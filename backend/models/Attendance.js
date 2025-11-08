@@ -1,0 +1,35 @@
+const mongoose = require('mongoose');
+
+const attendanceSchema = mongoose.Schema(
+  {
+    employee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    geofence: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Geofence',
+      required: true,
+    },
+    checkIn: {
+      type: Date,
+      required: true,
+    },
+    checkOut: {
+      type: Date,
+    },
+    status: {
+      type: String,
+      enum: ['in', 'out', 'pending_sync'],
+      default: 'in',
+    },
+    location: {
+      lat: { type: Number, required: true },
+      lng: { type: Number, required: true },
+    },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Attendance', attendanceSchema);

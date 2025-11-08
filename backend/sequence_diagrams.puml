@@ -1,0 +1,345 @@
+@startuml User Registration and Verification Sequence Diagram
+title FieldCheck: User Registration and Verification
+
+actor NewEmployee
+participant "Mobile App" as App
+participant "AuthService" as AuthService
+participant "EmailService" as EmailService
+database "Database" as DB
+
+NewEmployee -> App: Enters registration details (username, email, password, full name)
+App -> AuthService: register(username, email, password, fullName, role='employee')
+AuthService -> DB: Check if username/email already exists
+DB --> AuthService: Return existence status
+
+alt Username or Email exists
+    AuthService --> App: Return error (username/email taken)
+    App --> NewEmployee: Display error message
+else Username and Email are unique
+    AuthService -> DB: Create new user with status 'pending_verification'
+    DB --> AuthService: Confirm user creation
+    AuthService -> EmailService: sendVerificationEmail(email, verificationToken)
+    EmailService --> NewEmployee: Send verification email
+    AuthService --> App: Return success (awaiting verification)
+    App --> NewEmployee: Display success message, instruct to check email
+end
+
+NewEmployee -> NewEmployee: Clicks verification link in email
+NewEmployee -> AuthService: verifyEmail(verificationToken)
+AuthService -> DB: Find user by verification token
+DB --> AuthService: Return user details
+
+alt Token is valid
+    AuthService -> DB: Update user status to 'active'
+    DB --> AuthService: Confirm status update
+    AuthService --> NewEmployee: Return success
+    NewEmployee -> App: Redirect to login screen
+else Token is invalid or expired
+    AuthService --> NewEmployee: Return error
+    NewEmployee -> App: Display error message
+end
+
+@enduml
+
+@startuml Check-In Process Sequence Diagram
+title FieldCheck: Employee Check-In Process
+
+actor Employee
+participant "Mobile App" as App
+participant "LocationService" as LocService
+participant "GeofenceService" as GeoService
+participant "AttendanceService" as AttService
+database "Database" as DB
+
+Employee -> App: Open App
+App -> LocService: getCurrentLocation()
+LocService --> App: Return current location
+App -> GeoService: isPointInGeofence(lat, lng)
+GeoService -> DB: Query geofence data
+DB --> GeoService: Return geofence data
+GeoService --> App: Confirm location is within geofence
+
+alt Location is within geofence
+    Employee -> App: Tap "Check In"
+    App -> AttService: checkIn(userId, geofenceId, lat, lng)
+    AttService -> DB: Create attendance record
+    DB --> AttService: Confirm record created
+    AttService --> App: Return success
+    App --> Employee: Display check-in confirmation
+else Location is outside geofence
+    GeoService --> App: Location not in any geofence
+    App --> Employee: Display error message
+end
+
+@enduml
+
+@startuml Admin Task Management Sequence Diagram
+title FieldCheck: Admin Task Management Process
+
+actor Admin
+participant "Admin Dashboard" as Dashboard
+participant "TaskController" as TaskController
+participant "TaskService" as TaskService
+database "Database" as DB
+
+Admin -> Dashboard: Navigates to Task Management
+Dashboard -> TaskController: getTasks()
+TaskController -> TaskService: getTasks()
+TaskService -> DB: Retrieve all tasks
+DB --> TaskService: Return tasks list
+TaskService --> TaskController: Return tasks list
+TaskController --> Dashboard: Display tasks list
+
+Admin -> Dashboard: Clicks "Add New Task"
+Dashboard -> Admin: Prompts for task details (title, description, due date)
+Admin -> Dashboard: Enters task details
+Dashboard -> TaskController: createTask(title, description, dueDate)
+TaskController -> TaskService: createTask(taskObj)
+TaskService -> DB: Store new task
+DB --> TaskService: Confirm task creation
+TaskService --> TaskController: Return success
+TaskController --> Dashboard: Confirm creation
+Dashboard --> Admin: Display success message
+Dashboard -> Dashboard: Refresh tasks list
+
+Admin -> Dashboard: Selects a task to edit
+Dashboard -> Admin: Displays task details for editing
+Admin -> Dashboard: Modifies task details
+Admin -> Dashboard: Clicks "Save Changes"
+Dashboard -> TaskController: updateTask(taskId, title, description, dueDate)
+TaskController -> TaskService: updateTask(taskObj)
+TaskService -> DB: Update task details
+DB --> TaskService: Confirm update
+TaskService --> TaskController: Return success
+TaskController --> Dashboard: Confirm update
+Dashboard --> Admin: Display success message
+Dashboard -> Dashboard: Refresh tasks list
+
+Admin -> Dashboard: Selects a task to delete
+Admin -> Dashboard: Clicks "Delete Task"
+Dashboard -> Admin: Confirms deletion
+Admin -> Dashboard: Confirms
+Dashboard -> TaskController: deleteTask(taskId)
+TaskController -> TaskService: deleteTask(taskId)
+TaskService -> DB: Delete task
+DB --> TaskService: Confirm deletion
+TaskService --> TaskController: Return success
+TaskController --> Dashboard: Confirm deletion
+Dashboard --> Admin: Display success message
+Dashboard -> Dashboard: Refresh tasks list
+
+Admin -> Dashboard: Selects a task to assign
+Dashboard -> Admin: Displays list of employees
+Admin -> Dashboard: Selects an employee
+Admin -> Dashboard: Clicks "Assign Task"
+Dashboard -> TaskController: assignTask(userId, taskId)
+TaskController -> TaskService: assignTask(userObj, taskObj)
+TaskService -> DB: Create UserTask record
+DB --> TaskService: Confirm assignment
+TaskService --> TaskController: Return success
+TaskController --> Dashboard: Confirm assignment
+Dashboard --> Admin: Display success message
+Dashboard -> Dashboard: Refresh tasks list
+
+@enduml
+
+@startuml Admin Account Management Sequence Diagram
+title FieldCheck: Admin Account Management Process
+
+actor Admin
+participant "Admin Dashboard" as Dashboard
+participant "AuthService" as AuthService
+database "Database" as DB
+
+Admin -> Dashboard: Navigates to Employee Management
+Dashboard -> AuthService: getAllUsers()
+AuthService -> DB: Retrieve all user accounts
+DB --> AuthService: Return list of users
+AuthService --> Dashboard: Display list of users
+
+Admin -> Dashboard: Selects an employee account to edit
+Dashboard -> Admin: Displays employee details for editing
+Admin -> Dashboard: Modifies employee details (e.g., role, active status, full name)
+Admin -> Dashboard: Clicks "Save Changes"
+Dashboard -> AuthService: updateProfile(userId, updatedDetails)
+AuthService -> DB: Update user details
+DB --> AuthService: Confirm update
+AuthService --> Dashboard: Confirm update
+Dashboard --> Admin: Display success message
+Dashboard -> Dashboard: Refresh user list
+
+Admin -> Dashboard: Selects an employee account to delete
+Admin -> Dashboard: Clicks "Delete Account"
+Dashboard -> Admin: Confirms deletion
+Admin -> Dashboard: Confirms
+Dashboard -> AuthService: deleteUser(userId)
+AuthService -> DB: Delete user account
+DB --> AuthService: Confirm deletion
+AuthService --> Dashboard: Confirm deletion
+Dashboard --> Admin: Display success message
+Dashboard -> Dashboard: Refresh user list
+
+@enduml
+
+@startuml Employee Task Checklist Management Sequence Diagram
+
+@startuml Geofence Creation Sequence Diagram
+title FieldCheck: Admin Geofence Creation Process
+
+actor Administrator
+participant "Admin Dashboard" as Dashboard
+participant "GeofenceController" as GeoController
+participant "GeofenceService" as GeoService
+participant "LocationService" as LocService
+database "Database" as DB
+
+Administrator -> Dashboard: Navigate to Geofence Management
+Dashboard -> LocService: loadMap()
+LocService --> Dashboard: Display map interface
+
+Administrator -> Dashboard: Select location on map
+Dashboard -> LocService: getSelectedCoordinates()
+LocService --> Dashboard: Return coordinates (lat, lng)
+
+Administrator -> Dashboard: Enter geofence details (name, radius)
+Administrator -> Dashboard: Click "Create Geofence"
+Dashboard -> GeoController: createGeofence(name, radius, lat, lng)
+GeoController -> GeoService: createGeofence(geofenceObj)
+GeoService -> DB: Store geofence data
+DB --> GeoService: Confirm data stored
+GeoService --> GeoController: Return success
+GeoController --> Dashboard: Confirm creation
+Dashboard --> Administrator: Display success message
+Dashboard -> Dashboard: Update map with new geofence
+
+@enduml
+
+@startuml Offline Mode Sequence Diagram
+title FieldCheck: Offline Mode and Synchronization
+
+actor Employee
+participant "Mobile App" as App
+participant "LocationService" as LocService
+participant "AttendanceService" as AttService
+participant "SyncService" as SyncService
+database "Local Storage" as LocalDB
+database "Server Database" as ServerDB
+
+note over App, LocalDB: No Internet Connection
+
+Employee -> App: Open App
+App -> App: Check internet connectivity
+App --> Employee: Display "Working Offline" indicator
+
+Employee -> App: Tap "Check In"
+App -> LocService: getCurrentLocation()
+LocService --> App: Return current location
+
+App -> App: Verify location against cached geofence data
+App -> AttService: checkIn(userId, geofenceId, lat, lng)
+AttService -> SyncService: saveOfflineData("attendance", attendanceData)
+SyncService -> LocalDB: Store attendance record
+LocalDB --> SyncService: Confirm storage
+SyncService --> AttService: Return success
+AttService --> App: Return success
+App --> Employee: Display check-in confirmation
+
+... Later when internet connection is restored ...
+
+note over App, ServerDB: Internet Connection Restored
+
+App -> App: Detect internet connectivity
+App -> SyncService: syncOfflineData()
+SyncService -> LocalDB: Retrieve pending offline data
+LocalDB --> SyncService: Return offline records
+SyncService -> ServerDB: Send attendance records
+ServerDB --> SyncService: Confirm synchronization
+SyncService -> LocalDB: Mark records as synced
+SyncService --> App: Return sync status
+App --> Employee: Display "Data Synchronized" notification
+
+@enduml
+
+@startuml Forgot Password Sequence Diagram
+title FieldCheck: Forgot Password Process
+
+actor User
+participant "Mobile App" as App
+participant "AuthService" as AuthService
+participant "EmailService" as EmailService
+database "Database" as DB
+
+User -> App: Clicks "Forgot Password"
+App -> User: Prompts for email address
+User -> App: Enters email address
+App -> AuthService: resetPassword(email)
+AuthService -> DB: Find user by email
+DB --> AuthService: Return user details
+
+alt Email found
+    AuthService -> AuthService: Generate password reset token
+    AuthService -> DB: Store reset token and expiry for user
+    DB --> AuthService: Confirm token storage
+    AuthService -> EmailService: sendPasswordResetEmail(email, resetTokenLink)
+    EmailService --> User: Send password reset email with link
+    AuthService --> App: Return success
+    App --> User: Display instructions to check email
+else Email not found
+    AuthService --> App: Return error (email not registered)
+    App --> User: Display error message
+end
+
+User -> User: Clicks password reset link in email
+User -> App: Opens app/web page with reset token
+App -> User: Prompts for new password
+User -> App: Enters new password and confirms
+App -> AuthService: setNewPassword(resetToken, newPassword)
+AuthService -> DB: Validate reset token and expiry
+DB --> AuthService: Return token validity
+
+alt Token is valid and not expired
+    AuthService -> DB: Update user's password hash
+    AuthService -> DB: Invalidate/delete reset token
+    DB --> AuthService: Confirm password update and token invalidation
+    AuthService --> App: Return success
+    App --> User: Display success, redirect to login
+else Token is invalid or expired
+    AuthService --> App: Return error
+    App --> User: Display error message
+end
+
+@enduml
+
+@startuml Employee Task Checklist Management Sequence Diagram
+title FieldCheck: Employee Task Checklist Management Process
+
+actor Employee
+participant "Mobile App" as App
+participant "TaskController" as TaskController
+participant "TaskService" as TaskService
+database "Database" as DB
+
+Employee -> App: Logs in
+App -> App: Authenticates user
+App -> App: Navigates to "My Tasks"
+App -> TaskController: getUserTasks(employeeId)
+TaskController -> TaskService: getUserTasks(employeeId)
+TaskService -> DB: Retrieve tasks assigned to employee
+DB --> TaskService: Return list of UserTasks
+TaskService --> TaskController: Return list of UserTasks
+TaskController --> App: Display employee's task list
+
+Employee -> App: Selects a task
+App -> App: Displays task details (title, description, due date, current status)
+
+Employee -> App: Changes task status (e.g., from 'pending' to 'in_progress' or 'completed')
+App -> TaskController: updateUserTaskStatus(userTaskId, newStatus)
+TaskController -> TaskService: updateUserTaskStatus(userTaskId, newStatus)
+TaskService -> DB: Update UserTask status and completed_at (if completed)
+DB --> TaskService: Confirm update
+TaskService --> TaskController: Return success
+TaskController --> App: Confirm status update
+App --> Employee: Display success message
+App -> App: Refresh task list
+
+@enduml

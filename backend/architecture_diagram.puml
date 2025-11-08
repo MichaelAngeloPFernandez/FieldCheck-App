@@ -1,0 +1,91 @@
+@startuml FieldCheck System Architecture
+
+!define RECTANGLE class
+!define DATABASE database
+!define MOBILE component
+!define CLOUD cloud
+
+skinparam componentStyle uml2
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+title FieldCheck: Mobile Geofenced Attendance Verification System Architecture
+
+package "Employee Mobile App" {
+  MOBILE "Flutter Mobile App" as MobileApp {
+    [GPS Module]
+    [Geofence Verification]
+    [Attendance Module]
+    [Offline Storage]
+    [Sync Manager]
+    [Authentication]
+    [Bluetooth Beacon Integration]
+  }
+}
+
+package "Admin Dashboard" {
+  RECTANGLE "Web Interface" as WebInterface {
+    [Geofence Management]
+    [Employee Management]
+    [Attendance Reports]
+    [Location Tracking]
+    [System Configuration]
+  }
+}
+
+package "Backend Server" {
+  [API Gateway]
+  [Authentication Service]
+  [Geofence Service]
+  [Attendance Service]
+  [Employee Service]
+  [Notification Service]
+  DATABASE "Database" as DB {
+    [Employee Data]
+    [Attendance Records]
+    [Geofence Definitions]
+    [System Logs]
+  }
+}
+
+cloud "External Services" {
+  [GPS Satellites]
+  [Bluetooth Beacons]
+}
+
+MobileApp --> [API Gateway] : REST API Calls
+WebInterface --> [API Gateway] : REST API Calls
+[API Gateway] --> [Authentication Service]
+[API Gateway] --> [Geofence Service]
+[API Gateway] --> [Attendance Service]
+[API Gateway] --> [Employee Service]
+[API Gateway] --> [Notification Service]
+
+[Authentication Service] --> DB
+[Geofence Service] --> DB
+[Attendance Service] --> DB
+[Employee Service] --> DB
+[Notification Service] --> DB
+
+MobileApp --> [GPS Satellites] : Location Data
+MobileApp --> [Bluetooth Beacons] : Proximity Data
+
+note right of MobileApp
+  Mobile app restricts check-in/out 
+  to verified geofenced locations
+  and supports offline mode
+end note
+
+note right of WebInterface
+  Admin dashboard for managing
+  geofences, employees, and
+  viewing attendance reports
+end note
+
+note bottom of DB
+  Self-hosted database for
+  complete data control and privacy
+end note
+
+@enduml
