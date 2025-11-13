@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously, prefer_final_fields
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
@@ -33,9 +34,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   double? _fallbackLng;
 
   // Admin-enforced settings
-  bool _allowOfflineModeAdmin = true;
-  bool _requireBeaconVerificationAdmin = false;
-  bool _enableLocationTrackingAdmin = true;
+  final bool _allowOfflineModeAdmin = true;
+  final bool _requireBeaconVerificationAdmin = false;
+  final bool _enableLocationTrackingAdmin = true;
 
   // User preferences
   bool _userUseBluetoothBeacons = false;
@@ -66,9 +67,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       // Admin settings could be fetched from backend; keeping current defaults
-      _allowOfflineModeAdmin = _allowOfflineModeAdmin;
-      _requireBeaconVerificationAdmin = _requireBeaconVerificationAdmin;
-      _enableLocationTrackingAdmin = _enableLocationTrackingAdmin;
+      // _allowOfflineModeAdmin = _allowOfflineModeAdmin;
+      // _requireBeaconVerificationAdmin = _requireBeaconVerificationAdmin;
+      // _enableLocationTrackingAdmin = _enableLocationTrackingAdmin;
       // User preferences from Settings screen
       _userUseBluetoothBeacons = prefs.getBool('user.useBluetoothBeacons') ?? _userUseBluetoothBeacons;
       _userEnableLocationTracking = prefs.getBool('user.locationTrackingEnabled') ?? _userEnableLocationTracking;
@@ -134,7 +135,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       final geofenceStream = EasyGeofencing.getGeofenceStream();
       if (geofenceStream != null) {
         _geofenceStatusSubscription = geofenceStream.listen((GeofenceStatus status) {
-          print("Geofence Status: $status");
+          debugPrint("Geofence Status: $status");
           setState(() {
             _isWithinGeofence = (status == GeofenceStatus.enter);
           });
@@ -145,7 +146,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       }
 
     } catch (e) {
-      print('Error initializing location or geofence: $e');
+      debugPrint('Error initializing location or geofence: $e');
       setState(() {
         _locationError = true;
         _locationErrorMessage = e.toString();
@@ -161,27 +162,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         double? flLat = lastLat;
         double? flLng = lastLng;
 
-        if (flLat == null || flLng == null) {
-          if (geofences.isNotEmpty) {
-            flLat = geofences.first.latitude;
-            flLng = geofences.first.longitude;
-          }
-        }
-
-        if (flLat != null && flLng != null) {
-          setState(() {
-            _fallbackLat = flLat;
-            _fallbackLng = flLng;
-            _nearestGeofence = geofences.isNotEmpty
-                ? _geofenceService.findNearestGeofence(flLat!, flLng!, geofences)
-                : null;
-          });
-        } else {
-          setState(() {
-            _nearestGeofence = geofences.isNotEmpty ? geofences.first : null;
-          });
-        }
-      } catch (_) {}
+        setState(() {
+          _fallbackLat = flLat;
+          _fallbackLng = flLng;
+          _nearestGeofence = geofences.isNotEmpty
+              ? _geofenceService.findNearestGeofence(flLat!, flLng!, geofences)
+              : null;
+        });
+            } catch (_) {}
     } finally {
       _updateDistanceAndStatus();
       setState(() {
@@ -262,27 +250,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         double? flLat = lastLat;
         double? flLng = lastLng;
 
-        if (flLat == null || flLng == null) {
-          if (geofences.isNotEmpty) {
-            flLat = geofences.first.latitude;
-            flLng = geofences.first.longitude;
-          }
-        }
-
-        if (flLat != null && flLng != null) {
-          setState(() {
-            _fallbackLat = flLat;
-            _fallbackLng = flLng;
-            _nearestGeofence = geofences.isNotEmpty
-                ? _geofenceService.findNearestGeofence(flLat!, flLng!, geofences)
-                : null;
-          });
-        } else {
-          setState(() {
-            _nearestGeofence = geofences.isNotEmpty ? geofences.first : null;
-          });
-        }
-      } catch (_) {}
+        setState(() {
+          _fallbackLat = flLat;
+          _fallbackLng = flLng;
+          _nearestGeofence = geofences.isNotEmpty
+              ? _geofenceService.findNearestGeofence(flLat!, flLng!, geofences)
+              : null;
+        });
+            } catch (_) {}
     } finally {
       // Update computed distance and status using position or fallback
       _updateDistanceAndStatus();
@@ -816,41 +791,5 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return 'Location unavailable. Check permissions or network and retry.';
   }
 
-  Widget _buildLocationErrorBanner() {
-    final bool isInsecureOrigin = kIsWeb && Uri.base.scheme != 'https';
-    String message;
-    final String base = (_locationErrorMessage ?? '').toLowerCase();
 
-    if (isInsecureOrigin) {
-      message = 'Geolocation blocked on http. Open over https or allow location.';
-    } else if (base.contains('permanently denied') || base.contains('denied forever')) {
-      message = 'Location permanently denied. Enable in browser site settings.';
-    } else if (base.contains('denied')) {
-      message = 'Location permission denied. Allow location in site settings.';
-    } else if (base.contains('disabled')) {
-      message = 'Location services disabled. Enable OS location services and retry.';
-    } else {
-      message = 'Location unavailable. Check permissions or network and retry.';
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.amber.shade100,
-        border: Border.all(color: Colors.amber.shade300),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.amber),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-          TextButton(
-            onPressed: _updateLocationAndGeofenceStatus,
-            child: const Text('Retry'),
-          )
-        ],
-      ),
-    );
-  }
 }

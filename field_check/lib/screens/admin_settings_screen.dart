@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously, library_prefixes
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,7 +11,7 @@ import 'admin_geofence_screen.dart';
 import '../utils/export_util_stub.dart'
     if (dart.library.io) '../utils/export_util_io.dart'
     if (dart.library.html) '../utils/export_util_web.dart' as export_util;
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/settings_service.dart';
 import 'package:field_check/config/api_config.dart';
 
@@ -30,7 +31,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
   final UserService _userService = UserService();
   final SettingsService _settingsService = SettingsService();
-  late IO.Socket _socket;
+  late io.Socket _socket;
 
   @override
   void initState() {
@@ -40,9 +41,9 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   }
 
   void _initSocket() {
-    _socket = IO.io(
+    _socket = io.io(
       ApiConfig.baseUrl,
-      IO.OptionBuilder()
+      io.OptionBuilder()
           .setTransports(['websocket'])
           .enableAutoConnect()
           .build(),

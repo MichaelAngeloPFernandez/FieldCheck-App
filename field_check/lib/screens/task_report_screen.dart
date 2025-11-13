@@ -83,7 +83,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         }
       }
     } catch (e) {
-      print('Error loading autosaved data: $e');
+      debugPrint('Error loading autosaved data: $e');
     }
   }
 
@@ -116,7 +116,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         );
       }
     } catch (e) {
-      print('Error saving to autosave: $e');
+      debugPrint('Error saving to autosave: $e');
     }
   }
 

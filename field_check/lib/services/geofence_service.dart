@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import '../models/geofence_model.dart';
 import 'package:latlong2/latlong.dart';

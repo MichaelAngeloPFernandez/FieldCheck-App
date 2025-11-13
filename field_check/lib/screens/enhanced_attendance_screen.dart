@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print, use_build_context_synchronously
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -114,7 +115,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         _assignedGeofences = assigned;
       });
     } catch (e) {
-      print('Error loading geofences: $e');
+      debugPrint('Error loading geofences: $e');
     }
   }
 
@@ -189,8 +190,8 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         nearestGeofence = geofence;
       }
 
-      if (distance <= geofence.radius + 5.0) {
-        // 5m tolerance
+      // Check if within geofence radius (without extra tolerance for stricter checking)
+      if (distance <= geofence.radius) {
         withinAnyGeofence = true;
       }
     }
@@ -351,7 +352,6 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         userId = profile.id;
         if (mounted) setState(() { _userModelId = userId; });
       }
-      if (userId == null) return true;
       final tasks = await _taskService.fetchAssignedTasks(userId);
       if (tasks.isEmpty) {
         final proceed = await showDialog<bool>(

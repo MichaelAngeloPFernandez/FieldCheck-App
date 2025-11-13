@@ -1,0 +1,62 @@
+# render.yaml - Render.com Deployment Configuration
+# This file tells Render how to build and deploy your application
+
+services:
+  - type: web
+    name: fieldcheck-backend
+    env: node
+    plan: free
+    
+    # Build configuration
+    buildCommand: npm install --production
+    startCommand: node backend/server.js
+    
+    # Runtime
+    runtime: node
+    nodeVersion: 18
+    
+    # Environment variables (non-secret)
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: LOG_LEVEL
+        value: info
+    
+    # Secret environment variables (stored securely)
+    # Add these in Render Dashboard → Environment
+    # secretFiles: []
+    
+    # Health check configuration
+    healthCheckPath: /api/health
+    healthCheckInterval: 300
+    
+    # Autoscaling (Premium feature)
+    # autoscaling:
+    #   minInstances: 1
+    #   maxInstances: 3
+    #   targetMemoryPercent: 80
+    #   targetCPUPercent: 80
+    
+    # Disk configuration
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 10
+    
+    # GitHub integration
+    repo: https://github.com/ShaqmayBalS/capstone_fieldcheck_2.0
+    branch: main
+    autoPublishPath: /backend
+    
+    # Deployment configuration
+    buildFilter:
+      paths:
+        - backend/**
+    
+    # Prebuilt Docker image (optional)
+    # image: node:18-alpine
+    
+    # Custom domain (add after deployment)
+    # customDomain: api.fieldcheck.app

@@ -1,9 +1,10 @@
+// ignore_for_file: use_build_context_synchronously, library_prefixes
 import 'package:flutter/material.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/models/user_model.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 
 class AdminTaskManagementScreen extends StatefulWidget {
@@ -18,7 +19,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   final UserService _userService = UserService();
   List<Task> _tasks = [];
   bool _isLoading = true;
-  late IO.Socket _socket;
+  late io.Socket _socket;
 
   @override
   void initState() {
@@ -34,28 +35,28 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   }
 
   void _initSocket() {
-    _socket = IO.io(
+    _socket = io.io(
       ApiConfig.baseUrl,
-      IO.OptionBuilder().setTransports(['websocket']).build(),
+      io.OptionBuilder().setTransports(['websocket']).build(),
     );
 
-    _socket.onConnect((_) => print('Connected to Socket.IO'));
-    _socket.onDisconnect((_) => print('Disconnected from Socket.IO'));
-    _socket.onConnectError((err) => print('Socket.IO Connect Error: $err'));
-    _socket.onError((err) => print('Socket.IO Error: $err'));
+    _socket.onConnect((_) => debugPrint('Connected to Socket.IO'));
+    _socket.onDisconnect((_) => debugPrint('Disconnected from Socket.IO'));
+    _socket.onConnectError((err) => debugPrint('Socket.IO Connect Error: $err'));
+    _socket.onError((err) => debugPrint('Socket.IO Error: $err'));
 
     _socket.on('newTask', (data) {
-      print('New task received: $data');
+      debugPrint('New task received: $data');
       _fetchTasks();
     });
 
     _socket.on('updatedTask', (data) {
-      print('Task updated: $data');
+      debugPrint('Task updated: $data');
       _fetchTasks();
     });
 
     _socket.on('deletedTask', (data) {
-      print('Task deleted: $data');
+      debugPrint('Task deleted: $data');
       _fetchTasks();
     });
   }
@@ -69,7 +70,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       });
     } catch (e) {
       // Handle error
-      print('Error fetching tasks: $e');
+      debugPrint('Error fetching tasks: $e');
       setState(() {
         _isLoading = false;
       });
@@ -192,7 +193,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     );
                     Navigator.of(context).pop();
                   } catch (e) {
-                    print('Error adding task: $e');
+                    debugPrint('Error adding task: $e');
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Failed to add task: $e')),
                     );
@@ -317,7 +318,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     );
                     Navigator.of(context).pop();
                   } catch (e) {
-                    print('Error updating task: $e');
+                    debugPrint('Error updating task: $e');
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Failed to update task: $e')),
                     );
@@ -361,7 +362,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
           const SnackBar(content: Text('Task deleted successfully!')),
         );
       } catch (e) {
-        print('Error deleting task: $e');
+        debugPrint('Error deleting task: $e');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to delete task: $e')),
         );
@@ -374,7 +375,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     try {
       employees = await _userService.fetchEmployees();
     } catch (e) {
-      print('Error fetching employees: $e');
+      debugPrint('Error fetching employees: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to fetch employees: $e')),
       );
@@ -428,7 +429,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     );
                     Navigator.of(context).pop();
                   } catch (e) {
-                    print('Error assigning task: $e');
+                    debugPrint('Error assigning task: $e');
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Failed to assign task: $e')),
                     );

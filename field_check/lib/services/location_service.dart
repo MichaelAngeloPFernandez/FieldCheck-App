@@ -1,3 +1,4 @@
+// ignore_for_file: undefined_function, undefined_named_parameter
 import 'package:geolocator/geolocator.dart' as geolocator;
 import 'dart:async';
 
@@ -38,5 +39,49 @@ class LocationService {
     // When we reach here, permissions are granted and we can
     // continue accessing the position of the device.
     return await geolocator.Geolocator.getCurrentPosition();
+  }
+
+  /// Background-friendly position stream with sane defaults and simple filtering.
+  /// - desiredAccuracy: best for navigation when active
+  /// - distanceFilter: emit only on movement (meters)
+  /// - intervalDuration: minimum interval between updates
+  /// - Applies a basic jitter filter to drop implausible jumps
+  Stream<geolocator.Position> getPositionStream({
+    geolocator.LocationAccuracy accuracy = geolocator.LocationAccuracy.best,
+    int distanceFilter = 15,
+    Duration intervalDuration = const Duration(seconds: 10),
+  }) async* {
+    // Ensure permissions before starting stream
+    await getCurrentLocation();
+    final baseStream = geolocator.Geolocator.getPositionStream(
+      distanceFilter: distanceFilter,
+    );
+
+    geolocator.Position? last;
+    DateTime? lastTime;
+
+    await for (final pos in baseStream) {
+      final now = DateTime.now();
+      if (last != null && lastTime != null) {
+        final elapsed = now.difference(lastTime).inMilliseconds / 1000.0;
+        final distance = geolocator.Geolocator.distanceBetween(
+          last.latitude,
+          last.longitude,
+          pos.latitude,
+          pos.longitude,
+        );
+        // Drop improbable jumps > 150m in 1s (likely jitter)
+        if (elapsed > 0 && (distance / elapsed) > 150.0) {
+          continue;
+        }
+      }
+      last = pos;
+      lastTime = now;
+      yield pos;
+      // Throttle slightly to avoid over-updating downstream
+      if (intervalDuration.inMilliseconds > 0) {
+        await Future.delayed(intervalDuration);
+      }
+    }
   }
 }

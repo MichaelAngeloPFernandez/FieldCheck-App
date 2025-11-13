@@ -1,5 +1,6 @@
+// ignore_for_file: avoid_print, library_prefixes
 import 'dart:async';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
 
@@ -8,7 +9,7 @@ class RealtimeService {
   factory RealtimeService() => _instance;
   RealtimeService._internal();
 
-  IO.Socket? _socket;
+  io.Socket? _socket;
   final StreamController<Map<String, dynamic>> _eventController = 
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<int> _onlineCountController = 
@@ -35,7 +36,7 @@ class RealtimeService {
 
     try {
       final token = await UserService().getToken();
-      final options = IO.OptionBuilder()
+      final options = io.OptionBuilder()
           .setTransports(['websocket'])
           .setExtraHeaders({
             if (token != null) 'Authorization': 'Bearer $token'
@@ -43,7 +44,7 @@ class RealtimeService {
           .setTimeout(20000)
           .build();
 
-      _socket = IO.io(ApiConfig.baseUrl, options);
+      _socket = io.io(ApiConfig.baseUrl, options);
 
       _socket!.onConnect((_) {
         print('RealtimeService: Connected to Socket.IO');

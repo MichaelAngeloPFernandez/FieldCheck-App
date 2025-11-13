@@ -1,9 +1,10 @@
+// ignore_for_file: use_build_context_synchronously, library_prefixes, deprecated_member_use
 import 'package:flutter/material.dart';
 import '../widgets/custom_map.dart';
 import '../models/geofence_model.dart';
 import '../services/geofence_service.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/user_service.dart'; // Import UserService
 import '../models/user_model.dart'; // Import UserModel
 import 'package:field_check/config/api_config.dart';
@@ -21,12 +22,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   List<Geofence> _geofences = []; // Initialize as empty list
   LatLng? _selectedLocation;
   final double _newGeofenceRadius = 100.0;
-  late IO.Socket _socket;
+  late io.Socket _socket;
 
   List<UserModel> _allEmployees = []; // All employees fetched from backend
-  final List<UserModel> _selectedEmployees = []; // Employees assigned to a geofence
-  String? _selectedType; // 'TEAM' or 'SOLO'
-  String? _selectedLabelLetter; // 'A' through 'Z'
 
   @override
   void initState() {
@@ -37,9 +35,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   }
 
   void _initSocket() {
-    _socket = IO.io(
+    _socket = io.io(
       ApiConfig.baseUrl,
-      IO.OptionBuilder().setTransports(['websocket']).enableAutoConnect().build(),
+      io.OptionBuilder().setTransports(['websocket']).enableAutoConnect().build(),
     );
 
     // Trigger refresh on geofence-related events
@@ -56,7 +54,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
         _allEmployees = employees;
       });
     } catch (e) {
-      print('Error fetching employees: $e');
+      debugPrint('Error fetching employees: $e');
     }
   }
 
@@ -74,7 +72,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
         _geofences = fetchedGeofences;
       });
     } catch (e) {
-      print('Error fetching geofences in AdminGeofenceScreen: $e');
+      debugPrint('Error fetching geofences in AdminGeofenceScreen: $e');
       // Optionally show an error message to the user
     }
   }
@@ -84,6 +82,33 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     return Scaffold(
       body: Column(
         children: [
+          if (_hasOverlaps(_geofences))
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 8, left: 16, right: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amberAccent.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Overlap detected between some geofences. Consider adjusting radius or location.',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _showOverlapDetails(context),
+                    child: const Text('Details'),
+                  )
+                ],
+              ),
+            ),
           // Map area with geofence drawing tools
           Expanded(
             flex: 3,
@@ -166,7 +191,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                     await _geofenceService.updateGeofence(updatedGeofence);
                                     await _fetchGeofences(); // Refresh list from backend
                                   } catch (e) {
-                                    print('Error updating geofence status: $e');
+                                    debugPrint('Error updating geofence status: $e');
                                     // Optionally show an error message
                                   }
                                 },
@@ -227,7 +252,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 });
                 Navigator.pop(context);
               } catch (e) {
-                print('Error deleting geofence: $e');
+                debugPrint('Error deleting geofence: $e');
                 // Optionally show an error message
                 Navigator.pop(context);
               }
@@ -429,7 +454,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                           const SnackBar(content: Text('Geofence added')),
                         );
                       } catch (e) {
-                        print('Error adding geofence: $e');
+                        debugPrint('Error adding geofence: $e');
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Failed to add geofence: $e')),
                         );
@@ -618,7 +643,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     const SnackBar(content: Text('Geofence updated')),
                   );
                 } catch (e) {
-                  print('Error updating geofence: $e');
+                  debugPrint('Error updating geofence: $e');
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Failed to update geofence: $e')),
                   );
@@ -629,6 +654,47 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  bool _hasOverlaps(List<Geofence> geofences) {
+    for (int i = 0; i < geofences.length; i++) {
+      for (int j = i + 1; j < geofences.length; j++) {
+        if (_isOverlap(geofences[i], geofences[j])) return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isOverlap(Geofence a, Geofence b) {
+    final d = Geofence.calculateDistance(a.latitude, a.longitude, b.latitude, b.longitude);
+    return d < (a.radius + b.radius);
+  }
+
+  void _showOverlapDetails(BuildContext context) {
+    final List<String> pairs = [];
+    for (int i = 0; i < _geofences.length; i++) {
+      for (int j = i + 1; j < _geofences.length; j++) {
+        if (_isOverlap(_geofences[i], _geofences[j])) {
+          pairs.add('${_geofences[i].name} ↔ ${_geofences[j].name}');
+        }
+      }
+    }
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Overlapping Geofences'),
+        content: pairs.isEmpty
+            ? const Text('No overlaps found.')
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: pairs.map((p) => Text('• $p')).toList(),
+              ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
       ),
     );
   }

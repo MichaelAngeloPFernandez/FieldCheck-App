@@ -1,6 +1,10 @@
+// ignore_for_file: library_private_types_in_public_api
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:field_check/providers/auth_provider.dart';
 import 'package:field_check/screens/login_screen.dart';
+import 'package:field_check/screens/splash_screen.dart';
 import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
@@ -9,8 +13,8 @@ import 'package:field_check/services/sync_service.dart';
 import 'package:field_check/screens/dashboard_screen.dart';
 import 'package:field_check/screens/registration_screen.dart';
 import 'package:field_check/screens/forgot_password_screen.dart';
+import 'package:field_check/screens/reset_password_screen.dart';
 import 'package:field_check/screens/admin_dashboard_screen.dart';
-import 'package:field_check/services/user_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
@@ -43,14 +47,14 @@ class MyApp extends StatefulWidget {
     required this.autosaveService,
   });
 
-  static _MyAppState? of(BuildContext context) =>
-      context.findAncestorStateOfType<_MyAppState>();
+  static MyAppState? of(BuildContext context) =>
+      context.findAncestorStateOfType<MyAppState>();
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<MyApp> createState() => MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> {
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   ThemeMode _themeMode = ThemeMode.light;
 
@@ -145,75 +149,26 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ],
+      child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'FieldCheck',
         theme: _lightTheme(),
         darkTheme: _darkTheme(),
-      themeMode: _themeMode,
-      home: const StartupRouter(),
-      routes: {
-        '/register': (context) => const RegistrationScreen(),
-        '/forgot-password': (context) => const ForgotPasswordScreen(),
-      },
-    );
-  }
-}
-
-class StartupRouter extends StatefulWidget {
-  const StartupRouter({super.key});
-
-  @override
-  State<StartupRouter> createState() => _StartupRouterState();
-}
-
-class _StartupRouterState extends State<StartupRouter> {
-  final _userService = UserService();
-
-  @override
-  void initState() {
-    super.initState();
-    _decideRoute();
-  }
-
-  Future<void> _decideRoute() async {
-    try {
-      final token = await _userService.getToken();
-      if (token == null) {
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
-        return;
-      }
-      final profile = await _userService.getProfile();
-      if (!mounted) return;
-      final role = profile.role.toLowerCase();
-      if (role == 'admin') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
+        themeMode: _themeMode,
+        home: const SplashScreen(),
+        routes: {
+          '/login': (context) => const LoginScreen(),
+          '/register': (context) => const RegistrationScreen(),
+          '/forgot-password': (context) => const ForgotPasswordScreen(),
+          '/reset-password': (context) => const ResetPasswordScreen(),
+          '/dashboard': (context) => const DashboardScreen(),
+          '/admin-dashboard': (context) => const AdminDashboardScreen(),
+        },
+      ),
     );
   }
 }

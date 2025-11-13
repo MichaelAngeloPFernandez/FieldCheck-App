@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -329,7 +330,7 @@ class _MapScreenState extends State<MapScreen> {
                           final Color color = g.isActive ? Colors.green : Colors.grey;
                           return CircleMarker(
                             point: center,
-                            color: color.withOpacity(0.2),
+                            color: color.withValues(alpha: 0.2),
                             borderColor: color,
                             borderStrokeWidth: 2,
                             useRadiusInMeter: true,

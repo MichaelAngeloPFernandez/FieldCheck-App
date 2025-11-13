@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/http_util.dart';

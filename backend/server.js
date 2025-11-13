@@ -9,7 +9,11 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const morgan = require('morgan');
 
+console.log('🚀 Starting server initialization...');
+
 dotenv.config();
+
+console.log('📦 Modules loaded, environment configured');
 
 const app = express();
 const server = http.createServer(app); // Create http server
@@ -22,6 +26,8 @@ const io = new Server(server, { // Initialize socket.io
 
 // Export io for use in other modules
 module.exports.io = io;
+
+console.log('🔌 Socket.io initialized');
 
 // --- Presence tracking: broadcast online socket count ---
 let lastBroadcastCount = 0;
@@ -110,13 +116,32 @@ server.on('error', (err) => {
   }
 });
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
 (async () => {
-  await connectDB();
-  if (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true') {
-    const { seedDevData } = require('./utils/seedDev');
-    await seedDevData();
+  try {
+    await connectDB();
+    if (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true') {
+      const { seedDevData } = require('./utils/seedDev');
+      await seedDevData();
+    }
+    
+    // Initialize automation jobs (email verification cleanup, etc.)
+    const { initializeAutomation } = require('./utils/automationService');
+    initializeAutomation();
+    
+    server.listen(port, () => { // Use server.listen instead of app.listen
+      console.log(`Backend server listening at http://localhost:${port}`);
+    });
+  } catch (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
   }
-  server.listen(port, () => { // Use server.listen instead of app.listen
-    console.log(`Backend server listening at http://localhost:${port}`);
-  });
 })();

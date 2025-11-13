@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'package:flutter/material.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/services/task_service.dart';

@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'package:field_check/utils/http_util.dart';
 import 'package:field_check/services/user_service.dart';

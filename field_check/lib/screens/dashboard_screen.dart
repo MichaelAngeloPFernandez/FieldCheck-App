@@ -1,9 +1,11 @@
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
 import 'package:field_check/screens/enhanced_attendance_screen.dart';
 import 'package:field_check/screens/history_screen.dart';
 import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/settings_screen.dart';
 import 'package:field_check/screens/employee_task_list_screen.dart';
+import 'package:field_check/screens/employee_profile_screen.dart';
 import 'package:field_check/screens/login_screen.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
@@ -63,6 +65,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final List<Widget> screens = [
       const EnhancedAttendanceScreen(),
       const MapScreen(),
+      const EmployeeProfileScreen(),
       const HistoryScreen(),
       const SettingsScreen(),
       _loadingUserId
@@ -113,6 +116,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _selectedIndex = index;
           });
         },
+        type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.location_on),
@@ -121,6 +125,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.map),
             label: 'Map',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.history),

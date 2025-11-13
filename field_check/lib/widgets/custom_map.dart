@@ -158,8 +158,8 @@ class _CustomMapState extends State<CustomMap> {
                   radius: geofence.radius,
                   useRadiusInMeter: true,
                   color: geofence.isActive
-                      ? Colors.blue.withOpacity(0.3)
-                      : Colors.red.withOpacity(0.3),
+                      ? Colors.blue.withAlpha((0.3 * 255).round())
+                      : Colors.red.withAlpha((0.3 * 255).round()),
                   borderColor: geofence.isActive ? Colors.blue : Colors.red,
                   borderStrokeWidth: 2,
                 ),

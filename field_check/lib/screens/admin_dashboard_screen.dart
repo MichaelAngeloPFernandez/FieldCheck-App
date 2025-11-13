@@ -1,9 +1,12 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:field_check/screens/admin_geofence_screen.dart';
 import 'package:field_check/screens/admin_reports_screen.dart';
 import 'package:field_check/screens/admin_settings_screen.dart';
 import 'package:field_check/screens/admin_task_management_screen.dart';
+import 'package:field_check/screens/manage_employees_screen.dart';
+import 'package:field_check/screens/manage_admins_screen.dart';
 import 'package:field_check/screens/login_screen.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/dashboard_service.dart';
@@ -32,6 +35,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   List<Widget> get _screens => [
     _buildDashboardOverview(),
+    const ManageEmployeesScreen(),
+    const ManageAdminsScreen(),
     const AdminGeofenceScreen(),
     const AdminReportsScreen(),
     const AdminSettingsScreen(),
@@ -184,6 +189,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             label: 'Dashboard',
           ),
           BottomNavigationBarItem(
+            icon: Icon(Icons.people),
+            label: 'Employees',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.admin_panel_settings),
+            label: 'Admins',
+          ),
+          BottomNavigationBarItem(
             icon: Icon(Icons.map),
             label: 'Geofences',
           ),
@@ -211,12 +224,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 0:
         return 'Admin Dashboard';
       case 1:
-        return 'Geofence Management';
+        return 'Manage Employees';
       case 2:
-        return 'Reports & Analytics';
+        return 'Manage Administrators';
       case 3:
-        return 'System Settings';
+        return 'Geofence Management';
       case 4:
+        return 'Reports & Analytics';
+      case 5:
+        return 'System Settings';
+      case 6:
         return 'Task Management';
       default:
         return 'Admin Dashboard';
@@ -481,26 +498,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               children: [
                 Expanded(
                   child: _buildQuickActionButton(
-                    icon: Icons.person_add,
-                    label: 'Add Employee',
+                    icon: Icons.people,
+                    label: 'Manage Employees',
                     color: Colors.blue,
                     onTap: () {
-                      // Navigate to add employee
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Navigate to Add Employee')),
-                      );
+                      setState(() {
+                        _selectedIndex = 1; // Employees tab
+                      });
                     },
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildQuickActionButton(
-                    icon: Icons.location_on,
-                    label: 'Add Geofence',
-                    color: Colors.green,
+                    icon: Icons.admin_panel_settings,
+                    label: 'Manage Admins',
+                    color: Colors.red,
                     onTap: () {
                       setState(() {
-                        _selectedIndex = 1; // Geofences tab
+                        _selectedIndex = 2; // Admins tab
                       });
                     },
                   ),
@@ -512,12 +528,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               children: [
                 Expanded(
                   child: _buildQuickActionButton(
-                    icon: Icons.task,
-                    label: 'Create Task',
-                    color: Colors.orange,
+                    icon: Icons.location_on,
+                    label: 'Add Geofence',
+                    color: Colors.green,
                     onTap: () {
                       setState(() {
-                        _selectedIndex = 4; // Tasks tab
+                        _selectedIndex = 3; // Geofences tab
                       });
                     },
                   ),
@@ -525,12 +541,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildQuickActionButton(
+                    icon: Icons.task,
+                    label: 'Create Task',
+                    color: Colors.orange,
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 6; // Tasks tab
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildQuickActionButton(
                     icon: Icons.assessment,
                     label: 'View Reports',
                     color: Colors.purple,
                     onTap: () {
                       setState(() {
-                        _selectedIndex = 2; // Reports tab
+                        _selectedIndex = 4; // Reports tab
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildQuickActionButton(
+                    icon: Icons.settings,
+                    label: 'Settings',
+                    color: Colors.teal,
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 5; // Settings tab
                       });
                     },
                   ),
@@ -555,9 +601,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Column(
           children: [

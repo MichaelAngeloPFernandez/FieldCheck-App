@@ -1,10 +1,11 @@
+// ignore_for_file: constant_identifier_names
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/models/geofence_model.dart';
 
 class Attendance {
-  static const String STATUS_PENDING = 'pending';
-  static const String STATUS_IN_PROGRESS = 'in_progress';
-  static const String STATUS_COMPLETED = 'completed';
+  static const String statusPending = 'pending';
+  static const String statusInProgress = 'in_progress';
+  static const String statusCompleted = 'completed';
 
   final String id;
   final UserModel user;
