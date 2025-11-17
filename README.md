@@ -375,4 +375,5 @@ Everything you need is:
 *All systems operational and verified*
 *Ready for team testing and production deployment*
 #   c a p s t o n e _ f i e l d c h e c k _ 2 . 0  
+ #   F I E L D C H E C K _ 2 . 0  
  
