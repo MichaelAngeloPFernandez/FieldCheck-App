@@ -561,6 +561,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'manage_employees_fab',
         onPressed: _addEmployee,
         child: const Icon(Icons.person_add),
       ),

@@ -11,6 +11,7 @@ class CustomMap extends StatefulWidget {
   final UserLocation? currentLocation;
   final Function(double, double)? onTap;
   final bool isEditable;
+  final String? currentUserId;
 
   const CustomMap({
     super.key,
@@ -20,6 +21,7 @@ class CustomMap extends StatefulWidget {
     this.currentLocation,
     this.onTap,
     this.isEditable = false,
+    this.currentUserId,
   });
 
   @override
@@ -28,6 +30,35 @@ class CustomMap extends StatefulWidget {
 
 class _CustomMapState extends State<CustomMap> {
   final MapController _mapController = MapController();
+
+  Geofence? _nearestGeofence() {
+    if (widget.geofences.isEmpty) return null;
+    if (widget.currentLocation == null) return widget.geofences.first;
+    Geofence best = widget.geofences.first;
+    double bestDist = Geofence.calculateDistance(
+      best.latitude, best.longitude,
+      widget.currentLocation!.latitude, widget.currentLocation!.longitude,
+    );
+    for (final g in widget.geofences) {
+      final d = Geofence.calculateDistance(
+        g.latitude, g.longitude,
+        widget.currentLocation!.latitude, widget.currentLocation!.longitude,
+      );
+      if (d < bestDist) {
+        best = g;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  int _distanceTo(Geofence g) {
+    if (widget.currentLocation == null) return 0;
+    return Geofence.calculateDistance(
+      g.latitude, g.longitude,
+      widget.currentLocation!.latitude, widget.currentLocation!.longitude,
+    ).round();
+  }
 
   double _zoomForRadius(double r) {
     if (r <= 75) return 18;
@@ -122,6 +153,12 @@ class _CustomMapState extends State<CustomMap> {
         ? _zoomForRadius(widget.geofences.first.radius)
         : (widget.currentLocation != null ? 16.0 : 2.0);
 
+    final Geofence? nearest = _nearestGeofence();
+    final int distance = nearest != null ? _distanceTo(nearest) : 0;
+    final bool isAssigned = nearest != null &&
+        widget.currentUserId != null &&
+        (nearest.assignedEmployees?.any((u) => u.id == widget.currentUserId) ?? false);
+
     return Container(
       width: widget.width,
       height: widget.height,
@@ -130,56 +167,99 @@ class _CustomMapState extends State<CustomMap> {
         border: Border.all(color: Colors.grey),
         borderRadius: BorderRadius.circular(8.0),
       ),
-      child: FlutterMap(
-        mapController: _mapController,
-        options: MapOptions(
-          initialCenter: initialCenter,
-          initialZoom: initialZoom,
-          onTap: (tapPosition, latlng) {
-            if (widget.isEditable) {
-              _mapController.move(latlng, 18.0);
-              if (widget.onTap != null) {
-                widget.onTap!(latlng.latitude, latlng.longitude);
-              }
-            }
-          },
-        ),
+      child: Stack(
         children: [
-          TileLayer(
-            urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            subdomains: const ['a', 'b', 'c'],
-            userAgentPackageName: 'field_check',
-          ),
-          CircleLayer(
-            circles: [
-              for (var geofence in widget.geofences)
-                CircleMarker(
-                  point: LatLng(geofence.latitude, geofence.longitude),
-                  radius: geofence.radius,
-                  useRadiusInMeter: true,
-                  color: geofence.isActive
-                      ? Colors.blue.withAlpha((0.3 * 255).round())
-                      : Colors.red.withAlpha((0.3 * 255).round()),
-                  borderColor: geofence.isActive ? Colors.blue : Colors.red,
-                  borderStrokeWidth: 2,
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: initialCenter,
+              initialZoom: initialZoom,
+              onTap: (tapPosition, latlng) {
+                if (widget.isEditable) {
+                  _mapController.move(latlng, 18.0);
+                  if (widget.onTap != null) {
+                    widget.onTap!(latlng.latitude, latlng.longitude);
+                  }
+                }
+              },
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'field_check',
+              ),
+              CircleLayer(
+                circles: [
+                  for (var geofence in widget.geofences)
+                    CircleMarker(
+                      point: LatLng(geofence.latitude, geofence.longitude),
+                      radius: geofence.radius,
+                      useRadiusInMeter: true,
+                      color: geofence.isActive
+                          ? Colors.blue.withAlpha((0.3 * 255).round())
+                          : Colors.red.withAlpha((0.3 * 255).round()),
+                      borderColor: geofence.isActive ? Colors.blue : Colors.red,
+                      borderStrokeWidth: 2,
+                    ),
+                ],
+              ),
+              if (widget.currentLocation != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(widget.currentLocation!.latitude,
+                          widget.currentLocation!.longitude),
+                      width: 80,
+                      height: 80,
+                      child: const Icon(
+                        Icons.location_on,
+                        color: Colors.blue,
+                        size: 40,
+                      ),
+                    ),
+                  ],
                 ),
             ],
           ),
-          if (widget.currentLocation != null)
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: LatLng(widget.currentLocation!.latitude,
-                      widget.currentLocation!.longitude),
-                  width: 80,
-                  height: 80,
-                  child: const Icon(
-                    Icons.location_on,
-                    color: Colors.blue,
-                    size: 40,
-                  ),
+          if (nearest != null)
+            Positioned(
+              left: 12,
+              top: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
                 ),
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      nearest.isActive ? Icons.location_on : Icons.location_off,
+                      color: nearest.isActive ? Colors.blue : Colors.red,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${nearest.name}${nearest.type != null ? ' • ${nearest.type}' : ''}${nearest.labelLetter != null ? ' • ${nearest.labelLetter}' : ''}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 12),
+                    Text('$distance m'),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isAssigned ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: isAssigned ? Colors.green : Colors.orange),
+                      ),
+                      child: Text(isAssigned ? 'Assigned' : 'Not assigned', style: TextStyle(color: isAssigned ? Colors.green.shade700 : Colors.orange.shade700)),
+                    ),
+                  ],
+                ),
+              ),
             ),
         ],
       ),

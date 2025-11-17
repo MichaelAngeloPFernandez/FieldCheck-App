@@ -16,6 +16,7 @@ const {
   importUsers,
 } = require('../controllers/userController');
 const { protect, admin } = require('../middleware/authMiddleware');
+const { refreshAccessToken, logout, googleSignIn } = require('../controllers/userController');
 
 // Public routes
 router.post('/login', authUser);
@@ -23,6 +24,9 @@ router.post('/', registerUser);
 router.get('/verify/:token', verifyEmail);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password/:token', resetPassword);
+router.post('/refresh-token', refreshAccessToken);
+router.post('/logout', protect, logout);
+router.post('/google-signin', googleSignIn);
 
 // Private user profile routes
 router.get('/profile', protect, getUserProfile);

@@ -50,9 +50,21 @@ class AuthProvider with ChangeNotifier {
           _error = null;
           debugPrint('✅ Auto-login successful: ${_user?.name}');
         } catch (e) {
-          // Token might be expired, clear it
-          await logout();
-          debugPrint('⚠️ Saved token expired, cleared');
+          final refreshed = await _userService.refreshAccessToken();
+          if (refreshed) {
+            try {
+              final profile = await _userService.getProfile();
+              _user = profile;
+              _error = null;
+              debugPrint('✅ Auto-login refreshed: ${_user?.name}');
+            } catch (_) {
+              await logout();
+              debugPrint('⚠️ Refreshed token failed, cleared');
+            }
+          } else {
+            await logout();
+            debugPrint('⚠️ Saved token expired, cleared');
+          }
         }
       }
 
@@ -204,8 +216,8 @@ class AuthProvider with ChangeNotifier {
       // Clear backend token
       await _userService.logout();
 
-      // Clear local storage
       await _prefs?.remove('auth_token');
+      await _prefs?.remove('refresh_token');
 
       // Clear state
       _user = null;

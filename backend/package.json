@@ -27,7 +27,8 @@
     "nodemailer": "^6.9.13",
     "otp": "^2.0.1",
     "socket.io": "^4.8.1",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "google-auth-library": "^9.14.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

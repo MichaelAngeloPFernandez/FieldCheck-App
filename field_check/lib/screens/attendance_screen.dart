@@ -1,4 +1,3 @@
-// ignore_for_file: use_build_context_synchronously, prefer_final_fields
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
@@ -8,8 +7,6 @@ import 'dart:convert';
 import '../services/location_service.dart';
 import '../services/geofence_service.dart';
 import '../models/geofence_model.dart';
-import 'package:easy_geofencing/easy_geofencing.dart';
-import 'package:easy_geofencing/enums/geofence_status.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/user_service.dart';
 import '../config/api_config.dart';
@@ -48,7 +45,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   
   Position? _userPosition;
   Geofence? _nearestGeofence;
-  StreamSubscription<GeofenceStatus>? _geofenceStatusSubscription;
+  StreamSubscription? _geofenceStatusSubscription;
   double? _currentDistanceMeters;
   
   @override
@@ -59,7 +56,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   
   @override
   void dispose() {
-    _geofenceStatusSubscription?.cancel();
     super.dispose();
   }
 
@@ -121,29 +117,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         );
       }
 
-      // Start EasyGeofencing service
-      if (_nearestGeofence != null) {
-        EasyGeofencing.startGeofenceService(
-          pointedLatitude: _nearestGeofence!.latitude.toString(),
-          pointedLongitude: _nearestGeofence!.longitude.toString(),
-          radiusMeter: _nearestGeofence!.radius.toString(),
-          eventPeriodInSeconds: 5,
-        );
-      }
-
-      _geofenceStatusSubscription?.cancel();
-      final geofenceStream = EasyGeofencing.getGeofenceStream();
-      if (geofenceStream != null) {
-        _geofenceStatusSubscription = geofenceStream.listen((GeofenceStatus status) {
-          debugPrint("Geofence Status: $status");
-          setState(() {
-            _isWithinGeofence = (status == GeofenceStatus.enter);
-          });
-          _updateDistanceAndStatus();
-        });
-      } else {
-        _updateDistanceAndStatus();
-      }
+      _updateDistanceAndStatus();
 
     } catch (e) {
       debugPrint('Error initializing location or geofence: $e');
@@ -311,10 +285,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       if (response.statusCode == 200) {
         final now = DateTime.now();
         final formattedTime = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+        if (!mounted) return;
         setState(() {
           _isCheckedIn = !_isCheckedIn;
           _lastCheckTime = formattedTime;
         });
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isCheckedIn ? 'Successfully checked in!' : 'Successfully checked out!'),
@@ -323,6 +299,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         );
       } else {
         final error = json.decode(response.body)['message'] ?? 'Failed to update attendance';
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: $error'),
@@ -331,6 +308,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Network error: $e'),
@@ -338,9 +316,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         ),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -362,6 +342,28 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            if (!_isOnline)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.cloud_off, color: Colors.orange.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Offline. Actions will auto-sync when online.',
+                        style: TextStyle(color: Colors.orange.shade700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (_locationError)
               Container(
                 width: double.infinity,
@@ -755,17 +757,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     if (_userEnableLocationTracking) {
       await _initializeLocationAndGeofence();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Location tracking enabled')),
       );
     } else {
-      _geofenceStatusSubscription?.cancel();
       setState(() {
         _userPosition = null;
         _nearestGeofence = null;
         _currentDistanceMeters = null;
         _isWithinGeofence = false;
       });
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Location tracking disabled')),
       );

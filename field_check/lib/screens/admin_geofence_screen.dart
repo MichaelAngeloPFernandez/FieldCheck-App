@@ -34,11 +34,29 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     _initSocket();
   }
 
-  void _initSocket() {
-    _socket = io.io(
-      ApiConfig.baseUrl,
-      io.OptionBuilder().setTransports(['websocket']).enableAutoConnect().build(),
-    );
+  Future<void> _initSocket() async {
+    final token = await _userService.getToken();
+    final options = io.OptionBuilder()
+        .setTransports(['websocket'])
+        .enableAutoConnect()
+        .setTimeout(20000)
+        .setExtraHeaders({if (token != null) 'Authorization': 'Bearer $token'})
+        .build();
+
+    // Inject reconnection options supported by socket_io_client
+    options['reconnection'] = true;
+    options['reconnectionAttempts'] = 999999;
+    options['reconnectionDelay'] = 500;
+    options['reconnectionDelayMax'] = 10000;
+
+    _socket = io.io(ApiConfig.baseUrl, options);
+
+    _socket.onConnect((_) => debugPrint('Geofence socket connected'));
+    _socket.onDisconnect((_) => debugPrint('Geofence socket disconnected'));
+    _socket.on('reconnect_attempt', (_) => debugPrint('Geofence socket reconnect attempt'));
+    _socket.on('reconnect', (_) => debugPrint('Geofence socket reconnected'));
+    _socket.on('reconnect_error', (err) => debugPrint('Geofence socket reconnect error: $err'));
+    _socket.on('reconnect_failed', (_) => debugPrint('Geofence socket reconnect failed'));
 
     // Trigger refresh on geofence-related events
     void refresh(dynamic _) => _fetchGeofences();

@@ -54,7 +54,10 @@ class LocationService {
     // Ensure permissions before starting stream
     await getCurrentLocation();
     final baseStream = geolocator.Geolocator.getPositionStream(
-      distanceFilter: distanceFilter,
+      locationSettings: geolocator.LocationSettings(
+        accuracy: accuracy,
+        distanceFilter: distanceFilter,
+      ),
     );
 
     geolocator.Position? last;

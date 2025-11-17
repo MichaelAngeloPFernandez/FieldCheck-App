@@ -561,6 +561,7 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'manage_admins_fab',
         onPressed: _addAdmin,
         child: const Icon(Icons.person_add),
       ),

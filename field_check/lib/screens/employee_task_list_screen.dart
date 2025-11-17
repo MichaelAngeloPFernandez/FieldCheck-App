@@ -54,7 +54,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
       });
     } catch (e) {
       // Handle error, e.g., show a SnackBar
-      print('Error updating task status: $e');
+      debugPrint('Error updating task status: $e');
     }
   }
 

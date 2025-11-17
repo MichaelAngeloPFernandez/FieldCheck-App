@@ -62,22 +62,35 @@ class SyncService {
       if (token != null) 'Authorization': 'Bearer $token',
     };
 
+    final List<Map<String, dynamic>> attendanceItems = [];
     for (var data in offlineRecords) {
+      if (data.dataType == 'attendance') {
+        try {
+          final parsed = json.decode(data.dataJson);
+          if (parsed is Map<String, dynamic>) {
+            attendanceItems.add(parsed);
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (attendanceItems.isNotEmpty) {
       try {
         final response = await HttpUtil().post(
           '/api/sync',
           headers: headers,
-          body: data.toJson(),
+          body: {'attendance': attendanceItems},
         );
-
         if (response.statusCode == 200) {
-          print('Successfully synced data: ${data.id}');
-          await markAsSynced(data.id);
+          for (var data in offlineRecords.where((d) => d.dataType == 'attendance')) {
+            await markAsSynced(data.id);
+          }
+          print('Successfully synced ${attendanceItems.length} attendance records');
         } else {
-          print('Failed to sync data ${data.id}: ${response.statusCode} - ${response.body}');
+          print('Failed to sync attendance batch: ${response.statusCode} - ${response.body}');
         }
       } catch (e) {
-        print('Error syncing data ${data.id}: $e');
+        print('Error syncing attendance batch: $e');
       }
     }
     print('Offline data synchronization attempt completed.');

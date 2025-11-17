@@ -2,7 +2,7 @@ const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
 const User = require('../models/User');
 const sendEmail = require('../utils/emailService');
-const generateToken = require('../utils/generateToken');
+const { generateToken, generateRefreshToken, verifyRefreshToken } = require('../utils/generateToken');
 const { v4: uuidv4 } = require('uuid');
 
 // @desc    Auth user & get token
@@ -53,6 +53,7 @@ const authUser = asyncHandler(async (req, res) => {
     email: user.email,
     role: user.role,
     token: generateToken(user._id),
+    refreshToken: generateRefreshToken(user._id, user.tokenVersion || 0),
   });
 });
 
@@ -103,6 +104,8 @@ const registerUser = asyncHandler(async (req, res) => {
       username: user.username,
       email: user.email,
       role: user.role,
+      token: generateToken(user._id),
+      refreshToken: generateRefreshToken(user._id, user.tokenVersion || 0),
       message: 'User registered (email disabled in dev)',
     });
   }
@@ -248,16 +251,17 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     if (req.body.password) {
       user.password = req.body.password;
     }
-    const updatedUser = await user.save();
-      res.json({
-        _id: updatedUser._id,
-        name: updatedUser.name,
-        username: updatedUser.username,
-        email: updatedUser.email,
-        avatarUrl: updatedUser.avatarUrl, // Include avatarUrl in the response
-        role: updatedUser.role,
-        token: generateToken(updatedUser._id),
-      });
+  const updatedUser = await user.save();
+    res.json({
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      avatarUrl: updatedUser.avatarUrl, // Include avatarUrl in the response
+      role: updatedUser.role,
+      token: generateToken(updatedUser._id),
+      refreshToken: generateRefreshToken(updatedUser._id, updatedUser.tokenVersion || 0),
+    });
   } else {
     res.status(404);
     throw new Error('User not found');
@@ -400,3 +404,110 @@ module.exports = {
   updateUserByAdmin,
   importUsers,
 };
+
+// @desc    Refresh access token
+// @route   POST /api/users/refresh-token
+// @access  Public (requires refresh token)
+const refreshAccessToken = asyncHandler(async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) {
+    res.status(400);
+    throw new Error('refreshToken is required');
+  }
+  let decoded;
+  try {
+    decoded = verifyRefreshToken(refreshToken);
+  } catch (e) {
+    res.status(401);
+    throw new Error('Invalid refresh token');
+  }
+  const user = await User.findById(decoded.id);
+  if (!user || user.isActive === false) {
+    res.status(401);
+    throw new Error('User not found or inactive');
+  }
+  if (!user.isVerified) {
+    res.status(403);
+    throw new Error('Account not verified');
+  }
+  const currentVersion = user.tokenVersion || 0;
+  if (typeof decoded.tv === 'number' && decoded.tv !== currentVersion) {
+    res.status(401);
+    throw new Error('Refresh token revoked');
+  }
+  return res.json({
+    token: generateToken(user._id),
+    refreshToken: generateRefreshToken(user._id, currentVersion),
+  });
+});
+
+// @desc    Logout (invalidate refresh tokens)
+// @route   POST /api/users/logout
+// @access  Private
+const logout = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
+  await user.save();
+  res.json({ message: 'Logged out' });
+});
+
+// @desc    Google Sign-In
+// @route   POST /api/users/google-signin
+// @access  Public
+const googleSignIn = asyncHandler(async (req, res) => {
+  const { idToken } = req.body;
+  if (!idToken) {
+    res.status(400);
+    throw new Error('idToken is required');
+  }
+  const { OAuth2Client } = require('google-auth-library');
+  const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  const payload = ticket.getPayload();
+  const googleId = payload.sub;
+  const email = (payload.email || '').toLowerCase();
+  const name = payload.name || payload.given_name || 'User';
+  const username = (email ? email.split('@')[0] : name).toLowerCase();
+
+  let user = await User.findOne({ $or: [{ googleId }, { email }] });
+  if (!user) {
+    const randomPassword = `Google@${crypto.randomBytes(12).toString('hex')}`;
+    user = await User.create({
+      name,
+      username,
+      email,
+      password: randomPassword,
+      role: 'employee',
+      isVerified: true,
+      isActive: true,
+      provider: 'google',
+      googleId,
+    });
+  } else {
+    if (!user.googleId) {
+      user.googleId = googleId;
+      user.provider = 'google';
+      await user.save();
+    }
+  }
+  res.json({
+    _id: user._id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    token: generateToken(user._id),
+    refreshToken: generateRefreshToken(user._id, user.tokenVersion || 0),
+  });
+});
+
+module.exports.refreshAccessToken = refreshAccessToken;
+module.exports.logout = logout;
+module.exports.googleSignIn = googleSignIn;

@@ -30,21 +30,20 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  google_maps_flutter: ^2.5.0
   http: ^1.5.0
   shared_preferences: ^2.2.2
   provider: ^6.0.0
   intl: ^0.20.2
   flutter_map: ^8.2.2
   latlong2: ^0.9.0
+  google_sign_in: ^6.2.1
 
   connectivity_plus: ^7.0.0
   file_picker: ^10.3.3
   socket_io_client: ^3.1.2
   image_picker: ^1.2.0
   uuid: ^4.5.1
-  geolocator: ^7.7.1
-  easy_geofencing: ^0.2.0
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:

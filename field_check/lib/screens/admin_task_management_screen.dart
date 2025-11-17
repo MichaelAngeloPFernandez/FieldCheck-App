@@ -35,29 +35,47 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   }
 
   void _initSocket() {
-    _socket = io.io(
-      ApiConfig.baseUrl,
-      io.OptionBuilder().setTransports(['websocket']).build(),
-    );
+    // Include auth header and robust reconnection/backoff settings
+    final baseOptions = io.OptionBuilder()
+        .setTransports(['websocket'])
+        .enableAutoConnect()
+        .setTimeout(20000)
+        .build();
+    baseOptions['reconnection'] = true;
+    baseOptions['reconnectionAttempts'] = 999999;
+    baseOptions['reconnectionDelay'] = 500;
+    baseOptions['reconnectionDelayMax'] = 10000;
+    // Attach Authorization header if available
+    _userService.getToken().then((token) {
+      final options = Map<String, dynamic>.from(baseOptions);
+      if (token != null) {
+        options['extraHeaders'] = {'Authorization': 'Bearer $token'};
+      }
+      _socket = io.io(ApiConfig.baseUrl, options);
 
-    _socket.onConnect((_) => debugPrint('Connected to Socket.IO'));
-    _socket.onDisconnect((_) => debugPrint('Disconnected from Socket.IO'));
-    _socket.onConnectError((err) => debugPrint('Socket.IO Connect Error: $err'));
-    _socket.onError((err) => debugPrint('Socket.IO Error: $err'));
+      _socket.onConnect((_) => debugPrint('Connected to Socket.IO'));
+      _socket.onDisconnect((_) => debugPrint('Disconnected from Socket.IO'));
+      _socket.onConnectError((err) => debugPrint('Socket.IO Connect Error: $err'));
+      _socket.onError((err) => debugPrint('Socket.IO Error: $err'));
+      _socket.on('reconnect_attempt', (_) => debugPrint('Socket.IO reconnect attempt'));
+      _socket.on('reconnect', (_) => debugPrint('Socket.IO reconnected'));
+      _socket.on('reconnect_error', (err) => debugPrint('Socket.IO reconnect error: $err'));
+      _socket.on('reconnect_failed', (_) => debugPrint('Socket.IO reconnect failed'));
 
-    _socket.on('newTask', (data) {
-      debugPrint('New task received: $data');
-      _fetchTasks();
-    });
+      _socket.on('newTask', (data) {
+        debugPrint('New task received: $data');
+        _fetchTasks();
+      });
 
-    _socket.on('updatedTask', (data) {
-      debugPrint('Task updated: $data');
-      _fetchTasks();
-    });
+      _socket.on('updatedTask', (data) {
+        debugPrint('Task updated: $data');
+        _fetchTasks();
+      });
 
-    _socket.on('deletedTask', (data) {
-      debugPrint('Task deleted: $data');
-      _fetchTasks();
+      _socket.on('deletedTask', (data) {
+        debugPrint('Task deleted: $data');
+        _fetchTasks();
+      });
     });
   }
 
@@ -485,6 +503,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                   },
                 ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'admin_tasks_fab',
         onPressed: _addTask,
         child: const Icon(Icons.add),
       ),

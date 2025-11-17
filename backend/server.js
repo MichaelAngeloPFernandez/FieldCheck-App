@@ -57,8 +57,19 @@ app.use(compression());
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
-app.use(limiter);
+// Rate limiting: keep strict in production, relax/disable in development
+const isProd = process.env.NODE_ENV === 'production';
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
+  max: parseInt(process.env.RATE_LIMIT_MAX || (isProd ? '1000' : '0')), // 0 disables in dev
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip preflight and health checks to avoid blocking normal API usage
+  skip: (req) => req.method === 'OPTIONS' || req.path === '/api/health',
+});
+if (isProd) {
+  app.use(limiter);
+}
 
 // Route modules (loaded after io initialization to avoid circular deps)
 const userRoutes = require('./routes/userRoutes');
@@ -92,10 +103,57 @@ const taskRoutes = require('./routes/taskRoutes');
 app.use('/api/tasks', taskRoutes);
 app.use('/api/reports', reportRoutes);
 
-// Simple dev sync endpoint to accept offline submissions
-app.post('/api/sync', (req, res) => {
-  // In a real app, inspect payload by dataType and persist
-  res.status(200).json({ message: 'Sync received' });
+// Offline sync endpoint
+const { protect } = require('./middleware/authMiddleware');
+const Attendance = require('./models/Attendance');
+const Geofence = require('./models/Geofence');
+app.post('/api/sync', protect, async (req, res) => {
+  const payload = req.body || {};
+  const results = { attendanceProcessed: 0 };
+  try {
+    const items = Array.isArray(payload.attendance) ? payload.attendance : [];
+    for (const item of items) {
+      try {
+        const geofence = await Geofence.findById(item.geofenceId);
+        if (!geofence) continue;
+        const toRad = (deg) => (deg * Math.PI) / 180;
+        const haversineMeters = (lat1, lon1, lat2, lon2) => {
+          const R = 6371000;
+          const dLat = toRad(lat2 - lat1);
+          const dLon = toRad(lon2 - lon1);
+          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          return R * c;
+        };
+        const distanceMeters = haversineMeters(geofence.latitude, geofence.longitude, item.latitude, item.longitude);
+        if (distanceMeters > geofence.radius) continue;
+
+        if (item.type === 'checkin') {
+          await Attendance.create({
+            employee: req.user._id,
+            geofence: geofence._id,
+            checkIn: item.timestamp ? new Date(item.timestamp) : new Date(),
+            status: 'in',
+            location: { lat: item.latitude, lng: item.longitude },
+          });
+        } else if (item.type === 'checkout') {
+          const openRecord = await Attendance.findOne({ employee: req.user._id, geofence: geofence._id, checkOut: { $exists: false } }).sort({ createdAt: -1 });
+          if (openRecord) {
+            openRecord.checkOut = item.timestamp ? new Date(item.timestamp) : new Date();
+            openRecord.status = 'out';
+            openRecord.location = { lat: item.latitude, lng: item.longitude };
+            await openRecord.save();
+          }
+        }
+        results.attendanceProcessed++;
+      } catch (_) {}
+    }
+    res.status(200).json({ message: 'Sync processed', results });
+  } catch (e) {
+    res.status(500).json({ message: 'Sync failed' });
+  }
 });
 
 // Error handling middleware (JSON responses)

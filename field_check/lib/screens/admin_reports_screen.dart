@@ -50,18 +50,28 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Future<void> _initSocket() async {
     final base = ApiConfig.baseUrl;
     final token = await UserService().getToken();
-    final optionsBuilder = io.OptionBuilder()
+    final options = io.OptionBuilder()
         .setTransports(['websocket'])
-        .enableAutoConnect();
+        .enableAutoConnect()
+        .setTimeout(20000)
+        .build();
     if (token != null) {
-      optionsBuilder.setExtraHeaders({'Authorization': 'Bearer $token'});
+      options['extraHeaders'] = {'Authorization': 'Bearer $token'};
     }
-    _socket = io.io(base, optionsBuilder.build());
+    options['reconnection'] = true;
+    options['reconnectionAttempts'] = 999999;
+    options['reconnectionDelay'] = 500;
+    options['reconnectionDelayMax'] = 10000;
+    _socket = io.io(base, options);
 
     _socket.onConnect((_) => debugPrint('Connected to Socket.IO'));
     _socket.onDisconnect((_) => debugPrint('Disconnected from Socket.IO'));
     _socket.onConnectError((err) => debugPrint('Socket.IO Connect Error: $err'));
     _socket.onError((err) => debugPrint('Socket.IO Error: $err'));
+    _socket.on('reconnect_attempt', (_) => debugPrint('Reports socket reconnect attempt'));
+    _socket.on('reconnect', (_) => debugPrint('Reports socket reconnected'));
+    _socket.on('reconnect_error', (err) => debugPrint('Reports socket reconnect error: $err'));
+    _socket.on('reconnect_failed', (_) => debugPrint('Reports socket reconnect failed'));
 
     _socket.on('newAttendanceRecord', (data) {
       debugPrint('New attendance record: $data');

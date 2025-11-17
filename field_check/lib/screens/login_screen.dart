@@ -3,6 +3,7 @@ import 'package:field_check/main.dart';
 import 'package:field_check/screens/dashboard_screen.dart';
 import 'package:field_check/screens/admin_dashboard_screen.dart';
 import '../services/user_service.dart';
+import '../services/google_auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -19,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
 
   final _userService = UserService();
+  final _googleAuthService = GoogleAuthService();
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -278,25 +280,34 @@ class _LoginScreenState extends State<LoginScreen> {
                           const Divider(height: 32),
                           const Text('Or continue in demo mode'),
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _demoLoginEmployee,
-                                  icon: const Icon(Icons.person),
-                                  label: const Text('Employee'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _demoLoginAdmin,
-                                  icon: const Icon(Icons.admin_panel_settings),
-                                  label: const Text('Admin'),
-                                ),
-                              ),
-                            ],
-                          ),
+  Row(
+    children: [
+      Expanded(
+        child: OutlinedButton.icon(
+          onPressed: _demoLoginEmployee,
+          icon: const Icon(Icons.person),
+          label: const Text('Employee'),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: OutlinedButton.icon(
+          onPressed: _demoLoginAdmin,
+          icon: const Icon(Icons.admin_panel_settings),
+          label: const Text('Admin'),
+        ),
+      ),
+    ],
+  ),
+  const SizedBox(height: 12),
+  SizedBox(
+    width: double.infinity,
+    child: OutlinedButton.icon(
+      onPressed: _isLoading ? null : _loginWithGoogle,
+      icon: const Icon(Icons.login),
+      label: const Text('Continue with Google'),
+    ),
+  ),
                         ],
                       ),
                     ),
@@ -308,5 +319,35 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
+  }
+  Future<void> _loginWithGoogle() async {
+    setState(() {
+
+      _error = null;
+    });
+    try {
+      final ok = await _googleAuthService.signIn();
+      if (!mounted) return;
+      if (ok) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
+        );
+      } else {
+        setState(() {
+          _error = 'Google sign-in failed';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 }

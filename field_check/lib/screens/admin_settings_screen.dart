@@ -41,52 +41,67 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   }
 
   void _initSocket() {
-    _socket = io.io(
-      ApiConfig.baseUrl,
-      io.OptionBuilder()
-          .setTransports(['websocket'])
-          .enableAutoConnect()
-          .build(),
-    );
+    // Add Authorization header and reconnection/backoff settings
+    final baseOptions = io.OptionBuilder()
+        .setTransports(['websocket'])
+        .enableAutoConnect()
+        .setTimeout(20000)
+        .build();
+    baseOptions['reconnection'] = true;
+    baseOptions['reconnectionAttempts'] = 999999;
+    baseOptions['reconnectionDelay'] = 500;
+    baseOptions['reconnectionDelayMax'] = 10000;
 
-    _socket.onConnect((_) {
-      // print('Connected to settings socket');
-    });
-
-    _socket.on('settingsUpdated', (data) async {
-      // data can be an object of all settings or a single key update
-      if (data is Map) {
-        final prefs = await SharedPreferences.getInstance();
-        setState(() {
-          if (data.containsKey('geofenceRadius')) {
-            _geofenceRadius = (data['geofenceRadius'] as num).toInt();
-            prefs.setInt('geofenceRadius', _geofenceRadius);
-          }
-          if (data.containsKey('allowOfflineMode')) {
-            _allowOfflineMode = data['allowOfflineMode'] == true;
-            prefs.setBool('allowOfflineMode', _allowOfflineMode);
-          }
-          if (data.containsKey('requireBeaconVerification')) {
-            _requireBeaconVerification = data['requireBeaconVerification'] == true;
-            prefs.setBool('requireBeaconVerification', _requireBeaconVerification);
-          }
-          if (data.containsKey('enableLocationTracking')) {
-            _enableLocationTracking = data['enableLocationTracking'] == true;
-            prefs.setBool('enableLocationTracking', _enableLocationTracking);
-          }
-          if (data.containsKey('syncFrequency')) {
-            _syncFrequency = data['syncFrequency'] as String;
-            prefs.setString('syncFrequency', _syncFrequency);
-          }
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Settings synced in real-time')),
-        );
+    _userService.getToken().then((token) {
+      final options = Map<String, dynamic>.from(baseOptions);
+      if (token != null) {
+        options['extraHeaders'] = {'Authorization': 'Bearer $token'};
       }
-    });
+      _socket = io.io(ApiConfig.baseUrl, options);
 
-    _socket.onDisconnect((_) {
-      // print('Settings socket disconnected');
+      _socket.onConnect((_) {
+        debugPrint('Connected to settings socket');
+      });
+
+      _socket.on('settingsUpdated', (data) async {
+        // data can be an object of all settings or a single key update
+        if (data is Map) {
+          final prefs = await SharedPreferences.getInstance();
+          setState(() {
+            if (data.containsKey('geofenceRadius')) {
+              _geofenceRadius = (data['geofenceRadius'] as num).toInt();
+              prefs.setInt('geofenceRadius', _geofenceRadius);
+            }
+            if (data.containsKey('allowOfflineMode')) {
+              _allowOfflineMode = data['allowOfflineMode'] == true;
+              prefs.setBool('allowOfflineMode', _allowOfflineMode);
+            }
+            if (data.containsKey('requireBeaconVerification')) {
+              _requireBeaconVerification = data['requireBeaconVerification'] == true;
+              prefs.setBool('requireBeaconVerification', _requireBeaconVerification);
+            }
+            if (data.containsKey('enableLocationTracking')) {
+              _enableLocationTracking = data['enableLocationTracking'] == true;
+              prefs.setBool('enableLocationTracking', _enableLocationTracking);
+            }
+            if (data.containsKey('syncFrequency')) {
+              _syncFrequency = data['syncFrequency'] as String;
+              prefs.setString('syncFrequency', _syncFrequency);
+            }
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Settings synced in real-time')),
+          );
+        }
+      });
+
+      _socket.onDisconnect((_) {
+        debugPrint('Settings socket disconnected');
+      });
+      _socket.on('reconnect_attempt', (_) => debugPrint('Settings socket reconnect attempt'));
+      _socket.on('reconnect', (_) => debugPrint('Settings socket reconnected'));
+      _socket.on('reconnect_error', (err) => debugPrint('Settings socket reconnect error: $err'));
+      _socket.on('reconnect_failed', (_) => debugPrint('Settings socket reconnect failed'));
     });
   }
 

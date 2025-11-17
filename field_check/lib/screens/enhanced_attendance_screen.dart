@@ -12,6 +12,7 @@ import '../services/task_service.dart';
 import '../services/user_service.dart';
 import 'employee_task_list_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/http_util.dart';
 
 class EnhancedAttendanceScreen extends StatefulWidget {
   const EnhancedAttendanceScreen({super.key});
@@ -34,6 +35,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   bool _isLoading = false;
   bool _isOnline = true;
   String _lastCheckTime = "--:--";
+  int _pendingSyncCount = 0;
 
   Position? _userPosition;
   List<Geofence> _assignedGeofences = [];
@@ -76,6 +78,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     await _loadAssignedGeofences();
     await _initializeLocation();
     _startLocationUpdates();
+    await _loadPendingSyncCount();
   }
 
   Future<void> _loadCurrentUser() async {
@@ -95,6 +98,16 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     setState(() {
       _isOnline = !(prefs.getBool('user.offlineMode') ?? false);
     });
+  }
+
+  Future<void> _loadPendingSyncCount() async {
+    try {
+      final list = await _autosaveService.getUnsyncedData();
+      final pending = list.where((e) => (e['key'] as String).startsWith('attendance_')).length;
+      if (mounted) {
+        setState(() { _pendingSyncCount = pending; });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadAssignedGeofences() async {
@@ -129,7 +142,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         });
       }
     } catch (e) {
-      print('Error loading attendance status: $e');
+      debugPrint('Error loading attendance status: $e');
     }
   }
 
@@ -142,7 +155,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       _userPosition = await _locationService.getCurrentLocation();
       await _updateGeofenceStatus();
     } catch (e) {
-      print('Error getting location: $e');
+      debugPrint('Error getting location: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -166,7 +179,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         await _updateGeofenceStatus();
       }
     } catch (e) {
-      print('Error updating location: $e');
+      debugPrint('Error updating location: $e');
     }
   }
 
@@ -280,6 +293,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
           'longitude': attendanceData.longitude,
         });
       }
+      await _loadPendingSyncCount();
 
       if (mounted) {
         setState(() {
@@ -496,6 +510,31 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                   ),
 
                 const SizedBox(height: 16),
+                if (!_isOnline)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud_off, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Offline. Pending sync: $_pendingSyncCount',
+                            style: TextStyle(color: Colors.orange.shade700),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _isLoading ? null : _syncOfflineAttendance,
+                          child: const Text('Sync Now'),
+                        )
+                      ],
+                    ),
+                  ),
 
                 // Location status
                 _buildLocationCard(),
@@ -648,7 +687,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                 color: Colors.transparent,
                 child: InkWell(
                   customBorder: const CircleBorder(),
-                  onTap: _isLoading ? null : _toggleAttendance,
+                  onTap: (_isLoading || !_isWithinAnyGeofence) ? null : _toggleAttendance,
                   child: Center(
                     child: _isLoading
                         ? const CircularProgressIndicator()
@@ -678,6 +717,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            if (!_isWithinAnyGeofence)
+              const Text(
+                'Move inside your assigned geofence to check in/out.',
+                style: TextStyle(color: Colors.red),
+              ),
             Text(
               _isCheckedIn
                   ? 'Checked in at $_lastCheckTime'
@@ -690,6 +734,63 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _syncOfflineAttendance() async {
+    try {
+      setState(() { _isLoading = true; });
+      final unsynced = await _autosaveService.getUnsyncedData();
+      final items = <Map<String, dynamic>>[];
+      for (final e in unsynced) {
+        final key = e['key'] as String;
+        if (key.startsWith('attendance_')) {
+          final data = e['data'] as Map<String, dynamic>;
+          items.add({
+            'type': (data['data']?['isCheckedIn'] == true) ? 'checkin' : 'checkout',
+            'timestamp': data['data']?['timestamp'],
+            'latitude': data['data']?['latitude'],
+            'longitude': data['data']?['longitude'],
+            'geofenceId': data['data']?['geofenceId'],
+          });
+        }
+      }
+      if (items.isEmpty) {
+        await _loadPendingSyncCount();
+        setState(() { _isLoading = false; });
+        return;
+      }
+      final res = await HttpUtil().post('/api/sync', body: {'attendance': items});
+      if (res.statusCode == 200) {
+        for (final e in unsynced) {
+          final key = e['key'] as String;
+          if (key.startsWith('attendance_')) {
+            await _autosaveService.clearData(key);
+          }
+        }
+        await _loadPendingSyncCount();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Synced ${items.length} records')), 
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Sync failed: ${res.body}'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sync error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() { _isLoading = false; });
+      }
+    }
   }
 
   Widget _buildGeofencesCard() {

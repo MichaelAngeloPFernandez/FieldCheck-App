@@ -34,6 +34,9 @@ const userSchema = mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpires: Date,
     isActive: { type: Boolean, default: true },
+    tokenVersion: { type: Number, default: 0 },
+    provider: { type: String, enum: ['local', 'google'], default: 'local' },
+    googleId: { type: String },
   },
   { timestamps: true }
 );

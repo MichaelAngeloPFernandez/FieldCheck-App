@@ -79,9 +79,13 @@ class UserService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final token = data['token'] as String?;
+        final refreshToken = data['refreshToken'] as String?;
+        final prefs = await SharedPreferences.getInstance();
         if (token != null) {
-          final prefs = await SharedPreferences.getInstance();
           await prefs.setString('auth_token', token);
+        }
+        if (refreshToken != null) {
+          await prefs.setString('refresh_token', refreshToken);
         }
         _cachedProfile = UserModel.fromJson(data);
         return _cachedProfile!;
@@ -127,9 +131,13 @@ class UserService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final token = data['token'] as String?;
+        final refreshToken = data['refreshToken'] as String?;
+        final prefs = await SharedPreferences.getInstance();
         if (token != null) {
-          final prefs = await SharedPreferences.getInstance();
           await prefs.setString('auth_token', token);
+        }
+        if (refreshToken != null) {
+          await prefs.setString('refresh_token', refreshToken);
         }
         _cachedProfile = UserModel.fromJson(data);
         return _cachedProfile!;
@@ -219,6 +227,26 @@ class UserService {
       final profile = UserModel.fromJson(data);
       _cachedProfile = profile;
       return profile;
+    } else if (response.statusCode == 401) {
+      final refreshed = await refreshAccessToken();
+      if (!refreshed) {
+        throw Exception('Session expired');
+      }
+      final token2 = await getToken();
+      final response2 = await http.get(
+        Uri.parse('$_baseUrl/users/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token2 != null) 'Authorization': 'Bearer $token2',
+        },
+      );
+      if (response2.statusCode == 200) {
+        final data = json.decode(response2.body);
+        final profile = UserModel.fromJson(data);
+        _cachedProfile = profile;
+        return profile;
+      }
+      throw Exception('Failed to load profile: ${response2.body}');
     } else {
       throw Exception('Failed to load profile: ${response.body}');
     }
@@ -243,6 +271,25 @@ class UserService {
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       return UserModel.fromJson(data);
+    } else if (response.statusCode == 401) {
+      final refreshed = await refreshAccessToken();
+      if (!refreshed) {
+        throw Exception('Session expired');
+      }
+      final token2 = await getToken();
+      final response2 = await http.put(
+        Uri.parse('$_baseUrl/users/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token2 != null) 'Authorization': 'Bearer $token2',
+        },
+        body: json.encode(payload),
+      );
+      if (response2.statusCode == 200) {
+        final data = json.decode(response2.body);
+        return UserModel.fromJson(data);
+      }
+      throw Exception('Failed to update profile: ${response2.body}');
     } else {
       throw Exception('Failed to update profile: ${response.body}');
     }
@@ -253,9 +300,45 @@ class UserService {
     return prefs.getString('auth_token');
   }
 
+  Future<String?> getRefreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('refresh_token');
+  }
+
+  Future<bool> refreshAccessToken() async {
+    final refreshToken = await getRefreshToken();
+    if (refreshToken == null) return false;
+    final res = await http.post(
+      Uri.parse('$_baseUrl/users/refresh-token'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'refreshToken': refreshToken}),
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final prefs = await SharedPreferences.getInstance();
+      final token = data['token'] as String?;
+      final refreshToken2 = data['refreshToken'] as String?;
+      if (token != null) await prefs.setString('auth_token', token);
+      if (refreshToken2 != null) await prefs.setString('refresh_token', refreshToken2);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> logout() async {
+    final token = await getToken();
+    try {
+      await http.post(
+        Uri.parse('$_baseUrl/users/logout'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
+    await prefs.remove('refresh_token');
     _cachedProfile = null;
   }
 
