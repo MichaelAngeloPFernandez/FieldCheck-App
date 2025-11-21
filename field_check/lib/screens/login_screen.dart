@@ -91,9 +91,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Admin demo login failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Admin demo login failed: $e')));
     }
   }
 
@@ -107,9 +107,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Employee demo login failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Employee demo login failed: $e')));
     }
   }
 
@@ -129,7 +129,9 @@ class _LoginScreenState extends State<LoginScreen> {
           IconButton(
             tooltip: 'Toggle theme',
             icon: Icon(
-              Theme.of(context).brightness == Brightness.dark ? Icons.dark_mode : Icons.light_mode,
+              Theme.of(context).brightness == Brightness.dark
+                  ? Icons.dark_mode
+                  : Icons.light_mode,
             ),
             onPressed: () => MyApp.of(context)?.toggleTheme(),
           ),
@@ -160,10 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const Text(
                   'Mobile Geofenced Attendance Verification',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
                 ),
                 const SizedBox(height: 48),
                 Card(
@@ -181,7 +180,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           if (_error != null)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 12.0),
-                              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(color: Colors.red),
+                              ),
                             ),
                           TextFormField(
                             controller: _usernameController,
@@ -230,9 +232,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _login,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(context).colorScheme.primary,
-                                foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.primary,
+                                foregroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimary,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
@@ -255,10 +263,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 16),
                           TextButton(
                             onPressed: () {
-                              Navigator.of(context).pushNamed('/forgot-password');
+                              Navigator.of(
+                                context,
+                              ).pushNamed('/forgot-password');
                             },
                             style: TextButton.styleFrom(
-                              foregroundColor: Theme.of(context).colorScheme.primary,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary,
                             ),
                             child: const Text(
                               'Forgot Password?',
@@ -270,7 +282,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               Navigator.of(context).pushNamed('/register');
                             },
                             style: TextButton.styleFrom(
-                              foregroundColor: Theme.of(context).colorScheme.primary,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary,
                             ),
                             child: const Text(
                               "Don't have an account? Register",
@@ -280,34 +294,34 @@ class _LoginScreenState extends State<LoginScreen> {
                           const Divider(height: 32),
                           const Text('Or continue in demo mode'),
                           const SizedBox(height: 8),
-  Row(
-    children: [
-      Expanded(
-        child: OutlinedButton.icon(
-          onPressed: _demoLoginEmployee,
-          icon: const Icon(Icons.person),
-          label: const Text('Employee'),
-        ),
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: OutlinedButton.icon(
-          onPressed: _demoLoginAdmin,
-          icon: const Icon(Icons.admin_panel_settings),
-          label: const Text('Admin'),
-        ),
-      ),
-    ],
-  ),
-  const SizedBox(height: 12),
-  SizedBox(
-    width: double.infinity,
-    child: OutlinedButton.icon(
-      onPressed: _isLoading ? null : _loginWithGoogle,
-      icon: const Icon(Icons.login),
-      label: const Text('Continue with Google'),
-    ),
-  ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _demoLoginEmployee,
+                                  icon: const Icon(Icons.person),
+                                  label: const Text('Employee'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _demoLoginAdmin,
+                                  icon: const Icon(Icons.admin_panel_settings),
+                                  label: const Text('Admin'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _isLoading ? null : _loginWithGoogle,
+                              icon: const Icon(Icons.login),
+                              label: const Text('Continue with Google'),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -320,9 +334,9 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+
   Future<void> _loginWithGoogle() async {
     setState(() {
-
       _error = null;
     });
     try {

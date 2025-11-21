@@ -24,6 +24,7 @@ async function seedDevData() {
       { name: 'employee3', username: 'employee3', password: 'employee12345' },
       { name: 'employee4', username: 'employee4', password: 'employee123456' },
       { name: 'employee5', username: 'employee5', password: 'employee1234567' },
+      { name: 'Mark Perfecto', username: 'marper', password: 'marper123', email: 'karevindp@gmail.com' },
     ];
 
     for (const e of employees) {
@@ -36,6 +37,7 @@ async function seedDevData() {
         await User.create({
           name: e.name,
           username: e.username,
+          email: e.email || undefined,
           password: e.password,
           role: 'employee',
           isVerified: true,
@@ -53,9 +55,9 @@ async function seedDevData() {
           existing.name = e.name;
           changed = true;
         }
-        // Remove email for dummy accounts
-        if (existing.email) {
-          existing.email = undefined;
+        // Update email if provided
+        if (e.email && existing.email !== e.email) {
+          existing.email = e.email;
           changed = true;
         }
         // Always refresh the password to the specified one

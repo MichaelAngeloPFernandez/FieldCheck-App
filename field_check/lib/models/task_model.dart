@@ -10,9 +10,9 @@ class Task {
   final String status; // e.g., 'pending', 'in_progress', 'completed'
   final String? userTaskId; // ID of the UserTask if assigned
   final UserModel? assignedTo; // Assuming a UserModel for assigned user
+  final String? geofenceId; // Auto-populated from assigned geofence
   final double? latitude;
   final double? longitude;
-  final String? address;
 
   Task({
     required this.id,
@@ -24,13 +24,12 @@ class Task {
     required this.status,
     this.userTaskId,
     this.assignedTo,
+    this.geofenceId,
     this.latitude,
     this.longitude,
-    this.address,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
-    final loc = json['location'];
     return Task(
       id: json['_id'] ?? json['id'] ?? '',
       title: json['title'] ?? '',
@@ -43,9 +42,9 @@ class Task {
       assignedTo: json['assignedTo'] != null
           ? UserModel.fromJson(json['assignedTo'])
           : null,
-      latitude: (loc != null) ? (loc['latitude'] as num?)?.toDouble() : null,
-      longitude: (loc != null) ? (loc['longitude'] as num?)?.toDouble() : null,
-      address: (loc != null) ? (loc['address'] as String?) : null,
+      geofenceId: json['geofenceId'],
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
     );
   }
 
@@ -60,13 +59,9 @@ class Task {
       'status': status,
       'userTaskId': userTaskId,
       'assignedTo': assignedTo?.toJson(),
-      'location': (latitude != null && longitude != null)
-          ? {
-              'latitude': latitude,
-              'longitude': longitude,
-              'address': address ?? '',
-            }
-          : null,
+      'geofenceId': geofenceId,
+      'latitude': latitude,
+      'longitude': longitude,
     };
   }
 
@@ -80,9 +75,9 @@ class Task {
     String? status,
     String? userTaskId,
     UserModel? assignedTo,
+    String? geofenceId,
     double? latitude,
     double? longitude,
-    String? address,
   }) {
     return Task(
       id: id ?? this.id,
@@ -94,9 +89,9 @@ class Task {
       status: status ?? this.status,
       userTaskId: userTaskId ?? this.userTaskId,
       assignedTo: assignedTo ?? this.assignedTo,
+      geofenceId: geofenceId ?? this.geofenceId,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
-      address: address ?? this.address,
     );
   }
 }

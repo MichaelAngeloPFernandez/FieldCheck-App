@@ -17,7 +17,10 @@ class TaskService {
   }
 
   Future<List<Task>> fetchAllTasks() async {
-    final response = await http.get(Uri.parse(_baseUrl), headers: await _headers(jsonContent: false));
+    final response = await http.get(
+      Uri.parse(_baseUrl),
+      headers: await _headers(jsonContent: false),
+    );
 
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);
@@ -33,12 +36,7 @@ class TaskService {
       'description': task.description,
       'dueDate': task.dueDate.toIso8601String(),
       'status': task.status,
-      if (task.latitude != null && task.longitude != null)
-        'location': {
-          'latitude': task.latitude,
-          'longitude': task.longitude,
-          'address': task.address ?? '',
-        },
+      'geofenceId': task.geofenceId,
     };
     final response = await http.post(
       Uri.parse(_baseUrl),
@@ -59,12 +57,7 @@ class TaskService {
       'description': task.description,
       'dueDate': task.dueDate.toIso8601String(),
       'status': task.status,
-      if (task.latitude != null && task.longitude != null)
-        'location': {
-          'latitude': task.latitude,
-          'longitude': task.longitude,
-          'address': task.address ?? '',
-        },
+      'geofenceId': task.geofenceId,
     };
     final response = await http.put(
       Uri.parse('$_baseUrl/${task.id}'),
@@ -102,7 +95,10 @@ class TaskService {
   }
 
   Future<void> deleteTask(String taskId) async {
-    final response = await http.delete(Uri.parse('$_baseUrl/$taskId'), headers: await _headers(jsonContent: false));
+    final response = await http.delete(
+      Uri.parse('$_baseUrl/$taskId'),
+      headers: await _headers(jsonContent: false),
+    );
 
     if (response.statusCode != 204) {
       throw Exception('Failed to delete task');
@@ -110,7 +106,10 @@ class TaskService {
   }
 
   Future<List<UserTask>> fetchUserTasks(String userModelId) async {
-    final response = await http.get(Uri.parse('$_baseUrl/user/$userModelId'), headers: await _headers(jsonContent: false));
+    final response = await http.get(
+      Uri.parse('$_baseUrl/user/$userModelId'),
+      headers: await _headers(jsonContent: false),
+    );
 
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);
@@ -121,7 +120,10 @@ class TaskService {
   }
 
   Future<List<Task>> fetchAssignedTasks(String userModelId) async {
-    final response = await http.get(Uri.parse('$_baseUrl/assigned/$userModelId'), headers: await _headers(jsonContent: false));
+    final response = await http.get(
+      Uri.parse('$_baseUrl/assigned/$userModelId'),
+      headers: await _headers(jsonContent: false),
+    );
 
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);

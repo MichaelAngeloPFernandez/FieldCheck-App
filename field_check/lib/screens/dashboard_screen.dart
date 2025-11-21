@@ -78,11 +78,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: _selectedIndex != 0
-            ? BackButton(onPressed: () {
-                setState(() {
-                  _selectedIndex = 0;
-                });
-              })
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {
+                  setState(() {
+                    _selectedIndex = 0;
+                  });
+                },
+              )
             : null,
         title: const Text('FieldCheck'),
         actions: [
@@ -122,26 +125,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: Icon(Icons.location_on),
             label: 'Attendance',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
-            label: 'Map',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.history),
-            label: 'History',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Map'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: 'Settings',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.task),
-            label: 'Tasks',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.task), label: 'Tasks'),
         ],
       ),
     );

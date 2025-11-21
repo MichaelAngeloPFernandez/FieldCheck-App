@@ -15,13 +15,9 @@ function toTaskJson(doc, userTaskId) {
     createdAt: doc.createdAt?.toISOString() || new Date().toISOString(),
     status: doc.status || 'pending',
     userTaskId: userTaskId || undefined,
-    location: doc.location
-      ? {
-          latitude: doc.location.latitude,
-          longitude: doc.location.longitude,
-          address: doc.location.address || '',
-        }
-      : undefined,
+    geofenceId: doc.geofenceId?.toString() || undefined,
+    latitude: doc.latitude,
+    longitude: doc.longitude,
   };
 }
 
@@ -35,7 +31,7 @@ const getTasks = asyncHandler(async (req, res) => {
 // @route POST /api/tasks
 // @access Private/Admin
 const createTask = asyncHandler(async (req, res) => {
-  const { title, description, dueDate, status, location } = req.body;
+  const { title, description, dueDate, status, geofenceId } = req.body;
   if (!title) {
     res.status(400);
     throw new Error('Title is required');
@@ -46,15 +42,8 @@ const createTask = asyncHandler(async (req, res) => {
     dueDate: dueDate ? new Date(dueDate) : undefined,
     assignedBy: req.user._id,
     status: status || 'pending',
+    geofenceId: geofenceId || undefined,
   };
-  if (location && typeof location === 'object') {
-    const { latitude, longitude, address } = location;
-    taskData.location = {
-      latitude,
-      longitude,
-      address: address || '',
-    };
-  }
   const task = await Task.create(taskData);
   io.emit('newTask', toTaskJson(task)); // Emit real-time event
   res.status(201).json(toTaskJson(task));
@@ -72,15 +61,8 @@ const updateTask = asyncHandler(async (req, res) => {
   task.title = req.body.title ?? task.title;
   task.description = req.body.description ?? task.description;
   task.status = req.body.status ?? task.status;
+  task.geofenceId = req.body.geofenceId ?? task.geofenceId;
   if (req.body.dueDate) task.dueDate = new Date(req.body.dueDate);
-  if (req.body.location && typeof req.body.location === 'object') {
-    const { latitude, longitude, address } = req.body.location;
-    task.location = {
-      latitude: latitude ?? task.location?.latitude,
-      longitude: longitude ?? task.location?.longitude,
-      address: address ?? task.location?.address ?? '',
-    };
-  }
   const updated = await task.save();
   io.emit('updatedTask', toTaskJson(updated)); // Emit real-time event
   res.json(toTaskJson(updated));

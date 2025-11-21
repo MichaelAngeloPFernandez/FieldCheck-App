@@ -11,12 +11,8 @@ const taskSchema = new mongoose.Schema(
       enum: ['pending', 'in_progress', 'completed'],
       default: 'pending',
     },
-    // Optional location for mapping tasks
-    location: {
-      latitude: { type: Number, required: false },
-      longitude: { type: Number, required: false },
-      address: { type: String, required: false, default: '' },
-    },
+    // Auto-populated from assigned geofence
+    geofenceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Geofence', required: false },
   },
   { timestamps: true }
 );

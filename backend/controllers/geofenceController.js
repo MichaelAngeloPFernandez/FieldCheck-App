@@ -31,7 +31,7 @@ const createGeofence = asyncHandler(async (req, res) => {
 // @route   GET /api/geofences
 // @access  Private/Admin
 const getGeofences = asyncHandler(async (req, res) => {
-  const geofences = await Geofence.find({}).populate('assignedEmployees', 'name email');
+  const geofences = await Geofence.find({}).populate('assignedEmployees', '_id name email role');
   res.json(geofences);
 });
 
@@ -39,7 +39,7 @@ const getGeofences = asyncHandler(async (req, res) => {
 // @route   GET /api/geofences/:id
 // @access  Private/Admin
 const getGeofenceById = asyncHandler(async (req, res) => {
-  const geofence = await Geofence.findById(req.params.id).populate('assignedEmployees', 'name email');
+  const geofence = await Geofence.findById(req.params.id).populate('assignedEmployees', '_id name email role');
 
   if (geofence) {
     res.json(geofence);

@@ -11,7 +11,8 @@ class AdminTaskManagementScreen extends StatefulWidget {
   const AdminTaskManagementScreen({super.key});
 
   @override
-  State<AdminTaskManagementScreen> createState() => _AdminTaskManagementScreenState();
+  State<AdminTaskManagementScreen> createState() =>
+      _AdminTaskManagementScreenState();
 }
 
 class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
@@ -55,12 +56,23 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
       _socket.onConnect((_) => debugPrint('Connected to Socket.IO'));
       _socket.onDisconnect((_) => debugPrint('Disconnected from Socket.IO'));
-      _socket.onConnectError((err) => debugPrint('Socket.IO Connect Error: $err'));
+      _socket.onConnectError(
+        (err) => debugPrint('Socket.IO Connect Error: $err'),
+      );
       _socket.onError((err) => debugPrint('Socket.IO Error: $err'));
-      _socket.on('reconnect_attempt', (_) => debugPrint('Socket.IO reconnect attempt'));
+      _socket.on(
+        'reconnect_attempt',
+        (_) => debugPrint('Socket.IO reconnect attempt'),
+      );
       _socket.on('reconnect', (_) => debugPrint('Socket.IO reconnected'));
-      _socket.on('reconnect_error', (err) => debugPrint('Socket.IO reconnect error: $err'));
-      _socket.on('reconnect_failed', (_) => debugPrint('Socket.IO reconnect failed'));
+      _socket.on(
+        'reconnect_error',
+        (err) => debugPrint('Socket.IO reconnect error: $err'),
+      );
+      _socket.on(
+        'reconnect_failed',
+        (_) => debugPrint('Socket.IO reconnect failed'),
+      );
 
       _socket.on('newTask', (data) {
         debugPrint('New task received: $data');
@@ -98,9 +110,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   Future<void> _addTask() async {
     final TextEditingController titleController = TextEditingController();
     final TextEditingController descriptionController = TextEditingController();
-    final TextEditingController latitudeController = TextEditingController();
-    final TextEditingController longitudeController = TextEditingController();
-    final TextEditingController addressController = TextEditingController();
     DateTime? dueDate;
 
     await showDialog(
@@ -120,41 +129,12 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                   controller: descriptionController,
                   decoration: const InputDecoration(labelText: 'Description'),
                 ),
-                const SizedBox(height: 8),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Optional Location (for map markers)',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: latitudeController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
-                        decoration: const InputDecoration(labelText: 'Latitude'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: longitudeController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
-                        decoration: const InputDecoration(labelText: 'Longitude'),
-                      ),
-                    ),
-                  ],
-                ),
-                TextField(
-                  controller: addressController,
-                  decoration: const InputDecoration(labelText: 'Address (optional)'),
-                ),
                 ListTile(
-                  title: Text(dueDate == null
-                      ? 'Select Due Date'
-                      : 'Due Date: ${dueDate!.toLocal().toString().split(' ')[0]}'),
+                  title: Text(
+                    dueDate == null
+                        ? 'Select Due Date'
+                        : 'Due Date: ${dueDate!.toLocal().toString().split(' ')[0]}',
+                  ),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
                     dueDate = await showDatePicker(
@@ -182,30 +162,23 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                 if (titleController.text.isNotEmpty &&
                     descriptionController.text.isNotEmpty &&
                     dueDate != null) {
-                  final double? lat = latitudeController.text.trim().isEmpty
-                      ? null
-                      : double.tryParse(latitudeController.text.trim());
-                  final double? lng = longitudeController.text.trim().isEmpty
-                      ? null
-                      : double.tryParse(longitudeController.text.trim());
-                  final String addr = addressController.text.trim();
                   final newTask = Task(
                     id: '', // ID will be generated by the backend
                     title: titleController.text,
                     description: descriptionController.text,
                     dueDate: dueDate!,
-                    assignedBy: _userService.currentUser?.id ?? 'unknown_admin', // Use current user's ID
+                    assignedBy: _userService.currentUser?.id ?? 'unknown_admin',
                     createdAt: DateTime.now(),
-                    status: 'pending', // Default status
-                    userTaskId: null, // Not assigned yet
-                      assignedTo: null, // No user assigned initially
-                    latitude: lat,
-                    longitude: lng,
-                    address: addr.isNotEmpty ? addr : null,
+                    status: 'pending',
+                    userTaskId: null,
+                    assignedTo: null,
+                    geofenceId: null,
+                    latitude: null,
+                    longitude: null,
                   );
                   try {
                     await _taskService.createTask(newTask);
-                    _fetchTasks(); // Refresh the task list
+                    _fetchTasks();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Task added successfully!')),
                     );
@@ -227,11 +200,12 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   }
 
   Future<void> _editTask(Task task) async {
-    final TextEditingController titleController = TextEditingController(text: task.title);
-    final TextEditingController descriptionController = TextEditingController(text: task.description);
-    final TextEditingController latitudeController = TextEditingController(text: task.latitude?.toString() ?? '');
-    final TextEditingController longitudeController = TextEditingController(text: task.longitude?.toString() ?? '');
-    final TextEditingController addressController = TextEditingController(text: task.address ?? '');
+    final TextEditingController titleController = TextEditingController(
+      text: task.title,
+    );
+    final TextEditingController descriptionController = TextEditingController(
+      text: task.description,
+    );
     DateTime? dueDate = task.dueDate;
 
     await showDialog(
@@ -251,41 +225,12 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                   controller: descriptionController,
                   decoration: const InputDecoration(labelText: 'Description'),
                 ),
-                const SizedBox(height: 8),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Optional Location (for map markers)',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: latitudeController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
-                        decoration: const InputDecoration(labelText: 'Latitude'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: longitudeController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
-                        decoration: const InputDecoration(labelText: 'Longitude'),
-                      ),
-                    ),
-                  ],
-                ),
-                TextField(
-                  controller: addressController,
-                  decoration: const InputDecoration(labelText: 'Address (optional)'),
-                ),
                 ListTile(
-                  title: Text(dueDate == null
-                      ? 'Select Due Date'
-                      : 'Due Date: ${dueDate!.toLocal().toString().split(' ')[0]}'),
+                  title: Text(
+                    dueDate == null
+                        ? 'Select Due Date'
+                        : 'Due Date: ${dueDate!.toLocal().toString().split(' ')[0]}',
+                  ),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
                     dueDate = await showDatePicker(
@@ -313,26 +258,18 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                 if (titleController.text.isNotEmpty &&
                     descriptionController.text.isNotEmpty &&
                     dueDate != null) {
-                  final double? lat = latitudeController.text.trim().isEmpty
-                      ? null
-                      : double.tryParse(latitudeController.text.trim());
-                  final double? lng = longitudeController.text.trim().isEmpty
-                      ? null
-                      : double.tryParse(longitudeController.text.trim());
-                  final String addr = addressController.text.trim();
                   final updatedTask = task.copyWith(
                     title: titleController.text,
                     description: descriptionController.text,
                     dueDate: dueDate!,
-                    latitude: lat,
-                    longitude: lng,
-                    address: addr.isNotEmpty ? addr : null,
                   );
                   try {
                     await _taskService.updateTask(updatedTask);
-                    _fetchTasks(); // Refresh the task list
+                    _fetchTasks();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Task updated successfully!')),
+                      const SnackBar(
+                        content: Text('Task updated successfully!'),
+                      ),
                     );
                     Navigator.of(context).pop();
                   } catch (e) {
@@ -352,25 +289,27 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   }
 
   Future<void> _deleteTask(String taskId) async {
-    final bool confirmDelete = await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Confirm Delete'),
-          content: const Text('Are you sure you want to delete this task?'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    ) ?? false;
+    final bool confirmDelete =
+        await showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Confirm Delete'),
+              content: const Text('Are you sure you want to delete this task?'),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
 
     if (confirmDelete) {
       try {
@@ -381,9 +320,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
         );
       } catch (e) {
         debugPrint('Error deleting task: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete task: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete task: $e')));
       }
     }
   }
@@ -394,9 +333,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       employees = await _userService.fetchEmployees();
     } catch (e) {
       debugPrint('Error fetching employees: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to fetch employees: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to fetch employees: $e')));
       return;
     }
 
@@ -420,7 +359,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                         selectedEmployee = newValue;
                       });
                     },
-                    items: employees.map<DropdownMenuItem<UserModel>>((UserModel user) {
+                    items: employees.map<DropdownMenuItem<UserModel>>((
+                      UserModel user,
+                    ) {
                       return DropdownMenuItem<UserModel>(
                         value: user,
                         child: Text(user.name),
@@ -440,10 +381,15 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
               onPressed: () async {
                 if (selectedEmployee != null) {
                   try {
-                    await _taskService.assignTask(task.id, selectedEmployee!.id);
+                    await _taskService.assignTask(
+                      task.id,
+                      selectedEmployee!.id,
+                    );
                     _fetchTasks(); // Refresh the task list
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Task assigned successfully!')),
+                      const SnackBar(
+                        content: Text('Task assigned successfully!'),
+                      ),
                     );
                     Navigator.of(context).pop();
                   } catch (e) {
@@ -465,43 +411,41 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Admin Task Management'),
-      ),
+      appBar: AppBar(title: const Text('Admin Task Management')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _tasks.isEmpty
-              ? const Center(child: Text('No tasks available.'))
-              : ListView.builder(
-                  itemCount: _tasks.length,
-                  itemBuilder: (context, index) {
-                    final task = _tasks[index];
-                    return Card(
-                      margin: const EdgeInsets.all(8.0),
-                      child: ListTile(
-                        title: Text(task.title),
-                        subtitle: Text(task.description),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              onPressed: () => _editTask(task),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.assignment_ind),
-                              onPressed: () => _assignTask(task),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete),
-                              onPressed: () => _deleteTask(task.id),
-                            ),
-                          ],
+          ? const Center(child: Text('No tasks available.'))
+          : ListView.builder(
+              itemCount: _tasks.length,
+              itemBuilder: (context, index) {
+                final task = _tasks[index];
+                return Card(
+                  margin: const EdgeInsets.all(8.0),
+                  child: ListTile(
+                    title: Text(task.title),
+                    subtitle: Text(task.description),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _editTask(task),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                        IconButton(
+                          icon: const Icon(Icons.assignment_ind),
+                          onPressed: () => _assignTask(task),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () => _deleteTask(task.id),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'admin_tasks_fab',
         onPressed: _addTask,
