@@ -3,10 +3,11 @@ const router = express.Router();
 const { checkIn, checkOut, logAttendance, getAttendanceRecords, getAttendanceById, updateAttendance, deleteAttendance, getAttendanceStatus, getAttendanceHistory } = require('../controllers/attendanceController');
 const { protect } = require('../middleware/authMiddleware');
 
-router.post('/checkin', protect, checkIn);
-router.post('/checkout', protect, checkOut);
+// Order matters: more specific routes before generic ones
 router.get('/status', protect, getAttendanceStatus);
 router.get('/history', protect, getAttendanceHistory);
+router.post('/checkin', protect, checkIn);
+router.post('/checkout', protect, checkOut);
 router.route('/').post(protect, logAttendance).get(protect, getAttendanceRecords);
 router.route('/:id').get(protect, getAttendanceById).put(protect, updateAttendance).delete(protect, deleteAttendance);
 

@@ -58,13 +58,15 @@ const updateTask = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Task not found');
   }
-  task.title = req.body.title ?? task.title;
-  task.description = req.body.description ?? task.description;
-  task.status = req.body.status ?? task.status;
-  task.geofenceId = req.body.geofenceId ?? task.geofenceId;
-  if (req.body.dueDate) task.dueDate = new Date(req.body.dueDate);
+  // Only update if values are explicitly provided (not undefined)
+  if (req.body.title !== undefined) task.title = req.body.title;
+  if (req.body.description !== undefined) task.description = req.body.description;
+  if (req.body.status !== undefined) task.status = req.body.status;
+  if (req.body.geofenceId !== undefined) task.geofenceId = req.body.geofenceId;
+  if (req.body.dueDate !== undefined) task.dueDate = new Date(req.body.dueDate);
+  
   const updated = await task.save();
-  io.emit('updatedTask', toTaskJson(updated)); // Emit real-time event
+  io.emit('updatedTask', toTaskJson(updated));
   res.json(toTaskJson(updated));
 });
 

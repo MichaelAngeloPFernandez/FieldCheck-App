@@ -46,6 +46,16 @@ const checkIn = asyncHandler(async (req, res) => {
     throw new Error('Outside geofence boundary');
   }
 
+  // Check for existing open attendance to prevent double check-in
+  const existingOpen = await Attendance.findOne({ 
+    employee: req.user._id, 
+    checkOut: { $exists: false } 
+  });
+  if (existingOpen) {
+    res.status(400);
+    throw new Error('Employee already checked in. Check out first.');
+  }
+
   const attendance = new Attendance({
     employee: req.user._id,
     geofence: geofence._id,
@@ -55,7 +65,11 @@ const checkIn = asyncHandler(async (req, res) => {
   });
 
   const created = await attendance.save();
-  io.emit('newAttendanceRecord', created); // Emit real-time event
+  // Populate before emitting to ensure complete data
+  const populatedAttendance = await Attendance.findById(created._id)
+    .populate('employee', 'name email')
+    .populate('geofence', 'name');
+  io.emit('newAttendanceRecord', populatedAttendance);
 
   // Auto-create attendance report on check-in
   try {
@@ -126,7 +140,11 @@ const checkOut = asyncHandler(async (req, res) => {
   openRecord.location = { lat: latitude, lng: longitude };
 
   const updated = await openRecord.save();
-  io.emit('updatedAttendanceRecord', updated); // Emit real-time event
+  // Populate before emitting to ensure complete data
+  const populatedAttendance = await Attendance.findById(updated._id)
+    .populate('employee', 'name email')
+    .populate('geofence', 'name');
+  io.emit('updatedAttendanceRecord', populatedAttendance);
 
   // Auto-create attendance report on check-out
   try {

@@ -58,21 +58,28 @@ const updateGeofence = asyncHandler(async (req, res) => {
   const geofence = await Geofence.findById(req.params.id);
 
   if (geofence) {
-    geofence.name = name || geofence.name;
-    geofence.address = address !== undefined ? address : geofence.address;
-    geofence.latitude = latitude || geofence.latitude;
-    geofence.longitude = longitude || geofence.longitude;
-    geofence.radius = radius || geofence.radius;
-    geofence.shape = shape || geofence.shape;
-    geofence.isActive = isActive !== undefined ? isActive : geofence.isActive;
-    geofence.assignedEmployees = assignedEmployees || geofence.assignedEmployees;
-    geofence.type = type || geofence.type;
-    geofence.labelLetter = labelLetter !== undefined ? labelLetter : geofence.labelLetter;
+    // Update all fields with proper null/undefined handling
+    if (name !== undefined && name !== null) geofence.name = name;
+    if (address !== undefined && address !== null) geofence.address = address;
+    if (latitude !== undefined && latitude !== null) geofence.latitude = latitude;
+    if (longitude !== undefined && longitude !== null) geofence.longitude = longitude;
+    if (radius !== undefined && radius !== null) geofence.radius = radius;
+    if (shape !== undefined && shape !== null) geofence.shape = shape;
+    if (isActive !== undefined && isActive !== null) geofence.isActive = isActive;
+    if (type !== undefined && type !== null) geofence.type = type;
+    if (labelLetter !== undefined && labelLetter !== null) geofence.labelLetter = labelLetter;
+    // Important: Handle assignedEmployees as array with proper validation
+    if (Array.isArray(assignedEmployees)) {
+      geofence.assignedEmployees = assignedEmployees;
+    }
 
     const updatedGeofence = await geofence.save();
+    // Populate assignedEmployees before emitting to ensure frontend has complete data
+    const populatedGeofence = await Geofence.findById(updatedGeofence._id)
+      .populate('assignedEmployees', '_id name email role');
     // Emit real-time geofence update
-    io.emit('geofenceUpdated', updatedGeofence);
-    res.json(updatedGeofence);
+    io.emit('geofenceUpdated', populatedGeofence);
+    res.json(populatedGeofence);
   } else {
     res.status(404);
     throw new Error('Geofence not found');
