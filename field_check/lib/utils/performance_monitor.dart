@@ -103,7 +103,10 @@ class PerformanceMonitor {
         }
       }
     });
-    if (kDebugMode) print('═══════════════════════════════════════════════════════\n');
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('═══════════════════════════════════════════════════════\n');
+    }
   }
 
   /// Clear all recordings
