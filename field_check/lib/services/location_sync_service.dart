@@ -84,15 +84,16 @@ class LocationSyncService {
           geolocator.Geolocator.getPositionStream(
             locationSettings: const geolocator.LocationSettings(
               accuracy: geolocator.LocationAccuracy.bestForNavigation,
-              distanceFilter: 5, // Update every 5 meters
+              distanceFilter:
+                  3, // Update every 3 meters for responsive tracking
             ),
           ).listen(
             (geolocator.Position position) {
               final now = DateTime.now();
 
-              // Sync location every 10-15 seconds
+              // Sync location every 3 seconds for real-time monitoring (was 10s)
               if (_lastSyncTime == null ||
-                  now.difference(_lastSyncTime!).inSeconds >= 10) {
+                  now.difference(_lastSyncTime!).inSeconds >= 3) {
                 _lastSyncTime = now;
                 _syncLocationToBackend(position);
               }
@@ -113,15 +114,19 @@ class LocationSyncService {
     if (!_isCheckedIn || !_socket.connected) return;
 
     try {
-      _socket.emit('employeeLocationUpdate', {
+      final locationData = {
         'latitude': position.latitude,
         'longitude': position.longitude,
         'accuracy': position.accuracy,
         'timestamp': DateTime.now().toIso8601String(),
-      });
+      };
+
+      // Emit location update with instant delivery
+      _socket.emit('employeeLocationUpdate', locationData);
+
       if (kDebugMode) {
         print(
-          'LocationSyncService: Synced location (${position.latitude}, ${position.longitude})',
+          'LocationSyncService: Synced (${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}) • Accuracy: ${position.accuracy.toStringAsFixed(1)}m',
         );
       }
     } catch (e) {

@@ -42,6 +42,8 @@ class _MapScreenState extends State<MapScreen> {
   // Real-time location streaming
   late StreamSubscription<dynamic>? _locationSubscription;
   DateTime? _lastLocationUpdate;
+  bool _gpsConnected = false;
+  double? _currentAccuracy;
 
   @override
   void initState() {
@@ -65,12 +67,14 @@ class _MapScreenState extends State<MapScreen> {
       _locationSubscription = _locationService.getPositionStream().listen(
         (position) {
           final now = DateTime.now();
-          // Update location every 5 seconds to reduce lag
+          // Update location every 2 seconds for smooth real-time updates
           if (_lastLocationUpdate == null ||
-              now.difference(_lastLocationUpdate!).inSeconds >= 5) {
+              now.difference(_lastLocationUpdate!).inMilliseconds >= 2000) {
             _lastLocationUpdate = now;
             setState(() {
               _userLatLng = LatLng(position.latitude, position.longitude);
+              _gpsConnected = true; // GPS is actively updating
+              _currentAccuracy = position.accuracy;
               // Update geofence status in real-time
               if (_geofences.isNotEmpty) {
                 _outsideAnyGeofence = !_geofences.any((g) {
@@ -87,10 +91,16 @@ class _MapScreenState extends State<MapScreen> {
           }
         },
         onError: (e) {
+          setState(() {
+            _gpsConnected = false;
+          });
           if (kDebugMode) print('Location stream error: $e');
         },
       );
     } catch (e) {
+      setState(() {
+        _gpsConnected = false;
+      });
       if (kDebugMode) print('Failed to start location tracking: $e');
     }
   }
@@ -507,6 +517,51 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ),
                   ),
+                // GPS Status Indicator
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  top: _outsideAnyGeofence && !_showTasks ? 70 : 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _gpsConnected
+                          ? Colors.blue[50]
+                          : Colors.orange[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _gpsConnected ? Colors.blue : Colors.orange,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _gpsConnected ? Icons.gps_fixed : Icons.gps_not_fixed,
+                          color: _gpsConnected ? Colors.blue : Colors.orange,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _gpsConnected
+                                ? 'GPS Active • Accuracy: ${_currentAccuracy?.toStringAsFixed(1) ?? '?'}m'
+                                : 'GPS Connecting...',
+                            style: TextStyle(
+                              color: _gpsConnected
+                                  ? Colors.blue
+                                  : Colors.orange,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 if (_showAssignedOnly && _assignedGeofences.isEmpty)
                   Positioned(
                     left: 16,

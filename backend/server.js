@@ -44,12 +44,12 @@ io.on('connection', (socket) => {
   } catch (_) {}
 
   // Handle real-time location updates from employees while checked in
-  socket.on('employeeLocationUpdate', (data) => {
+  socket.on('employeeLocationUpdate', (data, callback) => {
     try {
       const { latitude, longitude, accuracy, timestamp } = data;
       const userId = socket.handshake.auth?.userId || socket.id;
       
-      // Store latest location
+      // Store latest location instantly
       employeeLocations.set(userId, {
         lat: latitude,
         lng: longitude,
@@ -57,18 +57,30 @@ io.on('connection', (socket) => {
         timestamp: timestamp,
       });
 
-      // Broadcast to admins/dashboard for real-time monitoring
-      io.emit('liveEmployeeLocation', {
-        userId,
-        latitude,
-        longitude,
-        accuracy,
-        timestamp,
+      // Send immediate ACK for low-latency feedback
+      if (typeof callback === 'function') {
+        callback({ received: true, timestamp: Date.now() });
+      }
+
+      // Broadcast to admins/dashboard for real-time monitoring (async)
+      setImmediate(() => {
+        io.emit('liveEmployeeLocation', {
+          userId,
+          latitude,
+          longitude,
+          accuracy,
+          timestamp,
+        });
       });
 
-      console.log(`📍 Location update: ${userId} at (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📍 Location: ${userId} at (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) • Accuracy: ${accuracy.toFixed(1)}m`);
+      }
     } catch (e) {
       console.error('Error handling location update:', e);
+      if (typeof callback === 'function') {
+        callback({ received: false, error: e.message });
+      }
     }
   });
 
