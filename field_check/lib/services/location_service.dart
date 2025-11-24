@@ -42,18 +42,19 @@ class LocationService {
   }
 
   /// High-accuracy real-time position stream optimized for employee tracking
-  /// - Uses bestForNavigation accuracy for GPS-grade precision
-  /// - Minimal distance filter (1m) for continuous tracking
-  /// - Updates every 5 seconds for responsive real-time monitoring
-  /// - Applies jitter filtering to remove GPS noise/spikes
+  /// - Uses bestForNavigation accuracy for GPS-grade precision (2-5m)
+  /// - 1m distance filter for responsive updates
+  /// - No artificial delays - streams every position update immediately
+  /// - Applies GPS spike filtering to remove implausible jumps
   Stream<geolocator.Position> getPositionStream({
     geolocator.LocationAccuracy accuracy =
         geolocator.LocationAccuracy.bestForNavigation,
     int distanceFilter = 1,
-    Duration intervalDuration = const Duration(seconds: 5),
   }) async* {
     // Ensure permissions before starting stream
     await getCurrentLocation();
+
+    // Use raw geolocator stream for lowest latency
     final baseStream = geolocator.Geolocator.getPositionStream(
       locationSettings: geolocator.LocationSettings(
         accuracy: accuracy,
@@ -64,28 +65,32 @@ class LocationService {
     geolocator.Position? last;
     DateTime? lastTime;
 
+    // Stream all positions without artificial delays
     await for (final pos in baseStream) {
       final now = DateTime.now();
+
+      // Skip GPS spikes: implausible jumps > 500m/s (1800 km/h)
       if (last != null && lastTime != null) {
         final elapsed = now.difference(lastTime).inMilliseconds / 1000.0;
-        final distance = geolocator.Geolocator.distanceBetween(
-          last.latitude,
-          last.longitude,
-          pos.latitude,
-          pos.longitude,
-        );
-        // Drop implausible jumps > 200m in 1s (GPS spikes)
-        if (elapsed > 0 && (distance / elapsed) > 200.0) {
-          continue;
+        if (elapsed > 0) {
+          final distance = geolocator.Geolocator.distanceBetween(
+            last.latitude,
+            last.longitude,
+            pos.latitude,
+            pos.longitude,
+          );
+          final speed = distance / elapsed;
+
+          // Skip implausible speeds (500m/s = unrealistic for human movement)
+          if (speed > 500.0) {
+            continue; // Skip this GPS spike
+          }
         }
       }
+
       last = pos;
       lastTime = now;
-      yield pos;
-      // Update every 5 seconds for real-time tracking
-      if (intervalDuration.inMilliseconds > 0) {
-        await Future.delayed(intervalDuration);
-      }
+      yield pos; // Emit immediately, no delays
     }
   }
 }

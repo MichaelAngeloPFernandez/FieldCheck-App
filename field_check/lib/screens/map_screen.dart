@@ -41,7 +41,6 @@ class _MapScreenState extends State<MapScreen> {
 
   // Real-time location streaming
   late StreamSubscription<dynamic>? _locationSubscription;
-  DateTime? _lastLocationUpdate;
   bool _gpsConnected = false;
   double? _currentAccuracy;
 
@@ -61,34 +60,30 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /// Start real-time location tracking stream
-  /// Updates map marker position continuously as employee moves
+  /// Updates map marker position with latest GPS data immediately
   void _startRealTimeLocationTracking() {
     try {
       _locationSubscription = _locationService.getPositionStream().listen(
         (position) {
-          final now = DateTime.now();
-          // Update location every 2 seconds for smooth real-time updates
-          if (_lastLocationUpdate == null ||
-              now.difference(_lastLocationUpdate!).inMilliseconds >= 2000) {
-            _lastLocationUpdate = now;
-            setState(() {
-              _userLatLng = LatLng(position.latitude, position.longitude);
-              _gpsConnected = true; // GPS is actively updating
-              _currentAccuracy = position.accuracy;
-              // Update geofence status in real-time
-              if (_geofences.isNotEmpty) {
-                _outsideAnyGeofence = !_geofences.any((g) {
-                  final d = Geofence.calculateDistance(
-                    g.latitude,
-                    g.longitude,
-                    _userLatLng!.latitude,
-                    _userLatLng!.longitude,
-                  );
-                  return d <= g.radius;
-                });
-              }
-            });
-          }
+          // Update UI immediately with latest position (no throttling)
+          setState(() {
+            _userLatLng = LatLng(position.latitude, position.longitude);
+            _gpsConnected = true; // GPS is actively updating
+            _currentAccuracy = position.accuracy;
+
+            // Update geofence status in real-time
+            if (_geofences.isNotEmpty) {
+              _outsideAnyGeofence = !_geofences.any((g) {
+                final d = Geofence.calculateDistance(
+                  g.latitude,
+                  g.longitude,
+                  _userLatLng!.latitude,
+                  _userLatLng!.longitude,
+                );
+                return d <= g.radius;
+              });
+            }
+          });
         },
         onError: (e) {
           setState(() {

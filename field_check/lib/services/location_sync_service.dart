@@ -85,17 +85,20 @@ class LocationSyncService {
             locationSettings: const geolocator.LocationSettings(
               accuracy: geolocator.LocationAccuracy.bestForNavigation,
               distanceFilter:
-                  3, // Update every 3 meters for responsive tracking
+                  2, // Update every 2 meters for responsive tracking
             ),
           ).listen(
             (geolocator.Position position) {
-              final now = DateTime.now();
+              // Only sync if accuracy is good (< 50m) to avoid sending bad data
+              if (position.accuracy > 0 && position.accuracy <= 50) {
+                final now = DateTime.now();
 
-              // Sync location every 3 seconds for real-time monitoring (was 10s)
-              if (_lastSyncTime == null ||
-                  now.difference(_lastSyncTime!).inSeconds >= 3) {
-                _lastSyncTime = now;
-                _syncLocationToBackend(position);
+                // Sync location every 3 seconds for backend updates
+                if (_lastSyncTime == null ||
+                    now.difference(_lastSyncTime!).inSeconds >= 3) {
+                  _lastSyncTime = now;
+                  _syncLocationToBackend(position);
+                }
               }
             },
             onError: (e) {
