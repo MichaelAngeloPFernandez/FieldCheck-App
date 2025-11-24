@@ -29,7 +29,10 @@ module.exports.io = io;
 
 console.log('🔌 Socket.io initialized');
 
-// --- Presence tracking: broadcast online socket count ---
+// Track employee locations for real-time dashboard updates
+const employeeLocations = new Map(); // { userId: { lat, lng, accuracy, timestamp } }
+
+// --- Presence tracking & real-time location monitoring ---
 let lastBroadcastCount = 0;
 io.on('connection', (socket) => {
   try {
@@ -39,6 +42,35 @@ io.on('connection', (socket) => {
       io.emit('onlineCount', count);
     }
   } catch (_) {}
+
+  // Handle real-time location updates from employees while checked in
+  socket.on('employeeLocationUpdate', (data) => {
+    try {
+      const { latitude, longitude, accuracy, timestamp } = data;
+      const userId = socket.handshake.auth?.userId || socket.id;
+      
+      // Store latest location
+      employeeLocations.set(userId, {
+        lat: latitude,
+        lng: longitude,
+        accuracy: accuracy,
+        timestamp: timestamp,
+      });
+
+      // Broadcast to admins/dashboard for real-time monitoring
+      io.emit('liveEmployeeLocation', {
+        userId,
+        latitude,
+        longitude,
+        accuracy,
+        timestamp,
+      });
+
+      console.log(`📍 Location update: ${userId} at (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+    } catch (e) {
+      console.error('Error handling location update:', e);
+    }
+  });
 
   socket.on('disconnect', () => {
     try {
