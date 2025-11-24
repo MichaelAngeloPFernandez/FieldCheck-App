@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geolocator;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/user_service.dart';
@@ -37,18 +38,22 @@ class LocationSyncService {
       _socket = io.io(ApiConfig.baseUrl, options);
 
       _socket.onConnect((_) {
-        print('LocationSyncService: Socket connected');
+        if (kDebugMode) print('LocationSyncService: Socket connected');
       });
 
       _socket.onDisconnect((_) {
-        print('LocationSyncService: Socket disconnected');
+        if (kDebugMode) print('LocationSyncService: Socket disconnected');
       });
 
       _socket.on('locationUpdateRequired', (_) {
-        print('LocationSyncService: Server requesting location update');
+        if (kDebugMode) {
+          print('LocationSyncService: Server requesting location update');
+        }
       });
     } catch (e) {
-      print('Failed to initialize socket in LocationSyncService: $e');
+      if (kDebugMode) {
+        print('Failed to initialize socket in LocationSyncService: $e');
+      }
     }
   }
 
@@ -68,7 +73,7 @@ class LocationSyncService {
     try {
       _positionSubscription?.cancel();
     } catch (e) {
-      print('Error stopping location tracking: $e');
+      if (kDebugMode) print('Error stopping location tracking: $e');
     }
   }
 
@@ -93,11 +98,13 @@ class LocationSyncService {
               }
             },
             onError: (e) {
-              print('LocationSyncService: Position stream error: $e');
+              if (kDebugMode) {
+                print('LocationSyncService: Position stream error: $e');
+              }
             },
           );
     } catch (e) {
-      print('Failed to start location stream: $e');
+      if (kDebugMode) print('Failed to start location stream: $e');
     }
   }
 
@@ -112,11 +119,13 @@ class LocationSyncService {
         'accuracy': position.accuracy,
         'timestamp': DateTime.now().toIso8601String(),
       });
-      print(
-        'LocationSyncService: Synced location (${position.latitude}, ${position.longitude})',
-      );
+      if (kDebugMode) {
+        print(
+          'LocationSyncService: Synced location (${position.latitude}, ${position.longitude})',
+        );
+      }
     } catch (e) {
-      print('Error syncing location to backend: $e');
+      if (kDebugMode) print('Error syncing location to backend: $e');
     }
   }
 
@@ -126,7 +135,7 @@ class LocationSyncService {
       _positionSubscription?.cancel();
       _socket.dispose();
     } catch (e) {
-      print('Error disposing LocationSyncService: $e');
+      if (kDebugMode) print('Error disposing LocationSyncService: $e');
     }
   }
 

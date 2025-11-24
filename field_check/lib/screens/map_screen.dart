@@ -1,4 +1,5 @@
 // ignore_for_file: use_build_context_synchronously, deprecated_member_use
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -86,11 +87,11 @@ class _MapScreenState extends State<MapScreen> {
           }
         },
         onError: (e) {
-          print('Location stream error: $e');
+          if (kDebugMode) print('Location stream error: $e');
         },
       );
     } catch (e) {
-      print('Failed to start location tracking: $e');
+      if (kDebugMode) print('Failed to start location tracking: $e');
     }
   }
 

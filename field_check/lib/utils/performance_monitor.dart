@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 /// Performance monitoring utility to track and optimize app responsiveness
 class PerformanceMonitor {
@@ -76,8 +77,12 @@ class PerformanceMonitor {
 
   /// Print performance report
   void printReport() {
+    if (!kDebugMode) return; // Only print in debug mode
+    // ignore: avoid_print
     print('\n═══════════════════════════════════════════════════════');
+    // ignore: avoid_print
     print('PERFORMANCE MONITOR REPORT');
+    // ignore: avoid_print
     print('═══════════════════════════════════════════════════════');
     _timings.forEach((operation, timings) {
       if (timings.isNotEmpty) {
@@ -89,14 +94,16 @@ class PerformanceMonitor {
         final maxMs = timings
             .map((d) => d.inMicroseconds / 1000)
             .reduce((a, b) => a > b ? a : b);
-        print(
-          '$operation: avg=${avgMs.toStringAsFixed(2)}ms '
-          'min=${minMs.toStringAsFixed(2)}ms '
-          'max=${maxMs.toStringAsFixed(2)}ms (count=$count)',
-        );
+        if (kDebugMode) {
+          print(
+            '$operation: avg=${avgMs.toStringAsFixed(2)}ms '
+            'min=${minMs.toStringAsFixed(2)}ms '
+            'max=${maxMs.toStringAsFixed(2)}ms (count=$count)',
+          );
+        }
       }
     });
-    print('═══════════════════════════════════════════════════════\n');
+    if (kDebugMode) print('═══════════════════════════════════════════════════════\n');
   }
 
   /// Clear all recordings
