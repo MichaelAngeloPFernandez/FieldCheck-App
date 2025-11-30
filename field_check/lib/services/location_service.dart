@@ -38,7 +38,13 @@ class LocationService {
 
     // When we reach here, permissions are granted and we can
     // continue accessing the position of the device.
-    return await geolocator.Geolocator.getCurrentPosition();
+    // Use high accuracy with timeout for faster location lock
+    return await geolocator.Geolocator.getCurrentPosition(
+      locationSettings: const geolocator.LocationSettings(
+        accuracy: geolocator.LocationAccuracy.bestForNavigation,
+        timeLimit: Duration(seconds: 10), // Timeout after 10 seconds
+      ),
+    );
   }
 
   /// High-accuracy real-time position stream optimized for employee tracking
@@ -59,7 +65,9 @@ class LocationService {
       locationSettings: geolocator.LocationSettings(
         accuracy: accuracy,
         distanceFilter: distanceFilter,
-        timeLimit: const Duration(seconds: 10), // Add timeout for faster initial lock
+        timeLimit: const Duration(
+          seconds: 10,
+        ), // Add timeout for faster initial lock
       ),
     );
 

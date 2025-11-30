@@ -741,11 +741,22 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            if (!_isWithinAnyGeofence)
+            if (!_isWithinAnyGeofence) ...[
               const Text(
                 'Move inside your assigned geofence to check in/out.',
                 style: TextStyle(color: Colors.red),
               ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: _isLoading ? null : _updateLocation,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh Location'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
             Text(
               _isCheckedIn
                   ? 'Checked in at $_lastCheckTime'
