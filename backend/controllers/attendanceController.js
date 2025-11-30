@@ -100,30 +100,50 @@ const checkIn = asyncHandler(async (req, res) => {
 // @access  Private
 const checkOut = asyncHandler(async (req, res) => {
   const { latitude, longitude, geofenceId } = req.body;
-  const openRecord = await Attendance.findOne({ employee: req.user._id, checkOut: { $exists: false } }).sort({ createdAt: -1 });
+  
+  // Validate location coordinates
+  if (isNaN(latitude) || isNaN(longitude) || latitude === undefined || longitude === undefined) {
+    res.status(400);
+    throw new Error('Invalid latitude or longitude');
+  }
+  
+  const openRecord = await Attendance.findOne({ 
+    employee: req.user._id, 
+    checkOut: { $exists: false } 
+  }).sort({ createdAt: -1 }).populate('geofence');
 
   if (!openRecord) {
     res.status(400);
     throw new Error('No active attendance record to check out');
   }
 
-  // Server-side geofence validation on checkout
-  // Use geofenceId from request if openRecord.geofence is missing
-  const geofenceIdToUse = openRecord.geofence || geofenceId;
-  if (!geofenceIdToUse) {
-    res.status(404);
-    throw new Error('Geofence information not available');
+  // CRITICAL: Ensure geofence exists in the record
+  if (!openRecord.geofence) {
+    // If geofence is missing, try to find employee's assigned geofence
+    if (!geofenceId) {
+      res.status(400);
+      throw new Error('Geofence information missing. Please check in again.');
+    }
+    
+    const geofence = await Geofence.findById(geofenceId);
+    if (!geofence) {
+      res.status(404);
+      throw new Error('Geofence not found');
+    }
+    
+    // Assign geofence to the record
+    openRecord.geofence = geofence._id;
+    console.warn(`⚠️ WARNING: Attendance record ${openRecord._id} had missing geofence. Auto-assigned: ${geofence._id}`);
   }
   
-  const geofence = await Geofence.findById(geofenceIdToUse);
+  // Get the geofence (either from record or just assigned)
+  const geofence = openRecord.geofence._id 
+    ? await Geofence.findById(openRecord.geofence._id)
+    : await Geofence.findById(openRecord.geofence);
+    
   if (!geofence) {
     res.status(404);
-    throw new Error('Geofence not found');
-  }
-  
-  // Update the geofence reference if it was missing
-  if (!openRecord.geofence) {
-    openRecord.geofence = geofence._id;
+    throw new Error('Geofence not found in database');
   }
   if (geofence.isActive === false) {
     res.status(403);
