@@ -5,6 +5,8 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:http/http.dart' as http;
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 class ReportExportPreviewScreen extends StatefulWidget {
   final List<AttendanceRecord> records;
@@ -67,31 +69,44 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
-        // File downloaded successfully
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✓ PDF exported successfully! File downloaded.'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
-            ),
-          );
-          // Show download completion dialog
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Export Complete'),
-              content: const Text(
-                'Your PDF report has been downloaded successfully.',
+        // Save file to device storage
+        try {
+          final directory =
+              await getDownloadsDirectory() ??
+              await getApplicationDocumentsDirectory();
+          final fileName =
+              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+          final file = File('${directory.path}/$fileName');
+
+          await file.writeAsBytes(response.bodyBytes);
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✓ PDF saved to: ${file.path}'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('OK'),
+            );
+            // Show download completion dialog
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Export Complete'),
+                content: Text(
+                  'Your PDF report has been saved to:\n\n${file.path}',
                 ),
-              ],
-            ),
-          );
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+        } catch (e) {
+          throw Exception('Failed to save PDF file: $e');
         }
       } else {
         throw Exception('Failed to export PDF: ${response.statusCode}');
@@ -147,31 +162,44 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
-        // File downloaded successfully
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✓ CSV exported successfully! File downloaded.'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
-            ),
-          );
-          // Show download completion dialog
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Export Complete'),
-              content: const Text(
-                'Your CSV report has been downloaded successfully.',
+        // Save file to device storage
+        try {
+          final directory =
+              await getDownloadsDirectory() ??
+              await getApplicationDocumentsDirectory();
+          final fileName =
+              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.csv';
+          final file = File('${directory.path}/$fileName');
+
+          await file.writeAsBytes(response.bodyBytes);
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✓ CSV saved to: ${file.path}'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('OK'),
+            );
+            // Show download completion dialog
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Export Complete'),
+                content: Text(
+                  'Your CSV report has been saved to:\n\n${file.path}',
                 ),
-              ],
-            ),
-          );
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+        } catch (e) {
+          throw Exception('Failed to save CSV file: $e');
         }
       } else {
         throw Exception('Failed to export CSV: ${response.statusCode}');
