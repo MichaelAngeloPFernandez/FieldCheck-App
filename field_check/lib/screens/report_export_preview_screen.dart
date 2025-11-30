@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:field_check/services/attendance_service.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:http/http.dart' as http;
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 
 class ReportExportPreviewScreen extends StatefulWidget {
   final List<AttendanceRecord> records;
@@ -34,8 +33,34 @@ class ReportExportPreviewScreen extends StatefulWidget {
 }
 
 class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
+  static const platform = MethodChannel('com.fieldcheck.field_check/files');
   bool _isExporting = false;
   String? _exportError = null;
+
+  Future<String?> _saveFileToDownloads(
+    String fileName,
+    List<int> fileBytes,
+  ) async {
+    try {
+      debugPrint('Saving file via native channel: $fileName');
+      final result = await platform.invokeMethod<Map>('saveFile', {
+        'fileName': fileName,
+        'fileBytes': fileBytes,
+      });
+
+      if (result != null) {
+        final path = result['path'] as String?;
+        final size = result['size'] as int?;
+        debugPrint('✓ File saved successfully via native channel');
+        debugPrint('  Path: $path');
+        debugPrint('  Size: $size bytes');
+        return path;
+      }
+    } catch (e) {
+      debugPrint('Native channel error: $e');
+    }
+    return null;
+  }
 
   Future<void> _exportToPDF() async {
     setState(() {
@@ -44,6 +69,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
     });
 
     try {
+      debugPrint('Starting PDF export...');
       final token = await _getToken();
       final queryParams = <String, String>{'type': widget.reportType};
 
@@ -64,49 +90,33 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         '${ApiConfig.baseUrl}/api/export/${widget.reportType}/pdf',
       ).replace(queryParameters: queryParams);
 
+      debugPrint('Requesting PDF from: $uri');
       final response = await http
           .get(uri, headers: {'Authorization': 'Bearer $token'})
           .timeout(const Duration(seconds: 30));
 
+      debugPrint(
+        'Response status: ${response.statusCode}, body length: ${response.bodyBytes.length}',
+      );
+
       if (response.statusCode == 200) {
-        // Save file to device storage
+        // Save file using native Android method
         try {
-          // Try to save to Downloads, fall back to app documents
-          Directory? directory;
-          String savePath = '';
-
-          try {
-            final downloads = await getDownloadsDirectory();
-            if (downloads != null) {
-              directory = downloads;
-              savePath = 'Downloads';
-            }
-          } catch (e) {
-            debugPrint('Downloads not available: $e');
-          }
-
-          directory ??= await getApplicationDocumentsDirectory();
-          if (savePath.isEmpty) savePath = 'Documents';
-
           final fileName =
               'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.pdf';
-          final file = File('${directory.path}/$fileName');
+          final filePath = await _saveFileToDownloads(
+            fileName,
+            response.bodyBytes,
+          );
 
-          debugPrint('Saving PDF to $savePath: ${file.path}');
-          await file.writeAsBytes(response.bodyBytes);
-
-          // Verify file was created
-          final exists = await file.exists();
-          final fileSize = exists ? await file.length() : 0;
-          debugPrint('✓ File saved successfully');
-          debugPrint('  Path: ${file.path}');
-          debugPrint('  Size: $fileSize bytes');
-          debugPrint('  Location: $savePath folder');
+          if (filePath == null) {
+            throw Exception('Failed to save file via native channel');
+          }
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('✓ PDF saved to: ${file.path}'),
+                content: Text('✓ PDF saved to: $filePath'),
                 backgroundColor: Colors.green,
                 duration: const Duration(seconds: 4),
               ),
@@ -128,12 +138,12 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                     ),
                     const SizedBox(height: 4),
                     SelectableText(
-                      file.path,
+                      filePath,
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      '📁 Check your Downloads or Documents folder',
+                      '📁 Check your Downloads folder',
                       style: TextStyle(fontSize: 12),
                     ),
                   ],
@@ -179,6 +189,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
     });
 
     try {
+      debugPrint('Starting CSV export...');
       final token = await _getToken();
       final queryParams = <String, String>{'type': widget.reportType};
 
@@ -199,49 +210,33 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         '${ApiConfig.baseUrl}/api/export/${widget.reportType}/excel',
       ).replace(queryParameters: queryParams);
 
+      debugPrint('Requesting CSV from: $uri');
       final response = await http
           .get(uri, headers: {'Authorization': 'Bearer $token'})
           .timeout(const Duration(seconds: 30));
 
+      debugPrint(
+        'Response status: ${response.statusCode}, body length: ${response.bodyBytes.length}',
+      );
+
       if (response.statusCode == 200) {
-        // Save file to device storage
+        // Save file using native Android method
         try {
-          // Try to save to Downloads, fall back to app documents
-          Directory? directory;
-          String savePath = '';
-
-          try {
-            final downloads = await getDownloadsDirectory();
-            if (downloads != null) {
-              directory = downloads;
-              savePath = 'Downloads';
-            }
-          } catch (e) {
-            debugPrint('Downloads not available: $e');
-          }
-
-          directory ??= await getApplicationDocumentsDirectory();
-          if (savePath.isEmpty) savePath = 'Documents';
-
           final fileName =
               'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.csv';
-          final file = File('${directory.path}/$fileName');
+          final filePath = await _saveFileToDownloads(
+            fileName,
+            response.bodyBytes,
+          );
 
-          debugPrint('Saving CSV to $savePath: ${file.path}');
-          await file.writeAsBytes(response.bodyBytes);
-
-          // Verify file was created
-          final exists = await file.exists();
-          final fileSize = exists ? await file.length() : 0;
-          debugPrint('✓ File saved successfully');
-          debugPrint('  Path: ${file.path}');
-          debugPrint('  Size: $fileSize bytes');
-          debugPrint('  Location: $savePath folder');
+          if (filePath == null) {
+            throw Exception('Failed to save file via native channel');
+          }
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('✓ CSV saved to: ${file.path}'),
+                content: Text('✓ CSV saved to: $filePath'),
                 backgroundColor: Colors.green,
                 duration: const Duration(seconds: 4),
               ),
@@ -263,12 +258,12 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                     ),
                     const SizedBox(height: 4),
                     SelectableText(
-                      file.path,
+                      filePath,
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      '📁 Check your Downloads or Documents folder',
+                      '📁 Check your Downloads folder',
                       style: TextStyle(fontSize: 12),
                     ),
                   ],
