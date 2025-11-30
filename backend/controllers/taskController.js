@@ -270,6 +270,15 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
     ut.completedAt = undefined;
   }
   await ut.save();
+  
+  // IMPORTANT: Also update the Task status so frontend sees the change
+  try {
+    const Task = require('../models/Task');
+    await Task.findByIdAndUpdate(ut.taskId, { status: status }, { new: true });
+    console.log(`✓ Updated Task ${ut.taskId} status to ${status}`);
+  } catch (e) {
+    console.warn(`⚠️ Failed to update Task status: ${e.message}`);
+  }
   // Auto-create a simple task report on completion
   if (status === 'completed') {
     try {

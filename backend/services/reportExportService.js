@@ -70,16 +70,17 @@ class ReportExportService {
         doc.font('Helvetica');
       }
 
-      const date = new Date(record.timestamp).toLocaleDateString();
-      const time = new Date(record.timestamp).toLocaleTimeString();
-      const status = record.isCheckIn ? time : '-';
-      const checkOut = !record.isCheckIn ? time : '-';
+      const date = new Date(record.checkIn || record.timestamp).toLocaleDateString();
+      const time = new Date(record.checkIn || record.timestamp).toLocaleTimeString();
+      const employeeName = record.employee?.name || record.userId || 'N/A';
+      const locationName = record.geofence?.name || 'N/A';
+      const status = record.status === 'in' ? 'Checked In' : 'Checked Out';
 
-      doc.text(record.userId || 'N/A', col1, yPosition);
+      doc.text(employeeName, col1, yPosition);
       doc.text(date, col2, yPosition);
-      doc.text(status, col3, yPosition);
-      doc.text(checkOut, col4, yPosition);
-      doc.text(record.geofenceName || 'N/A', col5, yPosition);
+      doc.text(time, col3, yPosition);
+      doc.text(status, col4, yPosition);
+      doc.text(locationName, col5, yPosition);
 
       yPosition += 20;
     });
@@ -203,39 +204,25 @@ class ReportExportService {
     metaCell.alignment = { horizontal: 'center' };
 
     // Add headers
-    const headerRow = worksheet.addRow(['Employee', 'Date', 'Check In Time', 'Check Out Time', 'Location']);
+    const headerRow = worksheet.addRow(['Employee', 'Date', 'Time', 'Status', 'Location']);
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2688d4' } };
     headerRow.alignment = { horizontal: 'center', vertical: 'center' };
 
-    // Group records by employee and date
-    const groupedRecords = {};
+    // Add data rows - show each check-in/out as separate row
     records.forEach((record) => {
-      const key = `${record.userId}_${new Date(record.timestamp).toLocaleDateString()}`;
-      if (!groupedRecords[key]) {
-        groupedRecords[key] = {
-          userId: record.userId,
-          date: new Date(record.timestamp).toLocaleDateString(),
-          location: record.geofenceName || 'N/A',
-          checkIn: null,
-          checkOut: null,
-        };
-      }
-      if (record.isCheckIn) {
-        groupedRecords[key].checkIn = new Date(record.timestamp).toLocaleTimeString();
-      } else {
-        groupedRecords[key].checkOut = new Date(record.timestamp).toLocaleTimeString();
-      }
-    });
-
-    // Add data rows
-    Object.values(groupedRecords).forEach((record) => {
+      const date = new Date(record.checkIn || record.timestamp).toLocaleDateString();
+      const time = new Date(record.checkIn || record.timestamp).toLocaleTimeString();
+      const employeeName = record.employee?.name || record.userId || 'N/A';
+      const locationName = record.geofence?.name || 'N/A';
+      const status = record.status === 'in' ? 'Checked In' : 'Checked Out';
+      
       const row = worksheet.addRow([
-        record.userId || 'N/A',
-        record.date,
-        record.checkIn || '-',
-        record.checkOut || '-',
-        record.location,
+        employeeName,
+        date,
+        time,
+        status,
+        locationName,
       ]);
       row.alignment = { horizontal: 'center', vertical: 'center' };
     });
