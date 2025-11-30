@@ -331,44 +331,79 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     List<UserModel> employees = [];
     try {
       employees = await _userService.fetchEmployees();
+
+      // REAL FIX: Validate employees have valid IDs
+      if (employees.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No employees available')),
+          );
+        }
+        return;
+      }
+
+      // Filter out employees with empty IDs
+      employees = employees.where((e) => e.id.isNotEmpty).toList();
+      if (employees.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No valid employees found')),
+          );
+        }
+        return;
+      }
     } catch (e) {
       debugPrint('Error fetching employees: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to fetch employees: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to fetch employees: $e')),
+        );
+      }
       return;
     }
 
-    UserModel? selectedEmployee = task.assignedTo;
+    final Set<String> selectedEmployeeIds = {};
+    if (task.assignedToMultiple.isNotEmpty) {
+      selectedEmployeeIds.addAll(task.assignedToMultiple.map((u) => u.id));
+    } else if (task.assignedTo != null) {
+      selectedEmployeeIds.add(task.assignedTo!.id);
+    }
 
     await showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Assign Task'),
+          title: const Text('Assign Task to Employees'),
           content: StatefulBuilder(
             builder: (BuildContext context, StateSetter setState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButton<UserModel>(
-                    value: selectedEmployee,
-                    hint: const Text('Select Employee'),
-                    onChanged: (UserModel? newValue) {
-                      setState(() {
-                        selectedEmployee = newValue;
-                      });
-                    },
-                    items: employees.map<DropdownMenuItem<UserModel>>((
-                      UserModel user,
-                    ) {
-                      return DropdownMenuItem<UserModel>(
-                        value: user,
-                        child: Text(user.name),
-                      );
-                    }).toList(),
-                  ),
-                ],
+              return SizedBox(
+                width: double.maxFinite,
+                child: employees.isEmpty
+                    ? const Center(child: Text('No employees available'))
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: employees.length,
+                        itemBuilder: (context, index) {
+                          final employee = employees[index];
+                          final isSelected = selectedEmployeeIds.contains(
+                            employee.id,
+                          );
+                          return CheckboxListTile(
+                            title: Text(employee.name),
+                            subtitle: Text(employee.email),
+                            value: isSelected,
+                            onChanged: (bool? selected) {
+                              setState(() {
+                                if (selected == true) {
+                                  selectedEmployeeIds.add(employee.id);
+                                } else {
+                                  selectedEmployeeIds.remove(employee.id);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
               );
             },
           ),
@@ -379,25 +414,46 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
             ),
             TextButton(
               onPressed: () async {
-                if (selectedEmployee != null) {
+                if (selectedEmployeeIds.isNotEmpty) {
                   try {
-                    await _taskService.assignTask(
-                      task.id,
-                      selectedEmployee!.id,
-                    );
+                    // REAL FIX: Validate IDs before sending
+                    final validIds = selectedEmployeeIds
+                        .where((id) => id.isNotEmpty)
+                        .toList();
+
+                    if (validIds.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Selected employees have invalid IDs'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    await _taskService.assignTaskToMultiple(task.id, validIds);
                     _fetchTasks(); // Refresh the task list
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Task assigned successfully!'),
-                      ),
-                    );
-                    Navigator.of(context).pop();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Task assigned successfully!'),
+                        ),
+                      );
+                      Navigator.of(context).pop();
+                    }
                   } catch (e) {
                     debugPrint('Error assigning task: $e');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to assign task: $e')),
-                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to assign task: $e')),
+                      );
+                    }
                   }
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please select at least one employee'),
+                    ),
+                  );
                 }
               },
               child: const Text('Assign'),
@@ -411,7 +467,24 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Admin Task Management')),
+      appBar: AppBar(
+        title: const Text('Admin Task Management'),
+        backgroundColor: const Color(0xFF2688d4),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton.icon(
+              onPressed: _addTask,
+              icon: const Icon(Icons.add),
+              label: const Text('Create Task'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF2688d4),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _tasks.isEmpty
@@ -446,11 +519,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'admin_tasks_fab',
-        onPressed: _addTask,
-        child: const Icon(Icons.add),
-      ),
     );
   }
 }

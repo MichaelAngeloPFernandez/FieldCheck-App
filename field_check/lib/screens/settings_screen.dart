@@ -74,7 +74,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-
   void _showEditProfileDialog() async {
     try {
       final profile = await _userService.getProfile();
@@ -164,20 +163,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
           }
         }
 
-        await _userService.updateMyProfile(
-          name: nameController.text.trim(),
-          email: emailController.text.trim(),
-          avatarUrl: newAvatarUrl, // Pass the new avatar URL
-        );
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Profile updated')));
-        await _loadProfile();
-        setState(() {
-          _pickedImage =
-              tempPickedImage; // Update the main _pickedImage after successful save
-        });
+        try {
+          await _userService.updateMyProfile(
+            name: nameController.text.trim(),
+            email: emailController.text.trim(),
+            avatarUrl: newAvatarUrl, // Pass the new avatar URL
+          );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Profile updated successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          await _loadProfile();
+          setState(() {
+            _pickedImage =
+                tempPickedImage; // Update the main _pickedImage after successful save
+          });
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to update profile: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(
@@ -190,22 +202,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final app = MyApp.of(context);
     final syncService = app?.widget.syncService;
     if (syncService == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Sync service unavailable')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sync service unavailable'),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
-    final pending = await syncService.getOfflineData();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Syncing ${pending.length} records...')),
-    );
-    await syncService.syncOfflineData();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Sync attempt completed'),
-        backgroundColor: Colors.green,
-      ),
-    );
+
+    try {
+      final pending = await syncService.getOfflineData();
+      if (pending.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No offline data to sync'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Syncing ${pending.length} records...')),
+      );
+
+      await syncService.syncOfflineData();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sync completed successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sync failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -331,7 +372,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       value: ThemeMode.light,
                       child: Text('Light'),
                     ),
-                    DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
+                    DropdownMenuItem(
+                      value: ThemeMode.dark,
+                      child: Text('Dark'),
+                    ),
                   ],
                   onChanged: (mode) async {
                     if (mode == null) return;
@@ -349,73 +393,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'App Settings',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-          SwitchListTile(
-            title: const Text('Offline Mode'),
-            subtitle: const Text('Store attendance data locally when offline'),
-            value: _offlineMode,
-            onChanged: (value) async {
-              setState(() {
-                _offlineMode = value;
-              });
-              await _saveUserPreference('user.offlineMode', value);
-            },
-          ),
-
-          SwitchListTile(
-            title: const Text('Location Tracking'),
-            subtitle: const Text(
-              'Allow continuous location tracking during work hours',
+            SwitchListTile(
+              title: const Text('Offline Mode'),
+              subtitle: const Text(
+                'Store attendance data locally when offline',
+              ),
+              value: _offlineMode,
+              onChanged: (value) async {
+                setState(() {
+                  _offlineMode = value;
+                });
+                await _saveUserPreference('user.offlineMode', value);
+              },
             ),
-            value: _locationTracking,
-            onChanged: (value) async {
-              setState(() {
-                _locationTracking = value;
-              });
-              await _saveUserPreference('user.locationTrackingEnabled', value);
-            },
-          ),
 
-          SwitchListTile(
-            title: const Text('Use Bluetooth Beacons'),
-            subtitle: const Text(
-              'Enhance location accuracy with Bluetooth beacons',
+            SwitchListTile(
+              title: const Text('Location Tracking'),
+              subtitle: const Text(
+                'Allow continuous location tracking during work hours',
+              ),
+              value: _locationTracking,
+              onChanged: (value) async {
+                setState(() {
+                  _locationTracking = value;
+                });
+                await _saveUserPreference(
+                  'user.locationTrackingEnabled',
+                  value,
+                );
+              },
             ),
-            value: _useBluetoothBeacons,
-            onChanged: (value) async {
-              setState(() {
-                _useBluetoothBeacons = value;
-              });
-              await _saveUserPreference('user.useBluetoothBeacons', value);
-            },
-          ),
 
-          const SizedBox(height: 24),
-
-          // Action buttons
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _syncData,
-              icon: const Icon(Icons.sync),
-              label: const Text('Sync Data'),
+            SwitchListTile(
+              title: const Text('Use Bluetooth Beacons'),
+              subtitle: const Text(
+                'Enhance location accuracy with Bluetooth beacons',
+              ),
+              value: _useBluetoothBeacons,
+              onChanged: (value) async {
+                setState(() {
+                  _useBluetoothBeacons = value;
+                });
+                await _saveUserPreference('user.useBluetoothBeacons', value);
+              },
             ),
-          ),
 
-          const SizedBox(height: 12),
+            const SizedBox(height: 24),
 
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _logout,
-              icon: const Icon(Icons.logout),
-              label: const Text('Logout'),
-              style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+            // Action buttons
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _syncData,
+                icon: const Icon(Icons.sync),
+                label: const Text('Sync Data'),
+              ),
             ),
-          ),
-        ],
-      ),
+
+            const SizedBox(height: 12),
+
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout),
+                label: const Text('Logout'),
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -36,13 +36,17 @@ class _CustomMapState extends State<CustomMap> {
     if (widget.currentLocation == null) return widget.geofences.first;
     Geofence best = widget.geofences.first;
     double bestDist = Geofence.calculateDistance(
-      best.latitude, best.longitude,
-      widget.currentLocation!.latitude, widget.currentLocation!.longitude,
+      best.latitude,
+      best.longitude,
+      widget.currentLocation!.latitude,
+      widget.currentLocation!.longitude,
     );
     for (final g in widget.geofences) {
       final d = Geofence.calculateDistance(
-        g.latitude, g.longitude,
-        widget.currentLocation!.latitude, widget.currentLocation!.longitude,
+        g.latitude,
+        g.longitude,
+        widget.currentLocation!.latitude,
+        widget.currentLocation!.longitude,
       );
       if (d < bestDist) {
         best = g;
@@ -55,8 +59,10 @@ class _CustomMapState extends State<CustomMap> {
   int _distanceTo(Geofence g) {
     if (widget.currentLocation == null) return 0;
     return Geofence.calculateDistance(
-      g.latitude, g.longitude,
-      widget.currentLocation!.latitude, widget.currentLocation!.longitude,
+      g.latitude,
+      g.longitude,
+      widget.currentLocation!.latitude,
+      widget.currentLocation!.longitude,
     ).round();
   }
 
@@ -81,7 +87,8 @@ class _CustomMapState extends State<CustomMap> {
       final rad = lat * (3.141592653589793 / 180.0);
       final metersPerDegreeLng = 111320.0 * (math.cos(rad).abs());
       final dLat = g.radius / metersPerDegreeLat;
-      final dLng = g.radius / (metersPerDegreeLng == 0 ? 1e-6 : metersPerDegreeLng);
+      final dLng =
+          g.radius / (metersPerDegreeLng == 0 ? 1e-6 : metersPerDegreeLng);
       final p1 = LatLng(lat + dLat, lng + dLng);
       final p2 = LatLng(lat - dLat, lng - dLng);
       final p3 = LatLng(lat + dLat, lng - dLng);
@@ -95,7 +102,12 @@ class _CustomMapState extends State<CustomMap> {
     }
     // Also include current location if available
     if (widget.currentLocation != null) {
-      bounds!.extend(LatLng(widget.currentLocation!.latitude, widget.currentLocation!.longitude));
+      bounds!.extend(
+        LatLng(
+          widget.currentLocation!.latitude,
+          widget.currentLocation!.longitude,
+        ),
+      );
     }
     return bounds;
   }
@@ -123,6 +135,32 @@ class _CustomMapState extends State<CustomMap> {
   @override
   void didUpdateWidget(covariant CustomMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    // If currentLocation changed (e.g., from geocoding search), move map to it
+    if (widget.currentLocation != null &&
+        (oldWidget.currentLocation == null ||
+            oldWidget.currentLocation!.latitude !=
+                widget.currentLocation!.latitude ||
+            oldWidget.currentLocation!.longitude !=
+                widget.currentLocation!.longitude)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          final newLocation = LatLng(
+            widget.currentLocation!.latitude,
+            widget.currentLocation!.longitude,
+          );
+          // Move map to location with zoom 18 (like Google Maps)
+          _mapController.move(newLocation, 18.0);
+          debugPrint(
+            'Map moved to: ${newLocation.latitude}, ${newLocation.longitude} with zoom 18',
+          );
+        } catch (e) {
+          debugPrint('Error moving map: $e');
+        }
+      });
+      return;
+    }
+
     // If geofences changed, refit
     if (oldWidget.geofences.length != widget.geofences.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitAllGeofences());
@@ -133,7 +171,9 @@ class _CustomMapState extends State<CustomMap> {
         if (i >= widget.geofences.length) return true;
         final a = entry.value;
         final b = widget.geofences[i];
-        return a.latitude != b.latitude || a.longitude != b.longitude || a.radius != b.radius;
+        return a.latitude != b.latitude ||
+            a.longitude != b.longitude ||
+            a.radius != b.radius;
       });
       if (changed) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _fitAllGeofences());
@@ -145,19 +185,27 @@ class _CustomMapState extends State<CustomMap> {
   Widget build(BuildContext context) {
     // Better initial centering based on current location or first geofence
     final LatLng initialCenter = widget.currentLocation != null
-        ? LatLng(widget.currentLocation!.latitude, widget.currentLocation!.longitude)
+        ? LatLng(
+            widget.currentLocation!.latitude,
+            widget.currentLocation!.longitude,
+          )
         : (widget.geofences.isNotEmpty
-            ? LatLng(widget.geofences.first.latitude, widget.geofences.first.longitude)
-            : const LatLng(0, 0));
+              ? LatLng(
+                  widget.geofences.first.latitude,
+                  widget.geofences.first.longitude,
+                )
+              : const LatLng(0, 0));
     final double initialZoom = widget.geofences.isNotEmpty
         ? _zoomForRadius(widget.geofences.first.radius)
         : (widget.currentLocation != null ? 16.0 : 2.0);
 
     final Geofence? nearest = _nearestGeofence();
     final int distance = nearest != null ? _distanceTo(nearest) : 0;
-    final bool isAssigned = nearest != null &&
+    final bool isAssigned =
+        nearest != null &&
         widget.currentUserId != null &&
-        (nearest.assignedEmployees?.any((u) => u.id == widget.currentUserId) ?? false);
+        (nearest.assignedEmployees?.any((u) => u.id == widget.currentUserId) ??
+            false);
 
     return Container(
       width: widget.width,
@@ -207,8 +255,10 @@ class _CustomMapState extends State<CustomMap> {
                 MarkerLayer(
                   markers: [
                     Marker(
-                      point: LatLng(widget.currentLocation!.latitude,
-                          widget.currentLocation!.longitude),
+                      point: LatLng(
+                        widget.currentLocation!.latitude,
+                        widget.currentLocation!.longitude,
+                      ),
                       width: 80,
                       height: 80,
                       child: const Icon(
@@ -226,7 +276,10 @@ class _CustomMapState extends State<CustomMap> {
               left: 12,
               top: 12,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.9),
                   borderRadius: BorderRadius.circular(8),
@@ -242,20 +295,34 @@ class _CustomMapState extends State<CustomMap> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '${nearest.name}${nearest.type != null ? ' • ${nearest.type}' : ''}${nearest.labelLetter != null ? ' • ${nearest.labelLetter}' : ''}',
+                      '${nearest.name}${nearest.labelLetter != null ? ' • ${nearest.labelLetter}' : ''}',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(width: 12),
                     Text('$distance m'),
                     const SizedBox(width: 12),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isAssigned ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: isAssigned ? Colors.green : Colors.orange),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
                       ),
-                      child: Text(isAssigned ? 'Assigned' : 'Not assigned', style: TextStyle(color: isAssigned ? Colors.green.shade700 : Colors.orange.shade700)),
+                      decoration: BoxDecoration(
+                        color: isAssigned
+                            ? Colors.green.withValues(alpha: 0.1)
+                            : Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isAssigned ? Colors.green : Colors.orange,
+                        ),
+                      ),
+                      child: Text(
+                        isAssigned ? 'Assigned' : 'Not assigned',
+                        style: TextStyle(
+                          color: isAssigned
+                              ? Colors.green.shade700
+                              : Colors.orange.shade700,
+                        ),
+                      ),
                     ),
                   ],
                 ),

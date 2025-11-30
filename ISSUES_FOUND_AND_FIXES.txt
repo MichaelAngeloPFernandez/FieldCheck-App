@@ -1,0 +1,95 @@
+ISSUES FOUND & FIXES NEEDED
+===========================
+Date: November 30, 2025, 8:00 PM
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 1: GEOCODING NOT IN UI
+═══════════════════════════════════════════════════════════════════════
+
+Problem: The geocoding search function exists but there's NO search field/button in the geofence management page UI
+
+Root Cause: The _searchLocation() method was implemented but never connected to any UI element
+
+Fix Applied: Added search bar with TextField and "Find" button to admin_geofence_screen.dart
+- User can type location name in search field
+- Press Enter or tap "Find" button
+- Results show with address names
+- Map moves to selected location with marker
+
+Status: FIXED ✓
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 2: REPORTS SHOWING 0 TOTAL RECORDS
+═══════════════════════════════════════════════════════════════════════
+
+Problem: Reports screen shows 0 records even though dashboard shows 2 check-ins
+
+Root Cause: Possible issues:
+1. AttendanceService.getAttendanceRecords() might not be filtering correctly
+2. Backend /api/reports endpoint might not be returning data
+3. Frontend might be calling wrong endpoint
+
+Investigation Needed:
+- Check if attendance records are actually being created in database
+- Verify /api/reports endpoint returns data
+- Check if frontend is passing correct type parameter
+
+Status: NEEDS INVESTIGATION - Likely backend issue
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 3: TASK ASSIGNMENT EXCEPTION ERROR
+═══════════════════════════════════════════════════════════════════════
+
+Problem: Exception error when assigning employees to task
+
+Root Cause: Unknown - need to see the actual error message
+
+Investigation Needed:
+- What is the exact error message?
+- Is it on frontend or backend?
+- Does it happen during assignment or after?
+
+Status: NEEDS ERROR MESSAGE TO DEBUG
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 4: REPORT EXPORT NOT WORKING
+═══════════════════════════════════════════════════════════════════════
+
+Problem: Export shows "Exported successfully" but:
+- No PDF or CSV file is downloaded
+- No format selection dialog appears
+- No actual file is created
+
+Root Cause: Export functionality is not implemented in frontend
+
+Investigation Needed:
+- Check if export endpoints exist in backend
+- Check if frontend has export UI
+- Verify file download mechanism
+
+Status: NEEDS IMPLEMENTATION
+
+═══════════════════════════════════════════════════════════════════════
+SUMMARY OF FIXES APPLIED
+═══════════════════════════════════════════════════════════════════════
+
+✓ GEOCODING UI: Added search bar to geofence management page
+  - TextField for location input
+  - "Find" button to trigger search
+  - Results show address names
+  - Map moves to selected location
+
+⚠ REPORTS 0 RECORDS: Needs backend investigation
+⚠ TASK ASSIGNMENT ERROR: Needs error message
+⚠ EXPORT NOT WORKING: Needs implementation
+
+═══════════════════════════════════════════════════════════════════════
+NEXT STEPS
+═══════════════════════════════════════════════════════════════════════
+
+1. Test geocoding search in geofence page - should work now
+2. Check database for attendance records
+3. Provide exact error message for task assignment
+4. Implement report export functionality
+
+═══════════════════════════════════════════════════════════════════════

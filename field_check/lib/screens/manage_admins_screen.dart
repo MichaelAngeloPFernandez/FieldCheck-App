@@ -44,10 +44,14 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
     // Apply search filter
     if (_searchController.text.isNotEmpty) {
       final query = _searchController.text.toLowerCase();
-      filtered = filtered.where((e) =>
-          e.name.toLowerCase().contains(query) ||
-          e.email.toLowerCase().contains(query) ||
-          (e.username?.toLowerCase().contains(query) ?? false)).toList();
+      filtered = filtered
+          .where(
+            (e) =>
+                e.name.toLowerCase().contains(query) ||
+                e.email.toLowerCase().contains(query) ||
+                (e.username?.toLowerCase().contains(query) ?? false),
+          )
+          .toList();
     }
 
     // Apply status filter
@@ -70,10 +74,18 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Deactivate Multiple'),
-        content: Text('Deactivate ${_selectedAdminIds.length} administrator(s)?'),
+        content: Text(
+          'Deactivate ${_selectedAdminIds.length} administrator(s)?',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Deactivate')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Deactivate'),
+          ),
         ],
       ),
     );
@@ -84,12 +96,18 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_selectedAdminIds.length} administrator(s) deactivated')),
+          SnackBar(
+            content: Text(
+              '${_selectedAdminIds.length} administrator(s) deactivated',
+            ),
+          ),
         );
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -100,9 +118,14 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Multiple'),
-        content: Text('Permanently delete ${_selectedAdminIds.length} administrator(s)? This cannot be undone.'),
+        content: Text(
+          'Permanently delete ${_selectedAdminIds.length} administrator(s)? This cannot be undone.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -118,12 +141,18 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_selectedAdminIds.length} administrator(s) deleted')),
+          SnackBar(
+            content: Text(
+              '${_selectedAdminIds.length} administrator(s) deleted',
+            ),
+          ),
         );
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -147,31 +176,43 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Full Name'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
                 TextFormField(
                   controller: emailController,
                   decoration: const InputDecoration(labelText: 'Email'),
                   keyboardType: TextInputType.emailAddress,
-                  validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                  validator: (v) => (v == null || !v.contains('@'))
+                      ? 'Enter a valid email'
+                      : null,
                 ),
                 TextFormField(
                   controller: passwordController,
-                  decoration: const InputDecoration(labelText: 'Temporary Password'),
+                  decoration: const InputDecoration(
+                    labelText: 'Temporary Password',
+                  ),
                   obscureText: true,
-                  validator: (v) => (v == null || v.length < 6) ? 'Min 6 characters' : null,
+                  validator: (v) =>
+                      (v == null || v.length < 6) ? 'Min 6 characters' : null,
                 ),
               ],
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () {
-            if (formKey.currentState!.validate()) {
-              Navigator.pop(ctx, true);
-            }
-          }, child: const Text('Add')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, true);
+              }
+            },
+            child: const Text('Add'),
+          ),
         ],
       ),
     );
@@ -185,9 +226,9 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
           role: 'admin',
         );
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Administrator added')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Administrator added')));
         await _refresh();
       } catch (e) {
         if (!mounted) return;
@@ -205,8 +246,14 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         title: const Text('Delete Administrator'),
         content: Text('Are you sure you want to delete ${user.name}?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -214,11 +261,15 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
       try {
         await _userService.deleteUser(user.id);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Administrator deleted')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Administrator deleted')));
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
       }
     }
   }
@@ -230,8 +281,14 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         title: const Text('Deactivate Administrator'),
         content: Text('Deactivate ${user.name}\'s account?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Deactivate')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Deactivate'),
+          ),
         ],
       ),
     );
@@ -239,11 +296,15 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
       try {
         await _userService.deactivateUser(user.id);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Administrator deactivated')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Administrator deactivated')),
+        );
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to deactivate: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to deactivate: $e')));
       }
     }
   }
@@ -255,8 +316,14 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         title: const Text('Reactivate Administrator'),
         content: Text('Reactivate ${user.name}\'s account?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Reactivate')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reactivate'),
+          ),
         ],
       ),
     );
@@ -264,11 +331,15 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
       try {
         await _userService.reactivateUser(user.id);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Administrator reactivated')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Administrator reactivated')),
+        );
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to reactivate: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to reactivate: $e')));
       }
     }
   }
@@ -292,13 +363,16 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Full Name'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
                 TextFormField(
                   controller: emailController,
                   decoration: const InputDecoration(labelText: 'Email'),
                   keyboardType: TextInputType.emailAddress,
-                  validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                  validator: (v) => (v == null || !v.contains('@'))
+                      ? 'Enter a valid email'
+                      : null,
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
@@ -306,7 +380,10 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                   decoration: const InputDecoration(labelText: 'Role'),
                   items: const [
                     DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                    DropdownMenuItem(value: 'employee', child: Text('Employee')),
+                    DropdownMenuItem(
+                      value: 'employee',
+                      child: Text('Employee'),
+                    ),
                   ],
                   onChanged: (v) => role = v ?? role,
                 ),
@@ -315,12 +392,18 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () {
-            if (formKey.currentState!.validate()) {
-              Navigator.pop(ctx, true);
-            }
-          }, child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, true);
+              }
+            },
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -334,11 +417,15 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
           role: role,
         );
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Administrator updated')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Administrator updated')));
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
       }
     }
   }
@@ -350,6 +437,19 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         title: const Text('Manage Administrators'),
         backgroundColor: const Color(0xFF2688d4),
         actions: [
+          if (!_isSelectMode)
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: ElevatedButton.icon(
+                onPressed: _addAdmin,
+                icon: const Icon(Icons.person_add),
+                label: const Text('Add Admin'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF2688d4),
+                ),
+              ),
+            ),
           if (_isSelectMode && _selectedAdminIds.isNotEmpty)
             PopupMenuButton<String>(
               onSelected: (value) {
@@ -418,22 +518,26 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                     FilterChip(
                       label: const Text('Active'),
                       selected: _filterStatus == 'active',
-                      onSelected: (_) => setState(() => _filterStatus = 'active'),
+                      onSelected: (_) =>
+                          setState(() => _filterStatus = 'active'),
                     ),
                     FilterChip(
                       label: const Text('Inactive'),
                       selected: _filterStatus == 'inactive',
-                      onSelected: (_) => setState(() => _filterStatus = 'inactive'),
+                      onSelected: (_) =>
+                          setState(() => _filterStatus = 'inactive'),
                     ),
                     FilterChip(
                       label: const Text('Verified'),
                       selected: _filterStatus == 'verified',
-                      onSelected: (_) => setState(() => _filterStatus = 'verified'),
+                      onSelected: (_) =>
+                          setState(() => _filterStatus = 'verified'),
                     ),
                     FilterChip(
                       label: const Text('Unverified'),
                       selected: _filterStatus == 'unverified',
-                      onSelected: (_) => setState(() => _filterStatus = 'unverified'),
+                      onSelected: (_) =>
+                          setState(() => _filterStatus = 'unverified'),
                     ),
                   ],
                 ),
@@ -442,8 +546,14 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    icon: Icon(_isSelectMode ? Icons.check_box : Icons.check_box_outline_blank),
-                    label: Text(_isSelectMode ? 'Exit Select Mode' : 'Select Mode'),
+                    icon: Icon(
+                      _isSelectMode
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                    ),
+                    label: Text(
+                      _isSelectMode ? 'Exit Select Mode' : 'Select Mode',
+                    ),
                     onPressed: () {
                       setState(() {
                         _isSelectMode = !_isSelectMode;
@@ -472,7 +582,7 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                   }
                   final admins = snapshot.data ?? [];
                   final filtered = _filterAdmins(admins);
-                  
+
                   if (filtered.isEmpty) {
                     return Center(
                       child: Text(
@@ -482,7 +592,7 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                       ),
                     );
                   }
-                  
+
                   return ListView.separated(
                     padding: const EdgeInsets.all(12),
                     itemCount: filtered.length,
@@ -490,7 +600,7 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                     itemBuilder: (context, index) {
                       final UserModel user = filtered[index];
                       final isSelected = _selectedAdminIds.contains(user.id);
-                      
+
                       return ListTile(
                         leading: _isSelectMode
                             ? Checkbox(
@@ -505,7 +615,9 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                                   });
                                 },
                               )
-                            : const CircleAvatar(child: Icon(Icons.admin_panel_settings)),
+                            : const CircleAvatar(
+                                child: Icon(Icons.admin_panel_settings),
+                              ),
                         title: Text(user.name),
                         subtitle: Text(
                           '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}',
@@ -532,12 +644,24 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                                   }
                                 },
                                 itemBuilder: (ctx) => [
-                                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                  PopupMenuItem(
-                                    value: user.isActive ? 'deactivate' : 'reactivate',
-                                    child: Text(user.isActive ? 'Deactivate' : 'Reactivate'),
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text('Edit'),
                                   ),
-                                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                  PopupMenuItem(
+                                    value: user.isActive
+                                        ? 'deactivate'
+                                        : 'reactivate',
+                                    child: Text(
+                                      user.isActive
+                                          ? 'Deactivate'
+                                          : 'Reactivate',
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Delete'),
+                                  ),
                                 ],
                               ),
                         onTap: _isSelectMode
@@ -559,11 +683,6 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
             ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'manage_admins_fab',
-        onPressed: _addAdmin,
-        child: const Icon(Icons.person_add),
       ),
     );
   }

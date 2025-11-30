@@ -1,0 +1,444 @@
+================================================================================
+FIELDCHECK - UML DIAGRAMS AND CHARTS (PART 2)
+================================================================================
+
+Continuation of UML diagrams: ERD, DFD, and Use Case diagrams
+
+================================================================================
+FIGURE 3.7: ENTITY RELATIONSHIP DIAGRAM (ERD)
+================================================================================
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    DATABASE SCHEMA (ERD)                         │
+└──────────────────────────────────────────────────────────────────┘
+
+                          ┌─────────────┐
+                          │    USERS    │
+                          ├─────────────┤
+                          │ _id (PK)    │
+                          │ name        │
+                          │ email       │
+                          │ password    │
+                          │ role        │
+                          │ isVerified  │
+                          │ isActive    │
+                          │ createdAt   │
+                          │ updatedAt   │
+                          └──────┬──────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    │            │            │
+                    │ 1:N        │ 1:N        │ 1:N
+                    │            │            │
+                    ▼            ▼            ▼
+          ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+          │ GEOFENCES    │ │ ATTENDANCE   │ │ TASKS        │
+          ├──────────────┤ ├──────────────┤ ├──────────────┤
+          │ _id (PK)     │ │ _id (PK)     │ │ _id (PK)     │
+          │ name         │ │ userId (FK)  │ │ title        │
+          │ type         │ │ geofenceId   │ │ description  │
+          │ latitude     │ │ (FK)         │ │ geofenceId   │
+          │ longitude    │ │ checkInTime  │ │ (FK)         │
+          │ radius       │ │ checkOutTime │ │ assignedTo[] │
+          │ coordinates  │ │ checkInLoc   │ │ assignedBy   │
+          │ assignedEmps │ │ checkOutLoc  │ │ dueDate      │
+          │ isActive     │ │ status       │ │ status       │
+          │ createdAt    │ │ isSynced     │ │ completDate  │
+          │ updatedAt    │ │ createdAt    │ │ createdAt    │
+          └──────┬───────┘ │ updatedAt    │ │ updatedAt    │
+                 │         └──────────────┘ └──────────────┘
+                 │
+                 │ 1:N
+                 │
+                 ▼
+          ┌──────────────┐
+          │ REPORTS      │
+          ├──────────────┤
+          │ _id (PK)     │
+          │ geofenceId   │
+          │ (FK)         │
+          │ generatedBy  │
+          │ (FK)         │
+          │ reportType   │
+          │ dateRange    │
+          │ data         │
+          │ exportFormat │
+          │ createdAt    │
+          └──────────────┘
+
+RELATIONSHIPS:
+- Users (1) → (N) Geofences: One user can manage multiple geofences
+- Users (1) → (N) Attendance: One user can have multiple attendance records
+- Users (1) → (N) Tasks: One user can be assigned multiple tasks
+- Geofences (1) → (N) Attendance: One geofence can have multiple attendance records
+- Geofences (1) → (N) Tasks: One geofence can have multiple tasks
+- Geofences (1) → (N) Reports: One geofence can have multiple reports
+```
+
+================================================================================
+FIGURE 3.8: DATA FLOW DIAGRAM (DFD)
+================================================================================
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    DATA FLOW DIAGRAM (DFD)                       │
+│                   Level 0 - System Context                       │
+└──────────────────────────────────────────────────────────────────┘
+
+                    ┌─────────────┐
+                    │  EMPLOYEE   │
+                    │   (Actor)   │
+                    └──────┬──────┘
+                           │
+            ┌──────────────┼──────────────┐
+            │              │              │
+            │ GPS Data     │ Tasks        │ Reports
+            │ Check-in     │ Status       │ Request
+            │              │              │
+            ▼              ▼              ▼
+    ┌──────────────────────────────────────────────┐
+    │                                              │
+    │        FIELDCHECK SYSTEM                     │
+    │                                              │
+    │  ┌────────────────────────────────────────┐ │
+    │  │ 1.0 Authenticate User                  │ │
+    │  │ 2.0 Validate Geofence                  │ │
+    │  │ 3.0 Process Attendance                 │ │
+    │  │ 4.0 Manage Tasks                       │ │
+    │  │ 5.0 Generate Reports                   │ │
+    │  │ 6.0 Sync Data                          │ │
+    │  │ 7.0 Broadcast Updates                  │ │
+    │  └────────────────────────────────────────┘ │
+    │                                              │
+    └──────────────────────────────────────────────┘
+            ▲              ▲              ▲
+            │              │              │
+            │ Attendance   │ Task         │ Report
+            │ Confirmation│ Updates      │ Data
+            │              │              │
+            └──────────────┼──────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │  ADMIN      │
+                    │   (Actor)   │
+                    └─────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                    DATA FLOW DIAGRAM (DFD)                       │
+│                   Level 1 - Detailed Processes                   │
+└──────────────────────────────────────────────────────────────────┘
+
+EMPLOYEE FLOW:
+┌──────────────┐
+│ Employee App │
+└──────┬───────┘
+       │ GPS Location
+       ▼
+┌──────────────────────┐
+│ 2.0 Validate         │
+│ Geofence             │
+└──────┬───────────────┘
+       │
+       ├─ Inside → Record Attendance
+       │
+       └─ Outside → Show Error
+
+ADMIN FLOW:
+┌──────────────┐
+│ Admin App    │
+└──────┬───────┘
+       │ Geofence Data
+       ▼
+┌──────────────────────┐
+│ 1.0 Authenticate     │
+│ Admin User           │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ 4.0 Manage Tasks &   │
+│ Geofences            │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ 5.0 Generate Reports │
+└──────┬───────────────┘
+       │
+       ▼
+    DATABASE
+```
+
+================================================================================
+FIGURE 3.9: USE CASE DIAGRAM
+================================================================================
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    USE CASE DIAGRAM                              │
+│                  FieldCheck System                               │
+└──────────────────────────────────────────────────────────────────┘
+
+                    ┌─────────────────────────────────┐
+                    │      FieldCheck System          │
+                    │                                 │
+                    │  ┌──────────────────────────┐  │
+                    │  │  Check In / Check Out    │  │
+                    │  └──────────────────────────┘  │
+                    │           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+    ┌──────────────┐│  ┌────────┴──────────────┐  │
+    │  EMPLOYEE    ├┼─→│  View Assigned Tasks  │  │
+    │   (Actor)    ││  └───────────────────────┘  │
+    └──────────────┘│           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+                    │  ┌────────┴──────────────┐  │
+                    │  │  View Attendance      │  │
+                    │  │  Records              │  │
+                    │  └───────────────────────┘  │
+                    │           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+                    │  ┌────────┴──────────────┐  │
+                    │  │  Export Reports       │  │
+                    │  │  (PDF/Excel)          │  │
+                    │  └───────────────────────┘  │
+                    │           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+                    │  ┌────────┴──────────────┐  │
+                    │  │  Sync Offline Data    │  │
+                    │  └───────────────────────┘  │
+                    │                                 │
+                    │                                 │
+                    │  ┌──────────────────────────┐  │
+                    │  │  Create Geofence        │  │
+                    │  └──────────────────────────┘  │
+                    │           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+    ┌──────────────┐│  ┌────────┴──────────────┐  │
+    │   ADMIN      ├┼─→│  Manage Employees     │  │
+    │   (Actor)    ││  └───────────────────────┘  │
+    └──────────────┘│           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+                    │  ┌────────┴──────────────┐  │
+                    │  │  Assign Tasks         │  │
+                    │  └───────────────────────┘  │
+                    │           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+                    │  ┌────────┴──────────────┐  │
+                    │  │  Generate Reports     │  │
+                    │  └───────────────────────┘  │
+                    │           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+                    │  ┌────────┴──────────────┐  │
+                    │  │  View Real-Time       │  │
+                    │  │  Analytics            │  │
+                    │  └───────────────────────┘  │
+                    │           ▲                    │
+                    │           │                    │
+                    │           │ uses               │
+                    │           │                    │
+                    │  ┌────────┴──────────────┐  │
+                    │  │  Manage System        │  │
+                    │  │  Settings             │  │
+                    │  └───────────────────────┘  │
+                    │                                 │
+                    └─────────────────────────────────┘
+
+EMPLOYEE USE CASES:
+1. Check In / Check Out - Record attendance at job site
+2. View Assigned Tasks - See tasks assigned by admin
+3. View Attendance Records - See personal attendance history
+4. Export Reports - Generate and export personal reports
+5. Sync Offline Data - Manually trigger data synchronization
+
+ADMIN USE CASES:
+1. Create Geofence - Define job site boundaries
+2. Manage Employees - Add, edit, remove employee accounts
+3. Assign Tasks - Create and assign tasks to employees
+4. Generate Reports - Create comprehensive reports
+5. View Real-Time Analytics - Monitor system in real-time
+6. Manage System Settings - Configure system parameters
+```
+
+================================================================================
+FIGURE 3.10: CLASS DIAGRAM (SIMPLIFIED)
+================================================================================
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    CLASS DIAGRAM                                 │
+│              (Simplified - Key Classes)                          │
+└──────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────┐
+│      User               │
+├─────────────────────────┤
+│ - id: String            │
+│ - name: String          │
+│ - email: String         │
+│ - password: String      │
+│ - role: String          │
+│ - isActive: Boolean     │
+├─────────────────────────┤
+│ + login()               │
+│ + logout()              │
+│ + updateProfile()       │
+│ + changePassword()      │
+└────────────┬────────────┘
+             │
+             │ inherits
+             │
+    ┌────────┴────────┐
+    │                 │
+    ▼                 ▼
+┌──────────────┐  ┌──────────────┐
+│  Employee    │  │  Admin       │
+├──────────────┤  ├──────────────┤
+│ - empId      │  │ - adminId    │
+│ - dept       │  │ - permissions│
+├──────────────┤  ├──────────────┤
+│ + checkIn()  │  │ + createGeo()│
+│ + checkOut() │  │ + manageEmp()│
+│ + viewTasks()│  │ + genReport()│
+└──────────────┘  └──────────────┘
+
+┌─────────────────────────┐
+│    Geofence             │
+├─────────────────────────┤
+│ - id: String            │
+│ - name: String          │
+│ - type: String          │
+│ - center: Coordinates   │
+│ - radius: Number        │
+│ - coordinates: Array    │
+├─────────────────────────┤
+│ + isPointInside()       │
+│ + addEmployee()         │
+│ + removeEmployee()      │
+│ + update()              │
+└────────────┬────────────┘
+             │
+             │ contains
+             │
+             ▼
+┌─────────────────────────┐
+│   Attendance            │
+├─────────────────────────┤
+│ - id: String            │
+│ - userId: String        │
+│ - geofenceId: String    │
+│ - checkInTime: Date     │
+│ - checkOutTime: Date    │
+│ - location: Coordinates │
+├─────────────────────────┤
+│ + record()              │
+│ + update()              │
+│ + sync()                │
+└─────────────────────────┘
+
+┌─────────────────────────┐
+│    Task                 │
+├─────────────────────────┤
+│ - id: String            │
+│ - title: String         │
+│ - description: String   │
+│ - assignedTo: String[]  │
+│ - dueDate: Date         │
+│ - status: String        │
+├─────────────────────────┤
+│ + assign()              │
+│ + updateStatus()        │
+│ + complete()            │
+└─────────────────────────┘
+
+┌─────────────────────────┐
+│    Report               │
+├─────────────────────────┤
+│ - id: String            │
+│ - type: String          │
+│ - dateRange: Date[]     │
+│ - data: Object          │
+│ - format: String        │
+├─────────────────────────┤
+│ + generate()            │
+│ + exportPDF()           │
+│ + exportExcel()         │
+│ + filter()              │
+└─────────────────────────┘
+```
+
+================================================================================
+FIGURE 3.11: SEQUENCE DIAGRAM - CHECK-IN PROCESS
+================================================================================
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    SEQUENCE DIAGRAM                              │
+│              Employee Check-In Process                           │
+└──────────────────────────────────────────────────────────────────┘
+
+Employee    Mobile App    GPS Module    Backend API    Database
+   │            │              │             │            │
+   │ Open App   │              │             │            │
+   ├───────────→│              │             │            │
+   │            │              │             │            │
+   │            │ Get Location │             │            │
+   │            ├─────────────→│             │            │
+   │            │              │             │            │
+   │            │ Return GPS   │             │            │
+   │            │←─────────────┤             │            │
+   │            │              │             │            │
+   │            │ Fetch Geofence Data       │            │
+   │            ├──────────────────────────→│            │
+   │            │                           │            │
+   │            │ Return Geofence Data      │            │
+   │            │←──────────────────────────┤            │
+   │            │                           │            │
+   │            │ Validate Location        │            │
+   │            │ (Haversine/Ray Casting)   │            │
+   │            │                           │            │
+   │            │ Inside Geofence?         │            │
+   │            ├──────────────────────────→│            │
+   │            │                           │            │
+   │            │ Record Attendance         │            │
+   │            │                           ├───────────→│
+   │            │                           │            │
+   │            │                           │ Store     │
+   │            │                           │←───────────┤
+   │            │                           │            │
+   │            │ Confirmation              │            │
+   │            │←──────────────────────────┤            │
+   │            │                           │            │
+   │ Success    │                           │            │
+   │←───────────┤                           │            │
+   │            │                           │            │
+   │ Display    │                           │            │
+   │ Confirmation                           │            │
+   │            │                           │            │
+```
+
+================================================================================
+END OF PART 2
+================================================================================
+
+All UML diagrams are now complete. These can be:
+1. Copied directly into documentation
+2. Converted to image format using online tools
+3. Used as reference for creating professional diagrams in tools like Lucidchart

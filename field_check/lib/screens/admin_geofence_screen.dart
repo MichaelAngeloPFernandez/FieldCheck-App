@@ -8,6 +8,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/user_service.dart'; // Import UserService
 import '../models/user_model.dart'; // Import UserModel
 import 'package:field_check/config/api_config.dart';
+import 'package:geocoding/geocoding.dart';
 
 class AdminGeofenceScreen extends StatefulWidget {
   const AdminGeofenceScreen({super.key});
@@ -53,10 +54,19 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
 
     _socket.onConnect((_) => debugPrint('Geofence socket connected'));
     _socket.onDisconnect((_) => debugPrint('Geofence socket disconnected'));
-    _socket.on('reconnect_attempt', (_) => debugPrint('Geofence socket reconnect attempt'));
+    _socket.on(
+      'reconnect_attempt',
+      (_) => debugPrint('Geofence socket reconnect attempt'),
+    );
     _socket.on('reconnect', (_) => debugPrint('Geofence socket reconnected'));
-    _socket.on('reconnect_error', (err) => debugPrint('Geofence socket reconnect error: $err'));
-    _socket.on('reconnect_failed', (_) => debugPrint('Geofence socket reconnect failed'));
+    _socket.on(
+      'reconnect_error',
+      (err) => debugPrint('Geofence socket reconnect error: $err'),
+    );
+    _socket.on(
+      'reconnect_failed',
+      (_) => debugPrint('Geofence socket reconnect failed'),
+    );
 
     // Trigger refresh on geofence-related events
     void refresh(dynamic _) => _fetchGeofences();
@@ -95,6 +105,118 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     }
   }
 
+  Future<String> _getAddressFromCoordinates(double lat, double lng) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        return '${p.street}, ${p.locality}, ${p.administrativeArea}';
+      }
+    } catch (e) {
+      debugPrint('Reverse geocoding error: $e');
+    }
+    return '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
+  }
+
+  Future<void> _searchLocation(String query) async {
+    if (query.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a location name')),
+      );
+      return;
+    }
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final locations = await locationFromAddress(query);
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+
+      if (locations.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Location not found')));
+        return;
+      }
+
+      // Get address names for each location
+      final List<Map<String, dynamic>> locationData = [];
+      for (final location in locations) {
+        final address = await _getAddressFromCoordinates(
+          location.latitude,
+          location.longitude,
+        );
+        locationData.add({'location': location, 'address': address});
+      }
+
+      if (!mounted) return;
+
+      showModalBottomSheet(
+        context: context,
+        builder: (context) => ListView.builder(
+          itemCount: locationData.length,
+          itemBuilder: (context, index) {
+            final data = locationData[index];
+            final location = data['location'] as Location;
+            final address = data['address'] as String;
+
+            return ListTile(
+              leading: const Icon(Icons.location_on, color: Colors.blue),
+              title: Text(address),
+              subtitle: Text(
+                '${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}',
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: const Icon(Icons.arrow_forward),
+              onTap: () {
+                final newLocation = LatLng(
+                  location.latitude,
+                  location.longitude,
+                );
+                Navigator.pop(context); // Close bottom sheet first
+
+                // Update location - this triggers map movement
+                setState(() {
+                  _selectedLocation = newLocation;
+                });
+
+                // Show confirmation with address
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('📍 Map moved to: $address'),
+                    duration: const Duration(seconds: 3),
+                    backgroundColor: Colors.blue,
+                  ),
+                );
+
+                debugPrint(
+                  'Location selected: $address at ${location.latitude}, ${location.longitude}',
+                );
+              },
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Search failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -123,10 +245,71 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   TextButton(
                     onPressed: () => _showOverlapDetails(context),
                     child: const Text('Details'),
-                  )
+                  ),
                 ],
               ),
             ),
+          // Search bar for geocoding
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Search location (e.g., "Manila", "Makati")',
+                      prefixIcon: const Icon(Icons.location_on),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                    onSubmitted: (query) {
+                      _searchLocation(query);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    final controller = TextEditingController();
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Search Location'),
+                        content: TextField(
+                          controller: controller,
+                          decoration: const InputDecoration(
+                            hintText: 'Enter location name',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _searchLocation(controller.text);
+                            },
+                            child: const Text('Search'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.search),
+                  label: const Text('Find'),
+                ),
+              ],
+            ),
+          ),
+
           // Map area with geofence drawing tools
           Expanded(
             flex: 3,
@@ -139,8 +322,8 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     height: double.infinity,
                     geofences: _geofences,
                     currentLocation: _selectedLocation != null
-                          ? UserLocation.fromLatLng(_selectedLocation!)
-                          : null,
+                        ? UserLocation.fromLatLng(_selectedLocation!)
+                        : null,
                     isEditable: true,
                     onTap: (lat, lng) {
                       setState(() {
@@ -192,7 +375,10 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     itemBuilder: (context, index) {
                       final geofence = _geofences[index];
                       return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
                         child: ListTile(
                           title: Text(geofence.name),
                           subtitle: Text(geofence.address),
@@ -204,12 +390,18 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                               Switch(
                                 value: geofence.isActive,
                                 onChanged: (value) async {
-                                  final updatedGeofence = geofence.copyWith(isActive: value);
+                                  final updatedGeofence = geofence.copyWith(
+                                    isActive: value,
+                                  );
                                   try {
-                                    await _geofenceService.updateGeofence(updatedGeofence);
+                                    await _geofenceService.updateGeofence(
+                                      updatedGeofence,
+                                    );
                                     await _fetchGeofences(); // Refresh list from backend
                                   } catch (e) {
-                                    debugPrint('Error updating geofence status: $e');
+                                    debugPrint(
+                                      'Error updating geofence status: $e',
+                                    );
                                     // Optionally show an error message
                                   }
                                 },
@@ -222,7 +414,10 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                 },
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
+                                icon: const Icon(
+                                  Icons.delete,
+                                  color: Colors.red,
+                                ),
                                 onPressed: () {
                                   _deleteGeofence(index);
                                 },
@@ -255,7 +450,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Geofence'),
-        content: Text('Are you sure you want to delete ${_geofences[index].name}?'),
+        content: Text(
+          'Are you sure you want to delete ${_geofences[index].name}?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -285,9 +482,10 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   void _showAddGeofenceDialog([double? lat, double? lng]) {
     final nameController = TextEditingController();
     final addressController = TextEditingController();
-    final radiusController = TextEditingController(text: _newGeofenceRadius.toString());
+    final radiusController = TextEditingController(
+      text: _newGeofenceRadius.toString(),
+    );
     double radiusValue = _newGeofenceRadius;
-    String? dialogSelectedType = 'TEAM'; // Default to TEAM
     String? dialogSelectedLabelLetter; // No default
     List<UserModel> dialogSelectedEmployees = [];
 
@@ -310,7 +508,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 ),
                 TextField(
                   controller: radiusController,
-                  decoration: const InputDecoration(labelText: 'Radius (meters)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Radius (meters)',
+                  ),
                   keyboardType: TextInputType.number,
                   onChanged: (val) {
                     final parsed = double.tryParse(val);
@@ -334,33 +534,21 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                // Type selection (TEAM/SOLO)
-                DropdownButtonFormField<String>(
-                  initialValue: dialogSelectedType,
-                  decoration: const InputDecoration(labelText: 'Geofence Type'),
-                  items: <String>['TEAM', 'SOLO'].map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    setStateDialog(() {
-                      dialogSelectedType = newValue;
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
                 // Label Letter selection (A-Z chips)
                 const Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Label Letter (A-Z)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Label Letter (A-Z)',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8.0,
                   children: List<Widget>.generate(26, (int index) {
-                    final letter = String.fromCharCode('A'.codeUnitAt(0) + index);
+                    final letter = String.fromCharCode(
+                      'A'.codeUnitAt(0) + index,
+                    );
                     return ChoiceChip(
                       label: Text(letter),
                       selected: dialogSelectedLabelLetter == letter,
@@ -376,22 +564,31 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 // Employee Assignment
                 const Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Assign Employees', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Assign Employees',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 ..._allEmployees.map((employee) {
-                  final isSelected = dialogSelectedEmployees.any((e) => e.id == employee.id);
+                  final isSelected = dialogSelectedEmployees.any(
+                    (e) => e.id == employee.id,
+                  );
                   return CheckboxListTile(
                     title: Text(employee.name),
                     value: isSelected,
                     onChanged: (bool? value) {
                       setStateDialog(() {
                         if (value == true) {
-                          if (!dialogSelectedEmployees.any((e) => e.id == employee.id)) {
+                          if (!dialogSelectedEmployees.any(
+                            (e) => e.id == employee.id,
+                          )) {
                             dialogSelectedEmployees.add(employee);
                           }
                         } else {
-                          dialogSelectedEmployees.removeWhere((e) => e.id == employee.id);
+                          dialogSelectedEmployees.removeWhere(
+                            (e) => e.id == employee.id,
+                          );
                         }
                       });
                     },
@@ -425,23 +622,22 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   ? () async {
                       final name = nameController.text.trim();
                       final address = addressController.text.trim();
-                      final radius = double.tryParse(radiusController.text) ?? radiusValue;
+                      final radius =
+                          double.tryParse(radiusController.text) ?? radiusValue;
 
                       if (name.isEmpty || address.isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please provide name and address')),
-                        );
-                        return;
-                      }
-                      if (dialogSelectedType == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please select geofence type (TEAM or SOLO)')),
+                          const SnackBar(
+                            content: Text('Please provide name and address'),
+                          ),
                         );
                         return;
                       }
                       if (dialogSelectedLabelLetter == null) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please select a label letter (A–Z)')),
+                          const SnackBar(
+                            content: Text('Please select a label letter (A–Z)'),
+                          ),
                         );
                         return;
                       }
@@ -457,7 +653,6 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                         isActive: true,
                         shape: GeofenceShape.circle,
                         assignedEmployees: dialogSelectedEmployees,
-                        type: dialogSelectedType,
                         labelLetter: dialogSelectedLabelLetter,
                       );
 
@@ -491,11 +686,15 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   void _showEditGeofenceDialog(Geofence geofence, int index) {
     final nameController = TextEditingController(text: geofence.name);
     final addressController = TextEditingController(text: geofence.address);
-    final radiusController = TextEditingController(text: geofence.radius.toString());
+    final radiusController = TextEditingController(
+      text: geofence.radius.toString(),
+    );
     double radiusValue = geofence.radius;
-    String? dialogSelectedType = geofence.type; // Initialize with existing type
-    String? dialogSelectedLabelLetter = geofence.labelLetter; // Initialize with existing labelLetter
-    List<UserModel> dialogSelectedEmployees = List.from(geofence.assignedEmployees ?? []);
+    String? dialogSelectedLabelLetter =
+        geofence.labelLetter; // Initialize with existing labelLetter
+    List<UserModel> dialogSelectedEmployees = List.from(
+      geofence.assignedEmployees ?? [],
+    );
 
     showDialog(
       context: context,
@@ -516,7 +715,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 ),
                 TextField(
                   controller: radiusController,
-                  decoration: const InputDecoration(labelText: 'Radius (meters)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Radius (meters)',
+                  ),
                   keyboardType: TextInputType.number,
                   onChanged: (val) {
                     final parsed = double.tryParse(val);
@@ -540,33 +741,21 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                // Type selection (TEAM/SOLO)
-                DropdownButtonFormField<String>(
-                  initialValue: dialogSelectedType,
-                  decoration: const InputDecoration(labelText: 'Geofence Type'),
-                  items: <String>['TEAM', 'SOLO'].map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    setStateDialog(() {
-                      dialogSelectedType = newValue;
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
                 // Label Letter selection (A-Z chips)
                 const Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Label Letter (A-Z)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Label Letter (A-Z)',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8.0,
                   children: List<Widget>.generate(26, (int index) {
-                    final letter = String.fromCharCode('A'.codeUnitAt(0) + index);
+                    final letter = String.fromCharCode(
+                      'A'.codeUnitAt(0) + index,
+                    );
                     return ChoiceChip(
                       label: Text(letter),
                       selected: dialogSelectedLabelLetter == letter,
@@ -582,22 +771,31 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 // Employee Assignment
                 const Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Assign Employees', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Assign Employees',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 ..._allEmployees.map((employee) {
-                  final isSelected = dialogSelectedEmployees.any((e) => e.id == employee.id);
+                  final isSelected = dialogSelectedEmployees.any(
+                    (e) => e.id == employee.id,
+                  );
                   return CheckboxListTile(
                     title: Text(employee.name),
                     value: isSelected,
                     onChanged: (bool? value) {
                       setStateDialog(() {
                         if (value == true) {
-                          if (!dialogSelectedEmployees.any((e) => e.id == employee.id)) {
+                          if (!dialogSelectedEmployees.any(
+                            (e) => e.id == employee.id,
+                          )) {
                             dialogSelectedEmployees.add(employee);
                           }
                         } else {
-                          dialogSelectedEmployees.removeWhere((e) => e.id == employee.id);
+                          dialogSelectedEmployees.removeWhere(
+                            (e) => e.id == employee.id,
+                          );
                         }
                       });
                     },
@@ -623,23 +821,22 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
               onPressed: () async {
                 final name = nameController.text.trim();
                 final address = addressController.text.trim();
-                final radius = double.tryParse(radiusController.text) ?? radiusValue;
+                final radius =
+                    double.tryParse(radiusController.text) ?? radiusValue;
 
                 if (name.isEmpty || address.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please provide name and address')),
-                  );
-                  return;
-                }
-                if (dialogSelectedType == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please select geofence type (TEAM or SOLO)')),
+                    const SnackBar(
+                      content: Text('Please provide name and address'),
+                    ),
                   );
                   return;
                 }
                 if (dialogSelectedLabelLetter == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please select a label letter (A–Z)')),
+                    const SnackBar(
+                      content: Text('Please select a label letter (A–Z)'),
+                    ),
                   );
                   return;
                 }
@@ -649,7 +846,6 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   address: address,
                   radius: radius,
                   assignedEmployees: dialogSelectedEmployees,
-                  type: dialogSelectedType,
                   labelLetter: dialogSelectedLabelLetter,
                 );
 
@@ -686,7 +882,12 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   }
 
   bool _isOverlap(Geofence a, Geofence b) {
-    final d = Geofence.calculateDistance(a.latitude, a.longitude, b.latitude, b.longitude);
+    final d = Geofence.calculateDistance(
+      a.latitude,
+      a.longitude,
+      b.latitude,
+      b.longitude,
+    );
     return d < (a.radius + b.radius);
   }
 
@@ -711,7 +912,10 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 children: pairs.map((p) => Text('• $p')).toList(),
               ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );

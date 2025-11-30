@@ -1,0 +1,673 @@
+================================================================================
+FIELDCHECK - COMPLETE API DOCUMENTATION
+================================================================================
+
+Backend URL: http://localhost:3000 (or your deployed server URL)
+Authentication: JWT Bearer Token (except for public endpoints)
+Real-time: Socket.io WebSocket connections
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. Authentication & User Management (/api/users)
+2. Attendance Management (/api/attendance)
+3. Geofence Management (/api/geofences)
+4. Task Management (/api/tasks)
+5. Dashboard & Analytics (/api/dashboard)
+6. Report Management (/api/reports)
+7. Export Functions (/api/export)
+8. System Settings (/api/settings)
+9. Offline Synchronization (/api/sync)
+10. System Endpoints
+11. Real-time Socket.io Events
+12. Authentication Middleware
+
+================================================================================
+1. AUTHENTICATION & USER MANAGEMENT (/api/users)
+================================================================================
+
+PUBLIC ENDPOINTS (No authentication required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ POST   │ /api/users/login            │ User login             │
+│ POST   │ /api/users                  │ User registration       │
+│ GET    │ /api/users/verify/:token    │ Email verification      │
+│ POST   │ /api/users/forgot-password  │ Forgot password         │
+│ POST   │ /api/users/reset-password/:token │ Reset password    │
+│ POST   │ /api/users/refresh-token    │ Refresh access token    │
+│ POST   │ /api/users/google-signin    │ Google OAuth sign-in    │
+└─────────────────────────────────────────────────────────────────┘
+
+PROTECTED ENDPOINTS (JWT required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ POST   │ /api/users/logout           │ User logout            │
+│ GET    │ /api/users/profile          │ Get user profile       │
+│ PUT    │ /api/users/profile          │ Update user profile    │
+└─────────────────────────────────────────────────────────────────┘
+
+ADMIN ENDPOINTS (JWT + Admin role required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ GET    │ /api/users                  │ List all users         │
+│ PUT    │ /api/users/:id              │ Update user by admin   │
+│ PUT    │ /api/users/:id/deactivate   │ Deactivate user        │
+│ PUT    │ /api/users/:id/reactivate   │ Reactivate user        │
+│ DELETE │ /api/users/:id              │ Delete user            │
+│ POST   │ /api/users/import           | Import users (bulk)    │
+└─────────────────────────────────────────────────────────────────┘
+
+REQUEST/RESPONSE EXAMPLES:
+
+POST /api/users/login
+Request:
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+Response:
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "refresh_token_here",
+  "user": {
+    "_id": "user_id",
+    "name": "John Doe",
+    "email": "user@example.com",
+    "role": "employee"
+  }
+}
+
+GET /api/users/profile
+Headers: Authorization: Bearer <token>
+Response:
+{
+  "_id": "user_id",
+  "name": "John Doe",
+  "email": "user@example.com",
+  "role": "employee",
+  "isActive": true,
+  "createdAt": "2024-01-01T00:00:00.000Z"
+}
+
+================================================================================
+2. ATTENDANCE MANAGEMENT (/api/attendance)
+================================================================================
+
+PROTECTED ENDPOINTS (JWT required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ GET    │ /api/attendance/status      │ Get current status      │
+│ GET    │ /api/attendance/history     │ Get attendance history  │
+│ POST   │ /api/attendance/checkin      │ Check-in at location    │
+│ POST   │ /api/attendance/checkout     │ Check-out from location │
+│ POST   │ /api/attendance             | Log attendance          │
+│ GET    │ /api/attendance             | Get attendance records  │
+│ GET    │ /api/attendance/:id         | Get attendance by ID    │
+│ PUT    │ /api/attendance/:id         | Update attendance       │
+│ DELETE │ /api/attendance/:id         | Delete attendance       │
+└─────────────────────────────────────────────────────────────────┘
+
+REQUEST/RESPONSE EXAMPLES:
+
+POST /api/attendance/checkin
+Request:
+{
+  "geofenceId": "geofence_id",
+  "latitude": 14.5995,
+  "longitude": 120.9842,
+  "timestamp": "2024-01-01T08:00:00.000Z"
+}
+Response:
+{
+  "success": true,
+  "message": "Check-in successful",
+  "attendance": {
+    "_id": "attendance_id",
+    "employee": "user_id",
+    "geofence": "geofence_id",
+    "checkIn": "2024-01-01T08:00:00.000Z",
+    "status": "in",
+    "location": { "lat": 14.5995, "lng": 120.9842 }
+  }
+}
+
+GET /api/attendance/history?startDate=2024-01-01&endDate=2024-01-31
+Response:
+{
+  "records": [
+    {
+      "_id": "attendance_id",
+      "employee": "user_id",
+      "geofence": "geofence_id",
+      "checkIn": "2024-01-01T08:00:00.000Z",
+      "checkOut": "2024-01-01T17:00:00.000Z",
+      "status": "out",
+      "location": { "lat": 14.5995, "lng": 120.9842 }
+    }
+  ],
+  "total": 20,
+  "page": 1,
+  "pages": 1
+}
+
+================================================================================
+3. GEOFENCE MANAGEMENT (/api/geofences)
+================================================================================
+
+PROTECTED ENDPOINTS (JWT required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ POST   │ /api/geofences              | Create geofence        │
+│ GET    │ /api/geofences              | List geofences         │
+│ GET    │ /api/geofences/:id          | Get geofence by ID     │
+│ PUT    │ /api/geofences/:id          | Update geofence        │
+│ DELETE │ /api/geofences/:id          | Delete geofence        │
+└─────────────────────────────────────────────────────────────────┘
+
+REQUEST/RESPONSE EXAMPLES:
+
+POST /api/geofences
+Request:
+{
+  "name": "Main Office",
+  "type": "circular",
+  "latitude": 14.5995,
+  "longitude": 120.9842,
+  "radius": 100,
+  "assignedEmployees": ["user_id_1", "user_id_2"]
+}
+Response:
+{
+  "success": true,
+  "geofence": {
+    "_id": "geofence_id",
+    "name": "Main Office",
+    "type": "circular",
+    "latitude": 14.5995,
+    "longitude": 120.9842,
+    "radius": 100,
+    "assignedEmployees": ["user_id_1", "user_id_2"],
+    "isActive": true,
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+
+GET /api/geofences
+Response:
+{
+  "geofences": [
+    {
+      "_id": "geofence_id",
+      "name": "Main Office",
+      "type": "circular",
+      "latitude": 14.5995,
+      "longitude": 120.9842,
+      "radius": 100,
+      "assignedEmployees": ["user_id_1", "user_id_2"],
+      "isActive": true
+    }
+  ]
+}
+
+================================================================================
+4. TASK MANAGEMENT (/api/tasks)
+================================================================================
+
+PROTECTED ENDPOINTS (JWT required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ GET    │ /api/tasks                  | List tasks             │
+│ POST   │ /api/tasks                  | Create task (admin)    │
+│ PUT    │ /api/tasks/:id              | Update task (admin)    │
+│ DELETE │ /api/tasks/:id              | Delete task (admin)    │
+│ GET    │ /api/tasks/user/:userId     | Get user tasks         │
+│ GET    │ /api/tasks/assigned/:userId | Get assigned tasks     │
+│ POST   │ /api/tasks/:taskId/assign/:userId | Assign task     │
+│ PUT    │ /api/tasks/user-task/:userTaskId/status | Update status │
+└─────────────────────────────────────────────────────────────────┘
+
+REQUEST/RESPONSE EXAMPLES:
+
+POST /api/tasks
+Request (admin only):
+{
+  "title": "Complete Site Inspection",
+  "description": "Inspect the construction site and report findings",
+  "geofenceId": "geofence_id",
+  "assignedTo": ["user_id_1"],
+  "dueDate": "2024-01-15T17:00:00.000Z"
+}
+Response:
+{
+  "success": true,
+  "task": {
+    "_id": "task_id",
+    "title": "Complete Site Inspection",
+    "description": "Inspect the construction site and report findings",
+    "geofenceId": "geofence_id",
+    "assignedTo": ["user_id_1"],
+    "assignedBy": "admin_id",
+    "dueDate": "2024-01-15T17:00:00.000Z",
+    "status": "pending",
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+
+PUT /api/tasks/user-task/:userTaskId/status
+Request:
+{
+  "status": "completed",
+  "completionNotes": "Inspection completed successfully"
+}
+Response:
+{
+  "success": true,
+  "message": "Task status updated",
+  "userTask": {
+    "_id": "user_task_id",
+    "taskId": "task_id",
+    "userId": "user_id",
+    "status": "completed",
+    "completionNotes": "Inspection completed successfully",
+    "completedAt": "2024-01-01T12:00:00.000Z"
+  }
+}
+
+================================================================================
+5. DASHBOARD & ANALYTICS (/api/dashboard)
+================================================================================
+
+ADMIN ENDPOINTS (JWT + Admin role required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ GET    │ /api/dashboard/stats        | Get dashboard stats    │
+│ GET    │ /api/dashboard/realtime     | Get real-time updates   │
+└─────────────────────────────────────────────────────────────────┘
+
+REQUEST/RESPONSE EXAMPLES:
+
+GET /api/dashboard/stats
+Response:
+{
+  "userStats": {
+    "total": 50,
+    "active": 45,
+    "employees": 40,
+    "admins": 5
+  },
+  "geofenceStats": {
+    "total": 10,
+    "active": 8
+  },
+  "taskStats": {
+    "total": 100,
+    "completed": 80,
+    "pending": 20
+  },
+  "attendanceStats": {
+    "today": {
+      "present": 35,
+      "absent": 5,
+      "late": 2
+    },
+    "thisWeek": {
+      "averageAttendance": 92.5
+    }
+  }
+}
+
+GET /api/dashboard/realtime
+Response:
+{
+  "onlineUsers": 25,
+  "recentActivity": [
+    {
+      "type": "checkin",
+      "user": "John Doe",
+      "timestamp": "2024-01-01T08:00:00.000Z",
+      "location": "Main Office"
+    }
+  ],
+  "employeeLocations": [
+    {
+      "userId": "user_id",
+      "name": "John Doe",
+      "latitude": 14.5995,
+      "longitude": 120.9842,
+      "timestamp": "2024-01-01T08:00:00.000Z"
+    }
+  ]
+}
+
+================================================================================
+6. REPORT MANAGEMENT (/api/reports)
+================================================================================
+
+PROTECTED ENDPOINTS (JWT required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ POST   │ /api/reports                | Create report          │
+└─────────────────────────────────────────────────────────────────┘
+
+ADMIN ENDPOINTS (JWT + Admin role required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ GET    │ /api/reports                | List reports           │
+│ GET    │ /api/reports/:id            | Get report by ID       │
+│ PATCH  │ /api/reports/:id/status     | Update report status   │
+│ DELETE │ /api/reports/:id            | Delete report           │
+└─────────────────────────────────────────────────────────────────┘
+
+REQUEST/RESPONSE EXAMPLES:
+
+POST /api/reports
+Request:
+{
+  "title": "Monthly Attendance Report",
+  "type": "attendance",
+  "dateRange": {
+    "startDate": "2024-01-01",
+    "endDate": "2024-01-31"
+  },
+  "filters": {
+    "geofenceId": "geofence_id",
+    "employeeIds": ["user_id_1", "user_id_2"]
+  }
+}
+Response:
+{
+  "success": true,
+  "report": {
+    "_id": "report_id",
+    "title": "Monthly Attendance Report",
+    "type": "attendance",
+    "dateRange": {
+      "startDate": "2024-01-01",
+      "endDate": "2024-01-31"
+    },
+    "filters": {
+      "geofenceId": "geofence_id",
+      "employeeIds": ["user_id_1", "user_id_2"]
+    },
+    "status": "generating",
+    "generatedBy": "user_id",
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+
+================================================================================
+7. EXPORT FUNCTIONS (/api/export)
+================================================================================
+
+ADMIN ENDPOINTS (JWT + Admin role required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ GET    │ /api/export/attendance/pdf  | Export attendance PDF  │
+│ GET    │ /api/export/attendance/excel| Export attendance Excel │
+│ GET    │ /api/export/tasks/pdf        | Export tasks PDF       │
+│ GET    │ /api/export/tasks/excel      | Export tasks Excel     │
+│ GET    │ /api/export/combined/excel   | Export combined Excel  │
+└─────────────────────────────────────────────────────────────────┘
+
+QUERY PARAMETERS:
+┌─────────────────────────────────────────────────────────────────┐
+│ PARAMETER │ TYPE        │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ startDate │ String      | Start date (YYYY-MM-DD)│
+│ endDate   │ String      | End date (YYYY-MM-DD)  │
+│ geofenceId│ String      | Filter by geofence     │
+│ employeeId│ String      | Filter by employee     │
+└─────────────────────────────────────────────────────────────────┘
+
+EXAMPLE REQUEST:
+GET /api/export/attendance/excel?startDate=2024-01-01&endDate=2024-01-31&geofenceId=geofence_id
+
+RESPONSE:
+Binary file download (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+
+================================================================================
+8. SYSTEM SETTINGS (/api/settings)
+================================================================================
+
+ADMIN ENDPOINTS (JWT + Admin role required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ GET    │ /api/settings               | Get all settings       │
+│ PUT    │ /api/settings               | Update multiple settings│
+│ GET    │ /api/settings/:key          | Get setting by key     │
+│ PUT    │ /api/settings/:key          | Update setting by key  │
+│ DELETE │ /api/settings/:key          | Delete setting         │
+└─────────────────────────────────────────────────────────────────┘
+
+COMMON SETTINGS KEYS:
+┌─────────────────────────────────────────────────────────────────┐
+│ KEY              │ TYPE    │ DESCRIPTION                    │
+├─────────────────────────────────────────────────────────────────┤
+│ company_name     │ String  | Organization name             │
+│ timezone         │ String  | Default timezone              │
+│ check_in_radius  │ Number  | Default geofence radius (m)   │
+│ auto_checkout    │ Boolean │ Auto-checkout at end of day   │
+│ email_notifications│ Boolean│ Enable email notifications   │
+└─────────────────────────────────────────────────────────────────┘
+
+================================================================================
+9. OFFLINE SYNCHRONIZATION (/api/sync)
+================================================================================
+
+PROTECTED ENDPOINT (JWT required):
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ POST   │ /api/sync                   | Sync offline data      │
+└─────────────────────────────────────────────────────────────────┘
+
+REQUEST/RESPONSE EXAMPLES:
+
+POST /api/sync
+Request:
+{
+  "attendance": [
+    {
+      "type": "checkin",
+      "geofenceId": "geofence_id",
+      "latitude": 14.5995,
+      "longitude": 120.9842,
+      "timestamp": "2024-01-01T08:00:00.000Z"
+    },
+    {
+      "type": "checkout",
+      "geofenceId": "geofence_id",
+      "latitude": 14.5995,
+      "longitude": 120.9842,
+      "timestamp": "2024-01-01T17:00:00.000Z"
+    }
+  ]
+}
+Response:
+{
+  "message": "Sync processed",
+  "results": {
+    "attendanceProcessed": 2
+  }
+}
+
+================================================================================
+10. SYSTEM ENDPOINTS
+================================================================================
+
+PUBLIC ENDPOINTS:
+┌─────────────────────────────────────────────────────────────────┐
+│ METHOD │ ENDPOINT                    │ DESCRIPTION            │
+├─────────────────────────────────────────────────────────────────┤
+│ GET    │ /                          | Server welcome message │
+│ GET    │ /api/health                 | Health check           │
+└─────────────────────────────────────────────────────────────────┘
+
+GET /api/health
+Response:
+{
+  "status": "ok",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "uptime": 3600,
+  "version": "1.0.0"
+}
+
+================================================================================
+11. REAL-TIME SOCKET.IO EVENTS
+================================================================================
+
+CLIENT TO SERVER EVENTS:
+┌─────────────────────────────────────────────────────────────────┐
+│ EVENT               │ DESCRIPTION                            │
+├─────────────────────────────────────────────────────────────────┤
+│ employeeLocationUpdate│ Send real-time location data            │
+└─────────────────────────────────────────────────────────────────┘
+
+SERVER TO CLIENT EVENTS:
+┌─────────────────────────────────────────────────────────────────┐
+│ EVENT               │ DESCRIPTION                            │
+├─────────────────────────────────────────────────────────────────┤
+│ onlineCount         │ Number of connected users               │
+│ liveEmployeeLocation│ Real-time employee location updates      │
+└─────────────────────────────────────────────────────────────────┘
+
+SOCKET.IO CONNECTION EXAMPLE:
+
+Client Side (Flutter):
+```dart
+final socket = io('http://localhost:3000');
+socket.on('onlineCount', (data) {
+  print('Online users: ${data}');
+});
+socket.on('liveEmployeeLocation', (data) {
+  print('Employee ${data['userId']} at ${data['latitude']}, ${data['longitude']}');
+});
+socket.emit('employeeLocationUpdate', {
+  'latitude': 14.5995,
+  'longitude': 120.9842,
+  'accuracy': 10.0,
+  'timestamp': DateTime.now().millisecondsSinceEpoch,
+});
+```
+
+================================================================================
+12. AUTHENTICATION MIDDLEWARE
+================================================================================
+
+JWT TOKEN STRUCTURE:
+┌─────────────────────────────────────────────────────────────────┐
+│ FIELD              │ DESCRIPTION                            │
+├─────────────────────────────────────────────────────────────────┤
+│ _id                | User ID                                │
+│ name               | User name                              │
+│ email              | User email                             │
+│ role               | User role (employee/admin)             │
+│ iat                | Issued at timestamp                   │
+│ exp                | Expiration timestamp                  │
+└─────────────────────────────────────────────────────────────────┘
+
+AUTHORIZATION HEADER:
+Authorization: Bearer <jwt_token>
+
+ROLE-BASED ACCESS:
+┌─────────────────────────────────────────────────────────────────┐
+│ ROLE               | ACCESS LEVEL                           │
+├─────────────────────────────────────────────────────────────────┤
+│ employee           | Can access own data, check-in/out      │
+│ admin              | Full access to all features            │
+└─────────────────────────────────────────────────────────────────┘
+
+================================================================================
+ERROR RESPONSES
+================================================================================
+
+STANDARD ERROR FORMAT:
+{
+  "success": false,
+  "message": "Error description",
+  "error": "Detailed error message (development only)"
+}
+
+COMMON HTTP STATUS CODES:
+┌─────────────────────────────────────────────────────────────────┐
+│ CODE  │ MEANING                     │ DESCRIPTION           │
+├─────────────────────────────────────────────────────────────────┤
+│ 200   │ OK                          | Request successful   │
+│ 201   │ Created                     | Resource created     │
+│ 400   │ Bad Request                 | Invalid input        │
+│ 401   │ Unauthorized                | Authentication failed│
+│ 403   │ Forbidden                   | Insufficient rights  │
+│ 404   │ Not Found                   | Resource not found   │
+│ 429   │ Too Many Requests          | Rate limit exceeded  │
+│ 500   │ Internal Server Error       | Server error         │
+└─────────────────────────────────────────────────────────────────┘
+
+================================================================================
+RATE LIMITING
+================================================================================
+
+PRODUCTION RATE LIMITS:
+┌─────────────────────────────────────────────────────────────────┐
+│ SETTING            │ VALUE                                  │
+├─────────────────────────────────────────────────────────────────┤
+│ Window             │ 15 minutes                             │
+│ Max Requests       │ 1000 per window                       │
+│ Skip Routes        │ OPTIONS, /api/health                   │
+└─────────────────────────────────────────────────────────────────┘
+
+DEVELOPMENT: Rate limiting is disabled for easier testing
+
+================================================================================
+SECURITY FEATURES
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│ FEATURE            │ DESCRIPTION                            │
+├─────────────────────────────────────────────────────────────────┤
+│ Helmet             | Security headers                       │
+│ CORS               | Cross-origin resource sharing          │
+│ Compression        | Response compression                   │
+│ Rate Limiting      | Request throttling                     │
+│ JWT Authentication │ Token-based auth                       │
+│ Input Validation   | Request body validation                │
+│ Error Handling     | Secure error responses                 │
+└─────────────────────────────────────────────────────────────────┘
+
+================================================================================
+SUMMARY
+================================================================================
+
+TOTAL ENDPOINTS: 47 REST APIs + 3 Socket.io Events
+
+By Category:
+- Authentication: 9 endpoints
+- User Management: 7 endpoints
+- Attendance: 9 endpoints
+- Geofences: 5 endpoints
+- Tasks: 8 endpoints
+- Dashboard: 2 endpoints
+- Reports: 5 endpoints
+- Export: 5 endpoints
+- Settings: 6 endpoints
+- Sync: 1 endpoint
+- System: 2 endpoints
+- Real-time: 3 events
+
+All endpoints use JSON format for requests/responses, except export endpoints
+which return binary files (PDF/Excel downloads).
+
+================================================================================
+END OF API DOCUMENTATION
+================================================================================

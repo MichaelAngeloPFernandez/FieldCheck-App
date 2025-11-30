@@ -13,24 +13,29 @@ class UserService {
   UserModel? get currentUser => _cachedProfile;
 
   Future<String> uploadAvatar(File imageFile) async {
-    // In a real application, you would upload the image to a server
-    // and get the URL back. For now, we'll return a placeholder.
-    // You would typically use a multipart request for file uploads.
-    // Example: 
-    // var request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/upload/avatar'));
-    // request.files.add(await http.MultipartFile.fromPath('avatar', imageFile.path));
-    // var response = await request.send();
-    // if (response.statusCode == 200) {
-    //   final responseData = await http.Response.fromStream(response);
-    //   final data = json.decode(responseData.body);
-    //   return data['avatarUrl'];
-    // } else {
-    //   throw Exception('Failed to upload avatar');
-    // }
-    
-    // Placeholder for now
-    await Future.delayed(const Duration(seconds: 2)); // Simulate network delay
-    return 'https://example.com/avatars/${DateTime.now().millisecondsSinceEpoch}.jpg';
+    try {
+      final token = await getToken();
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/upload/avatar'),
+      );
+      request.files.add(
+        await http.MultipartFile.fromPath('avatar', imageFile.path),
+      );
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+      var response = await request.send();
+      if (response.statusCode == 200) {
+        final responseData = await http.Response.fromStream(response);
+        final data = json.decode(responseData.body);
+        return data['avatarUrl'] ?? '';
+      } else {
+        throw Exception('Failed to upload avatar: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Avatar upload error: $e');
+    }
   }
 
   Future<List<UserModel>> fetchEmployees() async {
@@ -75,7 +80,7 @@ class UserService {
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'identifier': identifier, 'password': password}),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final token = data['token'] as String?;
@@ -111,9 +116,13 @@ class UserService {
         throw Exception(message);
       }
     } on http.ClientException catch (_) {
-      throw Exception('Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.');
+      throw Exception(
+        'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
+      );
     } on SocketException catch (_) {
-      throw Exception('Network error. Please confirm you are online and try again.');
+      throw Exception(
+        'Network error. Please confirm you are online and try again.',
+      );
     } on TimeoutException catch (_) {
       throw Exception('Request timed out. Server may be busy or unreachable.');
     }
@@ -159,19 +168,35 @@ class UserService {
         throw Exception(message);
       }
     } on http.ClientException catch (_) {
-      throw Exception('Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.');
+      throw Exception(
+        'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
+      );
     } on SocketException catch (_) {
-      throw Exception('Network error. Please confirm you are online and try again.');
+      throw Exception(
+        'Network error. Please confirm you are online and try again.',
+      );
     } on TimeoutException catch (_) {
       throw Exception('Request timed out. Server may be busy or unreachable.');
     }
   }
 
-  Future<UserModel> register(String name, String email, String password, {String role = 'employee', String? username}) async {
+  Future<UserModel> register(
+    String name,
+    String email,
+    String password, {
+    String role = 'employee',
+    String? username,
+  }) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/users'),
       headers: {'Content-Type': 'application/json'},
-      body: json.encode({'name': name, 'username': username, 'email': email, 'password': password, 'role': role}),
+      body: json.encode({
+        'name': name,
+        'username': username,
+        'email': email,
+        'password': password,
+        'role': role,
+      }),
     );
     if (response.statusCode == 201 || response.statusCode == 200) {
       final data = json.decode(response.body);
@@ -252,13 +277,19 @@ class UserService {
     }
   }
 
-  Future<UserModel> updateMyProfile({String? name, String? email, String? avatarUrl, String? username}) async {
+  Future<UserModel> updateMyProfile({
+    String? name,
+    String? email,
+    String? avatarUrl,
+    String? username,
+  }) async {
     final token = await getToken();
     final payload = <String, dynamic>{};
     if (name != null) payload['name'] = name;
     if (email != null) payload['email'] = email;
     if (username != null) payload['username'] = username;
-    if (avatarUrl != null) payload['avatarUrl'] = avatarUrl; // Add avatarUrl to payload
+    if (avatarUrl != null)
+      payload['avatarUrl'] = avatarUrl; // Add avatarUrl to payload
 
     final response = await http.put(
       Uri.parse('$_baseUrl/users/profile'),
@@ -319,7 +350,8 @@ class UserService {
       final token = data['token'] as String?;
       final refreshToken2 = data['refreshToken'] as String?;
       if (token != null) await prefs.setString('auth_token', token);
-      if (refreshToken2 != null) await prefs.setString('refresh_token', refreshToken2);
+      if (refreshToken2 != null)
+        await prefs.setString('refresh_token', refreshToken2);
       return true;
     }
     return false;
@@ -376,7 +408,14 @@ class UserService {
     await updateUserByAdmin(id, isActive: true);
   }
 
-  Future<UserModel> updateUserByAdmin(String userModelId, {String? name, String? email, String? role, bool? isActive, String? username}) async {
+  Future<UserModel> updateUserByAdmin(
+    String userModelId, {
+    String? name,
+    String? email,
+    String? role,
+    bool? isActive,
+    String? username,
+  }) async {
     final token = await getToken();
     final payload = <String, dynamic>{};
     if (name != null) payload['name'] = name;
@@ -403,7 +442,9 @@ class UserService {
 
   Future<List<UserModel>> fetchUsers({String? role}) async {
     final token = await getToken();
-    final uri = Uri.parse('$_baseUrl/users${role != null ? '?role=$role' : ''}');
+    final uri = Uri.parse(
+      '$_baseUrl/users${role != null ? '?role=$role' : ''}',
+    );
     final response = await http.get(
       uri,
       headers: {

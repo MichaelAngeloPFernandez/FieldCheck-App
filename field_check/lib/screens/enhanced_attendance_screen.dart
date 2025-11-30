@@ -103,9 +103,13 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   Future<void> _loadPendingSyncCount() async {
     try {
       final list = await _autosaveService.getUnsyncedData();
-      final pending = list.where((e) => (e['key'] as String).startsWith('attendance_')).length;
+      final pending = list
+          .where((e) => (e['key'] as String).startsWith('attendance_'))
+          .length;
       if (mounted) {
-        setState(() { _pendingSyncCount = pending; });
+        setState(() {
+          _pendingSyncCount = pending;
+        });
       }
     } catch (_) {}
   }
@@ -164,7 +168,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   }
 
   void _startLocationUpdates() {
-    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       _updateLocation();
     });
   }
@@ -245,13 +249,19 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       if (_isCheckedIn) {
         final confirmed = await _confirmCheckout();
         if (!confirmed) {
-          if (mounted) setState(() { _isLoading = false; });
+          if (mounted)
+            setState(() {
+              _isLoading = false;
+            });
           return;
         }
       } else {
         final proceed = await _ensureTasksBeforeCheckIn();
         if (!proceed) {
-          if (mounted) setState(() { _isLoading = false; });
+          if (mounted)
+            setState(() {
+              _isLoading = false;
+            });
           return;
         }
       }
@@ -341,7 +351,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                 if (_currentGeofence != null)
                   Text('Location: ${_currentGeofence!.name}'),
                 if (_currentDistanceMeters != null)
-                  Text('Distance: ${_currentDistanceMeters!.toStringAsFixed(1)}m'),
+                  Text(
+                    'Distance: ${_currentDistanceMeters!.toStringAsFixed(1)}m',
+                  ),
               ],
             ),
             actions: [
@@ -355,7 +367,8 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               ),
             ],
           ),
-        ) ?? false;
+        ) ??
+        false;
   }
 
   Future<bool> _ensureTasksBeforeCheckIn() async {
@@ -364,15 +377,21 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       if (userId == null) {
         final profile = await _userService.getProfile();
         userId = profile.id;
-        if (mounted) setState(() { _userModelId = userId; });
+        if (mounted)
+          setState(() {
+            _userModelId = userId;
+          });
       }
       final tasks = await _taskService.fetchAssignedTasks(userId);
       if (tasks.isEmpty) {
-        final proceed = await showDialog<bool>(
+        final proceed =
+            await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
                 title: const Text('No Assigned Tasks'),
-                content: const Text('You currently have no tasks assigned. Do you still want to check in?'),
+                content: const Text(
+                  'You currently have no tasks assigned. Do you still want to check in?',
+                ),
                 actions: [
                   TextButton(
                     onPressed: () {
@@ -381,7 +400,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => EmployeeTaskListScreen(userModelId: _userModelId!),
+                            builder: (_) => EmployeeTaskListScreen(
+                              userModelId: _userModelId!,
+                            ),
                           ),
                         );
                       }
@@ -394,7 +415,8 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                   ),
                 ],
               ),
-            ) ?? true;
+            ) ??
+            true;
         return proceed;
       }
       return true;
@@ -531,7 +553,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                         TextButton(
                           onPressed: _isLoading ? null : _syncOfflineAttendance,
                           child: const Text('Sync Now'),
-                        )
+                        ),
                       ],
                     ),
                   ),
@@ -687,7 +709,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                 color: Colors.transparent,
                 child: InkWell(
                   customBorder: const CircleBorder(),
-                  onTap: (_isLoading || !_isWithinAnyGeofence) ? null : _toggleAttendance,
+                  onTap: (_isLoading || !_isWithinAnyGeofence)
+                      ? null
+                      : _toggleAttendance,
                   child: Center(
                     child: _isLoading
                         ? const CircularProgressIndicator()
@@ -738,7 +762,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
   Future<void> _syncOfflineAttendance() async {
     try {
-      setState(() { _isLoading = true; });
+      setState(() {
+        _isLoading = true;
+      });
       final unsynced = await _autosaveService.getUnsyncedData();
       final items = <Map<String, dynamic>>[];
       for (final e in unsynced) {
@@ -746,7 +772,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         if (key.startsWith('attendance_')) {
           final data = e['data'] as Map<String, dynamic>;
           items.add({
-            'type': (data['data']?['isCheckedIn'] == true) ? 'checkin' : 'checkout',
+            'type': (data['data']?['isCheckedIn'] == true)
+                ? 'checkin'
+                : 'checkout',
             'timestamp': data['data']?['timestamp'],
             'latitude': data['data']?['latitude'],
             'longitude': data['data']?['longitude'],
@@ -756,10 +784,15 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       }
       if (items.isEmpty) {
         await _loadPendingSyncCount();
-        setState(() { _isLoading = false; });
+        setState(() {
+          _isLoading = false;
+        });
         return;
       }
-      final res = await HttpUtil().post('/api/sync', body: {'attendance': items});
+      final res = await HttpUtil().post(
+        '/api/sync',
+        body: {'attendance': items},
+      );
       if (res.statusCode == 200) {
         for (final e in unsynced) {
           final key = e['key'] as String;
@@ -770,25 +803,33 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         await _loadPendingSyncCount();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Synced ${items.length} records')), 
+            SnackBar(content: Text('Synced ${items.length} records')),
           );
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Sync failed: ${res.body}'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text('Sync failed: ${res.body}'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sync error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Sync error: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
       if (mounted) {
-        setState(() { _isLoading = false; });
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }

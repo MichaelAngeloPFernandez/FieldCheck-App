@@ -10,7 +10,8 @@ import 'manage_admins_screen.dart';
 import 'admin_geofence_screen.dart';
 import '../utils/export_util_stub.dart'
     if (dart.library.io) '../utils/export_util_io.dart'
-    if (dart.library.html) '../utils/export_util_web.dart' as export_util;
+    if (dart.library.html) '../utils/export_util_web.dart'
+    as export_util;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/settings_service.dart';
 import 'package:field_check/config/api_config.dart';
@@ -77,8 +78,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               prefs.setBool('allowOfflineMode', _allowOfflineMode);
             }
             if (data.containsKey('requireBeaconVerification')) {
-              _requireBeaconVerification = data['requireBeaconVerification'] == true;
-              prefs.setBool('requireBeaconVerification', _requireBeaconVerification);
+              _requireBeaconVerification =
+                  data['requireBeaconVerification'] == true;
+              prefs.setBool(
+                'requireBeaconVerification',
+                _requireBeaconVerification,
+              );
             }
             if (data.containsKey('enableLocationTracking')) {
               _enableLocationTracking = data['enableLocationTracking'] == true;
@@ -98,10 +103,19 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       _socket.onDisconnect((_) {
         debugPrint('Settings socket disconnected');
       });
-      _socket.on('reconnect_attempt', (_) => debugPrint('Settings socket reconnect attempt'));
+      _socket.on(
+        'reconnect_attempt',
+        (_) => debugPrint('Settings socket reconnect attempt'),
+      );
       _socket.on('reconnect', (_) => debugPrint('Settings socket reconnected'));
-      _socket.on('reconnect_error', (err) => debugPrint('Settings socket reconnect error: $err'));
-      _socket.on('reconnect_failed', (_) => debugPrint('Settings socket reconnect failed'));
+      _socket.on(
+        'reconnect_error',
+        (err) => debugPrint('Settings socket reconnect error: $err'),
+      );
+      _socket.on(
+        'reconnect_failed',
+        (_) => debugPrint('Settings socket reconnect failed'),
+      );
     });
   }
 
@@ -117,14 +131,21 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       if (settings.isNotEmpty) {
         setState(() {
           _allowOfflineMode = settings['allowOfflineMode'] ?? _allowOfflineMode;
-          _requireBeaconVerification = settings['requireBeaconVerification'] ?? _requireBeaconVerification;
-          _enableLocationTracking = settings['enableLocationTracking'] ?? _enableLocationTracking;
-          _geofenceRadius = (settings['geofenceRadius'] as num?)?.toInt() ?? _geofenceRadius;
+          _requireBeaconVerification =
+              settings['requireBeaconVerification'] ??
+              _requireBeaconVerification;
+          _enableLocationTracking =
+              settings['enableLocationTracking'] ?? _enableLocationTracking;
+          _geofenceRadius =
+              (settings['geofenceRadius'] as num?)?.toInt() ?? _geofenceRadius;
           _syncFrequency = settings['syncFrequency'] ?? _syncFrequency;
         });
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('allowOfflineMode', _allowOfflineMode);
-        await prefs.setBool('requireBeaconVerification', _requireBeaconVerification);
+        await prefs.setBool(
+          'requireBeaconVerification',
+          _requireBeaconVerification,
+        );
         await prefs.setBool('enableLocationTracking', _enableLocationTracking);
         await prefs.setInt('geofenceRadius', _geofenceRadius);
         await prefs.setString('syncFrequency', _syncFrequency);
@@ -132,9 +153,14 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         // Fallback to local if backend not available
         final prefs = await SharedPreferences.getInstance();
         setState(() {
-          _allowOfflineMode = prefs.getBool('allowOfflineMode') ?? _allowOfflineMode;
-          _requireBeaconVerification = prefs.getBool('requireBeaconVerification') ?? _requireBeaconVerification;
-          _enableLocationTracking = prefs.getBool('enableLocationTracking') ?? _enableLocationTracking;
+          _allowOfflineMode =
+              prefs.getBool('allowOfflineMode') ?? _allowOfflineMode;
+          _requireBeaconVerification =
+              prefs.getBool('requireBeaconVerification') ??
+              _requireBeaconVerification;
+          _enableLocationTracking =
+              prefs.getBool('enableLocationTracking') ??
+              _enableLocationTracking;
           _geofenceRadius = prefs.getInt('geofenceRadius') ?? _geofenceRadius;
           _syncFrequency = prefs.getString('syncFrequency') ?? _syncFrequency;
         });
@@ -142,9 +168,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
       setState(() {
-        _allowOfflineMode = prefs.getBool('allowOfflineMode') ?? _allowOfflineMode;
-        _requireBeaconVerification = prefs.getBool('requireBeaconVerification') ?? _requireBeaconVerification;
-        _enableLocationTracking = prefs.getBool('enableLocationTracking') ?? _enableLocationTracking;
+        _allowOfflineMode =
+            prefs.getBool('allowOfflineMode') ?? _allowOfflineMode;
+        _requireBeaconVerification =
+            prefs.getBool('requireBeaconVerification') ??
+            _requireBeaconVerification;
+        _enableLocationTracking =
+            prefs.getBool('enableLocationTracking') ?? _enableLocationTracking;
         _geofenceRadius = prefs.getInt('geofenceRadius') ?? _geofenceRadius;
         _syncFrequency = prefs.getString('syncFrequency') ?? _syncFrequency;
       });
@@ -154,7 +184,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('allowOfflineMode', _allowOfflineMode);
-    await prefs.setBool('requireBeaconVerification', _requireBeaconVerification);
+    await prefs.setBool(
+      'requireBeaconVerification',
+      _requireBeaconVerification,
+    );
     await prefs.setBool('enableLocationTracking', _enableLocationTracking);
     await prefs.setInt('geofenceRadius', _geofenceRadius);
     await prefs.setString('syncFrequency', _syncFrequency);
@@ -174,9 +207,9 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save settings: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save settings: $e')));
     }
   }
 
@@ -185,17 +218,19 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     return Scaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24 + kBottomNavigationBarHeight),
+          padding: const EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            24 + kBottomNavigationBarHeight,
+          ),
           children: [
             const Text(
               'System Settings',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
-            
+
             // Geofence Settings
             _buildSectionHeader('Geofence Settings'),
             _buildSliderSetting(
@@ -219,16 +254,19 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AdminGeofenceScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const AdminGeofenceScreen(),
+                  ),
                 );
               },
             ),
-            
+
             // Verification Settings
             _buildSectionHeader('Verification Settings'),
             _buildSwitchSetting(
               title: 'Allow Offline Mode',
-              subtitle: 'Employees can check in/out without internet connection',
+              subtitle:
+                  'Employees can check in/out without internet connection',
               value: _allowOfflineMode,
               onChanged: (value) {
                 setState(() {
@@ -242,7 +280,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             ),
             _buildSwitchSetting(
               title: 'Require Beacon Verification',
-              subtitle: 'Use Bluetooth beacons for additional location verification',
+              subtitle:
+                  'Use Bluetooth beacons for additional location verification',
               value: _requireBeaconVerification,
               onChanged: (value) {
                 setState(() {
@@ -260,7 +299,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                 });
               },
             ),
-            
+
             // Synchronization Settings
             _buildSectionHeader('Synchronization Settings'),
             _buildDropdownSetting(
@@ -271,7 +310,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                 'Every 15 minutes',
                 'Every 30 minutes',
                 'Every hour',
-                'Manual only'
+                'Manual only',
               ],
               onChanged: (value) {
                 setState(() {
@@ -279,7 +318,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                 });
               },
             ),
-            
+
             // User Management
             _buildSectionHeader('User Management'),
             ListTile(
@@ -290,13 +329,17 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ManageEmployeesScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const ManageEmployeesScreen(),
+                  ),
                 );
               },
             ),
             ListTile(
               title: const Text('Manage Administrators'),
-              subtitle: const Text('Add, edit, or remove administrator accounts'),
+              subtitle: const Text(
+                'Add, edit, or remove administrator accounts',
+              ),
               leading: const Icon(Icons.admin_panel_settings),
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
               onTap: () {
@@ -315,12 +358,14 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             ),
             ListTile(
               title: const Text('Delete Account'),
-              subtitle: const Text('Permanently remove a user account and all associated data'),
+              subtitle: const Text(
+                'Permanently remove a user account and all associated data',
+              ),
               leading: const Icon(Icons.delete_forever),
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
               onTap: () => _openRoleChooserAndNavigate('delete'),
             ),
-            
+
             // System Settings
             _buildSectionHeader('System'),
             ListTile(
@@ -337,7 +382,14 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
               onTap: _importUsersJsonPicker,
             ),
-            
+            ListTile(
+              title: const Text('Export to Excel'),
+              subtitle: const Text('Export users to Excel file'),
+              leading: const Icon(Icons.table_chart),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: _exportUsersExcel,
+            ),
+
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _saveSettings,
@@ -418,7 +470,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   onChanged: onChanged,
                 ),
               ),
-              Text('$value $unit', style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                '$value $unit',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(width: 16),
             ],
           ),
@@ -437,10 +492,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Expanded(
-            flex: 2,
-            child: Text(title),
-          ),
+          Expanded(flex: 2, child: Text(title)),
           Expanded(
             flex: 3,
             child: Container(
@@ -477,15 +529,19 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(kIsWeb
-            ? 'Backup exported: users-backup.json'
-            : 'Backup saved as users-backup.json')),
+        const SnackBar(
+          content: Text(
+            kIsWeb
+                ? 'Backup exported: users-backup.json'
+                : 'Backup saved as users-backup.json',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Backup failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Backup failed: $e')));
     }
   }
 
@@ -502,7 +558,9 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       if (bytes == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No file data captured. Please try again.')),
+          const SnackBar(
+            content: Text('No file data captured. Please try again.'),
+          ),
         );
         return;
       }
@@ -512,58 +570,98 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       final imported = res['imported'] ?? 0;
       final updated = res['updated'] ?? 0;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Import complete: $imported new, $updated updated')),
+        SnackBar(
+          content: Text('Import complete: $imported new, $updated updated'),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
+    }
+  }
+
+  Future<void> _exportUsersExcel() async {
+    try {
+      final users = await _userService.fetchUsers();
+
+      // Create CSV format (Excel compatible)
+      final csvBuffer = StringBuffer();
+      csvBuffer.writeln('ID,Name,Email,Role,Status');
+
+      for (final user in users) {
+        final status = user.isActive ? 'Active' : 'Inactive';
+        csvBuffer.writeln(
+          '${user.id},${user.name},${user.email},${user.role},$status',
+        );
+      }
+
+      final csvContent = csvBuffer.toString();
+
+      // Save as CSV (Excel compatible)
+      await export_util.saveUsersJson(csvContent);
+
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Import failed: $e')),
+        const SnackBar(
+          content: Text(
+            kIsWeb
+                ? 'Excel export completed: users-export.csv'
+                : 'Excel export saved as users-export.csv',
+          ),
+        ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Excel export failed: $e')));
     }
   }
 
   void _openRoleChooserAndNavigate(String action) {
     showModalBottomSheet(
       context: context,
-    builder: (context) {
-      return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.people),
-              title: const Text('Employees'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ManageEmployeesScreen(
-                      showInactiveOnly: action == 'reactivate',
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.people),
+                title: const Text('Employees'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ManageEmployeesScreen(
+                        showInactiveOnly: action == 'reactivate',
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.admin_panel_settings),
-              title: const Text('Administrators'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ManageAdminsScreen(
-                      showInactiveOnly: action == 'reactivate',
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.admin_panel_settings),
+                title: const Text('Administrators'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ManageAdminsScreen(
+                        showInactiveOnly: action == 'reactivate',
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }

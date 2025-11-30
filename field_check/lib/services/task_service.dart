@@ -17,10 +17,9 @@ class TaskService {
   }
 
   Future<List<Task>> fetchAllTasks() async {
-    final response = await http.get(
-      Uri.parse(_baseUrl),
-      headers: await _headers(jsonContent: false),
-    );
+    final response = await http
+        .get(Uri.parse(_baseUrl), headers: await _headers(jsonContent: false))
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);
@@ -81,6 +80,38 @@ class TaskService {
     }
   }
 
+  Future<void> assignTaskToMultiple(
+    String taskId,
+    List<String> employeeIds,
+  ) async {
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/$taskId/assign-multiple'),
+          headers: await _headers(),
+          body: json.encode({'userIds': employeeIds}),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (!(response.statusCode == 201 || response.statusCode == 200)) {
+      final errorMsg = response.body.isNotEmpty
+          ? response.body
+          : 'Failed to assign task to multiple employees';
+      throw Exception(errorMsg);
+    }
+  }
+
+  Future<void> completeTask(String taskId, String userId) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/$taskId/complete'),
+      headers: await _headers(),
+      body: json.encode({'userId': userId}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark task as completed');
+    }
+  }
+
   Future<UserTask> assignTaskToUser(String taskId, String userModelId) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/$taskId/assign/$userModelId'),
@@ -120,10 +151,12 @@ class TaskService {
   }
 
   Future<List<Task>> fetchAssignedTasks(String userModelId) async {
-    final response = await http.get(
-      Uri.parse('$_baseUrl/assigned/$userModelId'),
-      headers: await _headers(jsonContent: false),
-    );
+    final response = await http
+        .get(
+          Uri.parse('$_baseUrl/assigned/$userModelId'),
+          headers: await _headers(jsonContent: false),
+        )
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);

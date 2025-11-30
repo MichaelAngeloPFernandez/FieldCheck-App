@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/models/task_model.dart';
+import 'package:geocoding/geocoding.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -40,6 +41,11 @@ class _MapScreenState extends State<MapScreen> {
   String _taskFilter = 'all';
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _locationSearchController =
+      TextEditingController();
+  bool _isSearchingLocation = false;
+  List<Location> _locationSearchResults = [];
+  late MapController _mapController;
 
   // Real-time location streaming
   late StreamSubscription<dynamic>? _locationSubscription;
@@ -49,6 +55,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _mapController = MapController();
     _loadData();
     _startRealTimeLocationTracking();
   }
@@ -58,8 +65,80 @@ class _MapScreenState extends State<MapScreen> {
     try {
       _locationSubscription?.cancel();
     } catch (_) {}
+    _searchDebounce?.cancel();
     _searchController.dispose();
+    _locationSearchController.dispose();
     super.dispose();
+  }
+
+  Timer? _searchDebounce;
+
+  Future<void> _searchLocation(String query) async {
+    // Cancel previous search if any
+    _searchDebounce?.cancel();
+
+    if (query.isEmpty) {
+      setState(() {
+        _locationSearchResults = [];
+        _isSearchingLocation = false;
+      });
+      return;
+    }
+
+    // Debounce search by 500ms
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
+      setState(() {
+        _isSearchingLocation = true;
+      });
+
+      try {
+        final locations = await locationFromAddress(query);
+        if (mounted) {
+          setState(() {
+            _locationSearchResults = locations;
+          });
+        }
+      } catch (e) {
+        if (kDebugMode) print('Error searching location: $e');
+        if (mounted) {
+          setState(() {
+            _locationSearchResults = [];
+          });
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isSearchingLocation = false;
+          });
+        }
+      }
+    });
+  }
+
+  void _onLocationSelected(Location location) {
+    final latLng = LatLng(location.latitude, location.longitude);
+
+    // Animate to the location with smooth transition
+    _mapController.move(latLng, 17);
+
+    setState(() {
+      _locationSearchResults = [];
+      _locationSearchController.clear();
+      // Update user location to show the searched location
+      _userLatLng = latLng;
+    });
+
+    // Show a snackbar confirming the location
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Location: ${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   /// Start real-time location tracking stream
@@ -309,6 +388,7 @@ class _MapScreenState extends State<MapScreen> {
               children: [
                 Positioned.fill(
                   child: FlutterMap(
+                    mapController: _mapController,
                     options: MapOptions(
                       initialCenter: defaultCenter,
                       initialZoom: 15,
@@ -321,20 +401,32 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                       if (!_showTasks && _geofences.isNotEmpty)
                         CircleLayer(
-                          circles: _geofences.map((g) {
-                            final center = LatLng(g.latitude, g.longitude);
-                            final color = g.isActive
-                                ? Colors.green
-                                : Colors.grey;
-                            return CircleMarker(
-                              point: center,
-                              color: color.withValues(alpha: 0.2),
-                              borderColor: color,
-                              borderStrokeWidth: 2,
-                              useRadiusInMeter: true,
-                              radius: g.radius,
-                            );
-                          }).toList(),
+                          circles: _geofences
+                              .where(
+                                (g) =>
+                                    _searchQuery.isEmpty ||
+                                    g.name.toLowerCase().contains(
+                                      _searchQuery,
+                                    ) ||
+                                    g.address.toLowerCase().contains(
+                                      _searchQuery,
+                                    ),
+                              )
+                              .map((g) {
+                                final center = LatLng(g.latitude, g.longitude);
+                                final color = g.isActive
+                                    ? Colors.green
+                                    : Colors.grey;
+                                return CircleMarker(
+                                  point: center,
+                                  color: color.withValues(alpha: 0.2),
+                                  borderColor: color,
+                                  borderStrokeWidth: 2,
+                                  useRadiusInMeter: true,
+                                  radius: g.radius,
+                                );
+                              })
+                              .toList(),
                         ),
                       if (_showTasks && _visibleTasks.isNotEmpty)
                         MarkerLayer(
@@ -422,6 +514,156 @@ class _MapScreenState extends State<MapScreen> {
                               ),
                             ),
                           ],
+                        ),
+                    ],
+                  ),
+                ),
+                // Search location bar with autocomplete
+                Positioned(
+                  top: 12,
+                  left: 16,
+                  right: 16,
+                  child: Column(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _locationSearchController,
+                                decoration: InputDecoration(
+                                  hintText: 'Search location...',
+                                  prefixIcon: const Icon(
+                                    Icons.location_on,
+                                    size: 20,
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                  isDense: true,
+                                ),
+                                style: const TextStyle(fontSize: 14),
+                                onChanged: _searchLocation,
+                              ),
+                            ),
+                            if (_locationSearchController.text.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  _locationSearchController.clear();
+                                  setState(() {
+                                    _locationSearchResults = [];
+                                  });
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (_isSearchingLocation)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.1),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: const SizedBox(
+                            height: 30,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      if (_locationSearchResults.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          constraints: const BoxConstraints(maxHeight: 300),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.15),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: _locationSearchResults.length > 5
+                                ? 5
+                                : _locationSearchResults.length,
+                            separatorBuilder: (context, index) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final location = _locationSearchResults[index];
+                              return Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () => _onLocationSelected(location),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 12,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.location_on,
+                                          size: 20,
+                                          color: Colors.blue,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}',
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Tap to navigate',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                     ],
                   ),
@@ -631,7 +873,9 @@ class _MapScreenState extends State<MapScreen> {
                         TextField(
                           controller: _searchController,
                           decoration: InputDecoration(
-                            hintText: _showTasks ? 'Search tasks...' : 'Search geofences...',
+                            hintText: _showTasks
+                                ? 'Search tasks...'
+                                : 'Search geofences...',
                             prefixIcon: const Icon(Icons.search),
                             suffixIcon: _searchQuery.isNotEmpty
                                 ? IconButton(
@@ -647,7 +891,9 @@ class _MapScreenState extends State<MapScreen> {
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                            ),
                           ),
                           onChanged: (value) {
                             setState(() {
@@ -727,7 +973,11 @@ class _MapScreenState extends State<MapScreen> {
                         if (_showTasks) const SizedBox(height: 8),
                         if (!_showTasks)
                           ..._geofences
-                              .where((g) => _searchQuery.isEmpty || g.name.toLowerCase().contains(_searchQuery))
+                              .where(
+                                (g) =>
+                                    _searchQuery.isEmpty ||
+                                    g.name.toLowerCase().contains(_searchQuery),
+                              )
                               .take(10)
                               .map(
                                 (g) => ListTile(
@@ -739,7 +989,7 @@ class _MapScreenState extends State<MapScreen> {
                                   ),
                                   title: Text(g.name),
                                   subtitle: Text(
-                                    '${g.radius.toStringAsFixed(0)}m • ${g.type ?? 'TEAM'}${g.labelLetter != null ? ' • ${g.labelLetter}' : ''}',
+                                    '${g.radius.toStringAsFixed(0)}m${g.labelLetter != null ? ' • ${g.labelLetter}' : ''}',
                                   ),
                                   trailing: _userLatLng != null
                                       ? Text(
@@ -750,8 +1000,19 @@ class _MapScreenState extends State<MapScreen> {
                               ),
                         if (_showTasks)
                           ..._visibleTasks
-                              .where((t) => (_taskFilter == 'all' ? true : t.status == _taskFilter) &&
-                                  (_searchQuery.isEmpty || t.title.toLowerCase().contains(_searchQuery) || t.description.toLowerCase().contains(_searchQuery)))
+                              .where(
+                                (t) =>
+                                    (_taskFilter == 'all'
+                                        ? true
+                                        : t.status == _taskFilter) &&
+                                    (_searchQuery.isEmpty ||
+                                        t.title.toLowerCase().contains(
+                                          _searchQuery,
+                                        ) ||
+                                        t.description.toLowerCase().contains(
+                                          _searchQuery,
+                                        )),
+                              )
                               .take(10)
                               .map(
                                 (t) => ListTile(

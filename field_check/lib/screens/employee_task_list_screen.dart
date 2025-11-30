@@ -36,42 +36,32 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
 
   Future<void> _initRealtimeService() async {
     await _realtimeService.initialize();
-    
+
     _realtimeService.taskStream.listen((event) {
       if (mounted) {
         setState(() {
-          _assignedTasksFuture = TaskService().fetchAssignedTasks(widget.userModelId);
+          _assignedTasksFuture = TaskService().fetchAssignedTasks(
+            widget.userModelId,
+          );
         });
       }
     });
-  }
-
-  Future<void> _updateTaskStatus(String userTaskId, String status) async {
-    try {
-      await TaskService().updateUserTaskStatus(userTaskId, status);
-      setState(() {
-        _assignedTasksFuture = TaskService().fetchAssignedTasks(widget.userModelId);
-      });
-    } catch (e) {
-      // Handle error, e.g., show a SnackBar
-      debugPrint('Error updating task status: $e');
-    }
   }
 
   Future<void> _completeTaskWithReport(Task task) async {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => TaskReportScreen(
-          task: task,
-          employeeId: widget.userModelId,
-        ),
+        builder: (context) =>
+            TaskReportScreen(task: task, employeeId: widget.userModelId),
       ),
     );
 
     if (result == true && mounted) {
       setState(() {
-        _assignedTasksFuture = TaskService().fetchAssignedTasks(widget.userModelId);
+        _assignedTasksFuture = TaskService().fetchAssignedTasks(
+          widget.userModelId,
+        );
       });
     }
   }
@@ -108,6 +98,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
               itemCount: snapshot.data!.length,
               itemBuilder: (context, index) {
                 final task = snapshot.data![index];
+                final isCompleted = task.status == 'completed';
                 return Card(
                   margin: const EdgeInsets.all(8.0),
                   child: Padding(
@@ -115,38 +106,83 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          task.title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: isCompleted,
+                              onChanged: isCompleted
+                                  ? null
+                                  : (value) async {
+                                      if (value == true) {
+                                        await _completeTaskWithReport(task);
+                                      }
+                                    },
+                            ),
+                            Expanded(
+                              child: Text(
+                                task.title,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  decoration: isCompleted
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
                         Text(task.description),
                         const SizedBox(height: 8),
-                        Text('Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}'),
-                        const SizedBox(height: 8),
-                        Text('Status: ${task.status}'),
+                        Text(
+                          'Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}',
+                        ),
                         const SizedBox(height: 8),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            ElevatedButton(
-                              onPressed: task.status == 'pending'
-                                  ? () => _updateTaskStatus(task.userTaskId!, 'in_progress')
-                                  : null,
-                              child: const Text('Start Task'),
+                            Text(
+                              'Status: ',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                            const SizedBox(width: 8),
-                            ElevatedButton(
-                              onPressed: task.status == 'in_progress'
-                                  ? () => _completeTaskWithReport(task)
-                                  : null,
-                              child: const Text('Complete Task'),
+                            Chip(
+                              label: Text(task.status),
+                              backgroundColor: task.status == 'completed'
+                                  ? Colors.green[100]
+                                  : (task.status == 'in_progress'
+                                        ? Colors.orange[100]
+                                        : Colors.blue[100]),
+                              labelStyle: TextStyle(
+                                color: task.status == 'completed'
+                                    ? Colors.green[900]
+                                    : (task.status == 'in_progress'
+                                          ? Colors.orange[900]
+                                          : Colors.blue[900]),
+                              ),
                             ),
                           ],
                         ),
+                        if (task.assignedToMultiple.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Assigned to:',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          Wrap(
+                            spacing: 4,
+                            children: task.assignedToMultiple
+                                .map(
+                                  (user) => Chip(
+                                    label: Text(user.name),
+                                    padding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ],
                       ],
                     ),
                   ),

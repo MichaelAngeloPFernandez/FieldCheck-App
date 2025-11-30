@@ -1,7 +1,9 @@
-// ignore_for_file: avoid_print
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/http_util.dart';
+
+// ignore: avoid_print
 
 class SettingsService {
   static const String _settingsPath = '/api/settings';
@@ -35,7 +37,11 @@ class SettingsService {
   Future<void> updateSettings(Map<String, dynamic> settings) async {
     try {
       final headers = await _buildHeaders();
-      final response = await HttpUtil().put(_settingsPath, headers: headers, body: settings);
+      final response = await HttpUtil().put(
+        _settingsPath,
+        headers: headers,
+        body: settings,
+      );
       if (response.statusCode != 200) {
         throw Exception('Failed to update settings');
       }
@@ -49,7 +55,10 @@ class SettingsService {
   Future<dynamic> getSetting(String key) async {
     try {
       final headers = await _buildHeaders();
-      final response = await HttpUtil().get('$_settingsPath/$key', headers: headers);
+      final response = await HttpUtil().get(
+        '$_settingsPath/$key',
+        headers: headers,
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data['value'];
@@ -66,7 +75,11 @@ class SettingsService {
   Future<void> updateSetting(String key, dynamic value) async {
     try {
       final headers = await _buildHeaders();
-      final response = await HttpUtil().put('$_settingsPath/$key', headers: headers, body: {'value': value});
+      final response = await HttpUtil().put(
+        '$_settingsPath/$key',
+        headers: headers,
+        body: {'value': value},
+      );
       if (response.statusCode != 200) {
         throw Exception('Failed to update setting');
       }
@@ -83,8 +96,10 @@ class SettingsService {
       final settings = {
         'geofenceRadius': prefs.getInt('geofenceRadius')?.toDouble() ?? 100.0,
         'allowOfflineMode': prefs.getBool('allowOfflineMode') ?? true,
-        'requireBeaconVerification': prefs.getBool('requireBeaconVerification') ?? false,
-        'enableLocationTracking': prefs.getBool('enableLocationTracking') ?? true,
+        'requireBeaconVerification':
+            prefs.getBool('requireBeaconVerification') ?? false,
+        'enableLocationTracking':
+            prefs.getBool('enableLocationTracking') ?? true,
         'syncFrequency': prefs.getString('syncFrequency') ?? 'Every 15 minutes',
       };
       await updateSettings(settings);
@@ -98,18 +113,27 @@ class SettingsService {
     try {
       final settings = await fetchSettings();
       final prefs = await SharedPreferences.getInstance();
-      
+
       if (settings.containsKey('geofenceRadius')) {
-        await prefs.setInt('geofenceRadius', (settings['geofenceRadius'] as num).toInt());
+        await prefs.setInt(
+          'geofenceRadius',
+          (settings['geofenceRadius'] as num).toInt(),
+        );
       }
       if (settings.containsKey('allowOfflineMode')) {
         await prefs.setBool('allowOfflineMode', settings['allowOfflineMode']);
       }
       if (settings.containsKey('requireBeaconVerification')) {
-        await prefs.setBool('requireBeaconVerification', settings['requireBeaconVerification']);
+        await prefs.setBool(
+          'requireBeaconVerification',
+          settings['requireBeaconVerification'],
+        );
       }
       if (settings.containsKey('enableLocationTracking')) {
-        await prefs.setBool('enableLocationTracking', settings['enableLocationTracking']);
+        await prefs.setBool(
+          'enableLocationTracking',
+          settings['enableLocationTracking'],
+        );
       }
       if (settings.containsKey('syncFrequency')) {
         await prefs.setString('syncFrequency', settings['syncFrequency']);

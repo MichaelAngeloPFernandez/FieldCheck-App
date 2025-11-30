@@ -1,0 +1,1092 @@
+================================================================================
+FieldCheck: Mobile Geofenced Attendance Verification App for Field-Based Workers
+================================================================================
+
+An Undergraduate Capstone Project presented to the Faculty of New Era University,
+College of Informatics and Computing Studies, Department of Information Technology,
+New Era, Quezon City
+
+In Partial Fulfillment of the Requirements for the Degree Bachelor of Science in
+Information Technology
+
+Fernandez, Michael Angelo
+Perfecto, Mark Karevin D.
+Songco, Carl
+Maquiling, Patrick
+
+February 2025
+
+================================================================================
+CHAPTER 1: THE PROBLEM AND ITS BACKGROUND
+================================================================================
+
+1.1 Introduction
+
+In today's world, many organizations operate with employees scattered across
+different locations. Whether it's maintenance crews, delivery services, construction
+teams, or field inspectors, managing attendance for these workers has always been
+a challenge. Traditionally, companies relied on paper-based logs or simple check-in
+systems that could easily be manipulated. An employee might claim to be at a job
+site when they're actually somewhere else, or someone could check in on behalf of
+another worker. These problems have plagued organizations for years, leading to
+inaccurate records and wasted resources.
+
+In recent years, digital solutions have started to emerge. However, many of these
+systems come with significant drawbacks. They often depend on expensive third-party
+services, require ongoing subscription fees, or store company data on external cloud
+servers. This creates two major concerns: the cost of maintaining these systems and
+the risk of sensitive employee location data being stored on servers outside the
+organization's control.
+
+FieldCheck was created to address these issues directly. It's a mobile application
+that uses GPS technology and geofencing to ensure employees can only record their
+attendance when they're physically present at authorized work locations. The system
+doesn't rely on expensive external services. Instead, it can be hosted locally or on
+a private server that the organization controls. This approach significantly reduces
+costs while giving companies complete control over their data and privacy.
+
+The system combines two main components: a mobile app for employees and a backend
+server for data processing and storage. Together, they create a comprehensive solution
+for tracking field-based workers accurately and securely.
+
+1.2 Field Area of Project or Study
+
+This project draws from several important areas of technology and business:
+
+- GPS and Geofencing Systems – Using location data to control and verify access
+- Workforce Attendance Monitoring – Tools and methods for tracking employee presence
+- Location-Based Services – Software that uses geographic positioning for various purposes
+- Self-Hosted Mobile Systems – Applications deployed on local infrastructure rather than public clouds
+- Mobile Application Development – Building apps using the Flutter framework
+- Real-Time Communication Systems – Technologies that enable instant data updates across systems
+
+1.3 Problems of the Study
+
+1.3.1 General Problem
+
+Organizations with mobile or field-based workers face a significant challenge: how do
+you verify that employees are actually where they say they are? Without proper
+verification, it's easy for workers to falsify their location, leading to inaccurate
+attendance records and wasted company resources.
+
+1.3.2 Specific Problems
+
+1. Fraudulent Attendance Records – Workers can easily claim to be at a job site when
+   they're actually elsewhere, making it impossible to trust attendance data
+
+2. Expensive Third-Party Services – Most modern attendance systems require subscriptions
+   or API fees, which add up quickly for organizations with many employees
+
+3. Data Privacy Concerns – When companies use cloud-based systems, their sensitive
+   employee location data is stored on external servers, raising privacy and security
+   questions
+
+4. Poor Performance in Remote Areas – Many systems fail when internet connectivity is
+   weak or unavailable, which is exactly when field workers need the system most
+
+5. Disconnected Systems – Attendance tracking and task management often operate
+   separately, creating confusion and inefficiency in daily operations
+
+6. Difficult Reporting – Generating reports and exporting data is often a manual,
+   time-consuming process that slows down decision-making
+
+1.4 Objectives of the Study
+
+1.4.1 General Objective
+
+The main goal of this project is to create a mobile application that tracks employee
+attendance accurately and in real-time using GPS and geofencing technology. The system
+should work without relying on expensive third-party services, allowing organizations
+to maintain complete control over their data while reducing operational costs.
+
+1.4.2 Specific Objectives
+
+1. Design a geofencing system using Flutter Map and GPS that prevents employees from
+   checking in unless they're physically at an authorized job location
+
+2. Create a task management feature that lets administrators assign specific tasks to
+   employees and track whether those tasks are completed
+
+3. Implement an offline mode that saves attendance data locally when there's no internet
+   connection, then automatically uploads it when connectivity returns
+
+4. Build a real-time admin interface within the mobile app that shows live updates of
+   employee locations and attendance status without requiring page refreshes
+
+5. Reduce costs by using free mapping tools (OpenStreetMap) instead of expensive
+   commercial mapping APIs
+
+6. Add the ability to export attendance and task data as PDF and Excel files for
+   reporting and payroll purposes
+
+7. Support both circular and polygon-shaped geofences to accommodate different types
+   of job site boundaries
+
+1.5 Scope and Limitations
+
+1.5.1 Scope
+
+The system consists of a single integrated mobile application:
+
+FieldCheck Mobile App (Flutter): Available for Android and iOS with role-based interfaces:
+
+Employee Interface: Features include secure login (JWT), GPS-based check-in/out, task
+viewing, offline data caching, and PDF/Excel report generation.
+
+Admin Interface: Allows creation of circular and polygon geofences, employee profile
+management, task assignment, attendance reporting with export functionality, and
+real-time monitoring—all accessible from the mobile app.
+
+Backend Server: A Node.js and Express server handles all the business logic and data
+processing.
+
+The project focuses primarily on GPS-based geofencing. While Bluetooth beacons could
+be added in the future for better accuracy in indoor environments, they're not part
+of the initial release. The offline functionality is a key feature, allowing the app
+to work even when internet connectivity is temporarily lost.
+
+1.5.2 Limitations
+
+Like any project, this system has some constraints:
+
+- GPS Accuracy: The system's accuracy depends on the phone's hardware and environmental
+  conditions. Tall buildings or dense forests can interfere with GPS signals
+
+- Initial Login Required: While the app works offline, users need an internet connection
+  to log in initially and download their assigned job sites
+
+- Battery Usage: Constantly using GPS drains phone batteries faster than normal apps.
+  Users should be aware of this when using the system during long shifts
+
+- Bluetooth Beacons: Adding Bluetooth beacons for better accuracy would require
+  additional hardware investment, so this isn't included in the first version
+
+- Complex Calculations: Polygon geofences require more complex calculations, which
+  might slow down older phones
+
+1.6 Significance of the Study
+
+This project benefits several groups:
+
+Company Management: The system provides a reliable way to verify that employees are
+actually at their assigned locations. This prevents fraud and makes payroll processing
+easier through automated reporting and data export features.
+
+Field Employees: Workers get a simple, straightforward way to record their work hours.
+The offline functionality means they don't have to worry about losing data if they
+temporarily lose internet connection. They also have a clear digital record of their
+work hours and completed tasks.
+
+The IT Field: This project demonstrates that organizations don't need to pay for
+expensive mapping APIs. Open-source solutions like Flutter Map and OpenStreetMap can
+provide the same functionality at no cost, making advanced location-based systems
+accessible to smaller organizations.
+
+By hosting the system locally, organizations maintain complete control over their data,
+reduce ongoing costs, and can customize the system to fit their specific needs.
+
+1.7 Definition of Terms
+
+Geofencing: An imaginary boundary drawn around a physical location using GPS coordinates.
+When a mobile device enters this boundary, the system can trigger specific actions, like
+allowing an attendance check-in.
+
+JWT (JSON Web Token): A secure way to verify that a user is who they claim to be. It's
+like a digital ID card that proves a user is authenticated without storing passwords.
+
+MongoDB: A database system that stores information in a flexible, document-based format,
+similar to how information might be organized in JSON files.
+
+Socket.io: A technology that allows real-time communication between a server and mobile
+or web clients, enabling instant updates without requiring users to refresh their screens.
+
+Offline Synchronization: The process of saving data locally on a device when internet
+is unavailable, then automatically uploading that data to the central server once
+connectivity returns.
+
+Flutter: An open-source framework created by Google for building mobile apps that work
+on both Android and iOS from a single codebase.
+
+Flutter Map: An open-source package for Flutter that provides interactive mapping
+capabilities using free OpenStreetMap data, eliminating the need for paid mapping APIs.
+
+RBAC (Role-Based Access Control): A security approach that determines what different
+types of users can do in the system. For example, administrators might have access to
+all features, while regular employees only see their own data.
+
+Haversine Formula: A mathematical formula used to calculate the distance between two
+points on Earth given their latitude and longitude coordinates. Used for circular
+geofence validation.
+
+Ray Casting Algorithm: A computational geometry technique used to determine if a point
+lies inside a polygon. Used for polygon geofence validation.
+
+================================================================================
+CHAPTER 2: REVIEW OF RELATED LITERATURE
+================================================================================
+
+2.1 Overview
+
+The way organizations track employee attendance has evolved significantly over the
+past few decades. What started as simple paper logs has gradually transformed into
+digital systems powered by mobile technology and location data. This evolution has
+been driven by the limitations of older methods—they're easy to fake, expensive to
+maintain, and don't work well in field environments.
+
+2.2 GPS and Geofencing Technology in Workforce Management
+
+Recent research shows that GPS and geofencing technology have become the standard
+approach for modern attendance systems. Researchers like Kurnia and colleagues (2025)
+developed mobile apps that verify workers are at specific locations before recording
+attendance. Similarly, Shinde's team (2022) created systems that use geofencing to
+improve accuracy in monitoring field workers. These solutions have proven effective
+at preventing fraudulent check-ins and reducing the need for expensive hardware-based
+biometric systems.
+
+Harshada and colleagues (2023) specifically examined GPS-based attendance systems using
+geofencing, demonstrating the technology's reliability in real-world conditions. Their
+work confirmed that geofencing provides a practical and cost-effective solution for
+organizations seeking to verify employee locations without expensive infrastructure.
+
+2.3 Attendance Verification with Biometric Integration
+
+Many researchers have gone further by combining geofencing with biometric technology.
+For example, Aigbokhan and colleagues (2024) created a system that uses both GPS and
+facial recognition to verify both location and identity. This two-layer approach is
+more secure because it prevents someone from checking in on behalf of another worker.
+Other researchers, like Pawar's team (2024), added real-time face detection to prevent
+spoofing attacks where someone uses a photo instead of appearing in person.
+
+Babatunde and colleagues (2022) developed a mobile-based student attendance system
+combining geofencing with timing and face recognition, demonstrating the effectiveness
+of multi-factor verification approaches. Fadillah and Jalil (2024) similarly designed
+an attendance application using face recognition and location-based services on Android,
+showing the versatility of combining multiple verification methods.
+
+2.4 Comprehensive Workforce Management Systems
+
+Beyond just attendance tracking, researchers have explored how geofencing can be part
+of a larger workforce management system. GeoWorkTrack (Tile et al., 2024) and similar
+systems extend geofencing to include employee tracking, task assignment, and productivity
+monitoring. This shows that geofencing isn't just useful for attendance—it can be part
+of a comprehensive management solution.
+
+Tamboli and colleagues (2024) examined attendance management systems using geofencing
+technology, while Fischer and colleagues (2024) designed a university smart attendance
+tracking system using geo-location and IoT. These studies demonstrate that geofencing
+can be applied across various organizational contexts.
+
+2.5 Diverse Applications and Use Cases
+
+The technology has been applied in many different settings. Universities use it to track
+student attendance (Mohammed, 2021; Eweoya et al., 2025), companies use it for employee
+monitoring, and some organizations even use it for child safety monitoring (Agajo et al.,
+2023). This wide range of applications demonstrates how versatile geofencing technology
+really is.
+
+Kumavat and colleagues (2023) developed a student attendance tracking system, while
+Barbaso and colleagues (2025) created AttendEase, an online-onsite router-based mobile
+application for tracking faculty and student attendance. Venkatesh and colleagues (2024)
+developed a geofenced intelligent attendance system featuring facial recognition.
+
+2.6 Technical Challenges and Solutions
+
+However, researchers have also identified challenges that need to be addressed. Battery
+drain and connectivity issues can limit GPS-based systems (Harshada et al., 2023).
+Rexline and Nazrin (2024) suggested using lighter-weight approaches to reduce power
+consumption, while Fatkharrofiqi's team (2020) showed how to optimize location-based
+services for Android to minimize system overhead.
+
+Kumawat (2021) addressed the challenge of attendance management by combining fingerprint
+and voice recognition with geofence technology. Thiagarajan and colleagues (2025)
+developed a smart attendance management system using NRF51822 BLE module and mobile
+application, showing alternative approaches to traditional GPS-based systems.
+
+2.7 Security and Fraud Prevention
+
+Security and fraud prevention are also major concerns in the literature. Olajide (2024)
+explored multiple ways to prevent fraud, including dynamic QR codes, geofencing, and
+device verification. Other researchers emphasize the importance of encryption, proper
+access controls, and secure system design to protect employee privacy while preventing
+fraud (Gupta, 2022; Afolab, 2021).
+
+Kundariya and colleagues (2024) examined geofencing and location-based attendance
+systems with emphasis on security. Khodaskar and colleagues (2023) developed a smart
+attendance capturing mobile app with security considerations.
+
+2.8 Industry Trends and Future Directions
+
+When researchers reviewed the overall state of attendance technology, they identified
+clear trends. Ali and colleagues (2022) found that geolocation, biometrics, and cloud
+integration are the leading approaches. Abdalkarim and Sakarya (2022) confirmed that
+the industry is moving away from hardware-based solutions toward mobile-first systems
+that are more flexible and easier to use.
+
+Seng Keau and colleagues (2021) developed Smart-Hadir, a mobile-based attendance
+management system, demonstrating the industry's shift toward mobile solutions.
+
+2.9 Synthesis and Justification
+
+Based on the review of related literature, FieldCheck addresses a well-established need
+in workforce management. The research community has clearly established that geofencing-
+based attendance systems are the way forward. The evidence shows they're more secure than
+traditional methods, they can be combined with other technologies like biometrics for
+extra security, and they work across many different industries and settings.
+
+FieldCheck specifically addresses the main challenges identified in the literature:
+
+1. Managing battery usage through optimized GPS sampling and background task scheduling
+2. Ensuring systems work in areas with poor connectivity through offline synchronization
+3. Protecting employee privacy through self-hosted architecture and local data storage
+4. Reducing costs by using open-source solutions instead of expensive commercial APIs
+5. Providing comprehensive workforce management beyond just attendance tracking
+
+The combination of proven geofencing technology with offline functionality, real-time
+updates, task management, and a self-hosted architecture that gives organizations
+complete control over their data makes FieldCheck a comprehensive solution that directly
+addresses the gaps identified in existing research.
+
+2.10 References
+
+1. Thiagarajan, G., Saran, M., Sneha, K., Janani, J. (2025, April 5). A Smart Attendance
+   Management System Using NRF51822 BLE Module and Mobile Application. ResearchGate.
+
+2. Kurnia, N., Hananto, A. L., Tukino, T., Hilabi, S. (2025, June 15). Development of
+   Geolocation-Based Employee Attendance Application on Android Mobile. ResearchGate.
+
+3. Aigbokhan, E., J.O, A., Lawal, O., Folasade, O. (2024, February 4). Mobile Attendance
+   System Using GPS and Facial Authentication. ResearchGate.
+
+4. Khodaskar, D., Dengre, A., Rathi, A., Rathi, K. (2023, April). A Smart Attendance
+   Capturing Mobile App. ResearchGate.
+
+5. Barbaso, L. V., Busico, E., Paras, A. E., Atay, C. M. (2025, May). AttendEase: An
+   Online-Onsite Router-Based Mobile Application for Tracking Faculty and Student
+   Attendance. ResearchGate.
+
+6. Venkatesh, B., Likith, K., Reddy, E., Sahithi, T. S. (2024, October). Geofenced
+   Intelligent Attendance System Featuring Facial Recognition. ResearchGate.
+
+7. Harshada, H. S., Kawade, P. B., Harshada, A. S., Gangurde, A. M., Khairnar, N.
+   (2023, May). GPS Based Attendance System Using Geofencing. IJSDR.
+
+8. Mane, S., Bharambe, A., Gawade, M., Gandhi, N., Bhanwase, S. (2024, November).
+   Geolocation-Based Employee Attendance and Tracking System. IRJMETS.
+
+9. Eweoya, I., Adeniyi, O. J., Awoniyi, A., Mgbeahuruike, E. (2025, March). Design and
+   Implementation of a University Attendance Management System Using Geo-Fencing.
+   ResearchGate.
+
+10. Mohammed, K. K. (2021, October). Student Campus Location Monitoring and GPS Checking
+    System. ResearchGate.
+
+11. Fadillah, A. R., & Jalil, A. (2024, November). Design Of An Attendance Application
+    System Using Face Recognition And Location Based On Android. ResearchGate.
+
+12. Babatunde, A., Oke, A., Babatunde, R. S., Ibitoye, O. (2022, March). Mobile Based
+    Student Attendance System Using Geo-Fencing With Timing And Face Recognition.
+    ResearchGate.
+
+13. Agajo, J., Omokaro, I., Braimoh, I., Onyebuchi, N. (2023, November). Development of
+    A Remote Monitoring System for Young School Pupils Using Geofencing Technique.
+    ResearchGate.
+
+14. Rexline, S., & Nazrin, S. S. (2024, May). GeoTagging based Attendance System using
+    Google Maps API. ResearchGate.
+
+15. Fatkharrofiqi, A., Kuswanto, H., Rahman, T., Sumarna, S. (2020, November). Employee
+    Attendance Application Using Location Based Service (LBS) Method Based on Android.
+    ResearchGate.
+
+16. Kumawat, D. (2021). Attendance Management System using Fingerprint and Voice
+    Recognition with Geofence. Academia.
+
+17. Tile, P., Prajapati, A., Patil, H., Sonawane, S. (2024). GeoWorkTrack: A Comprehensive
+    Real-Time GPS-Based Employee Monitoring and Attendance Management System. ISRDO.
+
+18. Tamboli, M., Katore, G., Patale, S., Philips, N. J. (2024, August 4). Attendance
+    Management System Using Geofencing Technology. IEEE Xplore.
+
+19. Fischer, G. A., Ojong, V., Inametic, E. (2024, January 5). Design and Implementation
+    of a University Smart Attendance Tracking System Using Geo-Location and IoT. Nigerian
+    Journal of Engineering Research UNICROSS.
+
+20. Ali, N. S., Alhilali, A. H., Rjeib, H. D., Al-Sadawi, B. (2022, January). Automated
+    Attendance Management Systems: Systematic Literature Review. ResearchGate.
+
+21. Seng Keau, C., Kim On, C., Hanafi, M., Hijazi, A. (2021, April 25). Smart-Hadir –
+    Mobile Based Attendance Management System. Semantic Scholar.
+
+22. Kumavat, D., Hyalij, B., Mariya, K. R., Kumavat, V. (2023, May). Student Attendance
+    Tracking System. ResearchGate.
+
+23. Afolab, A. S. (2021, October 1). Development of Mobile and Desktop Applications for
+    a Fingerprint-Based Attendance Management System. Academia.
+
+24. Kundariya, N., Muthal, G., Patil, P., Ingle, A., Muthal, G., Gaidhani, P. (2024,
+    November 5). Geofencing and Location based Attendance System. IJARSCT.
+
+25. Olajide, F. (2024, April). Fraud Mitigation in Attendance Monitoring Systems using
+    Dynamic QR Code, Geofencing and IMEI Technologies. Academia.
+
+26. Gupta, A. (2022, December). Attendance Monitoring System. Academia.
+
+27. Abdalkarim, B., & Sakarya, D. (2022, July). A Literature Review on Smart Attendance
+    Systems. ResearchGate.
+
+28. Pawar, A., Hiwanj, R., Koparde, P., Chikmurge, D., Barve, S. (2024, June 27).
+    Automated Employee Attendance Monitoring Using Liveness Face Recognition and
+    Geofencing in Real Time. IEEE Xplore.
+
+29. Shinde, R., Nilose, A., Chandankhede, A. (2022, June 15). Design and Development of
+    Geofencing Based Attendance System for Mobile Application. IEEE Xplore.
+
+================================================================================
+CHAPTER 3: TECHNICAL BACKGROUND
+================================================================================
+
+3.1 Project Design
+
+3.1.1 Research Design
+
+This project uses a Developmental Research Design combined with an Agile development
+methodology. Developmental Research Design means we're not just studying something that
+already exists—we're actually building and testing a new technology solution. This
+approach makes sense because our main goal is to create a working system and then
+evaluate how well it performs in real-world conditions.
+
+The Agile methodology guides how we build the system. Rather than planning everything
+upfront and building it all at once (Waterfall), we work in short cycles, building
+features incrementally, testing them, and improving based on feedback. This allows us
+to adapt quickly if we discover new requirements or challenges during development.
+
+3.1.2 Overview
+
+FieldCheck is built as a two-part system. The first part is a mobile app for employees,
+built using Flutter so it works on both Android and iOS phones. The second part is a
+backend server for data processing and storage.
+
+The mobile app lets employees check in and out at job sites using GPS verification.
+It also handles task management, stores data locally when there's no internet, and
+can generate reports.
+
+3.1.3 Core Design Principles
+
+We built FieldCheck around several key ideas:
+
+Accuracy – The system uses GPS to pinpoint employee locations. It can handle both
+simple circular boundaries and complex polygon-shaped boundaries. In the future,
+Bluetooth beacons could be added for even better accuracy indoors.
+
+Privacy and Control – The system doesn't rely on any external services. Everything
+is hosted locally or on a private server that the organization controls. This means
+the company owns all its data.
+
+Reliability – The system works even when the internet is down. Data is stored locally
+and automatically syncs when connectivity returns. The system is designed to handle
+errors gracefully.
+
+Cost Efficiency – We use free, open-source mapping tools instead of expensive
+commercial APIs. This dramatically reduces costs.
+
+Scalability – The system is built in a modular way, so it can handle more employees,
+more job sites, and more concurrent users as the organization grows.
+
+Usability – Both employees and administrators should be able to use the system without
+extensive training. The interfaces are designed to be intuitive and straightforward.
+
+3.2 Technology Stack and Development Tools
+
+3.2.1 Frontend Technologies
+
+Flutter 3.9.0
+- Open-source mobile development framework by Google
+- Enables cross-platform development for Android and iOS
+- Provides hot reload for faster development iteration
+- Rich widget library for building responsive user interfaces
+
+Flutter Map 8.2.2
+- Interactive mapping package for Flutter
+- Uses OpenStreetMap tiles (free, no API keys required)
+- Supports custom markers, polylines, and polygons
+- Enables geofence visualization and creation
+
+Provider 6.0.0
+- State management solution for Flutter
+- Manages application state across the app
+- Enables reactive UI updates
+
+Geolocator 14.0.2
+- Handles GPS location services
+- Provides real-time location tracking
+- Manages location permissions on Android and iOS
+
+Connectivity Plus 7.0.0
+- Monitors network connectivity status
+- Detects when device goes online/offline
+- Triggers synchronization when connectivity returns
+
+Socket IO Client 3.1.2
+- Real-time communication with backend
+- Enables live updates without polling
+- Maintains persistent connection to server
+
+File Picker 10.3.3 and Image Picker 1.2.0
+- Handles file and image selection
+- Used for report exports and media uploads
+
+Shared Preferences 2.2.2
+- Local data storage on device
+- Stores user preferences and offline data
+- Enables offline synchronization
+
+3.2.2 Backend Technologies
+
+Node.js 16+
+- JavaScript runtime for server-side development
+- Handles concurrent connections efficiently
+- Extensive package ecosystem
+
+Express.js
+- Web application framework for Node.js
+- Handles HTTP requests and routing
+- Middleware support for authentication and validation
+
+MongoDB 4.4+
+- NoSQL database for flexible data storage
+- Document-based structure matches application data
+- Scalable and easy to manage
+
+Socket.io 4.0+
+- Real-time bidirectional communication
+- Enables live updates across connected clients
+- Automatic fallback mechanisms
+
+JWT (jsonwebtoken)
+- Secure token-based authentication
+- Stateless authentication mechanism
+- Supports refresh token rotation
+
+bcryptjs
+- Password hashing library
+- Secure password storage
+- Prevents rainbow table attacks
+
+Mongoose
+- MongoDB object modeling
+- Schema validation and data consistency
+- Simplifies database operations
+
+Multer
+- File upload middleware
+- Handles multipart form data
+- Manages file storage
+
+PDFKit and ExcelJS
+- PDF and Excel file generation
+- Enables report export functionality
+- Customizable document formatting
+
+3.2.3 Development Environment
+
+Visual Studio Code
+- Primary code editor
+- Extensions for Flutter, Node.js, and database tools
+- Git integration for version control
+
+Figma
+- UI/UX design tool
+- Prototyping and wireframing
+- Design system management
+
+Postman
+- API testing and documentation
+- Request collection management
+- Environment configuration
+
+Git and GitHub
+- Version control system
+- Collaborative development
+- Code repository management
+
+3.3 System Development Life Cycle (Agile Methodology)
+
+3.3.1 Agile Process Overview
+
+We're using an Agile approach to development, which means we work in short cycles
+(sprints) and continuously improve the system based on feedback. Unlike Waterfall
+methodology where all planning happens first and then execution, Agile allows us to
+adapt and refine requirements as we learn more about the system.
+
+3.3.2 Development Phases
+
+Planning & Requirements
+- Understand system requirements
+- Identify stakeholders and users
+- Map out features and priorities
+- Prioritize based on business value and technical feasibility
+
+Design
+- Create system architecture diagrams
+- Design user interfaces
+- Plan algorithms for geofencing
+- Design database schema
+- Design decisions are revisited in each sprint as needed
+
+Implementation
+- Build mobile app and backend server in parallel
+- Write clean, modular code
+- Develop features incrementally in short sprints (1-2 weeks)
+- Use version control for code management
+
+Testing
+- Unit testing: Test individual components
+- Integration testing: Test how components work together
+- User acceptance testing: Test in real field conditions
+- Ensure GPS accuracy and offline sync work properly
+
+Deployment
+- Set up server infrastructure
+- Deploy backend to production
+- Test system with real users
+- Gather feedback from users
+
+Maintenance & Feedback
+- Update system with security patches
+- Implement performance improvements
+- Add new features based on user feedback
+- This cycle repeats continuously
+
+[FIGURE 3.1: AGILE DEVELOPMENT CYCLE DIAGRAM]
+(Insert diagram showing: Planning → Design → Implementation → Testing → Deployment → Maintenance → back to Planning)
+
+3.4 Environment and Locale
+
+3.4.1 Development Environment
+
+The system was developed at New Era University in Quezon City and tested with partner
+organizations that have field-based workers.
+
+3.4.2 Target Locale
+
+This study focuses on organizations operating in Metro Manila, particularly in Quezon
+City, with emphasis on field-based workers in construction, maintenance, delivery, and
+inspection services.
+
+3.4.3 Target Users
+
+Administrators: HR staff or operations managers who set up job sites, assign employees,
+create tasks, and generate reports. They require access to comprehensive management
+features and real-time monitoring capabilities.
+
+Field Employees: Workers who use the mobile app to check in and out and complete
+assigned tasks. They require a simple, intuitive interface that works reliably in
+various field conditions.
+
+3.4.4 Population of Study
+
+The population consists of:
+- Organizations with 10-500 field-based workers
+- Companies in construction, maintenance, delivery, and inspection sectors
+- Organizations currently using manual or outdated attendance systems
+- Organizations seeking cost-effective solutions for attendance tracking
+
+3.5 Requirements Specification
+
+3.5.1 Hardware Requirements for Users
+
+Mobile Device Requirements:
+- Device: Android 10+ or iOS 14+ smartphone
+- RAM: Minimum 2GB (Recommended 4GB+)
+- Storage: Minimum 100MB free space
+- Processor: Snapdragon 600 series or equivalent
+- GPS: Built-in GPS sensor (all modern phones have this)
+- Camera: Optional (for future biometric features)
+- Battery: Standard smartphone battery (GPS usage: 15-20% per 8-hour shift)
+
+[TABLE 3.1: USER HARDWARE REQUIREMENTS]
+┌─────────────────────────────────────────────────────────────┐
+│ User Hardware Specifications                                │
+├──────────────────────┬──────────────┬──────────────────────┤
+│ Component            │ Minimum      │ Recommended          │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Device               │ Android 10   │ Android 12+          │
+│                      │ iOS 14       │ iOS 15+              │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ RAM                  │ 2GB          │ 4GB or more          │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Storage              │ 100MB free   │ 500MB free           │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Processor            │ Snapdragon   │ Snapdragon 700+      │
+│                      │ 600 series   │ or equivalent        │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Internet Speed       │ 2Mbps        │ 5Mbps+               │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ GPS                  │ Required     │ Required             │
+└──────────────────────┴──────────────┴──────────────────────┘
+
+3.5.2 Hardware Requirements for Developers
+
+[TABLE 3.2: DEVELOPER HARDWARE REQUIREMENTS]
+┌─────────────────────────────────────────────────────────────┐
+│ Developer Hardware Specifications                           │
+├──────────────────────┬──────────────┬──────────────────────┤
+│ Component            │ Minimum      │ Recommended          │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Device               │ Laptop/      │ Laptop/              │
+│                      │ Desktop      │ Desktop              │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ RAM                  │ 8GB          │ 16GB or more         │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Processor            │ Intel Core   │ Intel Core i7/       │
+│                      │ i5 or AMD    │ AMD Ryzen 7 or       │
+│                      │ Ryzen 5      │ latest version       │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Storage              │ 500GB SSD    │ 1TB SSD              │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Internet Speed       │ 5Mbps        │ 20Mbps+              │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Operating System     │ Windows 10   │ Windows 11 or        │
+│                      │ macOS 10.15  │ macOS 12+            │
+│                      │ Ubuntu 20.04 │ Ubuntu 22.04+        │
+└──────────────────────┴──────────────┴──────────────────────┘
+
+3.5.3 Software Requirements for Developers
+
+[TABLE 3.3: DEVELOPER SOFTWARE REQUIREMENTS]
+┌─────────────────────────────────────────────────────────────┐
+│ Developer Software Specifications                           │
+├──────────────────────┬──────────────┬──────────────────────┤
+│ Software             │ Minimum      │ Recommended          │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Flutter SDK          │ 3.0.0        │ 3.9.0 or latest      │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Dart SDK             │ 2.17.0       │ 3.0.0 or latest      │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Node.js              │ 14.0.0       │ 18.0.0 or latest     │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Code Editor          │ VS Code 1.50 │ VS Code latest       │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Database             │ MongoDB 4.0  │ MongoDB 5.0+         │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Git                  │ 2.25.0       │ Latest version       │
+├──────────────────────┼──────────────┼──────────────────────┤
+│ Android Studio       │ 4.0          │ Latest version       │
+│ (for testing)        │              │                      │
+└──────────────────────┴──────────────┴──────────────────────┘
+
+3.5.4 Server Requirements
+
+Backend Server Requirements:
+- Processor: Minimum 4 cores running at 2.0 GHz
+- RAM: Minimum 8GB (Recommended 16GB+)
+- Storage: Minimum 250GB SSD
+- Operating System: Ubuntu Server 20.04+ or Windows Server 2019+
+- Network: Stable internet connection (minimum 10Mbps)
+- Deployment: Can be self-hosted or deployed to Render.com
+
+3.6 System Architecture
+
+3.6.1 Architecture Overview
+
+[FIGURE 3.2: SYSTEM ARCHITECTURE DIAGRAM]
+(Insert diagram showing: Mobile App ↔ Backend Server ↔ Database)
+
+The system has several layers:
+
+Frontend: Flutter mobile app with role-based interfaces for both employees and
+administrators.
+
+Backend: A Node.js and Express server handles all the business logic and data processing.
+
+Mapping: We use Flutter Map with OpenStreetMap data for creating and displaying
+geofences. This replaces the need for expensive commercial mapping APIs.
+
+Data Storage: All data is stored on a local or private server, not on external clouds.
+
+Security: The system uses role-based access control, encrypted data transmission,
+JWT tokens for authentication, and optional two-factor authentication.
+
+Real-Time Updates: Socket.io enables instant updates across the system without
+requiring users to refresh their screens.
+
+3.6.2 Component Descriptions
+
+Mobile Application Layer:
+- Employee Interface: Check-in/out, task management, reports
+- Admin Interface: Geofence management, employee management, task assignment, reports
+- Local Storage: Offline data caching using SQLite
+- GPS Module: Location tracking and geofence validation
+
+Backend API Layer:
+- Authentication Service: JWT token management and user verification
+- Geofence Service: Geofence creation, validation, and management
+- Attendance Service: Attendance record processing and storage
+- Task Service: Task management and assignment
+- Report Service: Report generation and export
+- Real-Time Service: Socket.io event broadcasting
+
+Data Layer:
+- Users Collection: User profiles and credentials
+- Geofences Collection: Geofence definitions and boundaries
+- Attendance Collection: Attendance records
+- Tasks Collection: Task definitions and assignments
+- Reports Collection: Generated reports
+
+3.7 Operational Feasibility
+
+The FieldCheck application is capable of ensuring the user provides clear features and
+operates the system efficiently. It directly supports organizations by facilitating
+instant employee location verification through geofencing, alongside providing effortless
+task management and real-time monitoring on a user-friendly mobile application.
+
+Key feasibility factors:
+
+User Acceptance: The system has simple, intuitive interfaces that require minimal
+training. Highly Feasible.
+
+Ease of Use: Checking in and out is straightforward. The offline functionality handles
+connectivity issues automatically. Feasible.
+
+Reliability: The system is designed to work in real field conditions with offline
+support and automatic syncing. Highly Feasible.
+
+Integration with Workflow: The system replaces manual attendance logs without changing
+how the organization operates. Feasible.
+
+Training Requirements: Minimal training is needed. The app has visual instructions and
+helpful tooltips. Feasible.
+
+Maintenance and Support: The system is self-hosted, so the organization's IT team can
+maintain it. The code is modular and easy to update. Feasible.
+
+Data Privacy and Security: The self-hosted architecture means the organization owns
+all its data. Data is encrypted during transmission. Highly Feasible.
+
+Operational Cost: There are no third-party API fees. The system runs on existing
+infrastructure. Highly Feasible.
+
+System Scalability: The backend can handle multiple concurrent users and job sites.
+Feasible.
+
+Report Export: PDF and Excel export functionality is built in. Highly Feasible.
+
+3.8 Technical Feasibility
+
+The technologies we chose are well-established and widely used:
+
+- Flutter is open-source and has an active community
+- Node.js and Express are industry standards for backend development
+- Flutter Map is a mature package with good documentation
+- Offline synchronization using local storage is a proven approach
+- Polygon geofencing algorithms are well-understood and efficient
+- PDF and Excel export libraries are readily available
+
+All technologies have extensive documentation, active communities, and proven track
+records in production systems. The development team has experience with all chosen
+technologies, making the project technically feasible.
+
+3.9 Economic Feasibility
+
+The system is cost-effective because:
+
+- We use free mapping tools instead of paying for Google Maps APIs (saves $10,000+/year)
+- The system runs on a single local server instead of expensive cloud infrastructure
+- There are no recurring subscription fees
+- The organization already owns the mobile devices employees use
+- Open-source technologies eliminate licensing costs
+- Self-hosted architecture gives complete cost control
+
+Total cost of ownership is significantly lower than commercial alternatives.
+
+3.10 Schedule Feasibility
+
+[FIGURE 3.3: PROJECT GANTT CHART]
+(Insert Gantt chart showing: Requirements → Design → Development → Testing → Deployment)
+Timeline: 6 months from start to production deployment
+
+3.11 System Flowchart - Employee Check-In Process
+
+[FIGURE 3.4: EMPLOYEE CHECK-IN FLOWCHART]
+(Insert flowchart showing:
+Start → Open App → GPS Location → Compare with Geofence → 
+If Inside: Record Attendance → Success
+If Outside: Show Error → Cannot Check In)
+
+3.12 System Flowchart - Admin Geofence Management
+
+[FIGURE 3.5: ADMIN GEOFENCE MANAGEMENT FLOWCHART]
+(Insert flowchart showing:
+Start → Admin Login → Authenticate → Dashboard → 
+Create Geofence → Draw on Map → Set Boundaries → Save → Success)
+
+3.13 Input-Process-Output (IPO) Model
+
+[FIGURE 3.6: IPO MODEL]
+(Insert diagram showing:
+INPUT: GPS Location, Geofence Data, User Credentials
+PROCESS: Validate Location, Compare with Geofence, Record Attendance
+OUTPUT: Attendance Record, Confirmation Message, Real-Time Update)
+
+3.14 Entity Relationship Diagram (ERD)
+
+[FIGURE 3.7: ENTITY RELATIONSHIP DIAGRAM]
+(Insert ERD showing:
+Users ← (1:N) → Geofences
+Users ← (1:N) → Attendance
+Users ← (1:N) → Tasks
+Geofences ← (1:N) → Attendance
+Geofences ← (1:N) → Tasks)
+
+3.15 Data Flow Diagram
+
+[FIGURE 3.8: DATA FLOW DIAGRAM]
+(Insert DFD showing:
+User → Mobile App → GPS Module → Geofence Validation → Backend Server → Database
+Database → Backend Server → Real-Time Updates → Mobile App → User)
+
+3.16 Use Case Diagram
+
+[FIGURE 3.9: USE CASE DIAGRAM]
+(Insert use case diagram showing:
+Employee Actor:
+- Check In/Out
+- View Tasks
+- View Reports
+- Sync Offline Data
+
+Admin Actor:
+- Create Geofence
+- Manage Employees
+- Assign Tasks
+- Generate Reports
+- View Analytics)
+
+3.17 System Design - User Interface
+
+3.17.1 Employee Interface
+
+[FIGURE 3.10: EMPLOYEE LOGIN SCREEN]
+(Insert screenshot showing: Login form with email/password fields)
+
+[FIGURE 3.11: EMPLOYEE DASHBOARD]
+(Insert screenshot showing: Check-in button, current location, assigned tasks)
+
+[FIGURE 3.12: EMPLOYEE CHECK-IN SCREEN]
+(Insert screenshot showing: Map with geofence, GPS location, check-in button)
+
+[FIGURE 3.13: EMPLOYEE TASKS SCREEN]
+(Insert screenshot showing: List of assigned tasks with status)
+
+3.17.2 Admin Interface
+
+[FIGURE 3.14: ADMIN DASHBOARD]
+(Insert screenshot showing: Statistics, real-time employee locations, quick actions)
+
+[FIGURE 3.15: ADMIN GEOFENCE MANAGEMENT]
+(Insert screenshot showing: Map with geofences, create/edit buttons)
+
+[FIGURE 3.16: ADMIN EMPLOYEE MANAGEMENT]
+(Insert screenshot showing: List of employees, assign geofences, manage roles)
+
+[FIGURE 3.17: ADMIN REPORTS SCREEN]
+(Insert screenshot showing: Report generation, date filters, export buttons)
+
+3.18 Algorithms
+
+3.18.1 Haversine Formula (Circular Geofence Validation)
+
+The Haversine formula calculates the great-circle distance between two points on Earth
+given their latitude and longitude:
+
+d = 2R × arcsin(√(sin²((lat2-lat1)/2) + cos(lat1) × cos(lat2) × sin²((lon2-lon1)/2)))
+
+Where:
+- d = distance between points
+- R = Earth's radius (6,371 km)
+- lat1, lon1 = employee's coordinates
+- lat2, lon2 = geofence center coordinates
+
+If d ≤ geofence radius, the employee is within the geofence and can check in.
+
+3.18.2 Ray Casting Algorithm (Polygon Geofence Validation)
+
+The ray casting algorithm determines if a point lies inside a polygon by:
+
+1. Draw a ray from the point to infinity
+2. Count how many times the ray crosses polygon edges
+3. If count is odd, point is inside; if even, point is outside
+
+This algorithm is used for complex polygon-shaped geofences that don't fit the circular
+model.
+
+3.19 Security Implementation
+
+3.19.1 Authentication
+
+The system uses JWT tokens for authentication. When a user logs in, the server creates
+a token that proves the user's identity. This token is sent with every request to the
+server.
+
+Access tokens expire after 1 hour, requiring users to refresh their session. Refresh
+tokens expire after 7 days, requiring a new login.
+
+3.19.2 Authorization
+
+The system implements role-based access control. Administrators can access all features,
+while employees can only see their own data and assigned tasks.
+
+3.19.3 Data Encryption
+
+All data transmitted between the mobile app and server is encrypted using HTTPS/TLS.
+Passwords are hashed using bcryptjs before storage in the database.
+
+3.20 Offline Synchronization
+
+When the employee opens the app and attempts to check in, the app reads their GPS
+location. If the device is offline, the check-in is saved locally on the phone. When
+connectivity returns, the app automatically syncs all saved data with the backend server.
+
+The sync process:
+1. Detects the restored connection
+2. Retrieves all stored records from local storage
+3. Sends them to the backend server
+4. Waits for confirmation from the server
+5. Deletes the records from local storage once confirmed
+
+This ensures no data is lost and the system stays in sync.
+
+3.21 Real-Time Updates
+
+Socket.io maintains a persistent connection between the app and the server. When
+something changes (like a new attendance record or task assignment), the server
+broadcasts an update to all connected administrators. This means administrators see
+updates instantly without refreshing their screen.
+
+================================================================================
+CHAPTER 4: IMPLEMENTATION AND RESULTS
+================================================================================
+
+(Content continues with implementation details, testing results, challenges, and solutions)
+
+================================================================================
+CHAPTER 5: CONCLUSIONS AND RECOMMENDATIONS
+================================================================================
+
+(Content continues with conclusions, achievements, limitations, future enhancements, and recommendations)
+
+================================================================================
+APPENDIX A: API ENDPOINTS
+================================================================================
+
+(API documentation with endpoints, parameters, and responses)
+
+================================================================================
+APPENDIX B: DATABASE SCHEMA
+================================================================================
+
+(Database schema documentation with collections and fields)
+
+================================================================================
+END OF REORGANIZED PAPER
+================================================================================

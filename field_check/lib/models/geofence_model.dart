@@ -14,7 +14,6 @@ class Geofence {
   final DateTime? createdAt;
   final GeofenceShape shape;
   final List<UserModel>? assignedEmployees;
-  final String? type;
   final String? labelLetter;
 
   Geofence({
@@ -29,7 +28,6 @@ class Geofence {
     this.createdAt,
     this.shape = GeofenceShape.circle,
     this.assignedEmployees,
-    this.type, // Initialize new field
     this.labelLetter, // Initialize new field
   });
 
@@ -46,7 +44,6 @@ class Geofence {
     DateTime? createdAt,
     GeofenceShape? shape,
     List<UserModel>? assignedEmployees,
-    String? type,
     String? labelLetter,
   }) {
     return Geofence(
@@ -61,7 +58,6 @@ class Geofence {
       createdAt: createdAt ?? this.createdAt,
       shape: shape ?? this.shape,
       assignedEmployees: assignedEmployees ?? this.assignedEmployees,
-      type: type ?? this.type,
       labelLetter: labelLetter ?? this.labelLetter,
     );
   }
@@ -83,18 +79,23 @@ class Geofence {
   }
 
   // Calculate distance between two coordinates in meters
-  static double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+  static double calculateDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
     const R = 6371000; // Earth radius in meters
     final phi1 = lat1 * pi / 180;
     final phi2 = lat2 * pi / 180;
     final deltaPhi = (lat2 - lat1) * pi / 180;
     final deltaLambda = (lon2 - lon1) * pi / 180;
-    
-    final a = sin(deltaPhi / 2) * sin(deltaPhi / 2) +
-              cos(phi1) * cos(phi2) *
-              sin(deltaLambda / 2) * sin(deltaLambda / 2);
+
+    final a =
+        sin(deltaPhi / 2) * sin(deltaPhi / 2) +
+        cos(phi1) * cos(phi2) * sin(deltaLambda / 2) * sin(deltaLambda / 2);
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    
+
     return R * c; // Distance in meters
   }
 
@@ -121,10 +122,11 @@ class Geofence {
       radius: (json['radius'] as num).toDouble(),
       isActive: json['isActive'] ?? true,
       createdBy: json['createdBy'],
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
       shape: _parseShape(json['shape']),
       assignedEmployees: employees,
-      type: json['type'],
       labelLetter: json['labelLetter'],
     );
   }
@@ -144,7 +146,6 @@ class Geofence {
       'shape': shape.toString().split('.').last,
       if (assignedEmployees != null)
         'assignedEmployees': assignedEmployees!.map((u) => u.id).toList(),
-      if (type != null) 'type': type,
       if (labelLetter != null) 'labelLetter': labelLetter,
     };
   }
@@ -157,10 +158,7 @@ class Geofence {
   }
 }
 
-enum GeofenceShape {
-  circle,
-  polygon,
-}
+enum GeofenceShape { circle, polygon }
 
 class UserLocation {
   final double latitude;

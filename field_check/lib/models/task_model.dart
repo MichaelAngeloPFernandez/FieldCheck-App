@@ -9,7 +9,8 @@ class Task {
   final DateTime createdAt;
   final String status; // e.g., 'pending', 'in_progress', 'completed'
   final String? userTaskId; // ID of the UserTask if assigned
-  final UserModel? assignedTo; // Assuming a UserModel for assigned user
+  final UserModel? assignedTo; // Single assignee (for backward compatibility)
+  final List<UserModel> assignedToMultiple; // Multiple assignees
   final String? geofenceId; // Auto-populated from assigned geofence
   final double? latitude;
   final double? longitude;
@@ -26,6 +27,7 @@ class Task {
     required this.status,
     this.userTaskId,
     this.assignedTo,
+    this.assignedToMultiple = const [],
     this.geofenceId,
     this.latitude,
     this.longitude,
@@ -34,6 +36,13 @@ class Task {
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
+    List<UserModel> assignedToMultiple = [];
+    if (json['assignedToMultiple'] is List) {
+      assignedToMultiple = (json['assignedToMultiple'] as List)
+          .map((e) => UserModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+
     return Task(
       id: json['_id'] ?? json['id'] ?? '',
       title: json['title'] ?? '',
@@ -46,11 +55,14 @@ class Task {
       assignedTo: json['assignedTo'] != null
           ? UserModel.fromJson(json['assignedTo'])
           : null,
+      assignedToMultiple: assignedToMultiple,
       geofenceId: json['geofenceId'],
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       teamId: json['teamId'],
-      teamMembers: json['teamMembers'] != null ? List<String>.from(json['teamMembers']) : null,
+      teamMembers: json['teamMembers'] != null
+          ? List<String>.from(json['teamMembers'])
+          : null,
     );
   }
 
@@ -65,6 +77,7 @@ class Task {
       'status': status,
       'userTaskId': userTaskId,
       'assignedTo': assignedTo?.toJson(),
+      'assignedToMultiple': assignedToMultiple.map((u) => u.toJson()).toList(),
       'geofenceId': geofenceId,
       'latitude': latitude,
       'longitude': longitude,
@@ -83,6 +96,7 @@ class Task {
     String? status,
     String? userTaskId,
     UserModel? assignedTo,
+    List<UserModel>? assignedToMultiple,
     String? geofenceId,
     double? latitude,
     double? longitude,
@@ -99,6 +113,7 @@ class Task {
       status: status ?? this.status,
       userTaskId: userTaskId ?? this.userTaskId,
       assignedTo: assignedTo ?? this.assignedTo,
+      assignedToMultiple: assignedToMultiple ?? this.assignedToMultiple,
       geofenceId: geofenceId ?? this.geofenceId,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,

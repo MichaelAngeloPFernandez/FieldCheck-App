@@ -10,6 +10,7 @@ import 'package:field_check/models/report_model.dart';
 import 'package:intl/intl.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
+import 'package:field_check/screens/report_export_preview_screen.dart';
 
 class AdminReportsScreen extends StatefulWidget {
   const AdminReportsScreen({super.key});
@@ -68,12 +69,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
     _socket.onConnect((_) => debugPrint('Connected to Socket.IO'));
     _socket.onDisconnect((_) => debugPrint('Disconnected from Socket.IO'));
-    _socket.onConnectError((err) => debugPrint('Socket.IO Connect Error: $err'));
+    _socket.onConnectError(
+      (err) => debugPrint('Socket.IO Connect Error: $err'),
+    );
     _socket.onError((err) => debugPrint('Socket.IO Error: $err'));
-    _socket.on('reconnect_attempt', (_) => debugPrint('Reports socket reconnect attempt'));
+    _socket.on(
+      'reconnect_attempt',
+      (_) => debugPrint('Reports socket reconnect attempt'),
+    );
     _socket.on('reconnect', (_) => debugPrint('Reports socket reconnected'));
-    _socket.on('reconnect_error', (err) => debugPrint('Reports socket reconnect error: $err'));
-    _socket.on('reconnect_failed', (_) => debugPrint('Reports socket reconnect failed'));
+    _socket.on(
+      'reconnect_error',
+      (err) => debugPrint('Reports socket reconnect error: $err'),
+    );
+    _socket.on(
+      'reconnect_failed',
+      (_) => debugPrint('Reports socket reconnect failed'),
+    );
 
     _socket.on('newAttendanceRecord', (data) {
       debugPrint('New attendance record: $data');
@@ -86,29 +98,28 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     });
 
     _socket.on('newReport', (_) {
-      setState(() { _hasNewTaskReports = true; });
-      if (_viewMode == 'task') {
-        _fetchTaskReports();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('New report received')));
-        }
-        setState(() { _hasNewTaskReports = false; });
-      }
+      setState(() {
+        _hasNewTaskReports = true;
+      });
+      // Always fetch reports in real-time for all admins
+      _fetchTaskReports();
     });
 
     _socket.on('updatedReport', (_) {
-      if (_viewMode == 'task') {
-        _fetchTaskReports();
-      } else {
-        setState(() { _hasNewTaskReports = true; });
-      }
+      // Always fetch reports in real-time for all admins
+      _fetchTaskReports();
     });
 
     _socket.on('deletedReport', (_) {
+      // Always fetch reports in real-time for all admins
+      _fetchTaskReports();
+    });
+
+    _socket.on('taskCompleted', (data) {
+      debugPrint('Task completed event: $data');
+      _fetchAttendanceRecords();
       if (_viewMode == 'task') {
         _fetchTaskReports();
-      } else {
-        setState(() { _hasNewTaskReports = true; });
       }
     });
   }
@@ -129,9 +140,16 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       final records = await AttendanceService().getAttendanceRecords(
         date: _filterDate != 'All Dates' ? DateTime.parse(_filterDate) : null,
         locationId: _filterLocation != 'All Locations'
-            ? (_geofences.where((g) => g.name == _filterLocation).toList().isNotEmpty
-                ? _geofences.where((g) => g.name == _filterLocation).toList().first.id
-                : null)
+            ? (_geofences
+                      .where((g) => g.name == _filterLocation)
+                      .toList()
+                      .isNotEmpty
+                  ? _geofences
+                        .where((g) => g.name == _filterLocation)
+                        .toList()
+                        .first
+                        .id
+                  : null)
             : null,
         status: _filterStatus != 'All Status' ? _filterStatus : null,
       );
@@ -145,7 +163,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   Future<void> _fetchTaskReports() async {
-    setState(() { _isLoadingTaskReports = true; _taskReportsError = null; });
+    setState(() {
+      _isLoadingTaskReports = true;
+      _taskReportsError = null;
+    });
     try {
       final reports = await ReportService().fetchReports(type: 'task');
       setState(() {
@@ -164,7 +185,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   List<ReportModel> _filteredTaskReports() {
     if (_reportStatusFilter == 'All') return _taskReports;
     return _taskReports
-        .where((r) => r.status.toLowerCase() == _reportStatusFilter.toLowerCase())
+        .where(
+          (r) => r.status.toLowerCase() == _reportStatusFilter.toLowerCase(),
+        )
         .toList();
   }
 
@@ -173,6 +196,60 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     _debounce = Timer(const Duration(milliseconds: 500), () {
       _fetchAttendanceRecords();
     });
+  }
+
+  void _showExportPreview() {
+    // Import the preview screen at the top of the file
+    // import 'package:field_check/screens/report_export_preview_screen.dart';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReportExportPreviewScreen(
+          records: _attendanceRecords,
+          reportType: _viewMode,
+          startDate: _filterDate != 'All Dates'
+              ? DateTime.parse(_filterDate)
+              : null,
+          endDate: null,
+          locationFilter: _filterLocation != 'All Locations'
+              ? _filterLocation
+              : null,
+        ),
+      ),
+    );
+  }
+
+  // Group attendance records by employee and date
+  Map<String, Map<String, dynamic>> _groupAttendanceByEmployee() {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final record in _attendanceRecords) {
+      final key =
+          '${record.userId}_${record.timestamp.toLocal().toString().split(' ')[0]}';
+
+      if (!grouped.containsKey(key)) {
+        grouped[key] = {
+          'userId': record.userId,
+          'employeeName': record.employeeName ?? 'Unknown',
+          'date': record.timestamp.toLocal().toString().split(' ')[0],
+          'location': record.geofenceName ?? 'N/A',
+          'checkInTime': null,
+          'checkOutTime': null,
+          'isCurrentlyCheckedIn': false,
+        };
+      }
+
+      if (record.isCheckIn) {
+        grouped[key]!['checkInTime'] = record.timestamp;
+        grouped[key]!['isCurrentlyCheckedIn'] = true;
+      } else {
+        grouped[key]!['checkOutTime'] = record.timestamp;
+        grouped[key]!['isCurrentlyCheckedIn'] = false;
+      }
+    }
+
+    return grouped;
   }
 
   @override
@@ -186,7 +263,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
     final Set<String> statusSet = {
       'All Status',
-      ..._attendanceRecords.map((a) => a.isCheckIn ? 'Checked In' : 'Checked Out'),
+      ..._attendanceRecords.map(
+        (a) => a.isCheckIn ? 'Checked In' : 'Checked Out',
+      ),
     };
     final List<String> statusItems = statusSet.toList();
 
@@ -203,6 +282,20 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       appBar: AppBar(
         title: const Text('Admin Reports'),
         backgroundColor: brandColor,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton.icon(
+              onPressed: _exportReport,
+              icon: const Icon(Icons.download),
+              label: const Text('Export'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: brandColor,
+              ),
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: LayoutBuilder(
@@ -223,7 +316,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             selected: _viewMode == 'attendance',
                             onSelected: (sel) {
                               if (!sel) return;
-                              setState(() { _viewMode = 'attendance'; });
+                              setState(() {
+                                _viewMode = 'attendance';
+                              });
                             },
                           ),
                           const SizedBox(width: 8),
@@ -239,7 +334,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                       width: 8,
                                       height: 8,
                                       child: DecoratedBox(
-                                        decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -248,7 +346,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             selected: _viewMode == 'task',
                             onSelected: (sel) async {
                               if (!sel) return;
-                              setState(() { _viewMode = 'task'; _hasNewTaskReports = false; });
+                              setState(() {
+                                _viewMode = 'task';
+                                _hasNewTaskReports = false;
+                              });
                               await _fetchTaskReports();
                             },
                           ),
@@ -275,7 +376,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     items: dateItems,
                                     onChanged: (val) {
                                       if (val == null) return;
-                                      setState(() { _filterDate = val; });
+                                      setState(() {
+                                        _filterDate = val;
+                                      });
                                       _scheduleFetchAttendance();
                                     },
                                     onTap: () => _selectDate(context),
@@ -289,7 +392,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     items: locationItems,
                                     onChanged: (val) {
                                       if (val == null) return;
-                                      setState(() { _filterLocation = val; });
+                                      setState(() {
+                                        _filterLocation = val;
+                                      });
                                       _scheduleFetchAttendance();
                                     },
                                   ),
@@ -302,7 +407,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     items: statusItems,
                                     onChanged: (val) {
                                       if (val == null) return;
-                                      setState(() { _filterStatus = val; });
+                                      setState(() {
+                                        _filterStatus = val;
+                                      });
                                       _scheduleFetchAttendance();
                                     },
                                   ),
@@ -311,6 +418,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                   onPressed: _fetchAttendanceRecords,
                                   icon: const Icon(Icons.refresh),
                                   label: const Text('Refresh'),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton.icon(
+                                  onPressed: _attendanceRecords.isNotEmpty
+                                      ? () => _showExportPreview()
+                                      : null,
+                                  icon: const Icon(Icons.download),
+                                  label: const Text('Export'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    disabledBackgroundColor: Colors.grey,
+                                  ),
                                 ),
                               ],
                             ),
@@ -333,58 +453,204 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           ],
                         ),
 
-                      if (_viewMode == 'attendance')
-                        const SizedBox(height: 12),
+                      if (_viewMode == 'attendance') const SizedBox(height: 12),
 
                       Expanded(
                         child: _viewMode == 'attendance'
                             ? (_attendanceRecords.isEmpty
-                                ? const Center(child: Text('No attendance records'))
-                                : Card(
-                                    elevation: 2,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          return SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: DataTable(
-                                              columns: const [
-                                                DataColumn(label: Text('Employee')),
-                                                DataColumn(label: Text('Location')),
-                                                DataColumn(label: Text('Date')),
-                                                DataColumn(label: Text('Check In')),
-                                                DataColumn(label: Text('Check Out')),
-                                                DataColumn(label: Text('Status')),
-                                                DataColumn(label: Text('Actions')),
-                                              ],
-                                              rows: _attendanceRecords.map((rec) {
-                                                final dateStr =
-                                                    DateFormat('yyyy-MM-dd').format(rec.timestamp.toLocal());
-                                                return DataRow(
-                                                  cells: [
-                                                    DataCell(Text(rec.userId)),
-                                                    DataCell(Text(rec.geofenceName ?? 'N/A')),
-                                                    DataCell(Text(dateStr)),
-                                                    DataCell(Text(rec.isCheckIn ? formatTime(rec.timestamp) : 'N/A')),
-                                                    DataCell(Text(rec.isCheckIn ? 'N/A' : formatTime(rec.timestamp))),
-                                                    DataCell(Text(rec.isCheckIn ? 'Checked In' : 'Checked Out')),
-                                                    DataCell(
-                                                      IconButton(
-                                                        tooltip: 'Details',
-                                                        icon: const Icon(Icons.info_outline),
-                                                        onPressed: () => _showAttendanceDetails(rec),
-                                                      ),
+                                  ? const Center(
+                                      child: Text('No attendance records'),
+                                    )
+                                  : Card(
+                                      elevation: 2,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: LayoutBuilder(
+                                          builder: (context, constraints) {
+                                            final grouped =
+                                                _groupAttendanceByEmployee();
+                                            return SingleChildScrollView(
+                                              scrollDirection: Axis.horizontal,
+                                              child: DataTable(
+                                                columns: const [
+                                                  DataColumn(
+                                                    label: Text('Employee'),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text('Location'),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text('Date'),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text(
+                                                      'Check In Time',
                                                     ),
-                                                  ],
-                                                );
-                                              }).toList(),
-                                            ),
-                                          );
-                                        },
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text(
+                                                      'Check Out Time',
+                                                    ),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text(
+                                                      'Current Status',
+                                                    ),
+                                                  ),
+                                                  DataColumn(
+                                                    label: Text('Actions'),
+                                                  ),
+                                                ],
+                                                rows: grouped.values.map((
+                                                  data,
+                                                ) {
+                                                  final checkInTime =
+                                                      data['checkInTime']
+                                                          as DateTime?;
+                                                  final checkOutTime =
+                                                      data['checkOutTime']
+                                                          as DateTime?;
+                                                  final isCheckedIn =
+                                                      data['isCurrentlyCheckedIn']
+                                                          as bool;
+
+                                                  return DataRow(
+                                                    cells: [
+                                                      DataCell(
+                                                        Text(
+                                                          data['employeeName']
+                                                              as String,
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Text(
+                                                          data['location']
+                                                              as String,
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Text(
+                                                          data['date']
+                                                              as String,
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Text(
+                                                          checkInTime != null
+                                                              ? formatTime(
+                                                                  checkInTime,
+                                                                )
+                                                              : '-',
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Text(
+                                                          checkOutTime != null
+                                                              ? formatTime(
+                                                                  checkOutTime,
+                                                                )
+                                                              : '-',
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Chip(
+                                                          label: Text(
+                                                            isCheckedIn
+                                                                ? 'Checked In'
+                                                                : 'Checked Out',
+                                                          ),
+                                                          backgroundColor:
+                                                              isCheckedIn
+                                                              ? Colors
+                                                                    .green[100]
+                                                              : Colors.red[100],
+                                                          labelStyle: TextStyle(
+                                                            color: isCheckedIn
+                                                                ? Colors
+                                                                      .green[900]
+                                                                : Colors
+                                                                      .red[900],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        IconButton(
+                                                          tooltip: 'Details',
+                                                          icon: const Icon(
+                                                            Icons.info_outline,
+                                                          ),
+                                                          onPressed: () {
+                                                            showDialog(
+                                                              context: context,
+                                                              builder: (ctx) => AlertDialog(
+                                                                title: Text(
+                                                                  '${data['userId']} - ${data['date']}',
+                                                                ),
+                                                                content: Column(
+                                                                  mainAxisSize:
+                                                                      MainAxisSize
+                                                                          .min,
+                                                                  crossAxisAlignment:
+                                                                      CrossAxisAlignment
+                                                                          .start,
+                                                                  children: [
+                                                                    _buildDetailRow(
+                                                                      'Location:',
+                                                                      data['location']
+                                                                          as String,
+                                                                    ),
+                                                                    _buildDetailRow(
+                                                                      'Check In:',
+                                                                      checkInTime !=
+                                                                              null
+                                                                          ? formatTime(
+                                                                              checkInTime,
+                                                                            )
+                                                                          : 'Not checked in',
+                                                                    ),
+                                                                    _buildDetailRow(
+                                                                      'Check Out:',
+                                                                      checkOutTime !=
+                                                                              null
+                                                                          ? formatTime(
+                                                                              checkOutTime,
+                                                                            )
+                                                                          : 'Not checked out',
+                                                                    ),
+                                                                    _buildDetailRow(
+                                                                      'Status:',
+                                                                      isCheckedIn
+                                                                          ? 'Checked In'
+                                                                          : 'Checked Out',
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                                actions: [
+                                                                  TextButton(
+                                                                    onPressed: () =>
+                                                                        Navigator.pop(
+                                                                          ctx,
+                                                                        ),
+                                                                    child:
+                                                                        const Text(
+                                                                          'Close',
+                                                                        ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            );
+                                                          },
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            );
+                                          },
+                                        ),
                                       ),
-                                    ),
-                                  ))
+                                    ))
                             : _buildTaskReportsView(),
                       ),
                     ],
@@ -425,10 +691,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 4),
         GestureDetector(
@@ -446,7 +709,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               items: items.map((item) {
                 return DropdownMenuItem<String>(
                   value: item,
-                  child: Text(label == 'Date' && item != 'All Dates' ? DateFormat('yyyy-MM-dd').format(DateTime.parse(item)) : item),
+                  child: Text(
+                    label == 'Date' && item != 'All Dates'
+                        ? DateFormat('yyyy-MM-dd').format(DateTime.parse(item))
+                        : item,
+                  ),
                 );
               }).toList(),
               onChanged: onChanged,
@@ -486,10 +753,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             const SizedBox(height: 4),
             Text(
               title,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ],
         ),
@@ -501,15 +765,38 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${data.userId} - ${data.timestamp.toLocal().toString().split(' ')[0]}'),
+        title: Text(
+          '${data.userId} - ${data.timestamp.toLocal().toString().split(' ')[0]}',
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildDetailRow('Check In Time:', data.isCheckIn ? data.timestamp.toLocal().toString().split(' ')[1].substring(0, 5) : 'N/A'),
-            _buildDetailRow('Check Out Time:', !data.isCheckIn ? data.timestamp.toLocal().toString().split(' ')[1].substring(0, 5) : 'N/A'),
-          _buildDetailRow('Location:', data.geofenceName ?? 'N/A'),
-            _buildDetailRow('Status:', data.isCheckIn ? 'Checked In' : 'Checked Out'),
+            _buildDetailRow(
+              'Check In Time:',
+              data.isCheckIn
+                  ? data.timestamp
+                        .toLocal()
+                        .toString()
+                        .split(' ')[1]
+                        .substring(0, 5)
+                  : 'N/A',
+            ),
+            _buildDetailRow(
+              'Check Out Time:',
+              !data.isCheckIn
+                  ? data.timestamp
+                        .toLocal()
+                        .toString()
+                        .split(' ')[1]
+                        .substring(0, 5)
+                  : 'N/A',
+            ),
+            _buildDetailRow('Location:', data.geofenceName ?? 'N/A'),
+            _buildDetailRow(
+              'Status:',
+              data.isCheckIn ? 'Checked In' : 'Checked Out',
+            ),
             // _buildDetailRow('Total Hours:', '8.25'), // Calculate total hours based on check-in/out times
             // _buildDetailRow('Notes:', 'Regular attendance'),
           ],
@@ -537,13 +824,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               _buildDetailRow('Employee:', r.employeeName ?? r.employeeId),
               _buildDetailRow('Task:', r.taskTitle ?? (r.taskId ?? '-')),
               _buildDetailRow('Status:', r.status),
-              _buildDetailRow('Submitted:', DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal())),
+              _buildDetailRow(
+                'Submitted:',
+                DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal()),
+              ),
               if (r.content.isNotEmpty) _buildDetailRow('Content:', r.content),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
@@ -559,14 +852,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             width: 120,
             child: Text(
               label,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          Expanded(
-            child: Text(value),
-          ),
+          Expanded(child: Text(value)),
         ],
       ),
     );
@@ -577,22 +866,28 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_taskReportsError != null) {
-      return Center(child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(_taskReportsError!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _fetchTaskReports,
-              child: const Text('Retry'),
-            ),
-          ],
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(
+                _taskReportsError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _fetchTaskReports,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
-      ));
+      );
     }
     if (_taskReports.isEmpty) {
       return const Center(child: Text('No task reports'));
@@ -613,7 +908,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   selected: _reportStatusFilter == 'All',
                   onSelected: (sel) {
                     if (!sel) return;
-                    setState(() { _reportStatusFilter = 'All'; });
+                    setState(() {
+                      _reportStatusFilter = 'All';
+                    });
                   },
                 ),
                 ChoiceChip(
@@ -621,7 +918,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   selected: _reportStatusFilter == 'submitted',
                   onSelected: (sel) {
                     if (!sel) return;
-                    setState(() { _reportStatusFilter = 'submitted'; });
+                    setState(() {
+                      _reportStatusFilter = 'submitted';
+                    });
                   },
                 ),
                 ChoiceChip(
@@ -629,7 +928,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   selected: _reportStatusFilter == 'reviewed',
                   onSelected: (sel) {
                     if (!sel) return;
-                    setState(() { _reportStatusFilter = 'reviewed'; });
+                    setState(() {
+                      _reportStatusFilter = 'reviewed';
+                    });
                   },
                 ),
               ],
@@ -647,75 +948,194 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   DataColumn(label: Text('Actions')),
                 ],
                 rows: _filteredTaskReports().map((r) {
-                  final submitted = DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal());
-                  return DataRow(cells: [
-                    DataCell(Text(r.employeeName ?? r.employeeId)),
-                    DataCell(Text(r.taskTitle ?? (r.taskId ?? '-'))),
-                    DataCell(Text(submitted)),
-                    DataCell(Text(r.status)),
-                    DataCell(Text(r.content)),
-                    DataCell(Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'View',
-                          icon: const Icon(Icons.info_outline),
-                          onPressed: () => _showReportDetails(r),
-                        ),
-                        if (r.status != 'reviewed')
-                          TextButton(
-                            onPressed: () async {
-                              try {
-                                await ReportService().updateReportStatus(r.id, 'reviewed');
-                                await _fetchTaskReports();
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked as reviewed')));
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                                }
-                              }
-                            },
-                            child: const Text('Review'),
-                          ),
-                        TextButton(
-                          onPressed: () async {
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('Delete Report'),
-                                content: const Text('Are you sure you want to delete this report?'),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                                  FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
-                                ],
+                  final submitted = DateFormat(
+                    'yyyy-MM-dd HH:mm',
+                  ).format(r.submittedAt.toLocal());
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(r.employeeName ?? r.employeeId)),
+                      DataCell(Text(r.taskTitle ?? (r.taskId ?? '-'))),
+                      DataCell(Text(submitted)),
+                      DataCell(Text(r.status)),
+                      DataCell(Text(r.content)),
+                      DataCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'View',
+                              icon: const Icon(Icons.info_outline),
+                              onPressed: () => _showReportDetails(r),
+                            ),
+                            if (r.status != 'reviewed')
+                              TextButton(
+                                onPressed: () async {
+                                  try {
+                                    await ReportService().updateReportStatus(
+                                      r.id,
+                                      'reviewed',
+                                    );
+                                    await _fetchTaskReports();
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Marked as reviewed'),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(content: Text('Failed: $e')),
+                                      );
+                                    }
+                                  }
+                                },
+                                child: const Text('Review'),
                               ),
-                            );
-                            if (ok == true) {
-                              try {
-                                await ReportService().deleteReport(r.id);
-                                await _fetchTaskReports();
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report deleted')));
+                            TextButton(
+                              onPressed: () async {
+                                final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Delete Report'),
+                                    content: const Text(
+                                      'Are you sure you want to delete this report?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: const Text('Delete'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (ok == true) {
+                                  try {
+                                    await ReportService().deleteReport(r.id);
+                                    await _fetchTaskReports();
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Report deleted'),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(content: Text('Failed: $e')),
+                                      );
+                                    }
+                                  }
                                 }
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                                }
-                              }
-                            }
-                          },
-                          child: const Text('Delete'),
+                              },
+                              child: const Text('Delete'),
+                            ),
+                          ],
                         ),
-                      ],
-                    )),
-                  ]);
+                      ),
+                    ],
+                  );
                 }).toList(),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _exportReport() async {
+    try {
+      String csvContent = '';
+
+      if (_viewMode == 'attendance') {
+        // Export attendance report
+        csvContent =
+            'Employee Name,Date,Location,Check-In Time,Check-Out Time,Status\n';
+        final grouped = _groupAttendanceByEmployee();
+        for (final entry in grouped.entries) {
+          final data = entry.value;
+          final employeeName = data['employeeName'] ?? 'Unknown';
+          final date = data['date'] ?? '';
+          final location = data['location'] ?? 'N/A';
+          final checkInTime = data['checkInTime'] != null
+              ? DateFormat(
+                  'HH:mm',
+                ).format((data['checkInTime'] as DateTime).toLocal())
+              : '-';
+          final checkOutTime = data['checkOutTime'] != null
+              ? DateFormat(
+                  'HH:mm',
+                ).format((data['checkOutTime'] as DateTime).toLocal())
+              : '-';
+          final status = data['isCurrentlyCheckedIn']
+              ? 'Checked In'
+              : 'Checked Out';
+          csvContent +=
+              '$employeeName,$date,$location,$checkInTime,$checkOutTime,$status\n';
+        }
+      } else {
+        // Export task report
+        csvContent = 'Task Title,Employee,Status,Submitted Date,Type\n';
+        for (final report in _taskReports) {
+          final title = report.taskTitle ?? '';
+          final employee = report.employeeName ?? '';
+          final status = report.status ?? '';
+          final submittedDate = DateFormat(
+            'yyyy-MM-dd HH:mm',
+          ).format(report.submittedAt.toLocal());
+          final type = report.type ?? '';
+          csvContent += '$title,$employee,$status,$submittedDate,$type\n';
+        }
+      }
+
+      // Save CSV file
+      await _saveExportFile(csvContent);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Report exported successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _saveExportFile(String content) async {
+    // For now, just copy to clipboard or show in dialog
+    // In production, use file_picker or path_provider to save
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Report Export'),
+        content: SingleChildScrollView(child: Text(content)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

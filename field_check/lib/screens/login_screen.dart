@@ -3,7 +3,6 @@ import 'package:field_check/main.dart';
 import 'package:field_check/screens/dashboard_screen.dart';
 import 'package:field_check/screens/admin_dashboard_screen.dart';
 import '../services/user_service.dart';
-import '../services/google_auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,7 +19,6 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
 
   final _userService = UserService();
-  final _googleAuthService = GoogleAuthService();
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -215,29 +213,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: TextStyle(fontSize: 16),
                             ),
                           ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.of(context).pushNamed('/register');
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
-                            ),
-                            child: const Text(
-                              "Don't have an account? Register",
-                              style: TextStyle(fontSize: 16),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: _isLoading ? null : _loginWithGoogle,
-                              icon: const Icon(Icons.login),
-                              label: const Text('Continue with Google'),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -249,35 +224,5 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _loginWithGoogle() async {
-    setState(() {
-      _error = null;
-    });
-    try {
-      final ok = await _googleAuthService.signIn();
-      if (!mounted) return;
-      if (ok) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const DashboardScreen()),
-        );
-      } else {
-        setState(() {
-          _error = 'Google sign-in failed';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
   }
 }

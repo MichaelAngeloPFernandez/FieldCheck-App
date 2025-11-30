@@ -33,7 +33,11 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     // Listen for real-time user account changes
     _userEventSubscription = _realtimeService.userStream.listen((event) {
       final action = event['action'];
-      if (mounted && (action == 'created' || action == 'deleted' || action == 'deactivated' || action == 'reactivated')) {
+      if (mounted &&
+          (action == 'created' ||
+              action == 'deleted' ||
+              action == 'deactivated' ||
+              action == 'reactivated')) {
         // Automatically refresh the employee list when changes are detected
         _refresh();
       }
@@ -61,10 +65,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     // Apply search filter
     if (_searchController.text.isNotEmpty) {
       final query = _searchController.text.toLowerCase();
-      filtered = filtered.where((e) =>
-          e.name.toLowerCase().contains(query) ||
-          e.email.toLowerCase().contains(query) ||
-          (e.username?.toLowerCase().contains(query) ?? false)).toList();
+      filtered = filtered
+          .where(
+            (e) =>
+                e.name.toLowerCase().contains(query) ||
+                e.email.toLowerCase().contains(query) ||
+                (e.username?.toLowerCase().contains(query) ?? false),
+          )
+          .toList();
     }
 
     // Apply status filter
@@ -89,8 +97,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         title: const Text('Deactivate Multiple'),
         content: Text('Deactivate ${_selectedEmployeeIds.length} employee(s)?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Deactivate')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Deactivate'),
+          ),
         ],
       ),
     );
@@ -101,12 +115,18 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_selectedEmployeeIds.length} employee(s) deactivated')),
+          SnackBar(
+            content: Text(
+              '${_selectedEmployeeIds.length} employee(s) deactivated',
+            ),
+          ),
         );
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -117,9 +137,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Multiple'),
-        content: Text('Permanently delete ${_selectedEmployeeIds.length} employee(s)? This cannot be undone.'),
+        content: Text(
+          'Permanently delete ${_selectedEmployeeIds.length} employee(s)? This cannot be undone.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -135,12 +160,16 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_selectedEmployeeIds.length} employee(s) deleted')),
+          SnackBar(
+            content: Text('${_selectedEmployeeIds.length} employee(s) deleted'),
+          ),
         );
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -164,31 +193,43 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Full Name'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
                 TextFormField(
                   controller: emailController,
                   decoration: const InputDecoration(labelText: 'Email'),
                   keyboardType: TextInputType.emailAddress,
-                  validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                  validator: (v) => (v == null || !v.contains('@'))
+                      ? 'Enter a valid email'
+                      : null,
                 ),
                 TextFormField(
                   controller: passwordController,
-                  decoration: const InputDecoration(labelText: 'Temporary Password'),
+                  decoration: const InputDecoration(
+                    labelText: 'Temporary Password',
+                  ),
                   obscureText: true,
-                  validator: (v) => (v == null || v.length < 6) ? 'Min 6 characters' : null,
+                  validator: (v) =>
+                      (v == null || v.length < 6) ? 'Min 6 characters' : null,
                 ),
               ],
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () {
-            if (formKey.currentState!.validate()) {
-              Navigator.pop(ctx, true);
-            }
-          }, child: const Text('Add')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, true);
+              }
+            },
+            child: const Text('Add'),
+          ),
         ],
       ),
     );
@@ -202,15 +243,15 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           role: 'employee',
         );
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Employee added')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee added')));
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add employee: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to add employee: $e')));
       }
     }
   }
@@ -222,8 +263,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         title: const Text('Delete Employee'),
         content: Text('Are you sure you want to delete ${user.name}?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -231,11 +278,15 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
       try {
         await _userService.deleteUser(user.id);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Employee deleted')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee deleted')));
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
       }
     }
   }
@@ -247,8 +298,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         title: const Text('Deactivate Employee'),
         content: Text('Deactivate ${user.name}\'s account?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Deactivate')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Deactivate'),
+          ),
         ],
       ),
     );
@@ -256,11 +313,15 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
       try {
         await _userService.deactivateUser(user.id);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Employee deactivated')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee deactivated')));
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to deactivate: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to deactivate: $e')));
       }
     }
   }
@@ -284,20 +345,26 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Full Name'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
                 TextFormField(
                   controller: emailController,
                   decoration: const InputDecoration(labelText: 'Email'),
                   keyboardType: TextInputType.emailAddress,
-                  validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                  validator: (v) => (v == null || !v.contains('@'))
+                      ? 'Enter a valid email'
+                      : null,
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   initialValue: role,
                   decoration: const InputDecoration(labelText: 'Role'),
                   items: const [
-                    DropdownMenuItem(value: 'employee', child: Text('Employee')),
+                    DropdownMenuItem(
+                      value: 'employee',
+                      child: Text('Employee'),
+                    ),
                     DropdownMenuItem(value: 'admin', child: Text('Admin')),
                   ],
                   onChanged: (v) => role = v ?? role,
@@ -307,12 +374,18 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () {
-            if (formKey.currentState!.validate()) {
-              Navigator.pop(ctx, true);
-            }
-          }, child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, true);
+              }
+            },
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -326,11 +399,15 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           role: role,
         );
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Employee updated')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee updated')));
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
       }
     }
   }
@@ -342,8 +419,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         title: const Text('Reactivate Employee'),
         content: Text('Reactivate ${user.name}\'s account?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Reactivate')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reactivate'),
+          ),
         ],
       ),
     );
@@ -351,11 +434,15 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
       try {
         await _userService.reactivateUser(user.id);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Employee reactivated')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee reactivated')));
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to reactivate: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to reactivate: $e')));
       }
     }
   }
@@ -367,6 +454,19 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         title: const Text('Manage Employees'),
         backgroundColor: const Color(0xFF2688d4),
         actions: [
+          if (!_isSelectMode)
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: ElevatedButton.icon(
+                onPressed: _addEmployee,
+                icon: const Icon(Icons.person_add),
+                label: const Text('Add Employee'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF2688d4),
+                ),
+              ),
+            ),
           if (_isSelectMode && _selectedEmployeeIds.isNotEmpty)
             PopupMenuButton<String>(
               onSelected: (value) {
@@ -435,22 +535,26 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                     FilterChip(
                       label: const Text('Active'),
                       selected: _filterStatus == 'active',
-                      onSelected: (_) => setState(() => _filterStatus = 'active'),
+                      onSelected: (_) =>
+                          setState(() => _filterStatus = 'active'),
                     ),
                     FilterChip(
                       label: const Text('Inactive'),
                       selected: _filterStatus == 'inactive',
-                      onSelected: (_) => setState(() => _filterStatus = 'inactive'),
+                      onSelected: (_) =>
+                          setState(() => _filterStatus = 'inactive'),
                     ),
                     FilterChip(
                       label: const Text('Verified'),
                       selected: _filterStatus == 'verified',
-                      onSelected: (_) => setState(() => _filterStatus = 'verified'),
+                      onSelected: (_) =>
+                          setState(() => _filterStatus = 'verified'),
                     ),
                     FilterChip(
                       label: const Text('Unverified'),
                       selected: _filterStatus == 'unverified',
-                      onSelected: (_) => setState(() => _filterStatus = 'unverified'),
+                      onSelected: (_) =>
+                          setState(() => _filterStatus = 'unverified'),
                     ),
                   ],
                 ),
@@ -459,8 +563,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    icon: Icon(_isSelectMode ? Icons.check_box : Icons.check_box_outline_blank),
-                    label: Text(_isSelectMode ? 'Exit Select Mode' : 'Select Mode'),
+                    icon: Icon(
+                      _isSelectMode
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                    ),
+                    label: Text(
+                      _isSelectMode ? 'Exit Select Mode' : 'Select Mode',
+                    ),
                     onPressed: () {
                       setState(() {
                         _isSelectMode = !_isSelectMode;
@@ -489,7 +599,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                   }
                   final employees = snapshot.data ?? [];
                   final filtered = _filterEmployees(employees);
-                  
+
                   if (filtered.isEmpty) {
                     return Center(
                       child: Text(
@@ -499,7 +609,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                       ),
                     );
                   }
-                  
+
                   return ListView.separated(
                     padding: const EdgeInsets.all(12),
                     itemCount: filtered.length,
@@ -507,7 +617,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                     itemBuilder: (context, index) {
                       final UserModel user = filtered[index];
                       final isSelected = _selectedEmployeeIds.contains(user.id);
-                      
+
                       return ListTile(
                         leading: _isSelectMode
                             ? Checkbox(
@@ -549,12 +659,24 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                   }
                                 },
                                 itemBuilder: (ctx) => [
-                                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                  PopupMenuItem(
-                                    value: user.isActive ? 'deactivate' : 'reactivate',
-                                    child: Text(user.isActive ? 'Deactivate' : 'Reactivate'),
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text('Edit'),
                                   ),
-                                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                  PopupMenuItem(
+                                    value: user.isActive
+                                        ? 'deactivate'
+                                        : 'reactivate',
+                                    child: Text(
+                                      user.isActive
+                                          ? 'Deactivate'
+                                          : 'Reactivate',
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Delete'),
+                                  ),
                                 ],
                               ),
                         onTap: _isSelectMode
@@ -576,11 +698,6 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
             ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'manage_employees_fab',
-        onPressed: _addEmployee,
-        child: const Icon(Icons.person_add),
       ),
     );
   }

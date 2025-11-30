@@ -32,7 +32,9 @@ class AttendanceService {
     try {
       final token = await _userService.getToken();
       final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/attendance/${attendanceData.isCheckedIn ? 'checkin' : 'checkout'}'),
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/attendance/${attendanceData.isCheckedIn ? 'checkin' : 'checkout'}',
+        ),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -68,7 +70,7 @@ class AttendanceService {
     try {
       final token = await _userService.getToken();
       final queryParams = <String, String>{};
-      
+
       if (startDate != null) {
         queryParams['startDate'] = startDate.toIso8601String();
       }
@@ -76,9 +78,9 @@ class AttendanceService {
         queryParams['endDate'] = endDate.toIso8601String();
       }
 
-      final uri = Uri.parse('${ApiConfig.baseUrl}/api/attendance/history').replace(
-        queryParameters: queryParams.isNotEmpty ? queryParams : null,
-      );
+      final uri = Uri.parse(
+        '${ApiConfig.baseUrl}/api/attendance/history',
+      ).replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
 
       final response = await http.get(
         uri,
@@ -91,7 +93,9 @@ class AttendanceService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List<dynamic> records = data['records'] ?? [];
-        return records.map((record) => AttendanceRecord.fromJson(record)).toList();
+        return records
+            .map((record) => AttendanceRecord.fromJson(record))
+            .toList();
       } else {
         throw Exception('Failed to load attendance history');
       }
@@ -107,21 +111,19 @@ class AttendanceService {
   }) async {
     try {
       final token = await _userService.getToken();
-      final queryParams = <String, String>{};
-      
+      final queryParams = <String, String>{'type': 'attendance'};
+
       if (date != null) {
-        queryParams['date'] = date.toIso8601String();
+        queryParams['startDate'] = date.toIso8601String();
+        queryParams['endDate'] = date.add(Duration(days: 1)).toIso8601String();
       }
       if (locationId != null) {
         queryParams['geofenceId'] = locationId;
       }
-      if (status != null) {
-        queryParams['status'] = status;
-      }
 
-      final uri = Uri.parse('${ApiConfig.baseUrl}/api/attendance').replace(
-        queryParameters: queryParams.isNotEmpty ? queryParams : null,
-      );
+      final uri = Uri.parse(
+        '${ApiConfig.baseUrl}/api/reports',
+      ).replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
 
       final response = await http.get(
         uri,
@@ -133,7 +135,9 @@ class AttendanceService {
 
       if (response.statusCode == 200) {
         final List<dynamic> records = jsonDecode(response.body);
-        return records.map((record) => AttendanceRecord.fromJson(record)).toList();
+        return records
+            .map((record) => AttendanceRecord.fromJson(record))
+            .toList();
       } else {
         throw Exception('Failed to load attendance records');
       }
@@ -195,6 +199,8 @@ class AttendanceRecord {
   final String? geofenceId;
   final String? geofenceName;
   final String userId;
+  final String? employeeName;
+  final String? employeeEmail;
 
   AttendanceRecord({
     required this.id,
@@ -205,18 +211,40 @@ class AttendanceRecord {
     this.geofenceId,
     this.geofenceName,
     required this.userId,
+    this.employeeName,
+    this.employeeEmail,
   });
 
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
+    // Handle both direct attendance records and report objects
+    final attendance = json['attendance'] as Map<String, dynamic>? ?? json;
+    final employee = json['employee'] as Map<String, dynamic>?;
+    final geofence = json['geofence'] as Map<String, dynamic>?;
+
+    // Determine if it's check-in or check-out based on content
+    final content = json['content'] as String? ?? '';
+    final isCheckIn = content.toLowerCase().contains('checked in');
+
     return AttendanceRecord(
-      id: json['id'],
-      isCheckIn: json['isCheckIn'],
-      timestamp: DateTime.parse(json['timestamp']),
-      latitude: json['latitude']?.toDouble(),
-      longitude: json['longitude']?.toDouble(),
-      geofenceId: json['geofenceId'],
-      geofenceName: json['geofenceName'],
-      userId: json['userId'],
+      id: json['_id'] ?? json['id'] ?? '',
+      isCheckIn: isCheckIn,
+      timestamp: DateTime.parse(
+        attendance['checkIn'] ??
+            json['submittedAt'] ??
+            json['timestamp'] ??
+            DateTime.now().toIso8601String(),
+      ),
+      latitude:
+          (attendance['location']?['coordinates']?[1] as num?)?.toDouble() ??
+          (attendance['latitude'] as num?)?.toDouble(),
+      longitude:
+          (attendance['location']?['coordinates']?[0] as num?)?.toDouble() ??
+          (attendance['longitude'] as num?)?.toDouble(),
+      geofenceId: geofence?['_id'] ?? json['geofenceId'],
+      geofenceName: geofence?['name'] ?? json['geofenceName'],
+      userId: employee?['_id'] ?? json['userId'] ?? '',
+      employeeName: employee?['name'] ?? json['employeeName'],
+      employeeEmail: employee?['email'] ?? json['employeeEmail'],
     );
   }
 }
