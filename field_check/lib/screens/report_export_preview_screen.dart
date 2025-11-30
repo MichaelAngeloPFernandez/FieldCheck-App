@@ -76,13 +76,13 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       debugPrint('  Error: $e');
     }
 
-    // Fallback: Save to app cache directory (always accessible and deletable)
-    debugPrint('Step 2: Falling back to app cache directory...');
+    // Fallback: Save to app documents directory (visible in file manager)
+    debugPrint('Step 2: Falling back to app documents directory...');
     try {
-      final cacheDir = await getTemporaryDirectory();
-      debugPrint('  Cache directory: ${cacheDir.path}');
+      final docsDir = await getApplicationDocumentsDirectory();
+      debugPrint('  Documents directory: ${docsDir.path}');
 
-      final file = File('${cacheDir.path}/$fileName');
+      final file = File('${docsDir.path}/$fileName');
       debugPrint('  Writing file to: ${file.path}');
       await file.writeAsBytes(fileBytes);
 
@@ -93,7 +93,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       debugPrint('  File size: $fileSize bytes');
 
       if (fileExists && fileSize > 0) {
-        debugPrint('✓ Step 2 SUCCESS: File saved to app cache');
+        debugPrint('✓ Step 2 SUCCESS: File saved to app documents');
         debugPrint('  Path: ${file.path}');
         debugPrint('  Size: $fileSize bytes');
         return file.path;
@@ -101,7 +101,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         debugPrint('❌ Step 2 FAILED: File not created or empty');
       }
     } catch (e) {
-      debugPrint('❌ Step 2 FAILED: Cache write error');
+      debugPrint('❌ Step 2 FAILED: Documents write error');
       debugPrint('  Error: $e');
     }
 
