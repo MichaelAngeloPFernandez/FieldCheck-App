@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:field_check/services/attendance_service.dart';
 import 'package:field_check/config/api_config.dart';
+import 'package:field_check/models/report_model.dart';
 import 'package:http/http.dart' as http;
 
 class ReportExportPreviewScreen extends StatefulWidget {
@@ -10,6 +11,8 @@ class ReportExportPreviewScreen extends StatefulWidget {
   final DateTime? startDate;
   final DateTime? endDate;
   final String? locationFilter;
+  final String? statusFilter;
+  final List<ReportModel>? taskReports;
 
   const ReportExportPreviewScreen({
     super.key,
@@ -18,6 +21,8 @@ class ReportExportPreviewScreen extends StatefulWidget {
     this.startDate,
     this.endDate,
     this.locationFilter,
+    this.statusFilter,
+    this.taskReports,
   });
 
   @override
@@ -47,6 +52,9 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       }
       if (widget.locationFilter != null) {
         queryParams['geofenceId'] = widget.locationFilter!;
+      }
+      if (widget.statusFilter != null) {
+        queryParams['status'] = widget.statusFilter!;
       }
 
       final uri = Uri.parse(
@@ -108,6 +116,9 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       }
       if (widget.locationFilter != null) {
         queryParams['geofenceId'] = widget.locationFilter!;
+      }
+      if (widget.statusFilter != null) {
+        queryParams['status'] = widget.statusFilter!;
       }
 
       final uri = Uri.parse(

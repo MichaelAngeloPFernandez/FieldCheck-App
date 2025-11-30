@@ -198,28 +198,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     });
   }
 
-  void _showExportPreview() {
-    // Import the preview screen at the top of the file
-    // import 'package:field_check/screens/report_export_preview_screen.dart';
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ReportExportPreviewScreen(
-          records: _attendanceRecords,
-          reportType: _viewMode,
-          startDate: _filterDate != 'All Dates'
-              ? DateTime.parse(_filterDate)
-              : null,
-          endDate: null,
-          locationFilter: _filterLocation != 'All Locations'
-              ? _filterLocation
-              : null,
-        ),
-      ),
-    );
-  }
-
   // Group attendance records by employee and date
   Map<String, Map<String, dynamic>> _groupAttendanceByEmployee() {
     final grouped = <String, Map<String, dynamic>>{};
@@ -418,19 +396,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                   onPressed: _fetchAttendanceRecords,
                                   icon: const Icon(Icons.refresh),
                                   label: const Text('Refresh'),
-                                ),
-                                const SizedBox(width: 8),
-                                ElevatedButton.icon(
-                                  onPressed: _attendanceRecords.isNotEmpty
-                                      ? () => _showExportPreview()
-                                      : null,
-                                  icon: const Icon(Icons.download),
-                                  label: const Text('Export'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    foregroundColor: Colors.white,
-                                    disabledBackgroundColor: Colors.grey,
-                                  ),
                                 ),
                               ],
                             ),
@@ -1061,82 +1026,58 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   Future<void> _exportReport() async {
-    try {
-      String csvContent = '';
-
-      if (_viewMode == 'attendance') {
-        // Export attendance report
-        csvContent =
-            'Employee Name,Date,Location,Check-In Time,Check-Out Time,Status\n';
-        final grouped = _groupAttendanceByEmployee();
-        for (final entry in grouped.entries) {
-          final data = entry.value;
-          final employeeName = data['employeeName'] ?? 'Unknown';
-          final date = data['date'] ?? '';
-          final location = data['location'] ?? 'N/A';
-          final checkInTime = data['checkInTime'] != null
-              ? DateFormat(
-                  'HH:mm',
-                ).format((data['checkInTime'] as DateTime).toLocal())
-              : '-';
-          final checkOutTime = data['checkOutTime'] != null
-              ? DateFormat(
-                  'HH:mm',
-                ).format((data['checkOutTime'] as DateTime).toLocal())
-              : '-';
-          final status = data['isCurrentlyCheckedIn']
-              ? 'Checked In'
-              : 'Checked Out';
-          csvContent +=
-              '$employeeName,$date,$location,$checkInTime,$checkOutTime,$status\n';
-        }
-      } else {
-        // Export task report
-        csvContent = 'Task Title,Employee,Status,Submitted Date,Type\n';
-        for (final report in _taskReports) {
-          final title = report.taskTitle ?? '';
-          final employee = report.employeeName ?? '';
-          final status = report.status ?? '';
-          final submittedDate = DateFormat(
-            'yyyy-MM-dd HH:mm',
-          ).format(report.submittedAt.toLocal());
-          final type = report.type ?? '';
-          csvContent += '$title,$employee,$status,$submittedDate,$type\n';
-        }
-      }
-
-      // Save CSV file
-      await _saveExportFile(csvContent);
-
-      if (mounted) {
+    // Show export preview with filters applied
+    if (_viewMode == 'attendance') {
+      if (_attendanceRecords.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Report exported successfully')),
+          const SnackBar(content: Text('No attendance records to export')),
         );
+        return;
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
-      }
-    }
-  }
-
-  Future<void> _saveExportFile(String content) async {
-    // For now, just copy to clipboard or show in dialog
-    // In production, use file_picker or path_provider to save
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Report Export'),
-        content: SingleChildScrollView(child: Text(content)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ReportExportPreviewScreen(
+            records: _attendanceRecords,
+            reportType: _viewMode,
+            startDate: _filterDate != 'All Dates'
+                ? DateTime.parse(_filterDate)
+                : null,
+            endDate: null,
+            locationFilter: _filterLocation != 'All Locations'
+                ? _filterLocation
+                : null,
+            statusFilter: _filterStatus != 'All Status' ? _filterStatus : null,
           ),
-        ],
-      ),
-    );
+        ),
+      );
+    } else {
+      if (_taskReports.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No task reports to export')),
+        );
+        return;
+      }
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ReportExportPreviewScreen(
+            records: _attendanceRecords,
+            reportType: _viewMode,
+            taskReports: _filteredTaskReports(),
+            startDate: _filterDate != 'All Dates'
+                ? DateTime.parse(_filterDate)
+                : null,
+            endDate: null,
+            locationFilter: _filterLocation != 'All Locations'
+                ? _filterLocation
+                : null,
+            statusFilter: _reportStatusFilter != 'All'
+                ? _reportStatusFilter
+                : null,
+          ),
+        ),
+      );
+    }
   }
 }
