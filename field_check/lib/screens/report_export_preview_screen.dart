@@ -6,6 +6,8 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:http/http.dart' as http;
+import 'dart:io';
+import 'dart:async';
 
 class ReportExportPreviewScreen extends StatefulWidget {
   final List<AttendanceRecord> records;
@@ -41,24 +43,79 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
     String fileName,
     List<int> fileBytes,
   ) async {
+    debugPrint('=== Starting file save process ===');
+    debugPrint('File: $fileName, Size: ${fileBytes.length} bytes');
+
     try {
-      debugPrint('Saving file via native channel: $fileName');
-      final result = await platform.invokeMethod<Map>('saveFile', {
-        'fileName': fileName,
-        'fileBytes': fileBytes,
-      });
+      debugPrint('Step 1: Attempting to save file via native channel...');
+      final result = await platform
+          .invokeMethod<Map>('saveFile', {
+            'fileName': fileName,
+            'fileBytes': fileBytes,
+          })
+          .timeout(const Duration(seconds: 10));
 
       if (result != null) {
         final path = result['path'] as String?;
         final size = result['size'] as int?;
-        debugPrint('✓ File saved successfully via native channel');
+        debugPrint('✓ Step 1 SUCCESS: File saved via native channel');
         debugPrint('  Path: $path');
         debugPrint('  Size: $size bytes');
         return path;
+      } else {
+        debugPrint('❌ Step 1 FAILED: Native channel returned null');
+      }
+    } on PlatformException catch (e) {
+      debugPrint('❌ Step 1 FAILED: Platform exception');
+      debugPrint('  Code: ${e.code}');
+      debugPrint('  Message: ${e.message}');
+      debugPrint('  Details: ${e.details}');
+    } catch (e) {
+      debugPrint('❌ Step 1 FAILED: Native channel error');
+      debugPrint('  Error: $e');
+    }
+
+    // Fallback: Try direct file write to Downloads
+    debugPrint('Step 2: Falling back to direct file write...');
+    try {
+      final downloadsPath = '/storage/emulated/0/Download';
+      final downloadsDir = Directory(downloadsPath);
+
+      debugPrint(
+        '  Checking if Downloads directory exists: ${downloadsDir.path}',
+      );
+      final exists = await downloadsDir.exists();
+      debugPrint('  Directory exists: $exists');
+
+      if (!exists) {
+        debugPrint('  Creating Downloads directory...');
+        await downloadsDir.create(recursive: true);
+      }
+
+      final file = File('$downloadsPath/$fileName');
+      debugPrint('  Writing file to: ${file.path}');
+      await file.writeAsBytes(fileBytes);
+
+      final fileExists = await file.exists();
+      final fileSize = fileExists ? await file.length() : 0;
+
+      debugPrint('  File exists after write: $fileExists');
+      debugPrint('  File size: $fileSize bytes');
+
+      if (fileExists && fileSize > 0) {
+        debugPrint('✓ Step 2 SUCCESS: File saved via direct write');
+        debugPrint('  Path: ${file.path}');
+        debugPrint('  Size: $fileSize bytes');
+        return file.path;
+      } else {
+        debugPrint('❌ Step 2 FAILED: File not created or empty');
       }
     } catch (e) {
-      debugPrint('Native channel error: $e');
+      debugPrint('❌ Step 2 FAILED: Direct write error');
+      debugPrint('  Error: $e');
     }
+
+    debugPrint('=== File save process FAILED ===');
     return null;
   }
 
@@ -223,7 +280,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         // Save file using native Android method
         try {
           final fileName =
-              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.csv';
+              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.xlsx';
           final filePath = await _saveFileToDownloads(
             fileName,
             response.bodyBytes,
@@ -343,7 +400,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                 ElevatedButton.icon(
                   onPressed: _isExporting ? null : _exportToCSV,
                   icon: const Icon(Icons.table_chart),
-                  label: const Text('Export CSV'),
+                  label: const Text('Export Excel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
