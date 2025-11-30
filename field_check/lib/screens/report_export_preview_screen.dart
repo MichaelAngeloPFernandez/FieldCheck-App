@@ -35,7 +35,7 @@ class ReportExportPreviewScreen extends StatefulWidget {
 
 class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
   bool _isExporting = false;
-  String? _exportError;
+  String? _exportError = null;
 
   Future<void> _exportToPDF() async {
     setState(() {
@@ -71,21 +71,37 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       if (response.statusCode == 200) {
         // Save file to device storage
         try {
-          // Try Downloads first, then fall back to Documents, then app cache
+          // Try to save to Downloads, fall back to app documents
           Directory? directory;
+          String savePath = '';
+
           try {
-            directory = await getDownloadsDirectory();
+            final downloads = await getDownloadsDirectory();
+            if (downloads != null) {
+              directory = downloads;
+              savePath = 'Downloads';
+            }
           } catch (e) {
-            debugPrint('Downloads directory not available: $e');
+            debugPrint('Downloads not available: $e');
           }
 
           directory ??= await getApplicationDocumentsDirectory();
+          if (savePath.isEmpty) savePath = 'Documents';
 
           final fileName =
               'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.pdf';
           final file = File('${directory.path}/$fileName');
 
+          debugPrint('Saving PDF to $savePath: ${file.path}');
           await file.writeAsBytes(response.bodyBytes);
+
+          // Verify file was created
+          final exists = await file.exists();
+          final fileSize = exists ? await file.length() : 0;
+          debugPrint('✓ File saved successfully');
+          debugPrint('  Path: ${file.path}');
+          debugPrint('  Size: $fileSize bytes');
+          debugPrint('  Location: $savePath folder');
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -190,21 +206,37 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       if (response.statusCode == 200) {
         // Save file to device storage
         try {
-          // Try Downloads first, then fall back to Documents, then app cache
+          // Try to save to Downloads, fall back to app documents
           Directory? directory;
+          String savePath = '';
+
           try {
-            directory = await getDownloadsDirectory();
+            final downloads = await getDownloadsDirectory();
+            if (downloads != null) {
+              directory = downloads;
+              savePath = 'Downloads';
+            }
           } catch (e) {
-            debugPrint('Downloads directory not available: $e');
+            debugPrint('Downloads not available: $e');
           }
 
           directory ??= await getApplicationDocumentsDirectory();
+          if (savePath.isEmpty) savePath = 'Documents';
 
           final fileName =
               'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.csv';
           final file = File('${directory.path}/$fileName');
 
+          debugPrint('Saving CSV to $savePath: ${file.path}');
           await file.writeAsBytes(response.bodyBytes);
+
+          // Verify file was created
+          final exists = await file.exists();
+          final fileSize = exists ? await file.length() : 0;
+          debugPrint('✓ File saved successfully');
+          debugPrint('  Path: ${file.path}');
+          debugPrint('  Size: $fileSize bytes');
+          debugPrint('  Location: $savePath folder');
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(

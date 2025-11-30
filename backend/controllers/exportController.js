@@ -30,13 +30,10 @@ const exportAttendancePDF = asyncHandler(async (req, res) => {
     .populate('geofence', 'name')
     .sort({ checkIn: -1 });
 
-  // Fetch tasks for employees at this geofence if geofenceId is provided
+  // Fetch tasks for this geofence if geofenceId is provided
   let tasks = [];
   if (geofenceId) {
-    const Geofence = require('../models/Geofence');
-    const geofence = await Geofence.findById(geofenceId).populate('assignedEmployees', '_id');
-    if (geofence && geofence.assignedEmployees) {
-      const employeeIds = geofence.assignedEmployees.map(e => e._id);
+    try {
       const taskFilter = { geofence: geofenceId };
       if (startDate || endDate) {
         taskFilter.dueDate = {};
@@ -46,6 +43,10 @@ const exportAttendancePDF = asyncHandler(async (req, res) => {
       tasks = await Task.find(taskFilter)
         .populate('assignedBy', 'name email')
         .sort({ dueDate: -1 });
+      console.log(`✓ Found ${tasks.length} tasks for geofence ${geofenceId}`);
+    } catch (e) {
+      console.error('Error fetching tasks for geofence:', e);
+      tasks = [];
     }
   }
 
@@ -94,13 +95,10 @@ const exportAttendanceExcel = asyncHandler(async (req, res) => {
     .populate('geofence', 'name')
     .sort({ checkIn: -1 });
 
-  // Fetch tasks for employees at this geofence if geofenceId is provided
+  // Fetch tasks for this geofence if geofenceId is provided
   let tasks = [];
   if (geofenceId) {
-    const Geofence = require('../models/Geofence');
-    const geofence = await Geofence.findById(geofenceId).populate('assignedEmployees', '_id');
-    if (geofence && geofence.assignedEmployees) {
-      const employeeIds = geofence.assignedEmployees.map(e => e._id);
+    try {
       const taskFilter = { geofence: geofenceId };
       if (startDate || endDate) {
         taskFilter.dueDate = {};
@@ -110,11 +108,15 @@ const exportAttendanceExcel = asyncHandler(async (req, res) => {
       tasks = await Task.find(taskFilter)
         .populate('assignedBy', 'name email')
         .sort({ dueDate: -1 });
+      console.log(`✓ Found ${tasks.length} tasks for geofence ${geofenceId}`);
+    } catch (e) {
+      console.error('Error fetching tasks for geofence:', e);
+      tasks = [];
     }
   }
 
   // Generate Excel
-  const buffer = await ReportExportService.generateAttendanceExcel(records, tasks);
+  const buffer = await ReportExportService.generateAttendanceExcel(records, { dateRange: 'All Dates', tasks });
 
   // Set response headers
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

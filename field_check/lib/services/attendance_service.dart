@@ -111,18 +111,23 @@ class AttendanceService {
   }) async {
     try {
       final token = await _userService.getToken();
-      final queryParams = <String, String>{'type': 'attendance'};
+      final queryParams = <String, String>{};
 
       if (date != null) {
         queryParams['startDate'] = date.toIso8601String();
-        queryParams['endDate'] = date.add(Duration(days: 1)).toIso8601String();
+        queryParams['endDate'] = date
+            .add(const Duration(days: 1))
+            .toIso8601String();
       }
       if (locationId != null) {
         queryParams['geofenceId'] = locationId;
       }
+      if (status != null) {
+        queryParams['status'] = status;
+      }
 
       final uri = Uri.parse(
-        '${ApiConfig.baseUrl}/api/reports',
+        '${ApiConfig.baseUrl}/api/attendance',
       ).replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
 
       final response = await http.get(
@@ -139,7 +144,9 @@ class AttendanceService {
             .map((record) => AttendanceRecord.fromJson(record))
             .toList();
       } else {
-        throw Exception('Failed to load attendance records');
+        throw Exception(
+          'Failed to load attendance records: ${response.statusCode}',
+        );
       }
     } catch (e) {
       throw Exception('Error getting attendance records: $e');

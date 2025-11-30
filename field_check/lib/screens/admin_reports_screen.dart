@@ -141,6 +141,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   Future<void> _fetchAttendanceRecords() async {
     try {
+      debugPrint(
+        'Fetching attendance records with filters: date=$_filterDate, location=$_filterLocation, status=$_filterStatus',
+      );
       final records = await AttendanceService().getAttendanceRecords(
         date: _filterDate != 'All Dates' ? DateTime.parse(_filterDate) : null,
         locationId: _filterLocation != 'All Locations'
@@ -157,12 +160,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             : null,
         status: _filterStatus != 'All Status' ? _filterStatus : null,
       );
+      debugPrint('✓ Fetched ${records.length} attendance records');
       setState(() {
         _attendanceRecords = records;
       });
     } catch (e) {
-      debugPrint('Error fetching attendance records: $e');
-      // Optionally show an error message to the user
+      debugPrint('✗ Error fetching attendance records: $e');
+      setState(() {
+        _attendanceRecords = [];
+      });
     }
   }
 
@@ -992,6 +998,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           builder: (context) => ReportExportPreviewScreen(
             records: _attendanceRecords,
             reportType: _viewMode,
+            taskReports: _filteredTaskReports(),
             startDate: _filterDate != 'All Dates'
                 ? DateTime.parse(_filterDate)
                 : null,
