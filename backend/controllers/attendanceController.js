@@ -253,22 +253,7 @@ const getAttendanceRecords = asyncHandler(async (req, res) => {
     .populate('geofence', 'name')
     .sort({ checkIn: -1 });
 
-  // Transform data to match frontend expectations
-  const transformedRecords = attendance.map(record => ({
-    id: record._id,
-    isCheckIn: record.status === 'in',
-    timestamp: record.checkIn,
-    latitude: record.location?.lat,
-    longitude: record.location?.lng,
-    geofenceId: record.geofence?._id,
-    geofenceName: record.geofence?.name,
-    userId: record.employee?._id,
-    checkOut: record.checkOut,
-    employeeName: record.employee?.name,
-    employeeEmail: record.employee?.email,
-  }));
-
-  res.json(transformedRecords);
+  res.json(attendance);
 });
 
 // @desc    Get attendance record by ID
