@@ -99,7 +99,7 @@ const checkIn = asyncHandler(async (req, res) => {
 // @route   POST /api/attendance/checkout
 // @access  Private
 const checkOut = asyncHandler(async (req, res) => {
-  const { latitude, longitude } = req.body;
+  const { latitude, longitude, geofenceId } = req.body;
   const openRecord = await Attendance.findOne({ employee: req.user._id, checkOut: { $exists: false } }).sort({ createdAt: -1 });
 
   if (!openRecord) {
@@ -108,10 +108,22 @@ const checkOut = asyncHandler(async (req, res) => {
   }
 
   // Server-side geofence validation on checkout
-  const geofence = await Geofence.findById(openRecord.geofence);
+  // Use geofenceId from request if openRecord.geofence is missing
+  const geofenceIdToUse = openRecord.geofence || geofenceId;
+  if (!geofenceIdToUse) {
+    res.status(404);
+    throw new Error('Geofence information not available');
+  }
+  
+  const geofence = await Geofence.findById(geofenceIdToUse);
   if (!geofence) {
     res.status(404);
     throw new Error('Geofence not found');
+  }
+  
+  // Update the geofence reference if it was missing
+  if (!openRecord.geofence) {
+    openRecord.geofence = geofence._id;
   }
   if (geofence.isActive === false) {
     res.status(403);

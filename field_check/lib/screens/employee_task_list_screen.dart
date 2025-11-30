@@ -37,6 +37,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
   Future<void> _initRealtimeService() async {
     await _realtimeService.initialize();
 
+    // Listen for any task updates (new, updated, deleted, status_updated)
     _realtimeService.taskStream.listen((event) {
       if (mounted) {
         setState(() {
