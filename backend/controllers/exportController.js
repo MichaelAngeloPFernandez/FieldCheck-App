@@ -15,75 +15,19 @@ const exportAttendancePDF = asyncHandler(async (req, res) => {
 
     const { startDate, endDate, employeeId, geofenceId } = req.query;
 
-  // Build filter
-  const filter = {};
-  if (startDate || endDate) {
-    filter.checkIn = {};
-    if (startDate) filter.checkIn.$gte = new Date(startDate);
-    if (endDate) filter.checkIn.$lte = new Date(endDate);
-  }
-  if (employeeId) filter.employee = employeeId;
-  if (geofenceId) filter.geofence = geofenceId;
-
-  // Fetch records
-  const records = await Attendance.find(filter)
-    .populate('employee', 'name email')
-    .populate('geofence', 'name')
-    .sort({ checkIn: -1 });
-
-  // Fetch tasks for this geofence if geofenceId is provided
-  let tasks = [];
-  if (geofenceId) {
-    try {
-      const taskFilter = { geofence: geofenceId };
-      if (startDate || endDate) {
-        taskFilter.dueDate = {};
-        if (startDate) taskFilter.dueDate.$gte = new Date(startDate);
-        if (endDate) taskFilter.dueDate.$lte = new Date(endDate);
+    // Validate dates
+    if (startDate) {
+      const start = new Date(startDate);
+      if (isNaN(start.getTime())) {
+        return res.status(400).json({ message: 'Invalid startDate format' });
       }
-      tasks = await Task.find(taskFilter)
-        .populate('assignedBy', 'name email')
-        .sort({ dueDate: -1 });
-      console.log(`✓ Found ${tasks.length} tasks for geofence ${geofenceId}`);
-    } catch (e) {
-      console.error('Error fetching tasks for geofence:', e);
-      tasks = [];
     }
-  }
-
-  // Generate PDF
-  const dateRange = startDate && endDate
-    ? `${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`
-    : 'All Dates';
-
-  const pdfStream = ReportExportService.generateAttendancePDF(records, { dateRange, tasks });
-
-  // Set response headers
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="attendance_${Date.now()}.pdf"`);
-
-  // Pipe PDF to response
-  pdfStream.pipe(res);
-
-  // Handle errors
-  pdfStream.on('error', (err) => {
-    console.error('PDF generation error:', err);
-    if (!res.headersSent) {
-      res.status(500).json({ message: 'Failed to generate PDF' });
+    if (endDate) {
+      const end = new Date(endDate);
+      if (isNaN(end.getTime())) {
+        return res.status(400).json({ message: 'Invalid endDate format' });
+      }
     }
-  });
-  } catch (error) {
-    console.error('Export PDF error:', error);
-    res.status(500).json({ message: 'Failed to export PDF: ' + error.message });
-  }
-});
-
-// @desc    Export attendance records as Excel
-// @route   GET /api/export/attendance/excel
-// @access  Private/Admin
-const exportAttendanceExcel = asyncHandler(async (req, res) => {
-  try {
-    const { startDate, endDate, employeeId, geofenceId } = req.query;
 
     // Build filter
     const filter = {};
@@ -105,34 +49,149 @@ const exportAttendanceExcel = asyncHandler(async (req, res) => {
     let tasks = [];
     if (geofenceId) {
       try {
+        console.log(`Fetching tasks for geofence: ${geofenceId}`);
         const taskFilter = { geofence: geofenceId };
         if (startDate || endDate) {
           taskFilter.dueDate = {};
           if (startDate) taskFilter.dueDate.$gte = new Date(startDate);
           if (endDate) taskFilter.dueDate.$lte = new Date(endDate);
         }
+        console.log('Task filter:', JSON.stringify(taskFilter));
         tasks = await Task.find(taskFilter)
           .populate('assignedBy', 'name email')
           .sort({ dueDate: -1 });
         console.log(`✓ Found ${tasks.length} tasks for geofence ${geofenceId}`);
       } catch (e) {
-        console.error('Error fetching tasks for geofence:', e);
+        console.error('Error fetching tasks for geofence:', e.message);
+        console.error('Stack:', e.stack);
+        tasks = [];
+      }
+    }
+
+    // Generate PDF
+    const dateRange = startDate && endDate
+      ? `${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`
+      : 'All Dates';
+
+    console.log(`Generating PDF with ${records.length} records and ${tasks.length} tasks`);
+    
+    try {
+      const pdfStream = ReportExportService.generateAttendancePDF(records, { dateRange, tasks });
+
+      // Set response headers
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="attendance_${Date.now()}.pdf"`);
+
+      // Pipe PDF to response
+      pdfStream.pipe(res);
+
+      // Handle errors
+      pdfStream.on('error', (err) => {
+        console.error('PDF generation error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ message: 'Failed to generate PDF' });
+        }
+      });
+    } catch (pdfError) {
+      console.error('PDF generation exception:', pdfError.message);
+      console.error('Stack:', pdfError.stack);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'PDF generation failed: ' + pdfError.message });
+      }
+    }
+  } catch (error) {
+    console.error('Export PDF error:', error);
+    res.status(500).json({ message: 'Failed to export PDF: ' + error.message });
+  }
+});
+
+// @desc    Export attendance records as Excel
+// @route   GET /api/export/attendance/excel
+// @access  Private/Admin
+const exportAttendanceExcel = asyncHandler(async (req, res) => {
+  try {
+    // Verify admin role
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only administrators can export CSV reports' });
+    }
+
+    const { startDate, endDate, employeeId, geofenceId } = req.query;
+
+    // Validate dates
+    if (startDate) {
+      const start = new Date(startDate);
+      if (isNaN(start.getTime())) {
+        return res.status(400).json({ message: 'Invalid startDate format' });
+      }
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      if (isNaN(end.getTime())) {
+        return res.status(400).json({ message: 'Invalid endDate format' });
+      }
+    }
+
+    // Build filter
+    const filter = {};
+    if (startDate || endDate) {
+      filter.checkIn = {};
+      if (startDate) filter.checkIn.$gte = new Date(startDate);
+      if (endDate) filter.checkIn.$lte = new Date(endDate);
+    }
+    if (employeeId) filter.employee = employeeId;
+    if (geofenceId) filter.geofence = geofenceId;
+
+    // Fetch records
+    const records = await Attendance.find(filter)
+      .populate('employee', 'name email')
+      .populate('geofence', 'name')
+      .sort({ checkIn: -1 });
+
+    // Fetch tasks for this geofence if geofenceId is provided
+    let tasks = [];
+    if (geofenceId) {
+      try {
+        console.log(`Fetching tasks for geofence: ${geofenceId}`);
+        const taskFilter = { geofence: geofenceId };
+        if (startDate || endDate) {
+          taskFilter.dueDate = {};
+          if (startDate) taskFilter.dueDate.$gte = new Date(startDate);
+          if (endDate) taskFilter.dueDate.$lte = new Date(endDate);
+        }
+        console.log('Task filter:', JSON.stringify(taskFilter));
+        tasks = await Task.find(taskFilter)
+          .populate('assignedBy', 'name email')
+          .sort({ dueDate: -1 });
+        console.log(`✓ Found ${tasks.length} tasks for geofence ${geofenceId}`);
+      } catch (e) {
+        console.error('Error fetching tasks for geofence:', e.message);
+        console.error('Stack:', e.stack);
         tasks = [];
       }
     }
 
     // Generate CSV
-    const csv = ReportExportService.generateAttendanceCSV(records, tasks);
+    console.log(`Generating CSV with ${records.length} records and ${tasks.length} tasks`);
+    
+    try {
+      const csv = ReportExportService.generateAttendanceCSV(records, tasks);
 
-    // Set response headers
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="attendance_${Date.now()}.csv"`);
+      // Set response headers
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="attendance_${Date.now()}.csv"`);
 
-    // Send CSV
-    res.send(csv);
+      // Send CSV
+      res.send(csv);
+    } catch (csvError) {
+      console.error('CSV generation exception:', csvError.message);
+      console.error('Stack:', csvError.stack);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'CSV generation failed: ' + csvError.message });
+      }
+    }
   } catch (error) {
-    console.error('Export Excel error:', error);
-    res.status(500).json({ message: 'Failed to export Excel: ' + error.message });
+    console.error('Export CSV error:', error);
+    res.status(500).json({ message: 'Failed to export CSV: ' + error.message });
   }
 });
 
