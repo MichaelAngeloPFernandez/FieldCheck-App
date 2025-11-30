@@ -198,38 +198,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     });
   }
 
-  // Group attendance records by employee and date
-  Map<String, Map<String, dynamic>> _groupAttendanceByEmployee() {
-    final grouped = <String, Map<String, dynamic>>{};
-
-    for (final record in _attendanceRecords) {
-      final key =
-          '${record.userId}_${record.timestamp.toLocal().toString().split(' ')[0]}';
-
-      if (!grouped.containsKey(key)) {
-        grouped[key] = {
-          'userId': record.userId,
-          'employeeName': record.employeeName ?? 'Unknown',
-          'date': record.timestamp.toLocal().toString().split(' ')[0],
-          'location': record.geofenceName ?? 'N/A',
-          'checkInTime': null,
-          'checkOutTime': null,
-          'isCurrentlyCheckedIn': false,
-        };
-      }
-
-      if (record.isCheckIn) {
-        grouped[key]!['checkInTime'] = record.timestamp;
-        grouped[key]!['isCurrentlyCheckedIn'] = true;
-      } else {
-        grouped[key]!['checkOutTime'] = record.timestamp;
-        grouped[key]!['isCurrentlyCheckedIn'] = false;
-      }
-    }
-
-    return grouped;
-  }
-
   @override
   Widget build(BuildContext context) {
     const brandColor = Color(0xFF2688d4);
@@ -432,8 +400,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                         padding: const EdgeInsets.all(8.0),
                                         child: LayoutBuilder(
                                           builder: (context, constraints) {
-                                            final grouped =
-                                                _groupAttendanceByEmployee();
                                             return SingleChildScrollView(
                                               scrollDirection: Axis.horizontal,
                                               child: DataTable(
@@ -448,163 +414,59 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                     label: Text('Date'),
                                                   ),
                                                   DataColumn(
-                                                    label: Text(
-                                                      'Check In Time',
-                                                    ),
+                                                    label: Text('Time'),
                                                   ),
                                                   DataColumn(
-                                                    label: Text(
-                                                      'Check Out Time',
-                                                    ),
-                                                  ),
-                                                  DataColumn(
-                                                    label: Text(
-                                                      'Current Status',
-                                                    ),
-                                                  ),
-                                                  DataColumn(
-                                                    label: Text('Actions'),
+                                                    label: Text('Status'),
                                                   ),
                                                 ],
-                                                rows: grouped.values.map((
-                                                  data,
+                                                rows: _attendanceRecords.map((
+                                                  record,
                                                 ) {
-                                                  final checkInTime =
-                                                      data['checkInTime']
-                                                          as DateTime?;
-                                                  final checkOutTime =
-                                                      data['checkOutTime']
-                                                          as DateTime?;
-                                                  final isCheckedIn =
-                                                      data['isCurrentlyCheckedIn']
-                                                          as bool;
+                                                  final time = formatTime(
+                                                    record.timestamp,
+                                                  );
+                                                  final status =
+                                                      record.isCheckIn
+                                                      ? 'Checked In'
+                                                      : 'Checked Out';
+                                                  final date = record.timestamp
+                                                      .toLocal()
+                                                      .toString()
+                                                      .split(' ')[0];
 
                                                   return DataRow(
                                                     cells: [
                                                       DataCell(
                                                         Text(
-                                                          data['employeeName']
-                                                              as String,
+                                                          record.employeeName ??
+                                                              'Unknown',
                                                         ),
                                                       ),
                                                       DataCell(
                                                         Text(
-                                                          data['location']
-                                                              as String,
+                                                          record.geofenceName ??
+                                                              'N/A',
                                                         ),
                                                       ),
-                                                      DataCell(
-                                                        Text(
-                                                          data['date']
-                                                              as String,
-                                                        ),
-                                                      ),
-                                                      DataCell(
-                                                        Text(
-                                                          checkInTime != null
-                                                              ? formatTime(
-                                                                  checkInTime,
-                                                                )
-                                                              : '-',
-                                                        ),
-                                                      ),
-                                                      DataCell(
-                                                        Text(
-                                                          checkOutTime != null
-                                                              ? formatTime(
-                                                                  checkOutTime,
-                                                                )
-                                                              : '-',
-                                                        ),
-                                                      ),
+                                                      DataCell(Text(date)),
+                                                      DataCell(Text(time)),
                                                       DataCell(
                                                         Chip(
-                                                          label: Text(
-                                                            isCheckedIn
-                                                                ? 'Checked In'
-                                                                : 'Checked Out',
-                                                          ),
+                                                          label: Text(status),
                                                           backgroundColor:
-                                                              isCheckedIn
+                                                              record.isCheckIn
                                                               ? Colors
                                                                     .green[100]
                                                               : Colors.red[100],
                                                           labelStyle: TextStyle(
-                                                            color: isCheckedIn
+                                                            color:
+                                                                record.isCheckIn
                                                                 ? Colors
                                                                       .green[900]
                                                                 : Colors
                                                                       .red[900],
                                                           ),
-                                                        ),
-                                                      ),
-                                                      DataCell(
-                                                        IconButton(
-                                                          tooltip: 'Details',
-                                                          icon: const Icon(
-                                                            Icons.info_outline,
-                                                          ),
-                                                          onPressed: () {
-                                                            showDialog(
-                                                              context: context,
-                                                              builder: (ctx) => AlertDialog(
-                                                                title: Text(
-                                                                  '${data['userId']} - ${data['date']}',
-                                                                ),
-                                                                content: Column(
-                                                                  mainAxisSize:
-                                                                      MainAxisSize
-                                                                          .min,
-                                                                  crossAxisAlignment:
-                                                                      CrossAxisAlignment
-                                                                          .start,
-                                                                  children: [
-                                                                    _buildDetailRow(
-                                                                      'Location:',
-                                                                      data['location']
-                                                                          as String,
-                                                                    ),
-                                                                    _buildDetailRow(
-                                                                      'Check In:',
-                                                                      checkInTime !=
-                                                                              null
-                                                                          ? formatTime(
-                                                                              checkInTime,
-                                                                            )
-                                                                          : 'Not checked in',
-                                                                    ),
-                                                                    _buildDetailRow(
-                                                                      'Check Out:',
-                                                                      checkOutTime !=
-                                                                              null
-                                                                          ? formatTime(
-                                                                              checkOutTime,
-                                                                            )
-                                                                          : 'Not checked out',
-                                                                    ),
-                                                                    _buildDetailRow(
-                                                                      'Status:',
-                                                                      isCheckedIn
-                                                                          ? 'Checked In'
-                                                                          : 'Checked Out',
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                                actions: [
-                                                                  TextButton(
-                                                                    onPressed: () =>
-                                                                        Navigator.pop(
-                                                                          ctx,
-                                                                        ),
-                                                                    child:
-                                                                        const Text(
-                                                                          'Close',
-                                                                        ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            );
-                                                          },
                                                         ),
                                                       ),
                                                     ],

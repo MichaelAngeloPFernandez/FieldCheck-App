@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:field_check/services/attendance_service.dart';
+import 'package:field_check/services/user_service.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:http/http.dart' as http;
@@ -163,8 +164,12 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
   }
 
   Future<String?> _getToken() async {
-    // Get token from shared preferences or auth provider
-    return null; // Implement based on your auth setup
+    try {
+      return await UserService().getToken();
+    } catch (e) {
+      debugPrint('Error getting token: $e');
+      return null;
+    }
   }
 
   @override

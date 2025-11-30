@@ -30,12 +30,31 @@ const exportAttendancePDF = asyncHandler(async (req, res) => {
     .populate('geofence', 'name')
     .sort({ checkIn: -1 });
 
+  // Fetch tasks for employees at this geofence if geofenceId is provided
+  let tasks = [];
+  if (geofenceId) {
+    const Geofence = require('../models/Geofence');
+    const geofence = await Geofence.findById(geofenceId).populate('assignedEmployees', '_id');
+    if (geofence && geofence.assignedEmployees) {
+      const employeeIds = geofence.assignedEmployees.map(e => e._id);
+      const taskFilter = { geofence: geofenceId };
+      if (startDate || endDate) {
+        taskFilter.dueDate = {};
+        if (startDate) taskFilter.dueDate.$gte = new Date(startDate);
+        if (endDate) taskFilter.dueDate.$lte = new Date(endDate);
+      }
+      tasks = await Task.find(taskFilter)
+        .populate('assignedBy', 'name email')
+        .sort({ dueDate: -1 });
+    }
+  }
+
   // Generate PDF
   const dateRange = startDate && endDate
     ? `${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`
     : 'All Dates';
 
-  const pdfStream = ReportExportService.generateAttendancePDF(records, { dateRange });
+  const pdfStream = ReportExportService.generateAttendancePDF(records, { dateRange, tasks });
 
   // Set response headers
   res.setHeader('Content-Type', 'application/pdf');
@@ -75,8 +94,27 @@ const exportAttendanceExcel = asyncHandler(async (req, res) => {
     .populate('geofence', 'name')
     .sort({ checkIn: -1 });
 
+  // Fetch tasks for employees at this geofence if geofenceId is provided
+  let tasks = [];
+  if (geofenceId) {
+    const Geofence = require('../models/Geofence');
+    const geofence = await Geofence.findById(geofenceId).populate('assignedEmployees', '_id');
+    if (geofence && geofence.assignedEmployees) {
+      const employeeIds = geofence.assignedEmployees.map(e => e._id);
+      const taskFilter = { geofence: geofenceId };
+      if (startDate || endDate) {
+        taskFilter.dueDate = {};
+        if (startDate) taskFilter.dueDate.$gte = new Date(startDate);
+        if (endDate) taskFilter.dueDate.$lte = new Date(endDate);
+      }
+      tasks = await Task.find(taskFilter)
+        .populate('assignedBy', 'name email')
+        .sort({ dueDate: -1 });
+    }
+  }
+
   // Generate Excel
-  const buffer = await ReportExportService.generateAttendanceExcel(records);
+  const buffer = await ReportExportService.generateAttendanceExcel(records, tasks);
 
   // Set response headers
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
