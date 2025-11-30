@@ -85,6 +85,69 @@ class ReportExportService {
       yPosition += 20;
     });
 
+    // Add Tasks Section if tasks are provided
+    if (options.tasks && options.tasks.length > 0) {
+      yPosition += 20;
+      
+      // Add page break if needed
+      if (yPosition > pageHeight - 150) {
+        doc.addPage();
+        yPosition = 50;
+      }
+
+      // Tasks title
+      doc.fontSize(14).font('Helvetica-Bold').text('Tasks Completed', 50, yPosition);
+      yPosition += 20;
+
+      // Task headers
+      const taskCol1 = 50;
+      const taskCol2 = 200;
+      const taskCol3 = 350;
+      const taskCol4 = 450;
+
+      doc.fontSize(10).font('Helvetica-Bold');
+      doc.text('Task Title', taskCol1, yPosition);
+      doc.text('Status', taskCol2, yPosition);
+      doc.text('Due Date', taskCol3, yPosition);
+      doc.text('Assigned By', taskCol4, yPosition);
+
+      // Horizontal line
+      doc.moveTo(50, yPosition + 15).lineTo(550, yPosition + 15).stroke();
+      yPosition += 25;
+
+      doc.fontSize(9).font('Helvetica');
+
+      // Add task rows
+      options.tasks.forEach((task) => {
+        // Check if we need a new page
+        if (yPosition > pageHeight - bottomMargin) {
+          doc.addPage();
+          yPosition = 50;
+
+          // Repeat headers on new page
+          doc.fontSize(10).font('Helvetica-Bold');
+          doc.text('Task Title', taskCol1, yPosition);
+          doc.text('Status', taskCol2, yPosition);
+          doc.text('Due Date', taskCol3, yPosition);
+          doc.text('Assigned By', taskCol4, yPosition);
+          doc.moveTo(50, yPosition + 15).lineTo(550, yPosition + 15).stroke();
+          yPosition += 25;
+          doc.font('Helvetica');
+        }
+
+        const dueDate = new Date(task.dueDate).toLocaleDateString();
+        const assignedBy = task.assignedBy?.name || 'Unknown';
+        const taskStatus = task.status || 'pending';
+
+        doc.text(task.title || 'N/A', taskCol1, yPosition);
+        doc.text(taskStatus, taskCol2, yPosition);
+        doc.text(dueDate, taskCol3, yPosition);
+        doc.text(assignedBy, taskCol4, yPosition);
+
+        yPosition += 20;
+      });
+    }
+
     // Footer
     doc.fontSize(8).font('Helvetica');
     doc.text('FieldCheck - Attendance Verification System', 50, pageHeight - 30, { align: 'center' });
@@ -235,6 +298,56 @@ class ReportExportService {
       { width: 15 },
       { width: 20 },
     ];
+
+    // Add Tasks worksheet if tasks are provided
+    if (options.tasks && options.tasks.length > 0) {
+      const tasksWorksheet = workbook.addWorksheet('Tasks', {
+        pageSetup: { paperSize: 9, orientation: 'landscape' },
+      });
+
+      // Add title
+      tasksWorksheet.mergeCells('A1:D1');
+      const tasksTitleCell = tasksWorksheet.getCell('A1');
+      tasksTitleCell.value = 'Tasks Report';
+      tasksTitleCell.font = { bold: true, size: 14 };
+      tasksTitleCell.alignment = { horizontal: 'center', vertical: 'center' };
+
+      // Add metadata
+      tasksWorksheet.mergeCells('A2:D2');
+      const tasksMetaCell = tasksWorksheet.getCell('A2');
+      tasksMetaCell.value = `Generated: ${new Date().toLocaleString()}`;
+      tasksMetaCell.font = { size: 10 };
+      tasksMetaCell.alignment = { horizontal: 'center' };
+
+      // Add headers
+      const tasksHeaderRow = tasksWorksheet.addRow(['Task Title', 'Status', 'Due Date', 'Assigned By']);
+      tasksHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      tasksHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2688d4' } };
+      tasksHeaderRow.alignment = { horizontal: 'center', vertical: 'center' };
+
+      // Add task rows
+      options.tasks.forEach((task) => {
+        const dueDate = new Date(task.dueDate).toLocaleDateString();
+        const assignedBy = task.assignedBy?.name || 'Unknown';
+        const taskStatus = task.status || 'pending';
+
+        const row = tasksWorksheet.addRow([
+          task.title || 'N/A',
+          taskStatus,
+          dueDate,
+          assignedBy,
+        ]);
+        row.alignment = { horizontal: 'center', vertical: 'center' };
+      });
+
+      // Set column widths
+      tasksWorksheet.columns = [
+        { width: 30 },
+        { width: 15 },
+        { width: 15 },
+        { width: 20 },
+      ];
+    }
 
     // Generate buffer
     const buffer = await workbook.xlsx.writeBuffer();
