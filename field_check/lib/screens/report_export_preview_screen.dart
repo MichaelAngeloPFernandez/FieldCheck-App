@@ -71,9 +71,16 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       if (response.statusCode == 200) {
         // Save file to device storage
         try {
-          final directory =
-              await getDownloadsDirectory() ??
-              await getApplicationDocumentsDirectory();
+          // Try Downloads first, then fall back to Documents, then app cache
+          Directory? directory;
+          try {
+            directory = await getDownloadsDirectory();
+          } catch (e) {
+            debugPrint('Downloads directory not available: $e');
+          }
+
+          directory ??= await getApplicationDocumentsDirectory();
+
           final fileName =
               'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.pdf';
           final file = File('${directory.path}/$fileName');
@@ -85,16 +92,35 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
               SnackBar(
                 content: Text('✓ PDF saved to: ${file.path}'),
                 backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3),
+                duration: const Duration(seconds: 4),
               ),
             );
             // Show download completion dialog
             showDialog(
               context: context,
               builder: (ctx) => AlertDialog(
-                title: const Text('Export Complete'),
-                content: Text(
-                  'Your PDF report has been saved to:\n\n${file.path}',
+                title: const Text('✓ Export Complete'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Your PDF report has been saved!'),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'File path:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      file.path,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '📁 Check your Downloads or Documents folder',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
                 ),
                 actions: [
                   TextButton(
@@ -164,9 +190,16 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       if (response.statusCode == 200) {
         // Save file to device storage
         try {
-          final directory =
-              await getDownloadsDirectory() ??
-              await getApplicationDocumentsDirectory();
+          // Try Downloads first, then fall back to Documents, then app cache
+          Directory? directory;
+          try {
+            directory = await getDownloadsDirectory();
+          } catch (e) {
+            debugPrint('Downloads directory not available: $e');
+          }
+
+          directory ??= await getApplicationDocumentsDirectory();
+
           final fileName =
               'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.csv';
           final file = File('${directory.path}/$fileName');
@@ -178,16 +211,35 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
               SnackBar(
                 content: Text('✓ CSV saved to: ${file.path}'),
                 backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3),
+                duration: const Duration(seconds: 4),
               ),
             );
             // Show download completion dialog
             showDialog(
               context: context,
               builder: (ctx) => AlertDialog(
-                title: const Text('Export Complete'),
-                content: Text(
-                  'Your CSV report has been saved to:\n\n${file.path}',
+                title: const Text('✓ Export Complete'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Your CSV report has been saved!'),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'File path:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      file.path,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '📁 Check your Downloads or Documents folder',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
                 ),
                 actions: [
                   TextButton(
