@@ -33,6 +33,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   String _filterLocation = 'All Locations';
   String _filterStatus = 'All Status';
   String _reportStatusFilter = 'All';
+  String _dateRangePreset =
+      'All Time'; // 'All Time', 'Last 7 Days', 'Last 30 Days', 'Custom'
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
   Timer? _debounce;
 
   @override

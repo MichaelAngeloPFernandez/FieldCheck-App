@@ -333,11 +333,19 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Table header
+                    // Attendance Table header
                     if (widget.records.isNotEmpty)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          const Text(
+                            'ATTENDANCE RECORDS',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
@@ -352,6 +360,15 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                 Expanded(
                                   flex: 2,
                                   child: const Text(
+                                    'Employee',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
                                     'Date',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
@@ -359,7 +376,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                   ),
                                 ),
                                 Expanded(
-                                  flex: 2,
+                                  flex: 1,
                                   child: const Text(
                                     'Time',
                                     style: TextStyle(
@@ -368,7 +385,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                   ),
                                 ),
                                 Expanded(
-                                  flex: 2,
+                                  flex: 1,
                                   child: const Text(
                                     'Location',
                                     style: TextStyle(
@@ -399,19 +416,26 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                   Expanded(
                                     flex: 2,
                                     child: Text(
+                                      record.employeeName ?? 'Unknown',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
                                       dateFormat.format(record.timestamp),
                                       style: const TextStyle(fontSize: 12),
                                     ),
                                   ),
                                   Expanded(
-                                    flex: 2,
+                                    flex: 1,
                                     child: Text(
                                       timeFormat.format(record.timestamp),
                                       style: const TextStyle(fontSize: 12),
                                     ),
                                   ),
                                   Expanded(
-                                    flex: 2,
+                                    flex: 1,
                                     child: Text(
                                       record.geofenceName ?? 'N/A',
                                       style: const TextStyle(fontSize: 12),
@@ -453,10 +477,134 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                         child: Padding(
                           padding: EdgeInsets.all(32),
                           child: Text(
-                            'No records to display',
+                            'No attendance records to display',
                             style: TextStyle(color: Colors.grey),
                           ),
                         ),
+                      ),
+
+                    const SizedBox(height: 24),
+
+                    // Tasks section
+                    if (widget.taskReports != null &&
+                        widget.taskReports!.isNotEmpty)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'TASKS COMPLETED',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: const Text(
+                                    'Employee',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: const Text(
+                                    'Task',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Status',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Date',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...widget.taskReports!.take(10).map((task) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    flex: 2,
+                                    child: Text(
+                                      task.employeeName ?? 'Unknown',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 2,
+                                    child: Text(
+                                      task.taskTitle ?? 'N/A',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      task.status,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: task.status == 'completed'
+                                            ? Colors.green
+                                            : Colors.orange,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      dateFormat.format(task.submittedAt),
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          if (widget.taskReports!.length > 10)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                '... and ${widget.taskReports!.length - 10} more tasks',
+                                style: const TextStyle(
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
 
                     const SizedBox(height: 24),
