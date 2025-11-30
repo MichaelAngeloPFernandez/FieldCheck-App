@@ -100,39 +100,25 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
               itemBuilder: (context, index) {
                 final task = snapshot.data![index];
                 final isCompleted = task.status == 'completed';
-                return Card(
-                  margin: const EdgeInsets.all(8.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Checkbox(
-                              value: isCompleted,
-                              onChanged: isCompleted
-                                  ? null
-                                  : (value) async {
-                                      if (value == true) {
-                                        await _completeTaskWithReport(task);
-                                      }
-                                    },
+                return GestureDetector(
+                  onTap: isCompleted ? null : () => _completeTaskWithReport(task),
+                  child: Card(
+                    margin: const EdgeInsets.all(8.0),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.title,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              decoration: isCompleted
+                                  ? TextDecoration.lineThrough
+                                  : null,
                             ),
-                            Expanded(
-                              child: Text(
-                                task.title,
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  decoration: isCompleted
-                                      ? TextDecoration.lineThrough
-                                      : null,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
                         const SizedBox(height: 8),
                         Text(task.description),
                         const SizedBox(height: 8),
