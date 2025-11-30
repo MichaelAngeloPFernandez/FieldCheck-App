@@ -506,21 +506,33 @@ class ReportExportService {
    * @returns {String} CSV string
    */
   static generateAttendanceCSV(records, tasks = []) {
-    let csv = 'Employee,Date,Time,Status,Location\n';
+    let csv = 'Employee,Date,Check In Time,Check Out Time,Location\n';
 
-    // Add attendance records
+    // Helper function to format time as HH:MM AM/PM
+    const formatTime = (date) => {
+      if (!date) return '-';
+      const d = new Date(date);
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const ampm = d.getHours() >= 12 ? 'PM' : 'AM';
+      const displayHours = d.getHours() % 12 || 12;
+      return `${String(displayHours).padStart(2, '0')}:${minutes} ${ampm}`;
+    };
+
+    // Each record has both checkIn and checkOut times - just display them directly
     records.forEach((record) => {
-      const date = new Date(record.checkIn || record.timestamp).toLocaleDateString();
-      const time = new Date(record.checkIn || record.timestamp).toLocaleTimeString();
-      const employeeName = record.employee?.name || record.userId || 'N/A';
+      const date = new Date(record.checkIn).toLocaleDateString();
+      const employeeName = record.employee?.name || 'N/A';
       const locationName = record.geofence?.name || 'N/A';
-      const status = record.status === 'in' ? 'Checked In' : 'Checked Out';
-
+      
+      const checkInTime = formatTime(record.checkIn);
+      const checkOutTime = formatTime(record.checkOut);
+      
       // Escape quotes in values
       const escapedEmployee = employeeName.replace(/"/g, '""');
       const escapedLocation = locationName.replace(/"/g, '""');
-
-      csv += `"${escapedEmployee}","${date}","${time}","${status}","${escapedLocation}"\n`;
+      
+      csv += `"${escapedEmployee}","${date}","${checkInTime}","${checkOutTime}","${escapedLocation}"\n`;
     });
 
     // Add tasks section if present

@@ -63,10 +63,13 @@ const checkIn = asyncHandler(async (req, res) => {
     throw new Error('Employee already checked in. Check out first.');
   }
 
+  // Record time in Philippine timezone (UTC+8)
+  const phTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
+  
   const attendance = new Attendance({
     employee: req.user._id,
     geofence: geofence._id,
-    checkIn: new Date(),
+    checkIn: phTime,
     status: 'in',
     location: { lat: latitude, lng: longitude },
   });
@@ -174,7 +177,10 @@ const checkOut = asyncHandler(async (req, res) => {
     throw new Error('Outside geofence boundary');
   }
 
-  openRecord.checkOut = new Date();
+  // Record time in Philippine timezone (UTC+8)
+  const phTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
+  
+  openRecord.checkOut = phTime;
   openRecord.status = 'out';
   openRecord.location = { lat: latitude, lng: longitude };
 
