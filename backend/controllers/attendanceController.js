@@ -325,12 +325,14 @@ const getAttendanceStatus = asyncHandler(async (req, res) => {
   let lastGeofenceName = null;
   let lastCheckTimestamp = null;
 
-  // Helper function to format time as HH:MM AM/PM
+  // Helper function to format time as HH:MM AM/PM in PH timezone (UTC+8)
   const formatTime = (date) => {
     if (!date) return null;
     const d = new Date(date);
-    const hours = d.getHours();
-    const minutes = String(d.getMinutes()).padStart(2, '0');
+    // Convert to PH timezone (UTC+8)
+    const phTime = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+    const hours = phTime.getUTCHours();
+    const minutes = String(phTime.getUTCMinutes()).padStart(2, '0');
     const ampm = hours >= 12 ? 'PM' : 'AM';
     const displayHours = hours % 12 || 12;
     return `${String(displayHours).padStart(2, '0')}:${minutes} ${ampm}`;
