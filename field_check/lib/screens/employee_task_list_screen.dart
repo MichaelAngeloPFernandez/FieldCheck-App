@@ -101,7 +101,9 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                 final task = snapshot.data![index];
                 final isCompleted = task.status == 'completed';
                 return GestureDetector(
-                  onTap: isCompleted ? null : () => _completeTaskWithReport(task),
+                  onTap: isCompleted
+                      ? null
+                      : () => _completeTaskWithReport(task),
                   child: Card(
                     margin: const EdgeInsets.all(8.0),
                     child: Padding(
@@ -119,58 +121,59 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                                   : null,
                             ),
                           ),
-                        const SizedBox(height: 8),
-                        Text(task.description),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}',
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Text(
-                              'Status: ',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
+                          const SizedBox(height: 8),
+                          Text(task.description),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}',
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Text(
+                                'Status: ',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            Chip(
-                              label: Text(task.status),
-                              backgroundColor: task.status == 'completed'
-                                  ? Colors.green[100]
-                                  : (task.status == 'in_progress'
-                                        ? Colors.orange[100]
-                                        : Colors.blue[100]),
-                              labelStyle: TextStyle(
-                                color: task.status == 'completed'
-                                    ? Colors.green[900]
+                              Chip(
+                                label: Text(task.status),
+                                backgroundColor: task.status == 'completed'
+                                    ? Colors.green[100]
                                     : (task.status == 'in_progress'
-                                          ? Colors.orange[900]
-                                          : Colors.blue[900]),
+                                          ? Colors.orange[100]
+                                          : Colors.blue[100]),
+                                labelStyle: TextStyle(
+                                  color: task.status == 'completed'
+                                      ? Colors.green[900]
+                                      : (task.status == 'in_progress'
+                                            ? Colors.orange[900]
+                                            : Colors.blue[900]),
+                                ),
                               ),
+                            ],
+                          ),
+                          if (task.assignedToMultiple.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Assigned to:',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            Wrap(
+                              spacing: 4,
+                              children: task.assignedToMultiple
+                                  .map(
+                                    (user) => Chip(
+                                      label: Text(user.name),
+                                      padding: EdgeInsets.zero,
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  )
+                                  .toList(),
                             ),
                           ],
-                        ),
-                        if (task.assignedToMultiple.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Assigned to:',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          Wrap(
-                            spacing: 4,
-                            children: task.assignedToMultiple
-                                .map(
-                                  (user) => Chip(
-                                    label: Text(user.name),
-                                    padding: EdgeInsets.zero,
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                )
-                                .toList(),
-                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 );
