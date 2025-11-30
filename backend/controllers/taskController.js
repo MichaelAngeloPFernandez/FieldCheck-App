@@ -1,6 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const Task = require('../models/Task');
 const UserTask = require('../models/UserTask');
+const User = require('../models/User');
 const { io } = require('../server');
 const Report = require('../models/Report');
 
@@ -146,6 +147,112 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
   });
 });
 
+// @route POST /api/tasks/:taskId/assign-multiple
+// @access Private/Admin
+const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
+  const { taskId } = req.params;
+  const { userIds } = req.body;
+
+  // Validate input
+  if (!taskId || taskId.trim() === '') {
+    res.status(400);
+    throw new Error('Task ID is required');
+  }
+
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    res.status(400);
+    throw new Error('userIds must be a non-empty array');
+  }
+
+  // Validate all user IDs are strings
+  if (!userIds.every(id => typeof id === 'string' && id.trim() !== '')) {
+    res.status(400);
+    throw new Error('All user IDs must be non-empty strings');
+  }
+
+  const task = await Task.findById(taskId);
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  const results = [];
+  for (const userId of userIds) {
+    try {
+      // Validate user exists
+      const user = await User.findById(userId);
+      if (!user) {
+        console.log(`User not found: ${userId}`);
+        results.push({
+          userId,
+          success: false,
+          message: `User not found`,
+        });
+        continue;
+      }
+
+      const existing = await UserTask.findOne({ taskId, userId });
+      if (existing) {
+        results.push({
+          userId,
+          success: true,
+          message: 'Already assigned',
+          data: {
+            id: existing._id.toString(),
+            userId: existing.userId.toString(),
+            taskId: existing.taskId.toString(),
+            status: existing.status,
+            assignedAt: existing.assignedAt.toISOString(),
+            completedAt: existing.completedAt ? existing.completedAt.toISOString() : null,
+          },
+        });
+      } else {
+        const ut = await UserTask.create({ taskId, userId });
+        results.push({
+          userId,
+          success: true,
+          message: 'Assigned successfully',
+          data: {
+            id: ut._id.toString(),
+            userId: ut.userId.toString(),
+            taskId: ut.taskId.toString(),
+            status: ut.status,
+            assignedAt: ut.assignedAt.toISOString(),
+            completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
+          },
+        });
+      }
+    } catch (e) {
+      console.error(`Error assigning task to user ${userId}:`, e);
+      results.push({
+        userId,
+        success: false,
+        message: `Failed to assign: ${e.message}`,
+      });
+    }
+  }
+
+  const successCount = results.filter((r) => r.success).length;
+  const failedCount = results.filter((r) => !r.success).length;
+
+  // Always return 201 with results, even if some failed
+  const statusCode = successCount > 0 ? 201 : 400;
+  
+  if (successCount > 0) {
+    io.emit('taskAssignedToMultiple', { taskId, userIds: results.filter(r => r.success).map(r => r.userId) });
+  }
+  
+  res.status(statusCode).json({
+    taskId,
+    results,
+    summary: {
+      total: userIds.length,
+      successful: successCount,
+      failed: failedCount,
+    },
+  });
+});
+
 // @route PUT /api/tasks/user-task/:userTaskId/status
 // @access Private
 const updateUserTaskStatus = asyncHandler(async (req, res) => {
@@ -203,5 +310,6 @@ module.exports = {
   getUserTasks,
   getAssignedTasks,
   assignTaskToUser,
+  assignTaskToMultipleUsers,
   updateUserTaskStatus,
 };

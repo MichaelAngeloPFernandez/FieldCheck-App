@@ -18,6 +18,8 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _taskController = 
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _userController = 
+      StreamController<Map<String, dynamic>>.broadcast();
 
   bool _isConnected = false;
   Timer? _reconnectTimer;
@@ -28,6 +30,7 @@ class RealtimeService {
   Stream<int> get onlineCountStream => _onlineCountController.stream;
   Stream<Map<String, dynamic>> get attendanceStream => _attendanceController.stream;
   Stream<Map<String, dynamic>> get taskStream => _taskController.stream;
+  Stream<Map<String, dynamic>> get userStream => _userController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -137,6 +140,31 @@ class RealtimeService {
       print('RealtimeService: Updated report: $data');
       _eventController.add({'type': 'report', 'action': 'updated', 'data': data});
     });
+
+    // User account events for real-time sync
+    _socket!.on('userCreated', (data) {
+      print('RealtimeService: User created: $data');
+      _userController.add({'type': 'created', 'data': data});
+      _eventController.add({'type': 'user', 'action': 'created', 'data': data});
+    });
+
+    _socket!.on('userDeleted', (data) {
+      print('RealtimeService: User deleted: $data');
+      _userController.add({'type': 'deleted', 'data': data});
+      _eventController.add({'type': 'user', 'action': 'deleted', 'data': data});
+    });
+
+    _socket!.on('userDeactivated', (data) {
+      print('RealtimeService: User deactivated: $data');
+      _userController.add({'type': 'deactivated', 'data': data});
+      _eventController.add({'type': 'user', 'action': 'deactivated', 'data': data});
+    });
+
+    _socket!.on('userReactivated', (data) {
+      print('RealtimeService: User reactivated: $data');
+      _userController.add({'type': 'reactivated', 'data': data});
+      _eventController.add({'type': 'user', 'action': 'reactivated', 'data': data});
+    });
   }
 
   void _scheduleReconnect() {
@@ -186,5 +214,6 @@ class RealtimeService {
     _onlineCountController.close();
     _attendanceController.close();
     _taskController.close();
+    _userController.close();
   }
 }

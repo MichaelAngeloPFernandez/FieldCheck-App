@@ -38,6 +38,8 @@ class _MapScreenState extends State<MapScreen> {
   bool _loading = true;
   bool _showTasks = false;
   String _taskFilter = 'all';
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
 
   // Real-time location streaming
   late StreamSubscription<dynamic>? _locationSubscription;
@@ -56,6 +58,7 @@ class _MapScreenState extends State<MapScreen> {
     try {
       _locationSubscription?.cancel();
     } catch (_) {}
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -624,6 +627,35 @@ class _MapScreenState extends State<MapScreen> {
                       controller: controller,
                       padding: const EdgeInsets.all(16),
                       children: [
+                        // Search Bar
+                        TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: _showTasks ? 'Search tasks...' : 'Search geofences...',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {
+                                        _searchQuery = '';
+                                      });
+                                    },
+                                  )
+                                : null,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _searchQuery = value.toLowerCase();
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -695,6 +727,7 @@ class _MapScreenState extends State<MapScreen> {
                         if (_showTasks) const SizedBox(height: 8),
                         if (!_showTasks)
                           ..._geofences
+                              .where((g) => _searchQuery.isEmpty || g.name.toLowerCase().contains(_searchQuery))
                               .take(10)
                               .map(
                                 (g) => ListTile(
@@ -717,11 +750,8 @@ class _MapScreenState extends State<MapScreen> {
                               ),
                         if (_showTasks)
                           ..._visibleTasks
-                              .where(
-                                (t) => _taskFilter == 'all'
-                                    ? true
-                                    : t.status == _taskFilter,
-                              )
+                              .where((t) => (_taskFilter == 'all' ? true : t.status == _taskFilter) &&
+                                  (_searchQuery.isEmpty || t.title.toLowerCase().contains(_searchQuery) || t.description.toLowerCase().contains(_searchQuery)))
                               .take(10)
                               .map(
                                 (t) => ListTile(

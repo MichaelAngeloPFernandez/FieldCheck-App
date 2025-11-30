@@ -122,6 +122,8 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const exportRoutes = require('./routes/exportRoutes');
+const taskRoutes = require('./routes/taskRoutes');
 
 app.use(express.json({ limit: '200kb' })); // To parse JSON bodies (limited)
 app.use(cors({
@@ -143,9 +145,9 @@ app.use('/api/geofences', geofenceRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-const taskRoutes = require('./routes/taskRoutes');
 app.use('/api/tasks', taskRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/export', exportRoutes);
 
 // Offline sync endpoint
 const { protect } = require('./middleware/authMiddleware');
@@ -239,8 +241,9 @@ process.on('uncaughtException', (error) => {
     const { initializeAutomation } = require('./utils/automationService');
     initializeAutomation();
     
-    server.listen(port, () => { // Use server.listen instead of app.listen
-      console.log(`Backend server listening at http://localhost:${port}`);
+    server.listen(port, '0.0.0.0', () => { // Listen on all network interfaces
+      console.log(`Backend server listening at http://0.0.0.0:${port}`);
+      console.log(`Accessible from your device at: http://192.168.8.35:${port}`);
     });
   } catch (err) {
     console.error('Failed to start server:', err);

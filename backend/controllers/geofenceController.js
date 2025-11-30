@@ -6,25 +6,50 @@ const { io } = require('../server');
 // @route   POST /api/geofences
 // @access  Private/Admin
 const createGeofence = asyncHandler(async (req, res) => {
-  const { name, address, latitude, longitude, radius, shape, isActive, assignedEmployees, type, labelLetter } = req.body;
+  const { name, address, latitude, longitude, radius, shape, isActive, assignedEmployees, labelLetter } = req.body;
+
+  // Validate required fields
+  if (!name || name.trim() === '') {
+    res.status(400);
+    throw new Error('Geofence name is required');
+  }
+  if (latitude === undefined || latitude === null) {
+    res.status(400);
+    throw new Error('Latitude is required');
+  }
+  if (longitude === undefined || longitude === null) {
+    res.status(400);
+    throw new Error('Longitude is required');
+  }
+  if (radius === undefined || radius === null || radius <= 0) {
+    res.status(400);
+    throw new Error('Radius must be a positive number');
+  }
 
   const geofence = new Geofence({
-    name,
-    address,
-    latitude,
-    longitude,
-    radius,
-    shape,
-    isActive,
-    assignedEmployees,
-    type,
-    labelLetter,
+    name: name.trim(),
+    address: address || '',
+    latitude: parseFloat(latitude),
+    longitude: parseFloat(longitude),
+    radius: parseFloat(radius),
+    shape: shape || 'circle',
+    isActive: isActive !== undefined ? isActive : true,
+    assignedEmployees: Array.isArray(assignedEmployees) ? assignedEmployees : [],
+    labelLetter: labelLetter || '',
   });
 
-  const createdGeofence = await geofence.save();
-  // Emit real-time geofence creation
-  io.emit('geofenceCreated', createdGeofence);
-  res.status(201).json(createdGeofence);
+  try {
+    const createdGeofence = await geofence.save();
+    // Populate before emitting
+    const populatedGeofence = await Geofence.findById(createdGeofence._id)
+      .populate('assignedEmployees', '_id name email role');
+    // Emit real-time geofence creation
+    io.emit('geofenceCreated', populatedGeofence);
+    res.status(201).json(populatedGeofence);
+  } catch (error) {
+    res.status(400);
+    throw new Error(`Failed to create geofence: ${error.message}`);
+  }
 });
 
 // @desc    Get all geofences
@@ -53,7 +78,7 @@ const getGeofenceById = asyncHandler(async (req, res) => {
 // @route   PUT /api/geofences/:id
 // @access  Private/Admin
 const updateGeofence = asyncHandler(async (req, res) => {
-  const { name, address, latitude, longitude, radius, shape, isActive, assignedEmployees, type, labelLetter } = req.body;
+  const { name, address, latitude, longitude, radius, shape, isActive, labelLetter, assignedEmployees } = req.body;
 
   const geofence = await Geofence.findById(req.params.id);
 
@@ -66,12 +91,8 @@ const updateGeofence = asyncHandler(async (req, res) => {
     if (radius !== undefined && radius !== null) geofence.radius = radius;
     if (shape !== undefined && shape !== null) geofence.shape = shape;
     if (isActive !== undefined && isActive !== null) geofence.isActive = isActive;
-    if (type !== undefined && type !== null) geofence.type = type;
     if (labelLetter !== undefined && labelLetter !== null) geofence.labelLetter = labelLetter;
-    // Important: Handle assignedEmployees as array with proper validation
-    if (Array.isArray(assignedEmployees)) {
-      geofence.assignedEmployees = assignedEmployees;
-    }
+    if (Array.isArray(assignedEmployees)) geofence.assignedEmployees = assignedEmployees;
 
     const updatedGeofence = await geofence.save();
     // Populate assignedEmployees before emitting to ensure frontend has complete data

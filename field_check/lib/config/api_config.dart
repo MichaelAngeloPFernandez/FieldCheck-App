@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 class ApiConfig {
   // If provided via --dart-define, prefer that value
   static const String _envBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static const String _defaultAndroidUrl = String.fromEnvironment('ANDROID_API_URL', defaultValue: 'http://192.168.1.100:3002');
 
   // Platform-aware base URL with sensible defaults for local development
   static String get baseUrl {
@@ -15,8 +16,8 @@ class ApiConfig {
     // On emulators/devices, localhost resolves differently
     try {
       if (Platform.isAndroid) {
-        // Android emulator loopback to host machine
-        return 'http://10.0.2.2:3002';
+        // Use environment-provided URL or default
+        return _defaultAndroidUrl;
       }
       if (Platform.isIOS || Platform.isMacOS) {
         return 'http://localhost:3002';

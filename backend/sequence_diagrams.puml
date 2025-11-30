@@ -181,8 +181,6 @@ Dashboard -> Dashboard: Refresh user list
 
 @enduml
 
-@startuml Employee Task Checklist Management Sequence Diagram
-
 @startuml Geofence Creation Sequence Diagram
 title FieldCheck: Admin Geofence Creation Process
 

@@ -1,7 +1,9 @@
 // ignore_for_file: unnecessary_underscores
 import 'package:flutter/material.dart';
 import '../services/user_service.dart';
+import '../services/realtime_service.dart';
 import '../models/user_model.dart';
+import 'dart:async';
 
 class ManageEmployeesScreen extends StatefulWidget {
   const ManageEmployeesScreen({super.key, this.showInactiveOnly = false});
@@ -12,21 +14,36 @@ class ManageEmployeesScreen extends StatefulWidget {
 
 class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
   final UserService _userService = UserService();
+  final RealtimeService _realtimeService = RealtimeService();
   late Future<List<UserModel>> _employeesFuture;
   final TextEditingController _searchController = TextEditingController();
   String _filterStatus = 'all'; // all, active, inactive, verified, unverified
   final Set<String> _selectedEmployeeIds = {};
   bool _isSelectMode = false;
+  late StreamSubscription<Map<String, dynamic>> _userEventSubscription;
 
   @override
   void initState() {
     super.initState();
     _employeesFuture = _userService.fetchEmployees();
+    _initializeRealtimeSync();
+  }
+
+  void _initializeRealtimeSync() {
+    // Listen for real-time user account changes
+    _userEventSubscription = _realtimeService.userStream.listen((event) {
+      final action = event['action'];
+      if (mounted && (action == 'created' || action == 'deleted' || action == 'deactivated' || action == 'reactivated')) {
+        // Automatically refresh the employee list when changes are detected
+        _refresh();
+      }
+    });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _userEventSubscription.cancel();
     super.dispose();
   }
 

@@ -62,6 +62,7 @@ const authUser = asyncHandler(async (req, res) => {
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
   const { name, username, email, password, role } = req.body;
+  const io = require('../server').io;
 
   const emailStr = (email || '').toString().trim().toLowerCase();
   const usernameStr = (username || '').toString().trim().toLowerCase();
@@ -98,6 +99,17 @@ const registerUser = asyncHandler(async (req, res) => {
     user.verificationToken = undefined;
     user.verificationTokenExpires = undefined;
     await user.save();
+    
+    // Broadcast user created event for real-time sync
+    if (io) {
+      io.emit('userCreated', {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      });
+    }
+    
     return res.status(201).json({
       _id: user._id,
       name: user.name,
@@ -272,10 +284,21 @@ const updateUserProfile = asyncHandler(async (req, res) => {
 // @route   PUT /api/users/:id/deactivate
 // @access  Private/Admin
 const deactivateUser = asyncHandler(async (req, res) => {
+  const io = require('../server').io;
   const user = await User.findById(req.params.id);
   if (user) {
     user.isActive = false;
     await user.save();
+    
+    // Broadcast user deactivated event for real-time sync
+    if (io) {
+      io.emit('userDeactivated', {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      });
+    }
+    
     res.json({ message: 'User deactivated successfully' });
   } else {
     res.status(404);
@@ -287,10 +310,21 @@ const deactivateUser = asyncHandler(async (req, res) => {
 // @route   PUT /api/users/:id/reactivate
 // @access  Private/Admin
 const reactivateUser = asyncHandler(async (req, res) => {
+  const io = require('../server').io;
   const user = await User.findById(req.params.id);
   if (user) {
     user.isActive = true;
     await user.save();
+    
+    // Broadcast user reactivated event for real-time sync
+    if (io) {
+      io.emit('userReactivated', {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      });
+    }
+    
     res.json({ message: 'User reactivated successfully' });
   } else {
     res.status(404);
@@ -302,9 +336,21 @@ const reactivateUser = asyncHandler(async (req, res) => {
 // @route   DELETE /api/users/:id
 // @access  Private/Admin
 const deleteUser = asyncHandler(async (req, res) => {
+  const io = require('../server').io;
   const user = await User.findById(req.params.id);
   if (user) {
+    const userId = user._id;
+    const userName = user.name;
     await user.deleteOne();
+    
+    // Broadcast user deleted event for real-time sync
+    if (io) {
+      io.emit('userDeleted', {
+        id: userId,
+        name: userName,
+      });
+    }
+    
     res.json({ message: 'User removed successfully' });
   } else {
     res.status(404);

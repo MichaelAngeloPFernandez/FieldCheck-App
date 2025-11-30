@@ -14,9 +14,15 @@ const createReport = asyncHandler(async (req, res) => {
     throw new Error('Invalid report type');
   }
 
+  // Validate user is authenticated
+  if (!req.user || !req.user._id) {
+    res.status(401);
+    throw new Error('User not authenticated');
+  }
+
   const reportData = {
     type,
-    employee: employeeId || req.user?._id,
+    employee: employeeId || req.user._id,
     content: content || '',
     attachments: attachments || [],
   };

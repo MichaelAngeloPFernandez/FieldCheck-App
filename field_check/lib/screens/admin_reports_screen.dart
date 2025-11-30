@@ -25,6 +25,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   List<ReportModel> _taskReports = [];
   String _viewMode = 'attendance'; // 'attendance' | 'task'
   bool _hasNewTaskReports = false;
+  bool _isLoadingTaskReports = false;
+  String? _taskReportsError;
 
   String _filterDate = 'All Dates';
   String _filterLocation = 'All Locations';
@@ -143,13 +145,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   Future<void> _fetchTaskReports() async {
+    setState(() { _isLoadingTaskReports = true; _taskReportsError = null; });
     try {
       final reports = await ReportService().fetchReports(type: 'task');
       setState(() {
         _taskReports = reports;
+        _isLoadingTaskReports = false;
       });
     } catch (e) {
       debugPrint('Error fetching task reports: $e');
+      setState(() {
+        _isLoadingTaskReports = false;
+        _taskReportsError = 'Failed to load reports: $e';
+      });
     }
   }
 
@@ -377,129 +385,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                       ),
                                     ),
                                   ))
-                            : (_taskReports.isEmpty
-                                ? const Center(child: Text('No task reports'))
-                                : Card(
-                                    elevation: 2,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Wrap(
-                                            spacing: 8,
-                                            runSpacing: 8,
-                                            children: [
-                                              ChoiceChip(
-                                                label: const Text('All'),
-                                                selected: _reportStatusFilter == 'All',
-                                                onSelected: (sel) {
-                                                  if (!sel) return;
-                                                  setState(() { _reportStatusFilter = 'All'; });
-                                                },
-                                              ),
-                                              ChoiceChip(
-                                                label: const Text('Submitted'),
-                                                selected: _reportStatusFilter == 'submitted',
-                                                onSelected: (sel) {
-                                                  if (!sel) return;
-                                                  setState(() { _reportStatusFilter = 'submitted'; });
-                                                },
-                                              ),
-                                              ChoiceChip(
-                                                label: const Text('Reviewed'),
-                                                selected: _reportStatusFilter == 'reviewed',
-                                                onSelected: (sel) {
-                                                  if (!sel) return;
-                                                  setState(() { _reportStatusFilter = 'reviewed'; });
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: DataTable(
-                                              columns: const [
-                                                DataColumn(label: Text('Employee')),
-                                                DataColumn(label: Text('Task')),
-                                                DataColumn(label: Text('Submitted')),
-                                                DataColumn(label: Text('Status')),
-                                                DataColumn(label: Text('Content')),
-                                                DataColumn(label: Text('Actions')),
-                                              ],
-                                              rows: _filteredTaskReports().map((r) {
-                                                final submitted = DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal());
-                                                return DataRow(cells: [
-                                                  DataCell(Text(r.employeeName ?? r.employeeId)),
-                                                  DataCell(Text(r.taskTitle ?? (r.taskId ?? '-'))),
-                                                  DataCell(Text(submitted)),
-                                                  DataCell(Text(r.status)),
-                                                  DataCell(Text(r.content)),
-                                                  DataCell(Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      IconButton(
-                                                        tooltip: 'View',
-                                                        icon: const Icon(Icons.info_outline),
-                                                        onPressed: () => _showReportDetails(r),
-                                                      ),
-                                                      if (r.status != 'reviewed')
-                                                        TextButton(
-                                                          onPressed: () async {
-                                                            try {
-                                                              await ReportService().updateReportStatus(r.id, 'reviewed');
-                                                              await _fetchTaskReports();
-                                                              if (mounted) {
-                                                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked as reviewed')));
-                                                              }
-                                                            } catch (e) {
-                                                              if (mounted) {
-                                                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                                                              }
-                                                            }
-                                                          },
-                                                          child: const Text('Review'),
-                                                        ),
-                                                      TextButton(
-                                                        onPressed: () async {
-                                                          final ok = await showDialog<bool>(
-                                                            context: context,
-                                                            builder: (ctx) => AlertDialog(
-                                                              title: const Text('Delete Report'),
-                                                              content: const Text('Are you sure you want to delete this report?'),
-                                                              actions: [
-                                                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                                                                FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
-                                                              ],
-                                                            ),
-                                                          );
-                                                          if (ok == true) {
-                                                            try {
-                                                              await ReportService().deleteReport(r.id);
-                                                              await _fetchTaskReports();
-                                                              if (mounted) {
-                                                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report deleted')));
-                                                              }
-                                                            } catch (e) {
-                                                              if (mounted) {
-                                                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                                                              }
-                                                            }
-                                                          }
-                                                        },
-                                                        child: const Text('Delete'),
-                                                      ),
-                                                    ],
-                                                  )),
-                                                ]);
-                                              }).toList(),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  )),
+                            : _buildTaskReportsView(),
                       ),
                     ],
                   ),
@@ -682,6 +568,154 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             child: Text(value),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTaskReportsView() {
+    if (_isLoadingTaskReports) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_taskReportsError != null) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(_taskReportsError!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _fetchTaskReports,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ));
+    }
+    if (_taskReports.isEmpty) {
+      return const Center(child: Text('No task reports'));
+    }
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('All'),
+                  selected: _reportStatusFilter == 'All',
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() { _reportStatusFilter = 'All'; });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Submitted'),
+                  selected: _reportStatusFilter == 'submitted',
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() { _reportStatusFilter = 'submitted'; });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Reviewed'),
+                  selected: _reportStatusFilter == 'reviewed',
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() { _reportStatusFilter = 'reviewed'; });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('Employee')),
+                  DataColumn(label: Text('Task')),
+                  DataColumn(label: Text('Submitted')),
+                  DataColumn(label: Text('Status')),
+                  DataColumn(label: Text('Content')),
+                  DataColumn(label: Text('Actions')),
+                ],
+                rows: _filteredTaskReports().map((r) {
+                  final submitted = DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal());
+                  return DataRow(cells: [
+                    DataCell(Text(r.employeeName ?? r.employeeId)),
+                    DataCell(Text(r.taskTitle ?? (r.taskId ?? '-'))),
+                    DataCell(Text(submitted)),
+                    DataCell(Text(r.status)),
+                    DataCell(Text(r.content)),
+                    DataCell(Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'View',
+                          icon: const Icon(Icons.info_outline),
+                          onPressed: () => _showReportDetails(r),
+                        ),
+                        if (r.status != 'reviewed')
+                          TextButton(
+                            onPressed: () async {
+                              try {
+                                await ReportService().updateReportStatus(r.id, 'reviewed');
+                                await _fetchTaskReports();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked as reviewed')));
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                                }
+                              }
+                            },
+                            child: const Text('Review'),
+                          ),
+                        TextButton(
+                          onPressed: () async {
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Delete Report'),
+                                content: const Text('Are you sure you want to delete this report?'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                  FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+                                ],
+                              ),
+                            );
+                            if (ok == true) {
+                              try {
+                                await ReportService().deleteReport(r.id);
+                                await _fetchTaskReports();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report deleted')));
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                                }
+                              }
+                            }
+                          },
+                          child: const Text('Delete'),
+                        ),
+                      ],
+                    )),
+                  ]);
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

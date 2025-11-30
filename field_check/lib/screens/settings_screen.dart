@@ -212,142 +212,143 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Settings',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Settings',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
 
-          // User profile card
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: const Color(0xFF2688d4),
-                    backgroundImage: _pickedImage != null
-                        ? FileImage(_pickedImage!)
-                        : (_profile?.avatarUrl?.isNotEmpty == true
-                              ? NetworkImage(_profile!.avatarUrl!)
-                                    as ImageProvider
-                              : null),
-                    child:
-                        _pickedImage == null &&
-                            (_profile?.avatarUrl?.isEmpty ?? true)
-                        ? const Icon(
-                            Icons.person,
-                            size: 30,
-                            color: Colors.white,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _loadingProfile
-                              ? 'Loading...'
-                              : (_profile?.name ?? '—'),
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _loadingProfile ? '' : (_profile?.role ?? ''),
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _loadingProfile ? '' : 'ID: ${_profile?.id ?? '—'}',
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _loadingProfile ? '' : (_profile?.email ?? ''),
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                      ],
+            // User profile card
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundColor: const Color(0xFF2688d4),
+                      backgroundImage: _pickedImage != null
+                          ? FileImage(_pickedImage!)
+                          : (_profile?.avatarUrl?.isNotEmpty == true
+                                ? NetworkImage(_profile!.avatarUrl!)
+                                      as ImageProvider
+                                : null),
+                      child:
+                          _pickedImage == null &&
+                              (_profile?.avatarUrl?.isEmpty ?? true)
+                          ? const Icon(
+                              Icons.person,
+                              size: 30,
+                              color: Colors.white,
+                            )
+                          : null,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _loadingProfile
+                                ? 'Loading...'
+                                : (_profile?.name ?? '—'),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _loadingProfile ? '' : (_profile?.role ?? ''),
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _loadingProfile ? '' : 'ID: ${_profile?.id ?? '—'}',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _loadingProfile ? '' : (_profile?.email ?? ''),
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _showEditProfileDialog,
-              icon: const Icon(Icons.edit),
-              label: const Text('Edit Profile'),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _showEditProfileDialog,
+                icon: const Icon(Icons.edit),
+                label: const Text('Edit Profile'),
+              ),
             ),
-          ),
 
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MapScreen()),
-                );
-              },
-              icon: const Icon(Icons.map),
-              label: const Text('Open Map'),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Appearance
-          const Text(
-            'Appearance',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Expanded(child: Text('Theme Mode')),
-              DropdownButton<ThemeMode>(
-                value: MyApp.of(context)?.themeMode ?? ThemeMode.light,
-                items: const [
-                  DropdownMenuItem(
-                    value: ThemeMode.system,
-                    child: Text('System'),
-                  ),
-                  DropdownMenuItem(
-                    value: ThemeMode.light,
-                    child: Text('Light'),
-                  ),
-                  DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
-                ],
-                onChanged: (mode) async {
-                  if (mode == null) return;
-                  await MyApp.of(context)?.setThemeMode(mode);
-                  setState(() {});
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MapScreen()),
+                  );
                 },
+                icon: const Icon(Icons.map),
+                label: const Text('Open Map'),
               ),
-            ],
-          ),
+            ),
 
-          const SizedBox(height: 24),
+            const SizedBox(height: 24),
 
-          // App Settings
-          const Text(
-            'App Settings',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
+            // Appearance
+            const Text(
+              'Appearance',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(child: Text('Theme Mode')),
+                DropdownButton<ThemeMode>(
+                  value: MyApp.of(context)?.themeMode ?? ThemeMode.light,
+                  items: const [
+                    DropdownMenuItem(
+                      value: ThemeMode.system,
+                      child: Text('System'),
+                    ),
+                    DropdownMenuItem(
+                      value: ThemeMode.light,
+                      child: Text('Light'),
+                    ),
+                    DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
+                  ],
+                  onChanged: (mode) async {
+                    if (mode == null) return;
+                    await MyApp.of(context)?.setThemeMode(mode);
+                    setState(() {});
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // App Settings
+            const Text(
+              'App Settings',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           const SizedBox(height: 8),
 
           SwitchListTile(
@@ -414,6 +415,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

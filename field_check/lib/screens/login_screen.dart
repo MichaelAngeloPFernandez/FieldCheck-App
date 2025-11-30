@@ -32,28 +32,6 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = _usernameController.text.trim();
       final pass = _passwordController.text;
 
-      // Demo credentials routing
-      if (user.toLowerCase() == 'admin' && pass == 'admin123') {
-        // Perform backend auth with seeded admin account to persist token
-        await _userService.loginIdentifier('admin@example.com', 'Admin@123');
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const AdminDashboardScreen()),
-        );
-        return;
-      }
-      if (user.toLowerCase() == 'employee1' && pass == 'employee123') {
-        // Perform backend auth with seeded employee account (username-only)
-        await _userService.loginIdentifier('employee1', 'employee123');
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const DashboardScreen()),
-        );
-        return;
-      }
-
       // Login by identifier: email or username supported by backend
       final loggedIn = await _userService.loginIdentifier(user, pass);
       if (!mounted) return;
@@ -78,38 +56,6 @@ class _LoginScreenState extends State<LoginScreen> {
           _isLoading = false;
         });
       }
-    }
-  }
-
-  void _demoLoginAdmin() async {
-    try {
-      await _userService.loginIdentifier('admin@example.com', 'Admin@123');
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const AdminDashboardScreen()),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Admin demo login failed: $e')));
-    }
-  }
-
-  void _demoLoginEmployee() async {
-    try {
-      await _userService.loginIdentifier('employee1', 'employee123');
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const DashboardScreen()),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Employee demo login failed: $e')));
     }
   }
 
@@ -189,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             controller: _usernameController,
                             decoration: const InputDecoration(
                               labelText: 'Username',
-                              hintText: 'admin or employee1 (or enter email)',
+                              hintText: 'Enter your username or email',
                               prefixIcon: Icon(Icons.person),
                             ),
                             keyboardType: TextInputType.text,
@@ -217,14 +163,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               }
                               return null;
                             },
-                          ),
-                          const SizedBox(height: 8),
-                          const Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Tip: admin/admin123 or employee1/employee123',
-                              style: TextStyle(color: Colors.grey),
-                            ),
                           ),
                           const SizedBox(height: 24),
                           SizedBox(
@@ -291,29 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: TextStyle(fontSize: 16),
                             ),
                           ),
-                          const Divider(height: 32),
-                          const Text('Or continue in demo mode'),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _demoLoginEmployee,
-                                  icon: const Icon(Icons.person),
-                                  label: const Text('Employee'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _demoLoginAdmin,
-                                  icon: const Icon(Icons.admin_panel_settings),
-                                  label: const Text('Admin'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(

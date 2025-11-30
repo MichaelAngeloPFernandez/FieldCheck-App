@@ -9,6 +9,13 @@ const Report = require('../models/Report');
 // @access  Private
 const checkIn = asyncHandler(async (req, res) => {
   const { geofenceId, latitude, longitude } = req.body;
+  
+  // Validate location coordinates
+  if (isNaN(latitude) || isNaN(longitude) || latitude === undefined || longitude === undefined) {
+    res.status(400);
+    throw new Error('Invalid latitude or longitude');
+  }
+  
   const geofence = await Geofence.findById(geofenceId);
 
   if (!geofence) {
@@ -211,9 +218,25 @@ const getAttendanceRecords = asyncHandler(async (req, res) => {
 
   const attendance = await Attendance.find(filter)
     .populate('employee', 'name email')
-    .populate('geofence', 'name');
+    .populate('geofence', 'name')
+    .sort({ checkIn: -1 });
 
-  res.json(attendance);
+  // Transform data to match frontend expectations
+  const transformedRecords = attendance.map(record => ({
+    id: record._id,
+    isCheckIn: record.status === 'in',
+    timestamp: record.checkIn,
+    latitude: record.location?.lat,
+    longitude: record.location?.lng,
+    geofenceId: record.geofence?._id,
+    geofenceName: record.geofence?.name,
+    userId: record.employee?._id,
+    checkOut: record.checkOut,
+    employeeName: record.employee?.name,
+    employeeEmail: record.employee?.email,
+  }));
+
+  res.json(transformedRecords);
 });
 
 // @desc    Get attendance record by ID

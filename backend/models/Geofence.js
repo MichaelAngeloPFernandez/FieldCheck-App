@@ -5,7 +5,6 @@ const geofenceSchema = mongoose.Schema(
     name: {
       type: String,
       required: true,
-      unique: true,
     },
     address: {
       type: String,
@@ -41,12 +40,7 @@ const geofenceSchema = mongoose.Schema(
         ref: 'User',
       },
     ],
-    // New fields for TEAM/SOLO and A–Z labeling
-    type: {
-      type: String,
-      enum: ['TEAM', 'SOLO'],
-      default: 'TEAM',
-    },
+    // A–Z labeling for geofences
     labelLetter: {
       type: String,
       // Optional to maintain backward compatibility; UI will require on new geofences
@@ -55,9 +49,9 @@ const geofenceSchema = mongoose.Schema(
   { timestamps: true }
 );
 
-// Enforce unique TEAM/SOLO letter per active geofence
+// Enforce unique label letter per active geofence
 geofenceSchema.index(
-  { type: 1, labelLetter: 1 },
+  { labelLetter: 1 },
   { unique: true, partialFilterExpression: { isActive: true, labelLetter: { $exists: true } } }
 );
 

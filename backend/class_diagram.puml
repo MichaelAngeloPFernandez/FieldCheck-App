@@ -149,7 +149,6 @@ package "Services" {
         +updateUserTaskStatus(UserTask userTask): bool
         +getUserTasks(User user): List<UserTask>
     }
-}
 
     class BeaconService {
         +startBeaconScanning(): void

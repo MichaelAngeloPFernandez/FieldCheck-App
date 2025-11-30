@@ -13,6 +13,8 @@ class Task {
   final String? geofenceId; // Auto-populated from assigned geofence
   final double? latitude;
   final double? longitude;
+  final String? teamId; // Team assignment
+  final List<String>? teamMembers; // List of team member IDs
 
   Task({
     required this.id,
@@ -27,6 +29,8 @@ class Task {
     this.geofenceId,
     this.latitude,
     this.longitude,
+    this.teamId,
+    this.teamMembers,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -45,6 +49,8 @@ class Task {
       geofenceId: json['geofenceId'],
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
+      teamId: json['teamId'],
+      teamMembers: json['teamMembers'] != null ? List<String>.from(json['teamMembers']) : null,
     );
   }
 
@@ -62,6 +68,8 @@ class Task {
       'geofenceId': geofenceId,
       'latitude': latitude,
       'longitude': longitude,
+      'teamId': teamId,
+      'teamMembers': teamMembers,
     };
   }
 
@@ -78,6 +86,8 @@ class Task {
     String? geofenceId,
     double? latitude,
     double? longitude,
+    String? teamId,
+    List<String>? teamMembers,
   }) {
     return Task(
       id: id ?? this.id,
@@ -92,6 +102,8 @@ class Task {
       geofenceId: geofenceId ?? this.geofenceId,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      teamId: teamId ?? this.teamId,
+      teamMembers: teamMembers ?? this.teamMembers,
     );
   }
 }

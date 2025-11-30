@@ -43,13 +43,13 @@ class LocationService {
 
   /// High-accuracy real-time position stream optimized for employee tracking
   /// - Uses bestForNavigation accuracy for GPS-grade precision (2-5m)
-  /// - 1m distance filter for responsive updates
+  /// - 0m distance filter for immediate responsive updates
   /// - No artificial delays - streams every position update immediately
   /// - Applies GPS spike filtering to remove implausible jumps
   Stream<geolocator.Position> getPositionStream({
     geolocator.LocationAccuracy accuracy =
         geolocator.LocationAccuracy.bestForNavigation,
-    int distanceFilter = 1,
+    int distanceFilter = 0, // Changed from 1 to 0 for immediate updates
   }) async* {
     // Ensure permissions before starting stream
     await getCurrentLocation();
@@ -59,6 +59,7 @@ class LocationService {
       locationSettings: geolocator.LocationSettings(
         accuracy: accuracy,
         distanceFilter: distanceFilter,
+        timeLimit: const Duration(seconds: 10), // Add timeout for faster initial lock
       ),
     );
 
