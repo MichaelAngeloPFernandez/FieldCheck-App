@@ -52,6 +52,17 @@ class ReportExportService {
 
     doc.fontSize(9).font('Helvetica');
 
+    // Helper function to format time as HH:MM AM/PM
+    const formatTime = (date) => {
+      if (!date) return '-';
+      const d = new Date(date);
+      const hours = d.getHours();
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      return `${String(displayHours).padStart(2, '0')}:${minutes} ${ampm}`;
+    };
+
     records.forEach((record) => {
       // Check if we need a new page
       if (yPosition > pageHeight - bottomMargin) {
@@ -70,16 +81,17 @@ class ReportExportService {
         doc.font('Helvetica');
       }
 
-      const date = new Date(record.checkIn || record.timestamp).toLocaleDateString();
-      const time = new Date(record.checkIn || record.timestamp).toLocaleTimeString();
+      const checkInDate = new Date(record.checkIn);
+      const date = checkInDate.toLocaleDateString();
+      const checkInTime = formatTime(record.checkIn);
+      const checkOutTime = formatTime(record.checkOut);
       const employeeName = record.employee?.name || record.userId || 'N/A';
       const locationName = record.geofence?.name || 'N/A';
-      const status = record.status === 'in' ? 'Checked In' : 'Checked Out';
 
       doc.text(employeeName, col1, yPosition);
       doc.text(date, col2, yPosition);
-      doc.text(time, col3, yPosition);
-      doc.text(status, col4, yPosition);
+      doc.text(checkInTime, col3, yPosition);
+      doc.text(checkOutTime, col4, yPosition);
       doc.text(locationName, col5, yPosition);
 
       yPosition += 20;

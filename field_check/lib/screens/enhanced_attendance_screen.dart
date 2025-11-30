@@ -266,9 +266,13 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         }
       }
 
+      // Get PH timezone time (UTC+8)
       final now = DateTime.now();
+      final phTime = now.add(Duration(hours: 8 - now.timeZoneOffset.inHours));
+      final hour = phTime.hour % 12 == 0 ? 12 : phTime.hour % 12;
+      final ampm = phTime.hour >= 12 ? 'PM' : 'AM';
       final formattedTime =
-          "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+          "${hour.toString().padLeft(2, '0')}:${phTime.minute.toString().padLeft(2, '0')} $ampm";
 
       final attendanceData = AttendanceData(
         isCheckedIn: !_isCheckedIn,
