@@ -325,8 +325,19 @@ const getAttendanceStatus = asyncHandler(async (req, res) => {
   let lastGeofenceName = null;
   let lastCheckTimestamp = null;
 
+  // Helper function to format time as HH:MM AM/PM
+  const formatTime = (date) => {
+    if (!date) return null;
+    const d = new Date(date);
+    const hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return `${String(displayHours).padStart(2, '0')}:${minutes} ${ampm}`;
+  };
+
   if (openRecord) {
-    lastCheckTime = openRecord.checkIn.toLocaleTimeString();
+    lastCheckTime = formatTime(openRecord.checkIn);
     lastGeofenceName = openRecord.geofence?.name;
     lastCheckTimestamp = openRecord.checkIn;
   } else {
@@ -336,7 +347,7 @@ const getAttendanceStatus = asyncHandler(async (req, res) => {
     }).populate('geofence', 'name').sort({ createdAt: -1 });
     
     if (lastRecord) {
-      lastCheckTime = lastRecord.checkOut ? lastRecord.checkOut.toLocaleTimeString() : lastRecord.checkIn.toLocaleTimeString();
+      lastCheckTime = formatTime(lastRecord.checkOut || lastRecord.checkIn);
       lastGeofenceName = lastRecord.geofence?.name;
       lastCheckTimestamp = lastRecord.checkOut || lastRecord.checkIn;
     }
