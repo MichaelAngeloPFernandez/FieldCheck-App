@@ -6,6 +6,7 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:async';
 
@@ -75,24 +76,13 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       debugPrint('  Error: $e');
     }
 
-    // Fallback: Try direct file write to Downloads
-    debugPrint('Step 2: Falling back to direct file write...');
+    // Fallback: Save to app cache directory (always accessible and deletable)
+    debugPrint('Step 2: Falling back to app cache directory...');
     try {
-      final downloadsPath = '/storage/emulated/0/Download';
-      final downloadsDir = Directory(downloadsPath);
+      final cacheDir = await getTemporaryDirectory();
+      debugPrint('  Cache directory: ${cacheDir.path}');
 
-      debugPrint(
-        '  Checking if Downloads directory exists: ${downloadsDir.path}',
-      );
-      final exists = await downloadsDir.exists();
-      debugPrint('  Directory exists: $exists');
-
-      if (!exists) {
-        debugPrint('  Creating Downloads directory...');
-        await downloadsDir.create(recursive: true);
-      }
-
-      final file = File('$downloadsPath/$fileName');
+      final file = File('${cacheDir.path}/$fileName');
       debugPrint('  Writing file to: ${file.path}');
       await file.writeAsBytes(fileBytes);
 
@@ -103,7 +93,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       debugPrint('  File size: $fileSize bytes');
 
       if (fileExists && fileSize > 0) {
-        debugPrint('✓ Step 2 SUCCESS: File saved via direct write');
+        debugPrint('✓ Step 2 SUCCESS: File saved to app cache');
         debugPrint('  Path: ${file.path}');
         debugPrint('  Size: $fileSize bytes');
         return file.path;
@@ -111,7 +101,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         debugPrint('❌ Step 2 FAILED: File not created or empty');
       }
     } catch (e) {
-      debugPrint('❌ Step 2 FAILED: Direct write error');
+      debugPrint('❌ Step 2 FAILED: Cache write error');
       debugPrint('  Error: $e');
     }
 
@@ -280,7 +270,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         // Save file using native Android method
         try {
           final fileName =
-              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.csv';
           final filePath = await _saveFileToDownloads(
             fileName,
             response.bodyBytes,

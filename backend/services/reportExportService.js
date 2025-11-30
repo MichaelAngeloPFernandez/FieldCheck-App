@@ -498,6 +498,50 @@ class ReportExportService {
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer;
   }
+
+  /**
+   * Generate CSV report for attendance records
+   * @param {Array} records - Attendance records
+   * @param {Array} tasks - Tasks array
+   * @returns {String} CSV string
+   */
+  static generateAttendanceCSV(records, tasks = []) {
+    let csv = 'Employee,Date,Time,Status,Location\n';
+
+    // Add attendance records
+    records.forEach((record) => {
+      const date = new Date(record.checkIn || record.timestamp).toLocaleDateString();
+      const time = new Date(record.checkIn || record.timestamp).toLocaleTimeString();
+      const employeeName = record.employee?.name || record.userId || 'N/A';
+      const locationName = record.geofence?.name || 'N/A';
+      const status = record.status === 'in' ? 'Checked In' : 'Checked Out';
+
+      // Escape quotes in values
+      const escapedEmployee = employeeName.replace(/"/g, '""');
+      const escapedLocation = locationName.replace(/"/g, '""');
+
+      csv += `"${escapedEmployee}","${date}","${time}","${status}","${escapedLocation}"\n`;
+    });
+
+    // Add tasks section if present
+    if (tasks && tasks.length > 0) {
+      csv += '\n\nTasks Completed\n';
+      csv += 'Task Title,Status,Due Date,Assigned By\n';
+
+      tasks.forEach((task) => {
+        const dueDate = new Date(task.dueDate).toLocaleDateString();
+        const assignedBy = task.assignedBy?.name || 'Unknown';
+        const taskStatus = task.status || 'pending';
+
+        const escapedTitle = (task.title || 'N/A').replace(/"/g, '""');
+        const escapedAssignedBy = assignedBy.replace(/"/g, '""');
+
+        csv += `"${escapedTitle}","${taskStatus}","${dueDate}","${escapedAssignedBy}"\n`;
+      });
+    }
+
+    return csv;
+  }
 }
 
 module.exports = ReportExportService;

@@ -121,15 +121,15 @@ const exportAttendanceExcel = asyncHandler(async (req, res) => {
       }
     }
 
-    // Generate Excel
-    const buffer = await ReportExportService.generateAttendanceExcel(records, { dateRange: 'All Dates', tasks });
+    // Generate CSV
+    const csv = ReportExportService.generateAttendanceCSV(records, tasks);
 
     // Set response headers
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="attendance_${Date.now()}.xlsx"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="attendance_${Date.now()}.csv"`);
 
-    // Send buffer
-    res.send(buffer);
+    // Send CSV
+    res.send(csv);
   } catch (error) {
     console.error('Export Excel error:', error);
     res.status(500).json({ message: 'Failed to export Excel: ' + error.message });
