@@ -71,9 +71,25 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✓ PDF exported successfully!'),
+              content: Text('✓ PDF exported successfully! File downloaded.'),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
+              duration: Duration(seconds: 3),
+            ),
+          );
+          // Show download completion dialog
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Export Complete'),
+              content: const Text(
+                'Your PDF report has been downloaded successfully.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
             ),
           );
         }
@@ -135,9 +151,25 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✓ CSV exported successfully!'),
+              content: Text('✓ CSV exported successfully! File downloaded.'),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
+              duration: Duration(seconds: 3),
+            ),
+          );
+          // Show download completion dialog
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Export Complete'),
+              content: const Text(
+                'Your CSV report has been downloaded successfully.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
             ),
           );
         }

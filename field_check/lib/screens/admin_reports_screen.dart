@@ -202,6 +202,34 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     });
   }
 
+  void _applyDateRangePreset(String preset) {
+    setState(() {
+      _dateRangePreset = preset;
+      final now = DateTime.now();
+
+      switch (preset) {
+        case 'Last 7 Days':
+          _customStartDate = now.subtract(const Duration(days: 7));
+          _customEndDate = now;
+          _filterDate = _customStartDate.toString().split(' ')[0];
+          break;
+        case 'Last 30 Days':
+          _customStartDate = now.subtract(const Duration(days: 30));
+          _customEndDate = now;
+          _filterDate = _customStartDate.toString().split(' ')[0];
+          break;
+        case 'All Time':
+          _customStartDate = null;
+          _customEndDate = null;
+          _filterDate = 'All Dates';
+          break;
+        default:
+          break;
+      }
+    });
+    _scheduleFetchAttendance();
+  }
+
   @override
   Widget build(BuildContext context) {
     const brandColor = Color(0xFF2688d4);
@@ -309,69 +337,127 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       const SizedBox(height: 12),
 
                       if (_viewMode == 'attendance')
-                        Card(
-                          elevation: 2,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Wrap(
-                              spacing: 16,
-                              runSpacing: 12,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                SizedBox(
-                                  width: 220,
-                                  child: _buildFilterDropdown(
-                                    label: 'Date',
-                                    value: _filterDate,
-                                    items: dateItems,
-                                    onChanged: (val) {
-                                      if (val == null) return;
-                                      setState(() {
-                                        _filterDate = val;
-                                      });
-                                      _scheduleFetchAttendance();
-                                    },
-                                    onTap: () => _selectDate(context),
-                                  ),
+                        Column(
+                          children: [
+                            // Date Range Presets
+                            Card(
+                              elevation: 1,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Quick Date Range:',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        ChoiceChip(
+                                          label: const Text('All Time'),
+                                          selected:
+                                              _dateRangePreset == 'All Time',
+                                          onSelected: (_) =>
+                                              _applyDateRangePreset('All Time'),
+                                        ),
+                                        ChoiceChip(
+                                          label: const Text('Last 7 Days'),
+                                          selected:
+                                              _dateRangePreset == 'Last 7 Days',
+                                          onSelected: (_) =>
+                                              _applyDateRangePreset(
+                                                'Last 7 Days',
+                                              ),
+                                        ),
+                                        ChoiceChip(
+                                          label: const Text('Last 30 Days'),
+                                          selected:
+                                              _dateRangePreset ==
+                                              'Last 30 Days',
+                                          onSelected: (_) =>
+                                              _applyDateRangePreset(
+                                                'Last 30 Days',
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
-                                SizedBox(
-                                  width: 220,
-                                  child: _buildFilterDropdown(
-                                    label: 'Location',
-                                    value: _filterLocation,
-                                    items: locationItems,
-                                    onChanged: (val) {
-                                      if (val == null) return;
-                                      setState(() {
-                                        _filterLocation = val;
-                                      });
-                                      _scheduleFetchAttendance();
-                                    },
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 220,
-                                  child: _buildFilterDropdown(
-                                    label: 'Status',
-                                    value: _filterStatus,
-                                    items: statusItems,
-                                    onChanged: (val) {
-                                      if (val == null) return;
-                                      setState(() {
-                                        _filterStatus = val;
-                                      });
-                                      _scheduleFetchAttendance();
-                                    },
-                                  ),
-                                ),
-                                TextButton.icon(
-                                  onPressed: _fetchAttendanceRecords,
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text('Refresh'),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 12),
+                            // Filters
+                            Card(
+                              elevation: 2,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Wrap(
+                                  spacing: 16,
+                                  runSpacing: 12,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 220,
+                                      child: _buildFilterDropdown(
+                                        label: 'Date',
+                                        value: _filterDate,
+                                        items: dateItems,
+                                        onChanged: (val) {
+                                          if (val == null) return;
+                                          setState(() {
+                                            _filterDate = val;
+                                            _dateRangePreset = 'Custom';
+                                          });
+                                          _scheduleFetchAttendance();
+                                        },
+                                        onTap: () => _selectDate(context),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 220,
+                                      child: _buildFilterDropdown(
+                                        label: 'Location',
+                                        value: _filterLocation,
+                                        items: locationItems,
+                                        onChanged: (val) {
+                                          if (val == null) return;
+                                          setState(() {
+                                            _filterLocation = val;
+                                          });
+                                          _scheduleFetchAttendance();
+                                        },
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 220,
+                                      child: _buildFilterDropdown(
+                                        label: 'Status',
+                                        value: _filterStatus,
+                                        items: statusItems,
+                                        onChanged: (val) {
+                                          if (val == null) return;
+                                          setState(() {
+                                            _filterStatus = val;
+                                          });
+                                          _scheduleFetchAttendance();
+                                        },
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: _fetchAttendanceRecords,
+                                      icon: const Icon(Icons.refresh),
+                                      label: const Text('Refresh'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
 
                       const SizedBox(height: 12),
