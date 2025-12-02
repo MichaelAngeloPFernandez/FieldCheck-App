@@ -1,0 +1,233 @@
+FieldCheck Paper Edit Tasks – Assignment for 4 Members
+=====================================================
+
+Team members for this task split:
+- Michael
+- Mark
+- Carl
+- Patrick
+
+Goal
+----
+Bring `latestpaper.txt` fully in line with the actual FieldCheck implementation by applying small wording fixes and clarifications. All edits are **text-only**; no code changes are needed.
+
+GENERAL NOTE
+------------
+When you apply these edits, keep all existing headings, spacing, and formatting style. Only change the specific lines/paragraphs listed here.
+
+=====================================================
+1) MICHAEL – CHAPTER 1 SCOPE & OBJECTIVES
+=====================================================
+
+Task 1 – Update Objective 7 (Section 1.4.2 Specific Objectives)
+----------------------------------------------------------------
+Current text (paraphrased):
+- "Support both circular and polygon-shaped geofences to accommodate different types of job site boundaries."
+
+Replace Objective 7 with **exactly** this text:
+
+7. Implement GPS-based circular geofences for job sites and design the system architecture so that more complex polygon-shaped geofences can be added in future versions if needed.
+
+
+Task 2 – Update Employee Interface description (Section 1.5.1 Scope)
+---------------------------------------------------------------------
+Find the line under **FieldCheck Mobile App (Flutter)** that begins:
+
+"Employee Interface: Features include secure login (JWT), GPS-based check-in/out, task
+viewing, offline data caching, and PDF/Excel report generation."
+
+Replace that whole sentence with:
+
+Employee Interface: Features include secure login (JWT), GPS-based check-in/out, task
+viewing, offline data caching, and viewing of personal attendance history.
+
+
+Task 3 – Update Admin Interface description (Section 1.5.1 Scope)
+------------------------------------------------------------------
+Find the line that begins:
+
+"Admin Interface: Allows creation of circular and polygon geofences, employee profile
+management, task assignment, attendance reporting with export functionality, and
+real-time monitoring—all accessible from the mobile app."
+
+Replace it with:
+
+Admin Interface: Allows creation and management of circular geofences, employee profile
+management, task assignment, attendance reporting with PDF/Excel export functionality,
+and real-time monitoring—all accessible from the mobile app.
+
+
+=====================================================
+2) MARK – CHAPTER 3 CORE DESIGN & SECURITY TEXT
+=====================================================
+
+Task 4 – Update Accuracy design principle (Section 3.1.3 Core Design Principles)
+---------------------------------------------------------------------------------
+Find the bullet starting with **"Accuracy – The system uses GPS to pinpoint employee locations."**
+
+Replace that entire Accuracy paragraph with:
+
+Accuracy – The system uses GPS to pinpoint employee locations and validates attendance
+against circular geofence boundaries using distance calculations (Haversine formula).
+The architecture is designed so that more complex polygon-shaped boundaries, as well
+as Bluetooth beacons for improved indoor accuracy, can be added in future versions.
+
+(Do not change the other bullets like Privacy and Control, Reliability, etc.)
+
+
+Task 5 – Fix Security sentence (Section 3.6.1 Architecture Overview)
+---------------------------------------------------------------------
+Find this line:
+
+Security: The system uses role-based access control, encrypted data transmission,
+JWT tokens for authentication, and optional two-factor authentication.
+
+Replace it with:
+
+Security: The system uses role-based access control, encrypted data transmission, and
+JWT tokens for authentication. The architecture is designed to be extendable to
+two-factor authentication in future versions if required.
+
+-
+=====================================================
+3) CARL – CHAPTER 3 DATA STORAGE & FUTURE WORK TEXT
+=====================================================
+
+Task 6 – Correct Local Storage description (Section 3.6.2 Component Descriptions)
+----------------------------------------------------------------------------------
+Under **Mobile Application Layer**, find the bullet:
+
+- Local Storage: Offline data caching using SQLite
+
+Replace it with:
+
+- Local Storage: Offline data caching using on-device key–value storage (SharedPreferences)
+
+
+Task 7 – Clarify polygon algorithms as future work (Section 3.8 Technical Feasibility)
+---------------------------------------------------------------------------------------
+Find the bullet that currently says:
+
+- Polygon geofencing algorithms are well-understood and efficient
+
+Replace it with:
+
+- Polygon geofencing algorithms (planned for future versions) are well-understood and efficient
+
+
+Task 8 – Rewrite Section 3.18.2 Ray Casting Algorithm
+------------------------------------------------------
+Locate **"3.18.2 Ray Casting Algorithm (Polygon Geofence Validation)"** and replace the **entire subsection** (heading + paragraphs + final sentence) with this updated version:
+
+3.18.2 Ray Casting Algorithm (Polygon Geofence Validation – Future Enhancement)
+
+The ray casting algorithm determines if a point lies inside a polygon by:
+
+1. Draw a ray from the point to infinity
+2. Count how many times the ray crosses polygon edges
+3. If count is odd, point is inside; if even, point is outside
+
+This algorithm is considered for future support of complex polygon-shaped geofences that
+do not fit the circular model. The current FieldCheck implementation uses circular
+geofences validated with the Haversine formula.
+
+
+=====================================================
+4) PATRICK – UML / PLANTUML DIAGRAM UPDATES
+=====================================================
+
+IMPORTANT: These changes are **only** in the UML / PlantUML code blocks at the end of `latestpaper.txt`.
+After editing, use PlantUML (as described in the paper) to regenerate the PNG diagrams and place them in the correct figure slots in the chapters.
+
+
+Task 9 – Use Case Diagram (Figure 3.9 – PlantUML actor links)
+--------------------------------------------------------------
+In the **Use Case Diagram (PlantUML)** block, find the actor-to-use-case links:
+
+Employee --> UC1
+Employee --> UC2
+Employee --> UC3
+Employee --> UC4
+Employee --> UC5
+
+Admin --> UC6
+Admin --> UC7
+Admin --> UC8
+Admin --> UC9
+Admin --> UC10
+Admin --> UC11
+
+Replace that entire block of links with:
+
+Employee --> UC1
+Employee --> UC2
+Employee --> UC3
+Employee --> UC5
+
+Admin --> UC4
+Admin --> UC6
+Admin --> UC7
+Admin --> UC8
+Admin --> UC9
+Admin --> UC10
+Admin --> UC11
+
+This makes "Export Reports (PDF/Excel)" (UC4) an Admin-only use case, matching the actual system behavior.
+
+
+Task 10 – ERD Class Diagram Geofence fields (Figure 3.7 – PlantUML)
+--------------------------------------------------------------------
+In the **ERD → Class Diagram (PlantUML)** block, find the `Geofence` class definition:
+
+class Geofence {
+  _id : ObjectId <<PK>>
+  name : String
+  type : String
+  latitude : Number
+  longitude : Number
+  radius : Number
+  coordinates : Array
+  assignedEmps : [ObjectId]
+  isActive : Boolean
+}
+
+Replace just that class with this version, which matches the actual backend `Geofence` model and clearly focuses on circular geofences:
+
+class Geofence {
+  _id : ObjectId <<PK>>
+  name : String
+  address : String
+  latitude : Number
+  longitude : Number
+  radius : Number
+  shape : String
+  assignedEmployees : [ObjectId]
+  isActive : Boolean
+}
+
+Leave the relationships (e.g., `Geofence ||--o{ Attendance`) as they are.
+
+
+Task 11 – Sequence Diagram validation step (Figure 3.11 – PlantUML)
+--------------------------------------------------------------------
+In the **Sequence Diagram – Check-In Process (PlantUML)** block, locate the line:
+
+App -> App: Validate Location\n(Haversine / Ray-Casting)
+
+Replace it with:
+
+App -> App: Validate Location\n(Haversine)
+
+This reflects the actual implementation, which uses Haversine distance with circular geofences.
+
+
+=====================================================
+5) OPTIONAL COORDINATION NOTES
+=====================================================
+
+- After all four of you finish your parts, run through `latestpaper.txt` once to ensure:
+  - All section numbers and headings are unchanged.
+  - There are no duplicated or conflicting sentences.
+  - The wording consistently describes **circular geofences implemented now** and **polygon geofences + 2FA as future enhancements**.
+
+- When diagrams are re-generated from PlantUML, make sure the correct PNGs are inserted back into the appropriate figure placeholders (Figure 3.1 to 3.11) as already described at the end of the paper.
