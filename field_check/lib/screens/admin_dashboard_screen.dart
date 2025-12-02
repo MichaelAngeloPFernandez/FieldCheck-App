@@ -26,7 +26,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final UserService _userService = UserService();
   final DashboardService _dashboardService = DashboardService();
   final RealtimeService _realtimeService = RealtimeService();
-  
+
   DashboardStats? _dashboardStats;
   RealtimeUpdates? _realtimeUpdates;
   bool _isLoading = true;
@@ -59,7 +59,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _initRealtimeService() async {
     await _realtimeService.initialize();
-    
+
     // Listen for real-time updates
     _realtimeService.attendanceStream.listen((event) {
       if (mounted) {
@@ -142,11 +142,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: _selectedIndex != 0
-            ? BackButton(onPressed: () {
-                setState(() {
-                  _selectedIndex = 0;
-                });
-              })
+            ? BackButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedIndex = 0;
+                  });
+                },
+              )
             : null,
         title: Text(_getAppBarTitle()),
         backgroundColor: brandColor,
@@ -170,10 +172,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: _selectedIndex, children: _screens),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         backgroundColor: const Color(0xFFF5F7FA),
@@ -188,18 +187,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             icon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'Employees',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Employees'),
           BottomNavigationBarItem(
             icon: Icon(Icons.admin_panel_settings),
             label: 'Admins',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
-            label: 'Geofences',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Geofences'),
           BottomNavigationBarItem(
             icon: Icon(Icons.assessment),
             label: 'Reports',
@@ -208,10 +201,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             icon: Icon(Icons.settings),
             label: 'Settings',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.task),
-            label: 'Tasks',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.task), label: 'Tasks'),
         ],
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
@@ -261,7 +251,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return RefreshIndicator(
       onRefresh: _loadDashboardData,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -288,19 +278,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ],
                 ),
               ),
-            
+
             const SizedBox(height: 20),
-            
+
             // Statistics Cards
             _buildStatsGrid(),
-            
+
             const SizedBox(height: 24),
-            
+
             // Recent Activities
             _buildRecentActivities(),
-            
+
             const SizedBox(height: 24),
-            
+
             // Quick Actions
             _buildQuickActions(),
           ],
@@ -381,19 +371,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(height: 8),
             Text(
               title,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
             ],
           ],
@@ -412,10 +396,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           children: [
             const Text(
               'Recent Activities',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             if (_dashboardStats!.recentActivities.attendances.isNotEmpty) ...[
@@ -428,21 +409,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              ...(_dashboardStats!.recentActivities.attendances.take(3).map(
-                (attendance) => ListTile(
-                  dense: true,
-                  leading: const CircleAvatar(
-                    radius: 16,
-                    child: Icon(Icons.person, size: 16),
-                  ),
-                  title: Text(attendance.userName),
-                  subtitle: Text(attendance.geofenceName),
-                  trailing: Text(
-                    DateFormat('HH:mm').format(attendance.timestamp),
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              )),
+              ...(_dashboardStats!.recentActivities.attendances
+                  .take(3)
+                  .map(
+                    (attendance) => ListTile(
+                      dense: true,
+                      leading: const CircleAvatar(
+                        radius: 16,
+                        child: Icon(Icons.person, size: 16),
+                      ),
+                      title: Text(attendance.userName),
+                      subtitle: Text(attendance.geofenceName),
+                      trailing: Text(
+                        DateFormat('HH:mm').format(attendance.timestamp),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  )),
             ],
             if (_dashboardStats!.recentActivities.tasks.isNotEmpty) ...[
               const SizedBox(height: 16),
@@ -455,22 +438,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              ...(_dashboardStats!.recentActivities.tasks.take(3).map(
-                (task) => ListTile(
-                  dense: true,
-                  leading: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: _getTaskStatusColor(task.status),
-                    child: const Icon(Icons.task, size: 16, color: Colors.white),
-                  ),
-                  title: Text(task.title),
-                  subtitle: Text(task.assignedToName ?? 'Unassigned'),
-                  trailing: Text(
-                    DateFormat('MMM dd').format(task.createdAt),
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              )),
+              ...(_dashboardStats!.recentActivities.tasks
+                  .take(3)
+                  .map(
+                    (task) => ListTile(
+                      dense: true,
+                      leading: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: _getTaskStatusColor(task.status),
+                        child: const Icon(
+                          Icons.task,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                      title: Text(task.title),
+                      subtitle: Text(task.assignedToName ?? 'Unassigned'),
+                      trailing: Text(
+                        DateFormat('MMM dd').format(task.createdAt),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  )),
             ],
           ],
         ),
@@ -488,10 +477,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           children: [
             const Text(
               'Quick Actions',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Row(
