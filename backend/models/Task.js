@@ -13,6 +13,8 @@ const taskSchema = new mongoose.Schema(
     },
     // Auto-populated from assigned geofence
     geofenceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Geofence', required: false },
+    // Soft-archive flag for separating current vs archived tasks
+    isArchived: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

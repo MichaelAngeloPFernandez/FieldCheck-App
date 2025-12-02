@@ -172,7 +172,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         color: Colors.white,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
+                            color: Colors.black.withOpacity(0.2),
                             blurRadius: 8,
                             offset: const Offset(0, 4),
                           ),
@@ -208,7 +208,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
@@ -247,7 +247,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                           decoration: BoxDecoration(
                             color: _getStatusColorValue(
                               _userProfile!.isVerified ? 'active' : 'pending',
-                            ).withValues(alpha: 0.1),
+                            ).withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: _getStatusColorValue(

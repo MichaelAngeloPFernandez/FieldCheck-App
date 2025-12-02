@@ -25,6 +25,58 @@ class ReportService {
     }
   }
 
+  Future<List<ReportModel>> getCurrentReports({String? type}) async {
+    final queryParams = <String, String>{'archived': 'false'};
+    if (type != null) queryParams['type'] = type;
+    final response = await HttpUtil().get(
+      _basePath,
+      queryParams: queryParams,
+      headers: await _headers(jsonContent: false),
+    );
+    if (response.statusCode == 200) {
+      final list = json.decode(response.body) as List<dynamic>;
+      return list.map((e) => ReportModel.fromJson(e)).toList();
+    } else {
+      throw Exception('Failed to fetch current reports');
+    }
+  }
+
+  Future<List<ReportModel>> getArchivedReports({String? type}) async {
+    final queryParams = <String, String>{'archived': 'true'};
+    if (type != null) queryParams['type'] = type;
+    final response = await HttpUtil().get(
+      _basePath,
+      queryParams: queryParams,
+      headers: await _headers(jsonContent: false),
+    );
+    if (response.statusCode == 200) {
+      final list = json.decode(response.body) as List<dynamic>;
+      return list.map((e) => ReportModel.fromJson(e)).toList();
+    } else {
+      throw Exception('Failed to fetch archived reports');
+    }
+  }
+
+  Future<void> archiveReport(String id) async {
+    final response = await HttpUtil().put(
+      '$_basePath/$id/archive',
+      headers: await _headers(),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to archive report');
+    }
+  }
+
+  Future<void> restoreReport(String id) async {
+    final response = await HttpUtil().put(
+      '$_basePath/$id/restore',
+      headers: await _headers(),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to restore report');
+    }
+  }
+
   Future<ReportModel> updateReportStatus(String id, String status) async {
     final response = await HttpUtil().patch(
       '$_basePath/$id/status',

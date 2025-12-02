@@ -281,7 +281,7 @@ class _CustomMapState extends State<CustomMap> {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.9),
+                  color: Colors.white.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.grey.shade300),
                 ),
@@ -308,8 +308,8 @@ class _CustomMapState extends State<CustomMap> {
                       ),
                       decoration: BoxDecoration(
                         color: isAssigned
-                            ? Colors.green.withValues(alpha: 0.1)
-                            : Colors.orange.withValues(alpha: 0.1),
+                            ? Colors.green.withOpacity(0.1)
+                            : Colors.orange.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
                           color: isAssigned ? Colors.green : Colors.orange,

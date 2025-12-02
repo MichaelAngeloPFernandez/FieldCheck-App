@@ -16,6 +16,7 @@ class Task {
   final double? longitude;
   final String? teamId; // Team assignment
   final List<String>? teamMembers; // List of team member IDs
+  final bool isArchived;
 
   Task({
     required this.id,
@@ -33,6 +34,7 @@ class Task {
     this.longitude,
     this.teamId,
     this.teamMembers,
+    this.isArchived = false,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -63,6 +65,7 @@ class Task {
       teamMembers: json['teamMembers'] != null
           ? List<String>.from(json['teamMembers'])
           : null,
+      isArchived: json['isArchived'] ?? false,
     );
   }
 
@@ -83,6 +86,7 @@ class Task {
       'longitude': longitude,
       'teamId': teamId,
       'teamMembers': teamMembers,
+      'isArchived': isArchived,
     };
   }
 
@@ -102,6 +106,7 @@ class Task {
     double? longitude,
     String? teamId,
     List<String>? teamMembers,
+    bool? isArchived,
   }) {
     return Task(
       id: id ?? this.id,
@@ -119,6 +124,7 @@ class Task {
       longitude: longitude ?? this.longitude,
       teamId: teamId ?? this.teamId,
       teamMembers: teamMembers ?? this.teamMembers,
+      isArchived: isArchived ?? this.isArchived,
     );
   }
 }

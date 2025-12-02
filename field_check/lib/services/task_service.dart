@@ -16,6 +16,34 @@ class TaskService {
     return headers;
   }
 
+  /// Fetch non-archived (current) tasks
+  Future<List<Task>> getCurrentTasks() async {
+    final response = await http
+        .get(Uri.parse('$_baseUrl?archived=false'), headers: await _headers(jsonContent: false))
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      final Iterable l = json.decode(response.body);
+      return List<Task>.from(l.map((model) => Task.fromJson(model)));
+    } else {
+      throw Exception('Failed to load current tasks');
+    }
+  }
+
+  /// Fetch archived tasks
+  Future<List<Task>> getArchivedTasks() async {
+    final response = await http
+        .get(Uri.parse('$_baseUrl?archived=true'), headers: await _headers(jsonContent: false))
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      final Iterable l = json.decode(response.body);
+      return List<Task>.from(l.map((model) => Task.fromJson(model)));
+    } else {
+      throw Exception('Failed to load archived tasks');
+    }
+  }
+
   Future<List<Task>> fetchAllTasks() async {
     final response = await http
         .get(Uri.parse(_baseUrl), headers: await _headers(jsonContent: false))
@@ -100,18 +128,6 @@ class TaskService {
     }
   }
 
-  Future<void> completeTask(String taskId, String userId) async {
-    final response = await http.put(
-      Uri.parse('$_baseUrl/$taskId/complete'),
-      headers: await _headers(),
-      body: json.encode({'userId': userId}),
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to mark task as completed');
-    }
-  }
-
   Future<UserTask> assignTaskToUser(String taskId, String userModelId) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/$taskId/assign/$userModelId'),
@@ -177,4 +193,27 @@ class TaskService {
       throw Exception('Failed to update user task status');
     }
   }
+
+  Future<void> archiveTask(String taskId) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/$taskId/archive'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to archive task');
+    }
+  }
+
+  Future<void> restoreTask(String taskId) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/$taskId/restore'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to restore task');
+    }
+  }
+
 }

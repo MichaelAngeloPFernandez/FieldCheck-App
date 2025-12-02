@@ -16,6 +16,7 @@ import 'package:field_check/screens/forgot_password_screen.dart';
 import 'package:field_check/screens/reset_password_screen.dart';
 import 'package:field_check/screens/admin_dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:field_check/utils/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,37 +59,9 @@ class MyAppState extends State<MyApp> {
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   ThemeMode _themeMode = ThemeMode.light;
 
-  ThemeData _lightTheme() {
-    const seed = Color(0xFF2688d4);
-    return ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
-      iconTheme: const IconThemeData(color: seed),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: seed,
-          foregroundColor: Colors.white,
-          elevation: 2,
-        ),
-      ),
-      visualDensity: VisualDensity.adaptivePlatformDensity,
-    );
-  }
+  ThemeData _lightTheme() => AppTheme.lightTheme;
 
-  ThemeData _darkTheme() {
-    const seed = Color(0xFF2688d4);
-    return ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
-      iconTheme: const IconThemeData(color: Colors.white70),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: seed,
-          foregroundColor: Colors.white,
-          elevation: 2,
-        ),
-      ),
-      visualDensity: VisualDensity.adaptivePlatformDensity,
-    );
-  }
+  ThemeData _darkTheme() => AppTheme.darkTheme;
 
   Future<void> _loadThemeMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -165,8 +138,16 @@ class MyAppState extends State<MyApp> {
           '/register': (context) => const RegistrationScreen(),
           '/forgot-password': (context) => const ForgotPasswordScreen(),
           '/reset-password': (context) => const ResetPasswordScreen(),
-          '/dashboard': (context) => const DashboardScreen(),
           '/admin-dashboard': (context) => const AdminDashboardScreen(),
+        },
+        onGenerateRoute: (settings) {
+          if (settings.name == '/dashboard') {
+            final int? initialIndex = settings.arguments as int?;
+            return MaterialPageRoute(
+              builder: (context) => DashboardScreen(initialIndex: initialIndex),
+            );
+          }
+          return null;
         },
       ),
     );

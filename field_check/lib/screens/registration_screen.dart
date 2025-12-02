@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:field_check/main.dart';
-import '../services/user_service.dart';
+import 'package:field_check/services/user_service.dart';
+import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/utils/logger.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -28,25 +31,32 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       _error = null;
     });
     try {
+      final role = _isAdmin ? 'admin' : 'employee';
+      AppLogger.info(AppLogger.tagAuth, 'Registration attempt for: ${_emailController.text.trim()} (role: $role)');
+      
       await _userService.register(
         _nameController.text.trim(),
         _emailController.text.trim(),
         _passwordController.text,
-        role: _isAdmin ? 'admin' : 'employee',
+        role: role,
         username: _usernameController.text.trim().isEmpty ? null : _usernameController.text.trim(),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Registration successful. Check email to activate.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      
+      AppLogger.success(AppLogger.tagAuth, 'Registration successful for: ${_emailController.text.trim()}');
+      AppWidgets.showSuccessSnackbar(
+        context,
+        'Registration successful. Check your email to activate your account.',
       );
-      Navigator.pop(context); // go back to login
+      Navigator.pop(context);
     } catch (e) {
+      AppLogger.error(AppLogger.tagAuth, 'Registration failed', e);
       setState(() {
-        _error = e.toString();
+        _error = e.toString().replaceAll('Exception: ', '');
       });
+      if (mounted) {
+        AppWidgets.showErrorSnackbar(context, _error ?? 'Registration failed');
+      }
     } finally {
       if (mounted) {
         setState(() {

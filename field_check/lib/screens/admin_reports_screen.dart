@@ -24,10 +24,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   List<Geofence> _geofences = [];
   late io.Socket _socket;
   List<ReportModel> _taskReports = [];
+  List<ReportModel> _archivedTaskReports = [];
   String _viewMode = 'attendance'; // 'attendance' | 'task'
   bool _hasNewTaskReports = false;
   bool _isLoadingTaskReports = false;
   String? _taskReportsError;
+  bool _showArchivedReports = false;
 
   String _filterDate = 'All Dates';
   String _filterLocation = 'All Locations';
@@ -44,6 +46,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     super.initState();
     _fetchGeofences();
     _fetchAttendanceRecords();
+    _fetchTaskReports();
     _initSocket();
   }
 
@@ -178,11 +181,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       _taskReportsError = null;
     });
     try {
-      final reports = await ReportService().fetchReports(type: 'task');
-      setState(() {
-        _taskReports = reports;
-        _isLoadingTaskReports = false;
-      });
+      if (_showArchivedReports) {
+        final reports = await ReportService().getArchivedReports(type: 'task');
+        setState(() {
+          _archivedTaskReports = reports;
+          _isLoadingTaskReports = false;
+        });
+      } else {
+        final reports = await ReportService().getCurrentReports(type: 'task');
+        setState(() {
+          _taskReports = reports;
+          _isLoadingTaskReports = false;
+        });
+      }
     } catch (e) {
       debugPrint('Error fetching task reports: $e');
       setState(() {
@@ -193,8 +204,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   List<ReportModel> _filteredTaskReports() {
-    if (_reportStatusFilter == 'All') return _taskReports;
-    return _taskReports
+    final base = _showArchivedReports ? _archivedTaskReports : _taskReports;
+    if (_reportStatusFilter == 'All') return base;
+    return base
         .where(
           (r) => r.status.toLowerCase() == _reportStatusFilter.toLowerCase(),
         )
@@ -234,6 +246,33 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       }
     });
     _scheduleFetchAttendance();
+  }
+
+  /// Get count of employees with no check-in/out records
+  /// This identifies employees who should have checked in but didn't
+  int _getNoCheckInOutCount() {
+    // Group records by employee ID to find those with incomplete check-in/out
+    final Map<String, List<AttendanceRecord>> recordsByEmployee = {};
+    
+    for (final record in _attendanceRecords) {
+      final employeeId = record.userId;
+      recordsByEmployee.putIfAbsent(employeeId, () => []);
+      recordsByEmployee[employeeId]!.add(record);
+    }
+
+    // Count employees who only have check-in but no check-out (incomplete day)
+    int incompleteCount = 0;
+    for (final records in recordsByEmployee.values) {
+      final hasCheckIn = records.any((r) => r.isCheckIn);
+      final hasCheckOut = records.any((r) => !r.isCheckIn);
+      
+      // If employee has check-in but no check-out, they didn't complete their day
+      if (hasCheckIn && !hasCheckOut) {
+        incompleteCount++;
+      }
+    }
+    
+    return incompleteCount;
   }
 
   @override
@@ -282,16 +321,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ],
       ),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: IntrinsicHeight(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                       // View toggle
                       Row(
                         children: [
@@ -353,18 +391,26 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                 color: brandColor,
                               ),
                             ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildStatCard(
+                                title: 'No Check-in/out',
+                                value: _getNoCheckInOutCount().toString(),
+                                icon: Icons.warning_amber,
+                                color: Colors.orange,
+                              ),
+                            ),
                           ],
                         ),
 
                       if (_viewMode == 'attendance') const SizedBox(height: 12),
 
-                      Expanded(
-                        child: _viewMode == 'attendance'
-                            ? (_attendanceRecords.isEmpty
-                                  ? const Center(
-                                      child: Text('No attendance records'),
-                                    )
-                                  : Card(
+                      if (_viewMode == 'attendance')
+                        _attendanceRecords.isEmpty
+                            ? const Center(
+                                child: Text('No attendance records'),
+                              )
+                            : Card(
                                       elevation: 2,
                                       child: Padding(
                                         padding: const EdgeInsets.all(8.0),
@@ -447,15 +493,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                           },
                                         ),
                                       ),
-                                    ))
-                            : _buildTaskReportsView(),
-                      ),
+                                    ),
+
+                      if (_viewMode == 'task') _buildTaskReportsView(),
                     ],
-                  ),
                 ),
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );
@@ -686,8 +731,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ),
       );
     }
-    if (_taskReports.isEmpty) {
-      return const Center(child: Text('No task reports'));
+    final reports = _showArchivedReports ? _archivedTaskReports : _taskReports;
+    if (reports.isEmpty) {
+      return Center(
+        child: Text(
+          _showArchivedReports ? 'No archived reports' : 'No task reports',
+        ),
+      );
     }
     return Card(
       elevation: 2,
@@ -696,6 +746,34 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              children: [
+                ChoiceChip(
+                  label: const Text('Current'),
+                  selected: !_showArchivedReports,
+                  onSelected: (sel) async {
+                    if (!sel) return;
+                    setState(() {
+                      _showArchivedReports = false;
+                    });
+                    await _fetchTaskReports();
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Archived'),
+                  selected: _showArchivedReports,
+                  onSelected: (sel) async {
+                    if (!sel) return;
+                    setState(() {
+                      _showArchivedReports = true;
+                    });
+                    await _fetchTaskReports();
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -843,6 +921,48 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               },
                               child: const Text('Delete'),
                             ),
+                            if (!_showArchivedReports)
+                              TextButton(
+                                onPressed: () async {
+                                  try {
+                                    await ReportService().archiveReport(r.id);
+                                    await _fetchTaskReports();
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Report archived')),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Failed: $e')),
+                                      );
+                                    }
+                                  }
+                                },
+                                child: const Text('Archive'),
+                              )
+                            else
+                              TextButton(
+                                onPressed: () async {
+                                  try {
+                                    await ReportService().restoreReport(r.id);
+                                    await _fetchTaskReports();
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Report restored')),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Failed: $e')),
+                                      );
+                                    }
+                                  }
+                                },
+                                child: const Text('Restore'),
+                              ),
                           ],
                         ),
                       ),

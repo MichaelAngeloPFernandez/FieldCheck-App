@@ -9,6 +9,8 @@ import '../services/user_service.dart'; // Import UserService
 import '../models/user_model.dart'; // Import UserModel
 import 'package:field_check/config/api_config.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:field_check/services/task_service.dart';
+import 'package:field_check/models/task_model.dart';
 
 class AdminGeofenceScreen extends StatefulWidget {
   const AdminGeofenceScreen({super.key});
@@ -19,19 +21,22 @@ class AdminGeofenceScreen extends StatefulWidget {
 
 class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   final GeofenceService _geofenceService = GeofenceService();
-  final UserService _userService = UserService(); // Initialize UserService
-  List<Geofence> _geofences = []; // Initialize as empty list
+  final UserService _userService = UserService();
+  final TaskService _taskService = TaskService();
+  List<Geofence> _geofences = [];
   LatLng? _selectedLocation;
   final double _newGeofenceRadius = 100.0;
   late io.Socket _socket;
 
-  List<UserModel> _allEmployees = []; // All employees fetched from backend
+  List<UserModel> _allEmployees = [];
+  List<Task> _allTasks = [];
 
   @override
   void initState() {
     super.initState();
     _fetchGeofences();
-    _fetchAllEmployees(); // Fetch all employees
+    _fetchAllEmployees();
+    _fetchAllTasks();
     _initSocket();
   }
 
@@ -83,6 +88,17 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
       });
     } catch (e) {
       debugPrint('Error fetching employees: $e');
+    }
+  }
+
+  Future<void> _fetchAllTasks() async {
+    try {
+      final tasks = await _taskService.fetchAllTasks();
+      setState(() {
+        _allTasks = tasks;
+      });
+    } catch (e) {
+      debugPrint('Error fetching tasks: $e');
     }
   }
 
@@ -228,7 +244,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
               margin: const EdgeInsets.only(top: 8, left: 16, right: 16),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.amberAccent.withValues(alpha: 0.2),
+                color: Colors.amberAccent.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.amber),
               ),
@@ -691,10 +707,16 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     );
     double radiusValue = geofence.radius;
     String? dialogSelectedLabelLetter =
-        geofence.labelLetter; // Initialize with existing labelLetter
+        geofence.labelLetter;
     List<UserModel> dialogSelectedEmployees = List.from(
       geofence.assignedEmployees ?? [],
     );
+    List<Task> dialogSelectedTasks = _allTasks
+        .where((t) => t.geofenceId == geofence.id)
+        .toList();
+    
+    // Capture geofences for use in dialog
+    final allGeofences = _geofences;
 
     showDialog(
       context: context,
@@ -802,6 +824,76 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   );
                 }),
                 const SizedBox(height: 16),
+                // Task Assignment
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Assign Tasks',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (_allTasks.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: Text(
+                      'No tasks available',
+                      style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+                    ),
+                  )
+                else
+                  ..._allTasks.map((task) {
+                    final isSelected = dialogSelectedTasks.any((t) => t.id == task.id);
+                    Geofence? currentGeofence;
+                    try {
+                      currentGeofence = allGeofences.firstWhere(
+                        (g) => g.id == task.geofenceId,
+                      );
+                    } catch (_) {
+                      currentGeofence = null;
+                    }
+                    final geofenceLabel = currentGeofence != null
+                        ? 'Assigned to: ${currentGeofence.name}'
+                        : 'Not assigned';
+                    return CheckboxListTile(
+                      title: Text(task.title),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            geofenceLabel,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: currentGeofence != null
+                                  ? Colors.green
+                                  : Colors.grey,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                      value: isSelected,
+                      onChanged: (bool? value) {
+                        setStateDialog(() {
+                          if (value == true) {
+                            if (!dialogSelectedTasks.any((t) => t.id == task.id)) {
+                              dialogSelectedTasks.add(task);
+                            }
+                          } else {
+                            dialogSelectedTasks.removeWhere((t) => t.id == task.id);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                const SizedBox(height: 16),
                 Text(
                   'Location: ${geofence.latitude.toStringAsFixed(6)}, ${geofence.longitude.toStringAsFixed(6)}',
                   style: const TextStyle(
@@ -851,10 +943,42 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
 
                 try {
                   await _geofenceService.updateGeofence(updatedGeofence);
-                  await _fetchGeofences(); // Refresh list from backend
+                  
+                  // Assign selected tasks to this geofence
+                  if (geofence.id != null) {
+                    // Assign newly selected tasks
+                    for (final task in dialogSelectedTasks) {
+                      try {
+                        final updatedTask = task.copyWith(geofenceId: geofence.id);
+                        await _taskService.updateTask(updatedTask);
+                        debugPrint('✓ Assigned task ${task.id} to geofence ${geofence.id}');
+                      } catch (e) {
+                        debugPrint('⚠️ Failed to assign task ${task.id}: $e');
+                      }
+                    }
+                    
+                    // Unassign tasks that were deselected
+                    final previousTasks = _allTasks
+                        .where((t) => t.geofenceId == geofence.id)
+                        .toList();
+                    for (final task in previousTasks) {
+                      if (!dialogSelectedTasks.any((t) => t.id == task.id)) {
+                        try {
+                          final updatedTask = task.copyWith(geofenceId: null);
+                          await _taskService.updateTask(updatedTask);
+                          debugPrint('✓ Unassigned task ${task.id} from geofence');
+                        } catch (e) {
+                          debugPrint('⚠️ Failed to unassign task ${task.id}: $e');
+                        }
+                      }
+                    }
+                  }
+                  
+                  await _fetchGeofences();
+                  await _fetchAllTasks();
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Geofence updated')),
+                    const SnackBar(content: Text('Geofence and tasks updated')),
                   );
                 } catch (e) {
                   debugPrint('Error updating geofence: $e');
