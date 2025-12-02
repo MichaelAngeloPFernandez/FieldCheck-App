@@ -1,0 +1,42 @@
+@startuml FieldCheck_CollaborationDiagram
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #AED6F1
+skinparam classBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.4 (Extended): Collaboration Diagram - Check-In Process\nFieldCheck - Object Interactions During Employee Check-In
+
+object "Employee" as emp
+object "Mobile App" as app
+object "GPS Service" as gps
+object "Geofence Service" as geofence
+object "Attendance Service" as attendance
+object "Database" as db
+object "Socket.io" as socket
+object "Admin Dashboard" as admin
+
+emp --> app: 1: Tap Check-In
+app --> gps: 2: Request Location
+gps --> app: 3: Return {lat, lon, accuracy}
+app --> geofence: 4: Validate Location
+geofence --> db: 5: Get Geofences
+db --> geofence: 6: Return Geofences
+geofence --> geofence: 7: Calculate Distance\n(Haversine Formula)
+geofence --> app: 8: Location Valid/Invalid
+
+alt Location Valid
+  app --> attendance: 9a: Create Attendance
+  attendance --> db: 10a: Insert Record
+  db --> attendance: 11a: Return ID
+  attendance --> socket: 12a: Emit Event
+  socket --> admin: 13a: Broadcast Update
+  admin --> admin: 14a: Refresh Dashboard
+  attendance --> app: 15a: Return Success
+  app --> emp: 16a: Show Confirmation
+else Location Invalid
+  app --> app: 9b: Show Error
+  app --> emp: 10b: Display Error Message
+end
+
+@enduml

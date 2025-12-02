@@ -1,0 +1,113 @@
+@startuml FieldCheck_CheckInSequence
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam sequenceActorBackgroundColor #D4E6F1
+skinparam sequenceParticipantBackgroundColor #AED6F1
+skinparam sequenceArrowColor #34495E
+
+title FIGURE 3.4: Employee Check-In Flowchart\nFieldCheck - Step-by-Step Check-In Process with GPS Validation
+
+actor "Employee" as Employee
+participant "Mobile App" as App
+participant "Location Service" as LocService
+participant "Backend API" as API
+participant "Geofence Service" as GeoService
+participant "Attendance Service" as AttService
+participant "Database" as DB
+participant "Socket.io" as Socket
+
+Employee -> App: Tap Check-In Button
+activate App
+
+App -> LocService: Request Current Location
+activate LocService
+LocService -> LocService: Get GPS Coordinates
+LocService --> App: Return Location {lat, lon, accuracy}
+deactivate LocService
+
+App -> App: Check if Device is Online
+alt Device is Online
+  App -> API: POST /api/attendance/check-in\n{userId, location}
+  activate API
+  
+  API -> API: Verify JWT Token
+  alt Token Valid
+    API -> GeoService: Validate Location in Geofence
+    activate GeoService
+    
+    GeoService -> DB: Get All Active Geofences
+    activate DB
+    DB --> GeoService: Return Geofences List
+    deactivate DB
+    
+    GeoService -> GeoService: Calculate Distance using Haversine Formula\nfor each geofence
+    
+    alt Location Within Geofence
+      GeoService --> API: Return Geofence ID + Valid
+      deactivate GeoService
+      
+      API -> AttService: Create Attendance Record
+      activate AttService
+      
+      AttService -> DB: Insert Attendance Record
+      activate DB
+      DB --> AttService: Return Attendance ID
+      deactivate DB
+      
+      AttService --> API: Return Attendance Record
+      deactivate AttService
+      
+      API -> Socket: Broadcast Check-In Event
+      activate Socket
+      Socket -> Socket: Send to All Connected Admins
+      Socket --> API: Event Sent
+      deactivate Socket
+      
+      API --> App: Return 200 OK\n{attendanceId, checkInTime}
+      App -> App: Show Success Message
+      App -> App: Save to Local Storage
+      
+    else Location Outside All Geofences
+      GeoService --> API: Return Not Valid
+      deactivate GeoService
+      API --> App: Return 400 Error\n"Not at authorized location"
+      App -> App: Show Error Message
+    end
+  else Token Invalid
+    API --> App: Return 401 Unauthorized
+    App -> App: Redirect to Login
+  end
+  deactivate API
+  
+else Device is Offline
+  App -> App: Save Check-In to Local Storage\n{userId, location, timestamp}
+  App -> App: Show "Saved Offline" Message
+  App -> App: Start Sync Service
+  
+  App -> App: Monitor Connectivity
+  App -> App: When Online Detected
+  App -> API: POST /api/attendance/sync\n{offlineRecords}
+  activate API
+  API -> AttService: Process Offline Records
+  activate AttService
+  AttService -> DB: Insert All Records
+  activate DB
+  DB --> AttService: Confirmation
+  deactivate DB
+  AttService --> API: Return Success
+  deactivate AttService
+  API -> Socket: Broadcast Sync Event
+  activate Socket
+  Socket -> Socket: Send to All Connected Admins
+  Socket --> API: Event Sent
+  deactivate Socket
+  API --> App: Return 200 OK
+  App -> App: Clear Local Storage
+  App -> App: Show Sync Complete Message
+  deactivate API
+end
+
+App --> Employee: Display Check-In Confirmation
+deactivate App
+
+@enduml

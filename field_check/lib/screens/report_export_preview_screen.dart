@@ -38,7 +38,7 @@ class ReportExportPreviewScreen extends StatefulWidget {
 class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
   static const platform = MethodChannel('com.fieldcheck.field_check/files');
   bool _isExporting = false;
-  String? _exportError = null;
+  String? _exportError;
 
   Future<String?> _saveFileToDownloads(
     String fileName,
@@ -643,7 +643,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                 ],
                               ),
                             );
-                          }).toList(),
+                          }),
 
                           if (widget.records.length > 10)
                             Padding(
@@ -778,7 +778,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                 ],
                               ),
                             );
-                          }).toList(),
+                          }),
                           if (widget.taskReports!.length > 10)
                             Padding(
                               padding: const EdgeInsets.only(top: 8),

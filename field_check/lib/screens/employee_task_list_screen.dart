@@ -38,17 +38,8 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
 
   Future<void> _initRealtimeService() async {
     await _realtimeService.initialize();
-
-    // Listen for any task updates (new, updated, deleted, status_updated)
-    _realtimeService.taskStream.listen((event) {
-      if (mounted) {
-        setState(() {
-          _assignedTasksFuture = TaskService().fetchAssignedTasks(
-            widget.userModelId,
-          );
-        });
-      }
-    });
+    // Real-time service initialized but NOT auto-refreshing
+    // User must manually refresh using pull-down gesture or refresh button
   }
 
   Future<void> _completeTaskWithReport(Task task) async {
@@ -69,12 +60,25 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     }
   }
 
+  Future<void> _refreshTasks() async {
+    setState(() {
+      _assignedTasksFuture = TaskService().fetchAssignedTasks(
+        widget.userModelId,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Tasks'),
         actions: [
+          IconButton(
+            tooltip: 'Refresh Tasks',
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshTasks,
+          ),
           IconButton(
             tooltip: 'Open Map',
             icon: const Icon(Icons.map),
@@ -87,138 +91,168 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<Task>>(
-        future: _assignedTasksFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('No tasks assigned.'));
-          }
+      body: RefreshIndicator(
+        onRefresh: _refreshTasks,
+        child: FutureBuilder<List<Task>>(
+          future: _assignedTasksFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            } else if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return const Center(child: Text('No tasks assigned.'));
+            }
 
-          final tasks = snapshot.data!
-              .where((t) => !t.isArchived)
-              .where((t) => _statusFilter == 'all' ? true : t.status == _statusFilter)
-              .toList();
-
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Wrap(
-                  spacing: 8,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('All'),
-                      selected: _statusFilter == 'all',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        setState(() => _statusFilter = 'all');
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Pending'),
-                      selected: _statusFilter == 'pending',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        setState(() => _statusFilter = 'pending');
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('In Progress'),
-                      selected: _statusFilter == 'in_progress',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        setState(() => _statusFilter = 'in_progress');
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Completed'),
-                      selected: _statusFilter == 'completed',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        setState(() => _statusFilter = 'completed');
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              if (tasks.isEmpty)
-                const Expanded(
-                  child: Center(child: Text('No tasks match this filter.')),
+            final tasks = snapshot.data!
+                .where((t) => !t.isArchived)
+                .where(
+                  (t) =>
+                      _statusFilter == 'all' ? true : t.status == _statusFilter,
                 )
-              else
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: tasks.length,
-                    itemBuilder: (context, index) {
-                      final task = tasks[index];
-                      final isCompleted = task.status == 'completed';
-                      return GestureDetector(
-                        onTap: isCompleted ? null : () => _completeTaskWithReport(task),
-                        child: Card(
-                          margin: const EdgeInsets.all(8.0),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  task.title,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    decoration: isCompleted ? TextDecoration.lineThrough : null,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(task.description),
-                                const SizedBox(height: 8),
-                                Text('Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}'),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Text('Status: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                    Chip(
-                                      label: Text(task.status),
-                                      backgroundColor: task.status == 'completed'
-                                          ? Colors.green[100]
-                                          : (task.status == 'in_progress' ? Colors.orange[100] : Colors.blue[100]),
-                                      labelStyle: TextStyle(
-                                        color: task.status == 'completed'
-                                            ? Colors.green[900]
-                                            : (task.status == 'in_progress' ? Colors.orange[900] : Colors.blue[900]),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (task.assignedToMultiple.isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  const Text('Assigned to:', style: TextStyle(fontWeight: FontWeight.w600)),
-                                  Wrap(
-                                    spacing: 4,
-                                    children: task.assignedToMultiple
-                                        .map((user) => Chip(
-                                          label: Text(user.name),
-                                          padding: EdgeInsets.zero,
-                                          visualDensity: VisualDensity.compact,
-                                        ))
-                                        .toList(),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                .toList();
+
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('All'),
+                        selected: _statusFilter == 'all',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() => _statusFilter = 'all');
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Pending'),
+                        selected: _statusFilter == 'pending',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() => _statusFilter = 'pending');
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('In Progress'),
+                        selected: _statusFilter == 'in_progress',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() => _statusFilter = 'in_progress');
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Completed'),
+                        selected: _statusFilter == 'completed',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() => _statusFilter = 'completed');
+                        },
+                      ),
+                    ],
                   ),
                 ),
-            ],
-          );
-        },
+                if (tasks.isEmpty)
+                  const Expanded(
+                    child: Center(child: Text('No tasks match this filter.')),
+                  )
+                else
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: tasks.length,
+                      itemBuilder: (context, index) {
+                        final task = tasks[index];
+                        final isCompleted = task.status == 'completed';
+                        return GestureDetector(
+                          onTap: isCompleted
+                              ? null
+                              : () => _completeTaskWithReport(task),
+                          child: Card(
+                            margin: const EdgeInsets.all(8.0),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    task.title,
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      decoration: isCompleted
+                                          ? TextDecoration.lineThrough
+                                          : null,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(task.description),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}',
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        'Status: ',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Chip(
+                                        label: Text(task.status),
+                                        backgroundColor:
+                                            task.status == 'completed'
+                                            ? Colors.green[100]
+                                            : (task.status == 'in_progress'
+                                                  ? Colors.orange[100]
+                                                  : Colors.blue[100]),
+                                        labelStyle: TextStyle(
+                                          color: task.status == 'completed'
+                                              ? Colors.green[900]
+                                              : (task.status == 'in_progress'
+                                                    ? Colors.orange[900]
+                                                    : Colors.blue[900]),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (task.assignedToMultiple.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Assigned to:',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Wrap(
+                                      spacing: 4,
+                                      children: task.assignedToMultiple
+                                          .map(
+                                            (user) => Chip(
+                                              label: Text(user.name),
+                                              padding: EdgeInsets.zero,
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

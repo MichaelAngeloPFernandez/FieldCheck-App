@@ -1,0 +1,105 @@
+@startuml FieldCheck_DeploymentDiagram
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam nodeBackgroundColor #AED6F1
+skinparam nodeBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.2 (Extended): Deployment Diagram\nFieldCheck - Physical Deployment Architecture
+
+node "Employee Mobile Device" as MobileDevice {
+  component "Flutter App" as FlutterApp {
+    component "Employee UI" as EmpUI
+    component "Location Service" as LocService
+    component "Offline Storage" as OfflineStorage
+  }
+  component "Android/iOS OS" as OS
+  component "GPS Sensor" as GPS
+}
+
+node "Administrator Mobile Device" as AdminMobile {
+  component "Flutter App (Admin)" as FlutterAppAdmin {
+    component "Admin UI" as AdminUI
+    component "Real-Time Dashboard" as Dashboard
+  }
+  component "Android/iOS OS" as AdminOS
+}
+
+node "Organization Server" as OrgServer {
+  component "Express.js Server" as ExpressServer {
+    component "API Routes" as APIRoutes
+    component "Business Logic" as BLL
+    component "Authentication" as Auth
+  }
+  component "Socket.io Server" as SocketServer
+  component "Node.js Runtime" as NodeRuntime
+}
+
+node "Database Server" as DBServer {
+  component "MongoDB" as MongoDB {
+    component "Users Collection" as UsersCol
+    component "Geofences Collection" as GeofencesCol
+    component "Attendance Collection" as AttendanceCol
+    component "Tasks Collection" as TasksCol
+    component "Reports Collection" as ReportsCol
+  }
+}
+
+node "External Services" as External {
+  component "OpenStreetMap" as OSM
+  component "File Export Service" as FileService
+}
+
+' Mobile Device Connections
+MobileDevice --> OrgServer: HTTP/REST API\n(HTTPS/TLS)
+MobileDevice --> OrgServer: WebSocket\n(Socket.io)
+MobileDevice --> GPS: GPS Signal
+LocService --> GPS: Request Location
+
+' Admin Mobile Connections
+AdminMobile --> OrgServer: HTTP/REST API\n(HTTPS/TLS)
+AdminMobile --> OrgServer: WebSocket\n(Socket.io)
+
+' Server Connections
+OrgServer --> DBServer: Database Queries\n(MongoDB Protocol)
+OrgServer --> External: Map Tiles\nFile Generation
+
+' Internal Server Components
+ExpressServer --> SocketServer: Emit Events
+ExpressServer --> NodeRuntime: Runs On
+SocketServer --> NodeRuntime: Runs On
+APIRoutes --> BLL: Calls
+BLL --> Auth: Uses
+
+' Database Connections
+MongoDB --> UsersCol: Stores
+MongoDB --> GeofencesCol: Stores
+MongoDB --> AttendanceCol: Stores
+MongoDB --> TasksCol: Stores
+MongoDB --> ReportsCol: Stores
+
+' Deployment Notes
+note right of MobileDevice
+  Deployed on:
+  - Android 10+
+  - iOS 14+
+  - 2GB+ RAM
+  - 100MB+ Storage
+end note
+
+note right of OrgServer
+  Self-Hosted or Cloud:
+  - Ubuntu Server 20.04+
+  - 4+ CPU Cores
+  - 8GB+ RAM
+  - 250GB+ SSD
+end note
+
+note right of DBServer
+  MongoDB Instance:
+  - Local or Cloud
+  - Automatic Backups
+  - Replication Support
+end note
+
+@enduml

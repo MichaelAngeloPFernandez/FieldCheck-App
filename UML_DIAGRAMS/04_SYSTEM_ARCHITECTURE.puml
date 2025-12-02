@@ -1,0 +1,134 @@
+@startuml FieldCheck_SystemArchitecture
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam componentBackgroundColor #AED6F1
+skinparam componentBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.2: System Architecture Diagram\nFieldCheck - Layered Architecture with All Components
+
+package "Client Layer" {
+  component "Flutter Mobile App" as MobileApp {
+    component "Employee Interface" as EmpUI
+    component "Admin Interface" as AdminUI
+    component "Local Storage\n(SharedPreferences)" as LocalStorage
+    component "GPS Module" as GPSModule
+    component "Offline Sync Manager" as SyncManager
+  }
+}
+
+package "Communication Layer" {
+  component "Socket.io Client" as SocketClient
+  component "HTTP/REST Client" as HTTPClient
+  component "HTTPS/TLS Encryption" as Encryption
+}
+
+package "Backend Layer" {
+  component "Express.js Server" as ExpressServer {
+    component "Authentication Routes" as AuthRoutes
+    component "Geofence Routes" as GeoRoutes
+    component "Attendance Routes" as AttRoutes
+    component "Task Routes" as TaskRoutes
+    component "Report Routes" as ReportRoutes
+  }
+  
+  component "Business Logic Layer" as BLL {
+    component "Authentication Service" as AuthService
+    component "Geofence Service" as GeoService
+    component "Attendance Service" as AttService
+    component "Task Service" as TaskService
+    component "Report Service" as ReportService
+    component "Location Validation" as LocValidation
+  }
+  
+  component "Socket.io Server" as SocketServer
+  
+  component "Middleware" as Middleware {
+    component "JWT Verification" as JWTMiddleware
+    component "Role-Based Access Control" as RBACMiddleware
+    component "Error Handling" as ErrorMiddleware
+    component "Request Validation" as ValidationMiddleware
+  }
+}
+
+package "Data Layer" {
+  component "MongoDB Database" as MongoDB {
+    component "Users Collection" as UsersCol
+    component "Geofences Collection" as GeofencesCol
+    component "Attendance Collection" as AttendanceCol
+    component "Tasks Collection" as TasksCol
+    component "Reports Collection" as ReportsCol
+  }
+}
+
+package "External Services" {
+  component "OpenStreetMap" as OSM
+  component "File Export Service\n(PDF/Excel)" as FileService
+}
+
+package "Security Layer" {
+  component "JWT Token Manager" as JWTManager
+  component "Password Hashing\n(bcryptjs)" as PasswordHash
+  component "Data Encryption" as DataEncrypt
+}
+
+' Client to Communication
+EmpUI --> HTTPClient
+AdminUI --> HTTPClient
+EmpUI --> SocketClient
+AdminUI --> SocketClient
+GPSModule --> LocalStorage
+SyncManager --> LocalStorage
+SyncManager --> HTTPClient
+
+' Communication to Backend
+HTTPClient --> Encryption
+SocketClient --> Encryption
+Encryption --> ExpressServer
+Encryption --> SocketServer
+
+' Routes to Business Logic
+AuthRoutes --> AuthService
+GeoRoutes --> GeoService
+AttRoutes --> AttService
+TaskRoutes --> TaskService
+ReportRoutes --> ReportService
+
+' Business Logic to Data
+AuthService --> MongoDB
+GeoService --> MongoDB
+AttService --> MongoDB
+AttService --> LocValidation
+TaskService --> MongoDB
+ReportService --> MongoDB
+ReportService --> FileService
+
+' Socket Server
+SocketServer --> ExpressServer
+SocketServer --> MobileApp
+
+' Middleware
+ExpressServer --> Middleware
+Middleware --> JWTMiddleware
+Middleware --> RBACMiddleware
+Middleware --> ErrorMiddleware
+Middleware --> ValidationMiddleware
+
+' Security
+JWTMiddleware --> JWTManager
+AuthService --> PasswordHash
+AuthService --> JWTManager
+HTTPClient --> DataEncrypt
+
+' External Services
+GeoService --> OSM
+MobileApp --> OSM
+
+' Database Collections
+MongoDB --> UsersCol
+MongoDB --> GeofencesCol
+MongoDB --> AttendanceCol
+MongoDB --> TasksCol
+MongoDB --> ReportsCol
+
+@enduml

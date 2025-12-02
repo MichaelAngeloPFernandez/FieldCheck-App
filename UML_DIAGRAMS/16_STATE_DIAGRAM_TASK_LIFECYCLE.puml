@@ -1,0 +1,82 @@
+@startuml FieldCheck_TaskLifecycle
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam stateBackgroundColor #AED6F1
+skinparam stateBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.5 (Extended): Task Lifecycle State Diagram\nFieldCheck - Task State Transitions and Archive/Restore
+
+[*] --> TaskCreated
+
+state TaskCreated {
+  [*] --> Pending
+  Pending: Task created by admin\nWaiting for assignment
+}
+
+state TaskAssigned {
+  [*] --> Assigned
+  Assigned: Task assigned to employee\nEmployee notified
+}
+
+state TaskInProgress {
+  [*] --> InProgress
+  InProgress: Employee started\nworking on task
+}
+
+state TaskCompleted {
+  [*] --> Completed
+  Completed: Task finished\nby employee
+}
+
+state TaskArchived {
+  [*] --> Archived
+  Archived: Task archived\nby admin
+}
+
+state TaskRestored {
+  [*] --> Restored
+  Restored: Task restored\nfrom archive
+}
+
+' Main Transitions
+Pending --> Assigned: Admin assigns\nto employee
+
+Assigned --> InProgress: Employee starts\ntask
+
+InProgress --> Completed: Employee marks\ntask complete
+
+Completed --> [*]: Task Lifecycle\nEnds
+
+' Archive Transitions
+Pending --> Archived: Admin archives\nincomplete task
+Assigned --> Archived: Admin archives\nassigned task
+InProgress --> Archived: Admin archives\nin-progress task
+Completed --> Archived: Admin archives\ncompleted task
+
+' Restore Transitions
+Archived --> Restored: Admin restores\nfrom archive
+
+Restored --> Pending: Task restored\nto pending state
+
+Restored --> Assigned: Task restored\nto assigned state
+
+Restored --> InProgress: Task restored\nto in-progress state
+
+Restored --> Completed: Task restored\nto completed state
+
+' Alternative Paths
+Assigned --> Pending: Admin unassigns\ntask
+
+InProgress --> Assigned: Employee pauses\ntask
+
+Completed --> InProgress: Admin reopens\ncompleted task
+
+' Error/Cancellation
+Pending --> [*]: Task deleted\nby admin
+
+Assigned --> [*]: Task deleted\nby admin
+
+InProgress --> [*]: Task cancelled\nby admin
+
+@enduml

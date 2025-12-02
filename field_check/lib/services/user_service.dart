@@ -288,8 +288,9 @@ class UserService {
     if (name != null) payload['name'] = name;
     if (email != null) payload['email'] = email;
     if (username != null) payload['username'] = username;
-    if (avatarUrl != null)
+    if (avatarUrl != null) {
       payload['avatarUrl'] = avatarUrl; // Add avatarUrl to payload
+    }
 
     final response = await http.put(
       Uri.parse('$_baseUrl/users/profile'),
@@ -350,8 +351,9 @@ class UserService {
       final token = data['token'] as String?;
       final refreshToken2 = data['refreshToken'] as String?;
       if (token != null) await prefs.setString('auth_token', token);
-      if (refreshToken2 != null)
+      if (refreshToken2 != null) {
         await prefs.setString('refresh_token', refreshToken2);
+      }
       return true;
     }
     return false;

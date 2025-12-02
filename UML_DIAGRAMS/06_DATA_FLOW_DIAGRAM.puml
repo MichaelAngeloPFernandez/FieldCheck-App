@@ -1,0 +1,105 @@
+@startuml FieldCheck_DFD
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam arrowColor #34495E
+
+title FIGURE 3.8: Data Flow Diagram (Level 0 - Context)\nFieldCheck - High-Level System Data Flow
+
+actor "Employee" as Emp
+actor "Administrator" as Admin
+database "FieldCheck System" as System
+
+Emp --> System: Location Data, Check-In/Out Requests
+Emp <-- System: Attendance Confirmation, Task List, History
+Admin --> System: Geofence Data, Task Assignments, Report Requests
+Admin <-- System: Real-Time Updates, Reports, Employee Locations
+
+@enduml
+
+@startuml FieldCheck_DFD_Level1
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam arrowColor #34495E
+
+title FieldCheck: Data Flow Diagram (Level 1 - Main Processes)
+
+actor "Employee" as Emp
+actor "Administrator" as Admin
+database "Local Storage" as LocalDB
+database "MongoDB" as MainDB
+entity "OpenStreetMap" as OSM
+entity "Socket.io" as Socket
+
+rectangle "FieldCheck System" {
+  component "1.0 Authentication" as Auth
+  component "2.0 Location Processing" as LocProc
+  component "3.0 Attendance Management" as AttMgmt
+  component "4.0 Task Management" as TaskMgmt
+  component "5.0 Report Generation" as ReportGen
+  component "6.0 Real-Time Updates" as RealTime
+  component "7.0 Offline Sync" as OfflineSync
+}
+
+' Employee Flows
+Emp --> Auth: Credentials
+Auth --> MainDB: Verify User
+MainDB --> Auth: User Data
+Auth --> Emp: JWT Token
+
+Emp --> LocProc: GPS Coordinates
+LocProc --> MainDB: Get Geofences
+MainDB --> LocProc: Geofence Data
+LocProc --> LocProc: Validate Location (Haversine)
+LocProc --> AttMgmt: Location Valid/Invalid
+
+AttMgmt --> MainDB: Create/Update Attendance
+MainDB --> AttMgmt: Attendance Record
+AttMgmt --> Emp: Check-In/Out Confirmation
+
+Emp --> TaskMgmt: Request Tasks
+TaskMgmt --> MainDB: Get Assigned Tasks
+MainDB --> TaskMgmt: Task List
+TaskMgmt --> Emp: Display Tasks
+
+Emp --> OfflineSync: Offline Data
+OfflineSync --> LocalDB: Store Locally
+OfflineSync --> OfflineSync: Monitor Connectivity
+OfflineSync --> MainDB: Sync When Online
+MainDB --> OfflineSync: Confirmation
+
+' Administrator Flows
+Admin --> Auth: Credentials
+Auth --> MainDB: Verify Admin
+MainDB --> Auth: Admin Data
+Auth --> Admin: JWT Token
+
+Admin --> TaskMgmt: Create/Assign Tasks
+TaskMgmt --> MainDB: Store Tasks
+MainDB --> TaskMgmt: Task Confirmation
+TaskMgmt --> Admin: Task Created
+
+Admin --> ReportGen: Request Report
+ReportGen --> MainDB: Query Attendance/Tasks
+MainDB --> ReportGen: Data
+ReportGen --> Admin: PDF/Excel Report
+
+Admin --> RealTime: Request Live Updates
+RealTime --> Socket: Subscribe to Events
+Socket --> MainDB: Get Current Data
+MainDB --> Socket: Employee Locations
+Socket --> RealTime: Real-Time Events
+RealTime --> Admin: Live Dashboard
+
+' System Flows
+LocProc --> OSM: Get Map Tiles
+OSM --> LocProc: Map Data
+
+AttMgmt --> RealTime: Attendance Event
+RealTime --> Socket: Broadcast Event
+Socket --> Admin: Notify Admin
+
+TaskMgmt --> RealTime: Task Event
+RealTime --> Socket: Broadcast Event
+Socket --> Admin: Notify Admin
+
+@enduml

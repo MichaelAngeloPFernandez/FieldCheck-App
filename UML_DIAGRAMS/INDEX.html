@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FieldCheck UML Diagrams - Complete Index</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .section h2 {
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .section h3 {
+            color: #764ba2;
+            margin-top: 20px;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .diagram-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .diagram-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .diagram-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+            transform: translateY(-5px);
+        }
+        
+        .diagram-card h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .diagram-card .type {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            margin-bottom: 10px;
+        }
+        
+        .diagram-card .type.structural {
+            background: #28a745;
+        }
+        
+        .diagram-card .type.behavioral {
+            background: #007bff;
+        }
+        
+        .diagram-card p {
+            color: #666;
+            font-size: 0.95em;
+            margin-bottom: 10px;
+        }
+        
+        .diagram-card .file {
+            color: #764ba2;
+            font-family: monospace;
+            font-size: 0.9em;
+            word-break: break-all;
+        }
+        
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .quick-link {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .quick-link:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        
+        .table-responsive {
+            overflow-x: auto;
+            margin-bottom: 30px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .code-block {
+            background: #f5f5f5;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: monospace;
+            overflow-x: auto;
+            border-radius: 4px;
+        }
+        
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .feature-item {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .feature-item strong {
+            color: #667eea;
+        }
+        
+        footer {
+            background: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        
+        .badge-structural {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge-behavioral {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8em;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .diagram-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🗺️ FieldCheck UML Diagrams</h1>
+            <p>Mobile Geofenced Attendance Verification App - Complete Documentation</p>
+        </header>
+        
+        <div class="content">
+            <!-- Quick Start Section -->
+            <div class="section">
+                <h2>🚀 Quick Start</h2>
+                <div class="quick-links">
+                    <a href="QUICK_START.md" class="quick-link">📖 Quick Start Guide</a>
+                    <a href="README.md" class="quick-link">📚 Full Documentation</a>
+                    <a href="DIAGRAM_INDEX.md" class="quick-link">📑 Complete Index</a>
+                    <a href="https://www.plantuml.com/plantuml/uml/" class="quick-link" target="_blank">🌐 View Online</a>
+                </div>
+            </div>
+            
+            <!-- Overview Section -->
+            <div class="section">
+                <h2>📊 Overview</h2>
+                <p><strong>Total Diagrams:</strong> 17 comprehensive UML diagrams</p>
+                <p><strong>Documentation Files:</strong> 4 comprehensive guides</p>
+                <p><strong>Format:</strong> PlantUML (.puml) - Easy to view, edit, and export</p>
+                <p><strong>Status:</strong> ✅ Complete and Ready for Use</p>
+            </div>
+            
+            <!-- Structural Diagrams -->
+            <div class="section">
+                <h2>🏗️ Structural Diagrams (System Design)</h2>
+                <div class="diagram-grid">
+                    <div class="diagram-card">
+                        <h4>02 - Class Diagram</h4>
+                        <span class="type structural">Structural</span>
+                        <p>Complete object-oriented design with all classes, attributes, methods, and relationships.</p>
+                        <p class="file">02_CLASS_DIAGRAM.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>04 - System Architecture</h4>
+                        <span class="type structural">Structural</span>
+                        <p>High-level system architecture showing all layers, components, and technology stack.</p>
+                        <p class="file">04_SYSTEM_ARCHITECTURE.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>05 - Entity Relationship Diagram</h4>
+                        <span class="type structural">Structural</span>
+                        <p>Database schema with MongoDB collections and entity relationships.</p>
+                        <p class="file">05_ENTITY_RELATIONSHIP_DIAGRAM.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>08 - Deployment Diagram</h4>
+                        <span class="type structural">Structural</span>
+                        <p>Physical deployment showing mobile devices, servers, and network connections.</p>
+                        <p class="file">08_DEPLOYMENT_DIAGRAM.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>09 - Component Diagram</h4>
+                        <span class="type structural">Structural</span>
+                        <p>Software components with dependencies for mobile and backend layers.</p>
+                        <p class="file">09_COMPONENT_DIAGRAM.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>14 - Package Diagram</h4>
+                        <span class="type structural">Structural</span>
+                        <p>Package organization and code structure with dependencies.</p>
+                        <p class="file">14_PACKAGE_DIAGRAM.puml</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Behavioral Diagrams -->
+            <div class="section">
+                <h2>⚙️ Behavioral Diagrams (System Behavior)</h2>
+                <div class="diagram-grid">
+                    <div class="diagram-card">
+                        <h4>01 - Use Case Diagram</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>All actors (Employee, Admin, System) and their interactions with the system.</p>
+                        <p class="file">01_USE_CASE_DIAGRAM.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>03 - Sequence: Check-In</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Step-by-step employee check-in workflow with online and offline scenarios.</p>
+                        <p class="file">03_SEQUENCE_CHECKIN.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>06 - Data Flow Diagram</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Data movement through system with processes and data stores.</p>
+                        <p class="file">06_DATA_FLOW_DIAGRAM.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>07 - State: Attendance</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Attendance record states and transitions including offline mode.</p>
+                        <p class="file">07_STATE_DIAGRAM_ATTENDANCE.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>10 - Geofence Validation</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>GPS validation algorithm using Haversine formula for geofence checking.</p>
+                        <p class="file">10_GEOFENCE_VALIDATION_FLOWCHART.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>11 - Sequence: Task Assignment</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Admin task assignment workflow and employee notification process.</p>
+                        <p class="file">11_SEQUENCE_TASK_ASSIGNMENT.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>12 - Timing: Offline Sync</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Offline synchronization timing with connectivity detection and data sync.</p>
+                        <p class="file">12_TIMING_OFFLINE_SYNC.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>13 - Collaboration Diagram</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Object interactions for check-in process with message flow.</p>
+                        <p class="file">13_COLLABORATION_DIAGRAM.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>15 - Activity: Report Generation</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Report generation workflow with data aggregation and export.</p>
+                        <p class="file">15_ACTIVITY_REPORT_GENERATION.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>16 - State: Task Lifecycle</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Task state transitions with archive/restore functionality.</p>
+                        <p class="file">16_STATE_DIAGRAM_TASK_LIFECYCLE.puml</p>
+                    </div>
+                    
+                    <div class="diagram-card">
+                        <h4>17 - Interaction Overview</h4>
+                        <span class="type behavioral">Behavioral</span>
+                        <p>Daily employee and admin workflows with system background processes.</p>
+                        <p class="file">17_INTERACTION_OVERVIEW.puml</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Key Features -->
+            <div class="section">
+                <h2>✨ Key Features</h2>
+                <h3>Employee Features</h3>
+                <div class="feature-list">
+                    <div class="feature-item">✓ <strong>Secure Login</strong> - JWT authentication</div>
+                    <div class="feature-item">✓ <strong>GPS Check-In/Out</strong> - Geofence validation</div>
+                    <div class="feature-item">✓ <strong>Task Management</strong> - View and complete tasks</div>
+                    <div class="feature-item">✓ <strong>Attendance History</strong> - View work records</div>
+                    <div class="feature-item">✓ <strong>Offline Support</strong> - Local data caching</div>
+                    <div class="feature-item">✓ <strong>Auto Sync</strong> - Sync when online</div>
+                </div>
+                
+                <h3>Admin Features</h3>
+                <div class="feature-list">
+                    <div class="feature-item">✓ <strong>Geofence Management</strong> - Create and manage job sites</div>
+                    <div class="feature-item">✓ <strong>Task Assignment</strong> - Assign tasks to employees</div>
+                    <div class="feature-item">✓ <strong>Real-Time Monitoring</strong> - Live employee locations</div>
+                    <div class="feature-item">✓ <strong>Report Generation</strong> - Attendance and task reports</div>
+                    <div class="feature-item">✓ <strong>Data Export</strong> - PDF and Excel export</div>
+                    <div class="feature-item">✓ <strong>Archive/Restore</strong> - Manage historical data</div>
+                </div>
+            </div>
+            
+            <!-- Technology Stack -->
+            <div class="section">
+                <h2>💻 Technology Stack</h2>
+                <h3>Frontend</h3>
+                <div class="code-block">
+Flutter 3.9.0 | Flutter Map 8.2.2 | Provider 6.0.0 | Geolocator 14.0.2
+Socket IO Client 3.1.2 | Shared Preferences 2.2.2
+                </div>
+                
+                <h3>Backend</h3>
+                <div class="code-block">
+Node.js 16+ | Express.js | MongoDB 4.4+ | Socket.io 4.0+
+JWT | bcryptjs | Mongoose | PDFKit | ExcelJS
+                </div>
+            </div>
+            
+            <!-- How to View -->
+            <div class="section">
+                <h2>📖 How to View Diagrams</h2>
+                
+                <h3>Option 1: Online (Easiest)</h3>
+                <ol style="margin-left: 20px; margin-bottom: 20px;">
+                    <li>Visit: <a href="https://www.plantuml.com/plantuml/uml/" target="_blank">PlantUML Online Editor</a></li>
+                    <li>Copy content from any .puml file</li>
+                    <li>Paste into editor</li>
+                    <li>Click "Submit"</li>
+                </ol>
+                
+                <h3>Option 2: VS Code Extension</h3>
+                <ol style="margin-left: 20px; margin-bottom: 20px;">
+                    <li>Install "PlantUML" extension by jebbs</li>
+                    <li>Open any .puml file</li>
+                    <li>Press Alt+D to preview</li>
+                    <li>Export as PNG/SVG/PDF</li>
+                </ol>
+                
+                <h3>Option 3: Command Line</h3>
+                <div class="code-block">
+npm install -g plantuml
+plantuml 01_USE_CASE_DIAGRAM.puml
+plantuml -tsvg 01_USE_CASE_DIAGRAM.puml
+                </div>
+            </div>
+            
+            <!-- Documentation Files -->
+            <div class="section">
+                <h2>📚 Documentation Files</h2>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Purpose</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>README.md</strong></td>
+                                <td>Comprehensive documentation with detailed descriptions of each diagram</td>
+                            </tr>
+                            <tr>
+                                <td><strong>DIAGRAM_INDEX.md</strong></td>
+                                <td>Complete index with quick reference table and recommended reading order</td>
+                            </tr>
+                            <tr>
+                                <td><strong>QUICK_START.md</strong></td>
+                                <td>Quick start guide for getting started quickly</td>
+                            </tr>
+                            <tr>
+                                <td><strong>SUMMARY.txt</strong></td>
+                                <td>Text summary of all diagrams and features</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Project Info -->
+            <div class="section">
+                <h2>📋 Project Information</h2>
+                <p><strong>Project Title:</strong> FieldCheck - Mobile Geofenced Attendance Verification App for Field-Based Workers</p>
+                <p><strong>Institution:</strong> New Era University, College of Informatics and Computing Studies</p>
+                <p><strong>Department:</strong> Department of Information Technology</p>
+                <p><strong>Date:</strong> February 2025</p>
+                <p><strong>Authors:</strong> Fernandez, Michael Angelo; Perfecto, Mark Karevin D.; Songco, Carl; Maquiling, Patrick</p>
+            </div>
+        </div>
+        
+        <footer>
+            <p>FieldCheck UML Diagrams - Version 1.0 | December 2025</p>
+            <p>All diagrams created using PlantUML | <a href="https://plantuml.com/" target="_blank">Learn more about PlantUML</a></p>
+        </footer>
+    </div>
+</body>
+</html>

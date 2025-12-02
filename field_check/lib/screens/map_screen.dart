@@ -46,10 +46,9 @@ class _MapScreenState extends State<MapScreen> {
   bool _isSearchingLocation = false;
   List<Location> _locationSearchResults = [];
   late MapController _mapController;
-  
+
   // Geofence-based filtering
   Geofence? _selectedGeofence;
-  List<Task> _tasksForSelectedGeofence = [];
 
   // Real-time location streaming
   late StreamSubscription<dynamic>? _locationSubscription;
@@ -64,32 +63,14 @@ class _MapScreenState extends State<MapScreen> {
     _startRealTimeLocationTracking();
   }
 
-  /// Refresh visible tasks (called by refresh button)
-  void _refreshVisibleTasks() {
-    if (_showTasks) {
-      setState(() {
-        _visibleTasks = _computeGeoTasks();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tasks refreshed'),
-          duration: Duration(seconds: 1),
-        ),
-      );
-    }
-  }
-
   /// Get tasks for a specific geofence
   List<Task> _getTasksForGeofence(Geofence geofence) {
     if (geofence.id == null) return [];
     final source = _showAssignedOnly ? _tasksAssigned : _tasksAll;
-    return source
-        .where((t) => t.geofenceId == geofence.id)
-        .where((t) {
-          if (_taskFilter == 'all') return true;
-          return t.status == _taskFilter;
-        })
-        .toList();
+    return source.where((t) => t.geofenceId == geofence.id).where((t) {
+      if (_taskFilter == 'all') return true;
+      return t.status == _taskFilter;
+    }).toList();
   }
 
   /// Compute GEO TASKS: tasks assigned to geofences
@@ -106,13 +87,10 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     // Otherwise, show all tasks that have a geofence assignment
-    return _tasksAll
-        .where((t) => t.geofenceId != null)
-        .where((t) {
-          if (_taskFilter == 'all') return true;
-          return t.status == _taskFilter;
-        })
-        .toList();
+    return _tasksAll.where((t) => t.geofenceId != null).where((t) {
+      if (_taskFilter == 'all') return true;
+      return t.status == _taskFilter;
+    }).toList();
   }
 
   @override
@@ -304,16 +282,20 @@ class _MapScreenState extends State<MapScreen> {
 
       // Include tasks that have coordinates OR are assigned to a geofence
       List<Task> withLocAssigned = tasksAssigned
-          .where((t) => !t.isArchived && (
-            (t.latitude != null && t.longitude != null) || 
-            t.geofenceId != null
-          ))
+          .where(
+            (t) =>
+                !t.isArchived &&
+                ((t.latitude != null && t.longitude != null) ||
+                    t.geofenceId != null),
+          )
           .toList();
       List<Task> withLocAll = tasksAll
-          .where((t) => !t.isArchived && (
-            (t.latitude != null && t.longitude != null) || 
-            t.geofenceId != null
-          ))
+          .where(
+            (t) =>
+                !t.isArchived &&
+                ((t.latitude != null && t.longitude != null) ||
+                    t.geofenceId != null),
+          )
           .toList();
 
       setState(() {
@@ -527,25 +509,29 @@ class _MapScreenState extends State<MapScreen> {
                       if (_showTasks && _visibleTasks.isNotEmpty)
                         MarkerLayer(
                           markers: _visibleTasks
-                              .where((t) => t.latitude != null && t.longitude != null)
+                              .where(
+                                (t) =>
+                                    t.latitude != null && t.longitude != null,
+                              )
                               .map((t) {
-                            final point = LatLng(t.latitude!, t.longitude!);
-                            final iconColor = t.status == 'completed'
-                                ? Colors.green
-                                : (t.status == 'in_progress'
-                                      ? Colors.orange
-                                      : Colors.deepPurple);
-                            return Marker(
-                              point: point,
-                              width: 44,
-                              height: 44,
-                              child: Icon(
-                                Icons.assignment,
-                                color: iconColor,
-                                size: 36,
-                              ),
-                            );
-                          }).toList(),
+                                final point = LatLng(t.latitude!, t.longitude!);
+                                final iconColor = t.status == 'completed'
+                                    ? Colors.green
+                                    : (t.status == 'in_progress'
+                                          ? Colors.orange
+                                          : Colors.deepPurple);
+                                return Marker(
+                                  point: point,
+                                  width: 44,
+                                  height: 44,
+                                  child: Icon(
+                                    Icons.assignment,
+                                    color: iconColor,
+                                    size: 36,
+                                  ),
+                                );
+                              })
+                              .toList(),
                         ),
                       // Accuracy circle around user location
                       if (_userLatLng != null && _currentAccuracy != null)
@@ -914,9 +900,9 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   ),
                 DraggableScrollableSheet(
-                  initialChildSize: 0.15,
-                  minChildSize: 0.1,
-                  maxChildSize: 0.45,
+                  initialChildSize: 0.18,
+                  minChildSize: 0.12,
+                  maxChildSize: 0.75,
                   builder: (context, controller) => Container(
                     decoration: BoxDecoration(
                       color: const Color(0xFF1A3A52), // Dark blue background
@@ -943,10 +929,16 @@ class _MapScreenState extends State<MapScreen> {
                                 ? 'Search tasks...'
                                 : 'Search geofences...',
                             hintStyle: TextStyle(color: Colors.grey[400]),
-                            prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: Colors.white70,
+                            ),
                             suffixIcon: _searchQuery.isNotEmpty
                                 ? IconButton(
-                                    icon: const Icon(Icons.clear, color: Colors.white70),
+                                    icon: const Icon(
+                                      Icons.clear,
+                                      color: Colors.white70,
+                                    ),
                                     onPressed: () {
                                       _searchController.clear();
                                       setState(() {
@@ -957,15 +949,22 @@ class _MapScreenState extends State<MapScreen> {
                                 : null,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(color: Colors.white24),
+                              borderSide: const BorderSide(
+                                color: Colors.white24,
+                              ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(color: Colors.white24),
+                              borderSide: const BorderSide(
+                                color: Colors.white24,
+                              ),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(color: Color(0xFF2688d4), width: 2),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF2688d4),
+                                width: 2,
+                              ),
                             ),
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.1),
@@ -981,16 +980,21 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                         const SizedBox(height: 12),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              _showTasks ? 'GEO TASKS' : 'Nearby Geofences',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              child: Text(
+                                _showTasks ? 'GEO TASKS' : 'Nearby Geofences',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            Row(
+                            const SizedBox(width: 8),
+                            Wrap(
+                              spacing: 8,
                               children: [
                                 ChoiceChip(
                                   selected: !_showTasks,
@@ -999,12 +1003,12 @@ class _MapScreenState extends State<MapScreen> {
                                     _showTasks = false;
                                   }),
                                 ),
-                                const SizedBox(width: 8),
                                 ChoiceChip(
                                   selected: _showTasks,
                                   label: const Text('Tasks'),
                                   onSelected: (_) => setState(() {
                                     _showTasks = true;
+                                    _visibleTasks = _computeGeoTasks();
                                   }),
                                 ),
                               ],
@@ -1013,40 +1017,55 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                         const SizedBox(height: 8),
                         if (_showTasks)
-                          Row(
-                            children: [
-                              ChoiceChip(
-                                selected: _taskFilter == 'all',
-                                label: const Text('All'),
-                                onSelected: (_) => setState(() {
-                                  _taskFilter = 'all';
-                                }),
-                              ),
-                              const SizedBox(width: 8),
-                              ChoiceChip(
-                                selected: _taskFilter == 'pending',
-                                label: const Text('Pending'),
-                                onSelected: (_) => setState(() {
-                                  _taskFilter = 'pending';
-                                }),
-                              ),
-                              const SizedBox(width: 8),
-                              ChoiceChip(
-                                selected: _taskFilter == 'in_progress',
-                                label: const Text('In Progress'),
-                                onSelected: (_) => setState(() {
-                                  _taskFilter = 'in_progress';
-                                }),
-                              ),
-                              const SizedBox(width: 8),
-                              ChoiceChip(
-                                selected: _taskFilter == 'completed',
-                                label: const Text('Completed'),
-                                onSelected: (_) => setState(() {
-                                  _taskFilter = 'completed';
-                                }),
-                              ),
-                            ],
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                ChoiceChip(
+                                  selected: _taskFilter == 'all',
+                                  label: const Text('All'),
+                                  onSelected: (_) => setState(() {
+                                    _taskFilter = 'all';
+                                    if (_showTasks) {
+                                      _visibleTasks = _computeGeoTasks();
+                                    }
+                                  }),
+                                ),
+                                const SizedBox(width: 8),
+                                ChoiceChip(
+                                  selected: _taskFilter == 'pending',
+                                  label: const Text('Pending'),
+                                  onSelected: (_) => setState(() {
+                                    _taskFilter = 'pending';
+                                    if (_showTasks) {
+                                      _visibleTasks = _computeGeoTasks();
+                                    }
+                                  }),
+                                ),
+                                const SizedBox(width: 8),
+                                ChoiceChip(
+                                  selected: _taskFilter == 'in_progress',
+                                  label: const Text('In Progress'),
+                                  onSelected: (_) => setState(() {
+                                    _taskFilter = 'in_progress';
+                                    if (_showTasks) {
+                                      _visibleTasks = _computeGeoTasks();
+                                    }
+                                  }),
+                                ),
+                                const SizedBox(width: 8),
+                                ChoiceChip(
+                                  selected: _taskFilter == 'completed',
+                                  label: const Text('Completed'),
+                                  onSelected: (_) => setState(() {
+                                    _taskFilter = 'completed';
+                                    if (_showTasks) {
+                                      _visibleTasks = _computeGeoTasks();
+                                    }
+                                  }),
+                                ),
+                              ],
+                            ),
                           ),
                         if (_showTasks) const SizedBox(height: 8),
                         if (!_showTasks)
@@ -1056,35 +1075,43 @@ class _MapScreenState extends State<MapScreen> {
                                     _searchQuery.isEmpty ||
                                     g.name.toLowerCase().contains(_searchQuery),
                               )
-                              .take(10)
                               .map(
                                 (g) => Card(
-                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
                                   color: const Color(0xFF2A5A7A),
                                   child: ListTile(
+                                    isThreeLine: true,
                                     selected: _selectedGeofence?.id == g.id,
                                     selectedTileColor: const Color(0xFF3A7AAA),
                                     leading: Icon(
                                       Icons.location_on,
                                       color: _selectedGeofence?.id == g.id
                                           ? Colors.lightBlue
-                                          : (g.isActive ? Colors.lightGreen : Colors.grey),
+                                          : (g.isActive
+                                                ? Colors.lightGreen
+                                                : Colors.grey),
                                     ),
                                     title: Text(
                                       g.name,
                                       style: TextStyle(
                                         color: Colors.white,
-                                        fontWeight: _selectedGeofence?.id == g.id
+                                        fontWeight:
+                                            _selectedGeofence?.id == g.id
                                             ? FontWeight.bold
                                             : FontWeight.normal,
                                       ),
                                     ),
                                     subtitle: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           '${g.radius.toStringAsFixed(0)}m${g.labelLetter != null ? ' • ${g.labelLetter}' : ''}',
-                                          style: const TextStyle(color: Colors.white70),
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                          ),
                                         ),
                                         if (_selectedGeofence?.id == g.id)
                                           Text(
@@ -1100,7 +1127,10 @@ class _MapScreenState extends State<MapScreen> {
                                     trailing: _userLatLng != null
                                         ? Text(
                                             '${Geofence.calculateDistance(g.latitude, g.longitude, _userLatLng!.latitude, _userLatLng!.longitude).round()}m',
-                                            style: const TextStyle(fontSize: 12, color: Colors.white70),
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.white70,
+                                            ),
                                           )
                                         : null,
                                     onTap: () {
@@ -1109,8 +1139,9 @@ class _MapScreenState extends State<MapScreen> {
                                           _selectedGeofence = null;
                                         } else {
                                           _selectedGeofence = g;
-                                          _showTasks = true;
                                         }
+                                        _showTasks = true;
+                                        _visibleTasks = _computeGeoTasks();
                                       });
                                       // Zoom to geofence
                                       _mapController.move(
@@ -1136,93 +1167,90 @@ class _MapScreenState extends State<MapScreen> {
                                           _searchQuery,
                                         )),
                               )
-                              .take(10)
-                              .map(
-                                (t) {
-                                  final geofence = _allGeofences
-                                      .firstWhere(
-                                        (g) => g.id == t.geofenceId,
-                                        orElse: () => Geofence(
-                                          id: '',
-                                          name: 'Unknown',
-                                          address: 'Unknown',
-                                          latitude: 0,
-                                          longitude: 0,
-                                          radius: 0,
-                                          isActive: false,
+                              .map((t) {
+                                final geofence = _allGeofences.firstWhere(
+                                  (g) => g.id == t.geofenceId,
+                                  orElse: () => Geofence(
+                                    id: '',
+                                    name: 'Unknown',
+                                    address: 'Unknown',
+                                    latitude: 0,
+                                    longitude: 0,
+                                    radius: 0,
+                                    isActive: false,
+                                  ),
+                                );
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
+                                  child: ListTile(
+                                    isThreeLine: true,
+                                    leading: Icon(
+                                      Icons.assignment,
+                                      color: t.status == 'completed'
+                                          ? Colors.green
+                                          : (t.status == 'in_progress'
+                                                ? Colors.orange
+                                                : Colors.deepPurple),
+                                    ),
+                                    title: Text(
+                                      t.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          t.description,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 12),
                                         ),
-                                      );
-                                  return Card(
-                                    margin: const EdgeInsets.symmetric(vertical: 4),
-                                    child: ListTile(
-                                      leading: Icon(
-                                        Icons.assignment,
-                                        color: t.status == 'completed'
-                                            ? Colors.green
-                                            : (t.status == 'in_progress'
-                                                  ? Colors.orange
-                                                  : Colors.deepPurple),
-                                      ),
-                                      title: Text(
-                                        t.title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      subtitle: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            t.description,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(fontSize: 12),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.location_on,
-                                                size: 12,
-                                                color: Colors.grey,
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Expanded(
-                                                child: Text(
-                                                  geofence.name,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color: Colors.grey,
-                                                  ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.location_on,
+                                              size: 12,
+                                              color: Colors.grey,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                geofence.name,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey,
                                                 ),
                                               ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      trailing: Chip(
-                                        label: Text(
-                                          t.status,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.white,
-                                          ),
+                                            ),
+                                          ],
                                         ),
-                                        backgroundColor: t.status ==
-                                                'completed'
-                                            ? Colors.green
-                                            : (t.status == 'in_progress'
-                                                  ? Colors.orange
-                                                  : Colors.deepPurple),
-                                        padding: EdgeInsets.zero,
-                                      ),
+                                      ],
                                     ),
-                                  );
-                                },
-                              ),
+                                    trailing: Chip(
+                                      label: Text(
+                                        t.status,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      backgroundColor: t.status == 'completed'
+                                          ? Colors.green
+                                          : (t.status == 'in_progress'
+                                                ? Colors.orange
+                                                : Colors.deepPurple),
+                                      padding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                );
+                              }),
                       ],
                     ),
                   ),

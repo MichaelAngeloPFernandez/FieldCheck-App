@@ -1,9 +1,8 @@
+// ignore_for_file: avoid_print
+
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/http_util.dart';
-
-// ignore: avoid_print
 
 class SettingsService {
   static const String _settingsPath = '/api/settings';

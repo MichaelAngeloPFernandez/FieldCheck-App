@@ -1,0 +1,126 @@
+@startuml FieldCheck_TaskAssignmentSequence
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam sequenceActorBackgroundColor #D4E6F1
+skinparam sequenceParticipantBackgroundColor #AED6F1
+skinparam sequenceArrowColor #34495E
+
+title FIGURE 3.5: Admin Geofence Management Flowchart\nFieldCheck - Task Assignment and Employee Notification Process
+
+actor "Administrator" as Admin
+participant "Mobile App\n(Admin)" as AdminApp
+participant "Backend API" as API
+participant "Task Service" as TaskService
+participant "Database" as DB
+participant "Socket.io" as Socket
+participant "Mobile App\n(Employee)" as EmpApp
+actor "Employee" as Employee
+
+Admin -> AdminApp: Navigate to Task\nManagement Screen
+activate AdminApp
+
+AdminApp -> API: GET /api/tasks
+activate API
+API -> TaskService: Get All Tasks
+activate TaskService
+TaskService -> DB: Query Tasks Collection
+activate DB
+DB --> TaskService: Return Tasks List
+deactivate DB
+TaskService --> API: Return Tasks
+deactivate TaskService
+API --> AdminApp: Return Tasks JSON
+deactivate API
+
+AdminApp -> AdminApp: Display Tasks List
+
+Admin -> AdminApp: Tap "Create New Task"
+AdminApp -> AdminApp: Show Task Creation Form
+
+Admin -> AdminApp: Fill Task Details:\n- Title\n- Description\n- Priority\n- Due Date\n- Select Geofence\n- Select Employee
+
+Admin -> AdminApp: Tap "Assign Task"
+activate AdminApp
+
+AdminApp -> API: POST /api/tasks\n{title, description, geofenceId,\nassignedTo, priority, dueDate}
+activate API
+
+API -> API: Verify JWT Token
+API -> API: Verify Admin Role
+
+API -> TaskService: Create Task
+activate TaskService
+
+TaskService -> DB: Insert Task Document
+activate DB
+DB --> TaskService: Return Task ID
+deactivate DB
+
+TaskService -> DB: Create UserTask Assignment
+activate DB
+DB --> TaskService: Return Assignment ID
+deactivate DB
+
+TaskService --> API: Return Task Object
+deactivate TaskService
+
+API -> Socket: Emit "taskCreated" Event
+activate Socket
+Socket -> Socket: Broadcast to All Connected Clients
+Socket --> API: Event Sent
+deactivate Socket
+
+API --> AdminApp: Return 201 Created\n{taskId, status}
+deactivate API
+
+AdminApp -> AdminApp: Show Success Message
+AdminApp -> AdminApp: Refresh Task List
+
+Admin -> AdminApp: View Updated Task List
+activate AdminApp
+
+AdminApp -> API: GET /api/tasks
+activate API
+API -> TaskService: Get All Tasks
+activate TaskService
+TaskService -> DB: Query Tasks Collection
+activate DB
+DB --> TaskService: Return Updated Tasks
+deactivate DB
+TaskService --> API: Return Tasks
+deactivate TaskService
+API --> AdminApp: Return Tasks JSON
+deactivate API
+
+AdminApp -> AdminApp: Display Updated List\nwith New Task
+deactivate AdminApp
+
+' Employee receives notification
+Socket -> EmpApp: Broadcast "taskCreated" Event
+activate EmpApp
+EmpApp -> EmpApp: Show Notification:\n"New Task Assigned"
+EmpApp -> API: GET /api/tasks/assigned
+activate API
+API -> TaskService: Get Assigned Tasks
+activate TaskService
+TaskService -> DB: Query Tasks for Employee
+activate DB
+DB --> TaskService: Return Assigned Tasks
+deactivate DB
+TaskService --> API: Return Tasks
+deactivate TaskService
+API --> EmpApp: Return Tasks JSON
+deactivate API
+EmpApp -> EmpApp: Update Task List
+deactivate EmpApp
+
+Employee -> EmpApp: Open App
+activate EmpApp
+EmpApp -> EmpApp: Display New Task\nin Task List
+Employee -> EmpApp: View Task Details
+EmpApp -> EmpApp: Show:\n- Task Title\n- Description\n- Geofence Location\n- Due Date\n- Priority
+deactivate EmpApp
+
+Employee --> Employee: Ready to Complete Task
+
+@enduml

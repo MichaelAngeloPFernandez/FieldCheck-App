@@ -31,14 +31,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   String? _taskReportsError;
   bool _showArchivedReports = false;
 
-  String _filterDate = 'All Dates';
-  String _filterLocation = 'All Locations';
-  String _filterStatus = 'All Status';
+  final String _filterDate = 'All Dates';
+  final String _filterLocation = 'All Locations';
+  final String _filterStatus = 'All Status';
   String _reportStatusFilter = 'All';
-  String _dateRangePreset =
-      'All Time'; // 'All Time', 'Last 7 Days', 'Last 30 Days', 'Custom'
-  DateTime? _customStartDate;
-  DateTime? _customEndDate;
   Timer? _debounce;
 
   @override
@@ -213,47 +209,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         .toList();
   }
 
-  void _scheduleFetchAttendance() {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      _fetchAttendanceRecords();
-    });
-  }
-
-  void _applyDateRangePreset(String preset) {
-    setState(() {
-      _dateRangePreset = preset;
-      final now = DateTime.now();
-
-      switch (preset) {
-        case 'Last 7 Days':
-          _customStartDate = now.subtract(const Duration(days: 7));
-          _customEndDate = now;
-          _filterDate = _customStartDate.toString().split(' ')[0];
-          break;
-        case 'Last 30 Days':
-          _customStartDate = now.subtract(const Duration(days: 30));
-          _customEndDate = now;
-          _filterDate = _customStartDate.toString().split(' ')[0];
-          break;
-        case 'All Time':
-          _customStartDate = null;
-          _customEndDate = null;
-          _filterDate = 'All Dates';
-          break;
-        default:
-          break;
-      }
-    });
-    _scheduleFetchAttendance();
-  }
-
   /// Get count of employees with no check-in/out records
   /// This identifies employees who should have checked in but didn't
   int _getNoCheckInOutCount() {
     // Group records by employee ID to find those with incomplete check-in/out
     final Map<String, List<AttendanceRecord>> recordsByEmployee = {};
-    
+
     for (final record in _attendanceRecords) {
       final employeeId = record.userId;
       recordsByEmployee.putIfAbsent(employeeId, () => []);
@@ -265,38 +226,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     for (final records in recordsByEmployee.values) {
       final hasCheckIn = records.any((r) => r.isCheckIn);
       final hasCheckOut = records.any((r) => !r.isCheckIn);
-      
+
       // If employee has check-in but no check-out, they didn't complete their day
       if (hasCheckIn && !hasCheckOut) {
         incompleteCount++;
       }
     }
-    
+
     return incompleteCount;
   }
 
   @override
   Widget build(BuildContext context) {
     const brandColor = Color(0xFF2688d4);
-
-    final List<String> locationItems = [
-      'All Locations',
-      ..._geofences.map((g) => g.name),
-    ];
-
-    final Set<String> statusSet = {
-      'All Status',
-      ..._attendanceRecords.map(
-        (a) => a.isCheckIn ? 'Checked In' : 'Checked Out',
-      ),
-    };
-    final List<String> statusItems = statusSet.toList();
-
-    // Keep date dropdown simple: show "All Dates" and the currently picked date
-    final List<String> dateItems = [
-      'All Dates',
-      if (_filterDate != 'All Dates') _filterDate,
-    ];
 
     String formatTime(DateTime? dt) =>
         dt == null ? '-' : DateFormat('HH:mm').format(dt.toLocal());
@@ -330,243 +272,159 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                      // View toggle
-                      Row(
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Attendance'),
-                            selected: _viewMode == 'attendance',
-                            onSelected: (sel) {
-                              if (!sel) return;
-                              setState(() {
-                                _viewMode = 'attendance';
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text('Task Reports'),
-                                if (_hasNewTaskReports)
-                                  const Padding(
-                                    padding: EdgeInsets.only(left: 6.0),
-                                    child: SizedBox(
-                                      width: 8,
-                                      height: 8,
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          color: Colors.red,
-                                          shape: BoxShape.circle,
-                                        ),
+                    // View toggle
+                    Row(
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Attendance'),
+                          selected: _viewMode == 'attendance',
+                          onSelected: (sel) {
+                            if (!sel) return;
+                            setState(() {
+                              _viewMode = 'attendance';
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Task Reports'),
+                              if (_hasNewTaskReports)
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 6.0),
+                                  child: SizedBox(
+                                    width: 8,
+                                    height: 8,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
                                       ),
                                     ),
                                   ),
-                              ],
+                                ),
+                            ],
+                          ),
+                          selected: _viewMode == 'task',
+                          onSelected: (sel) async {
+                            if (!sel) return;
+                            setState(() {
+                              _viewMode = 'task';
+                              _hasNewTaskReports = false;
+                            });
+                            await _fetchTaskReports();
+                          },
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    if (_viewMode == 'attendance')
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildStatCard(
+                              title: 'Total Records',
+                              value: _attendanceRecords.length.toString(),
+                              icon: Icons.list_alt,
+                              color: brandColor,
                             ),
-                            selected: _viewMode == 'task',
-                            onSelected: (sel) async {
-                              if (!sel) return;
-                              setState(() {
-                                _viewMode = 'task';
-                                _hasNewTaskReports = false;
-                              });
-                              await _fetchTaskReports();
-                            },
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildStatCard(
+                              title: 'No Check-in/out',
+                              value: _getNoCheckInOutCount().toString(),
+                              icon: Icons.warning_amber,
+                              color: Colors.orange,
+                            ),
                           ),
                         ],
                       ),
 
-                      const SizedBox(height: 12),
+                    if (_viewMode == 'attendance') const SizedBox(height: 12),
 
-                      if (_viewMode == 'attendance')
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildStatCard(
-                                title: 'Total Records',
-                                value: _attendanceRecords.length.toString(),
-                                icon: Icons.list_alt,
-                                color: brandColor,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildStatCard(
-                                title: 'No Check-in/out',
-                                value: _getNoCheckInOutCount().toString(),
-                                icon: Icons.warning_amber,
-                                color: Colors.orange,
-                              ),
-                            ),
-                          ],
-                        ),
+                    if (_viewMode == 'attendance')
+                      _attendanceRecords.isEmpty
+                          ? const Center(child: Text('No attendance records'))
+                          : Card(
+                              elevation: 2,
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    return SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: DataTable(
+                                        columns: const [
+                                          DataColumn(label: Text('Employee')),
+                                          DataColumn(label: Text('Location')),
+                                          DataColumn(label: Text('Date')),
+                                          DataColumn(label: Text('Time')),
+                                          DataColumn(label: Text('Status')),
+                                        ],
+                                        rows: _attendanceRecords.map((record) {
+                                          final time = formatTime(
+                                            record.timestamp,
+                                          );
+                                          final status = record.isCheckIn
+                                              ? 'Checked In'
+                                              : 'Checked Out';
+                                          final date = record.timestamp
+                                              .toLocal()
+                                              .toString()
+                                              .split(' ')[0];
 
-                      if (_viewMode == 'attendance') const SizedBox(height: 12),
-
-                      if (_viewMode == 'attendance')
-                        _attendanceRecords.isEmpty
-                            ? const Center(
-                                child: Text('No attendance records'),
-                              )
-                            : Card(
-                                      elevation: 2,
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: LayoutBuilder(
-                                          builder: (context, constraints) {
-                                            return SingleChildScrollView(
-                                              scrollDirection: Axis.horizontal,
-                                              child: DataTable(
-                                                columns: const [
-                                                  DataColumn(
-                                                    label: Text('Employee'),
-                                                  ),
-                                                  DataColumn(
-                                                    label: Text('Location'),
-                                                  ),
-                                                  DataColumn(
-                                                    label: Text('Date'),
-                                                  ),
-                                                  DataColumn(
-                                                    label: Text('Time'),
-                                                  ),
-                                                  DataColumn(
-                                                    label: Text('Status'),
-                                                  ),
-                                                ],
-                                                rows: _attendanceRecords.map((
-                                                  record,
-                                                ) {
-                                                  final time = formatTime(
-                                                    record.timestamp,
-                                                  );
-                                                  final status =
-                                                      record.isCheckIn
-                                                      ? 'Checked In'
-                                                      : 'Checked Out';
-                                                  final date = record.timestamp
-                                                      .toLocal()
-                                                      .toString()
-                                                      .split(' ')[0];
-
-                                                  return DataRow(
-                                                    cells: [
-                                                      DataCell(
-                                                        Text(
-                                                          record.employeeName ??
-                                                              'Unknown',
-                                                        ),
-                                                      ),
-                                                      DataCell(
-                                                        Text(
-                                                          record.geofenceName ??
-                                                              'N/A',
-                                                        ),
-                                                      ),
-                                                      DataCell(Text(date)),
-                                                      DataCell(Text(time)),
-                                                      DataCell(
-                                                        Chip(
-                                                          label: Text(status),
-                                                          backgroundColor:
-                                                              record.isCheckIn
-                                                              ? Colors
-                                                                    .green[100]
-                                                              : Colors.red[100],
-                                                          labelStyle: TextStyle(
-                                                            color:
-                                                                record.isCheckIn
-                                                                ? Colors
-                                                                      .green[900]
-                                                                : Colors
-                                                                      .red[900],
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  );
-                                                }).toList(),
+                                          return DataRow(
+                                            cells: [
+                                              DataCell(
+                                                Text(
+                                                  record.employeeName ??
+                                                      'Unknown',
+                                                ),
                                               ),
-                                            );
-                                          },
-                                        ),
+                                              DataCell(
+                                                Text(
+                                                  record.geofenceName ?? 'N/A',
+                                                ),
+                                              ),
+                                              DataCell(Text(date)),
+                                              DataCell(Text(time)),
+                                              DataCell(
+                                                Chip(
+                                                  label: Text(status),
+                                                  backgroundColor:
+                                                      record.isCheckIn
+                                                      ? Colors.green[100]
+                                                      : Colors.red[100],
+                                                  labelStyle: TextStyle(
+                                                    color: record.isCheckIn
+                                                        ? Colors.green[900]
+                                                        : Colors.red[900],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }).toList(),
                                       ),
-                                    ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
 
-                      if (_viewMode == 'task') _buildTaskReportsView(),
-                    ],
+                    if (_viewMode == 'task') _buildTaskReportsView(),
+                  ],
                 ),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
-    );
-    if (picked != null && picked.toString().split(' ')[0] != _filterDate) {
-      setState(() {
-        _filterDate = picked.toString().split(' ')[0];
-      });
-      _scheduleFetchAttendance();
-    }
-  }
-
-  Widget _buildFilterDropdown({
-    required String label,
-    required String value,
-    required List<String> items,
-    required void Function(String?) onChanged,
-    VoidCallback? onTap, // Add onTap parameter
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 4),
-        GestureDetector(
-          onTap: onTap, // Use GestureDetector to trigger onTap
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: DropdownButton<String>(
-              value: value,
-              isExpanded: true,
-              underline: Container(),
-              items: items.map((item) {
-                return DropdownMenuItem<String>(
-                  value: item,
-                  child: Text(
-                    label == 'Date' && item != 'All Dates'
-                        ? DateFormat('yyyy-MM-dd').format(DateTime.parse(item))
-                        : item,
-                  ),
-                );
-              }).toList(),
-              onChanged: onChanged,
-              // Disable dropdown if onTap is provided to prevent default dropdown behavior
-              // when a custom date picker is used.
-              // This might need adjustment based on desired UX.
-              // For now, we'll keep it enabled but the onTap will take precedence.
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -599,56 +457,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showAttendanceDetails(AttendanceRecord data) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          '${data.userId} - ${data.timestamp.toLocal().toString().split(' ')[0]}',
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildDetailRow(
-              'Check In Time:',
-              data.isCheckIn
-                  ? data.timestamp
-                        .toLocal()
-                        .toString()
-                        .split(' ')[1]
-                        .substring(0, 5)
-                  : 'N/A',
-            ),
-            _buildDetailRow(
-              'Check Out Time:',
-              !data.isCheckIn
-                  ? data.timestamp
-                        .toLocal()
-                        .toString()
-                        .split(' ')[1]
-                        .substring(0, 5)
-                  : 'N/A',
-            ),
-            _buildDetailRow('Location:', data.geofenceName ?? 'N/A'),
-            _buildDetailRow(
-              'Status:',
-              data.isCheckIn ? 'Checked In' : 'Checked Out',
-            ),
-            // _buildDetailRow('Total Hours:', '8.25'), // Calculate total hours based on check-in/out times
-            // _buildDetailRow('Notes:', 'Regular attendance'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
   }
@@ -928,13 +736,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     await ReportService().archiveReport(r.id);
                                     await _fetchTaskReports();
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Report archived')),
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Report archived'),
+                                        ),
                                       );
                                     }
                                   } catch (e) {
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(content: Text('Failed: $e')),
                                       );
                                     }
@@ -949,13 +763,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     await ReportService().restoreReport(r.id);
                                     await _fetchTaskReports();
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Report restored')),
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Report restored'),
+                                        ),
                                       );
                                     }
                                   } catch (e) {
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(content: Text('Failed: $e')),
                                       );
                                     }

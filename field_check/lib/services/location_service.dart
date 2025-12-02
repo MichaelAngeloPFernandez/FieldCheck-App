@@ -38,13 +38,33 @@ class LocationService {
 
     // When we reach here, permissions are granted and we can
     // continue accessing the position of the device.
-    // Use high accuracy with timeout for faster location lock
-    return await geolocator.Geolocator.getCurrentPosition(
-      locationSettings: const geolocator.LocationSettings(
-        accuracy: geolocator.LocationAccuracy.bestForNavigation,
-        timeLimit: Duration(seconds: 10), // Timeout after 10 seconds
-      ),
-    );
+    try {
+      // Try high accuracy first with reasonable timeout
+      return await geolocator.Geolocator.getCurrentPosition(
+        locationSettings: const geolocator.LocationSettings(
+          accuracy: geolocator.LocationAccuracy.bestForNavigation,
+          timeLimit: Duration(seconds: 15), // Increased to 15 seconds
+        ),
+      );
+    } catch (e) {
+      // If high accuracy times out, try reduced accuracy
+      try {
+        return await geolocator.Geolocator.getCurrentPosition(
+          locationSettings: const geolocator.LocationSettings(
+            accuracy: geolocator.LocationAccuracy.high,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+      } catch (e2) {
+        // If still failing, use last known position as fallback
+        final lastPosition = await geolocator.Geolocator.getLastKnownPosition();
+        if (lastPosition != null) {
+          return lastPosition;
+        }
+        // If all fails, throw original error
+        rethrow;
+      }
+    }
   }
 
   /// High-accuracy real-time position stream optimized for employee tracking
@@ -66,8 +86,8 @@ class LocationService {
         accuracy: accuracy,
         distanceFilter: distanceFilter,
         timeLimit: const Duration(
-          seconds: 10,
-        ), // Add timeout for faster initial lock
+          seconds: 30,
+        ), // Increased timeout to 30s for better GPS lock
       ),
     );
 

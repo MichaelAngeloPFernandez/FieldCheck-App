@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:field_check/main.dart';
 import 'package:field_check/screens/dashboard_screen.dart';
@@ -25,24 +27,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() {
       _isLoading = true;
       _error = null;
     });
-    
+
     try {
       final user = _usernameController.text.trim();
       final pass = _passwordController.text;
 
       AppLogger.info(AppLogger.tagAuth, 'Login attempt for user: $user');
-      
+
       // Login by identifier: email or username supported by backend
       final loggedIn = await _userService.loginIdentifier(user, pass);
       if (!mounted) return;
-      
-      AppLogger.success(AppLogger.tagAuth, 'Login successful for user: $user (role: ${loggedIn.role})');
-      
+
+      AppLogger.success(
+        AppLogger.tagAuth,
+        'Login successful for user: $user (role: ${loggedIn.role})',
+      );
+
       if (loggedIn.role.toLowerCase() == 'admin') {
         Navigator.pushReplacement(
           context,
@@ -104,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 // Header Section
                 SizedBox(height: MediaQuery.of(context).size.height * 0.08),
-                
+
                 // Logo & Branding
                 Container(
                   width: 100,
@@ -120,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: AppTheme.xl),
-                
+
                 // Title
                 Text(
                   'FieldCheck',
@@ -130,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: AppTheme.md),
-                
+
                 // Subtitle
                 Text(
                   'Geofenced Attendance Verification',
@@ -139,9 +144,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: AppTheme.textSecondary,
                   ),
                 ),
-                
+
                 SizedBox(height: MediaQuery.of(context).size.height * 0.06),
-                
+
                 // Login Form Card
                 AppWidgets.roundedContainer(
                   padding: const EdgeInsets.all(AppTheme.xl),
@@ -157,7 +162,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             margin: const EdgeInsets.only(bottom: AppTheme.lg),
                             decoration: BoxDecoration(
                               color: AppTheme.errorColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusMd,
+                              ),
                               border: Border.all(
                                 color: AppTheme.errorColor.withOpacity(0.3),
                               ),
@@ -181,12 +188,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               ],
                             ),
                           ),
-                        
+
                         // Username Field
-                        Text(
-                          'Username or Email',
-                          style: AppTheme.labelLg,
-                        ),
+                        Text('Username or Email', style: AppTheme.labelLg),
                         const SizedBox(height: AppTheme.sm),
                         TextFormField(
                           controller: _usernameController,
@@ -203,12 +207,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                         ),
                         const SizedBox(height: AppTheme.lg),
-                        
+
                         // Password Field
-                        Text(
-                          'Password',
-                          style: AppTheme.labelLg,
-                        ),
+                        Text('Password', style: AppTheme.labelLg),
                         const SizedBox(height: AppTheme.sm),
                         TextFormField(
                           controller: _passwordController,
@@ -228,7 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                         ),
                         const SizedBox(height: AppTheme.xl),
-                        
+
                         // Login Button
                         SizedBox(
                           width: double.infinity,
@@ -257,13 +258,15 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: AppTheme.lg),
-                        
+
                         // Forgot Password Link
                         Center(
                           child: AppWidgets.textButton(
                             label: 'Forgot Password?',
                             onPressed: () {
-                              Navigator.of(context).pushNamed('/forgot-password');
+                              Navigator.of(
+                                context,
+                              ).pushNamed('/forgot-password');
                             },
                             icon: Icons.help_outline,
                           ),
@@ -272,7 +275,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                
+
                 SizedBox(height: MediaQuery.of(context).size.height * 0.08),
               ],
             ),

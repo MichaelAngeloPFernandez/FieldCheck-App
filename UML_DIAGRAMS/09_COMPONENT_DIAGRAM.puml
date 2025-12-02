@@ -1,0 +1,171 @@
+@startuml FieldCheck_ComponentDiagram
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam componentBackgroundColor #AED6F1
+skinparam componentBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.2 (Extended): Component Diagram\nFieldCheck - Software Components and Dependencies
+
+package "Mobile Application Layer" {
+  component "Presentation Layer" as PresentationLayer {
+    component "Employee Screens" as EmpScreens
+    component "Admin Screens" as AdminScreens
+    component "Common Widgets" as CommonWidgets
+  }
+  
+  component "Business Logic Layer" as BLLMobile {
+    component "Authentication Manager" as AuthMgr
+    component "Location Manager" as LocMgr
+    component "Attendance Manager" as AttMgr
+    component "Task Manager" as TaskMgr
+    component "Report Manager" as ReportMgr
+  }
+  
+  component "Data Layer" as DataLayerMobile {
+    component "Local Storage" as LocalStorage
+    component "Offline Queue" as OfflineQueue
+    component "Cache Manager" as CacheMgr
+  }
+  
+  component "Communication Layer" as CommLayer {
+    component "HTTP Client" as HTTPClient
+    component "Socket.io Client" as SocketClient
+    component "Encryption Handler" as EncHandler
+  }
+  
+  component "Device Integration" as DeviceInt {
+    component "GPS Service" as GPSService
+    component "Connectivity Monitor" as ConnMon
+    component "File Handler" as FileHandler
+  }
+}
+
+package "Backend Application Layer" {
+  component "API Layer" as APILayer {
+    component "Authentication Routes" as AuthRoutes
+    component "Geofence Routes" as GeoRoutes
+    component "Attendance Routes" as AttRoutes
+    component "Task Routes" as TaskRoutes
+    component "Report Routes" as ReportRoutes
+  }
+  
+  component "Service Layer" as ServiceLayer {
+    component "User Service" as UserService
+    component "Geofence Service" as GeoService
+    component "Attendance Service" as AttService
+    component "Task Service" as TaskService
+    component "Report Service" as ReportService
+    component "Notification Service" as NotifService
+  }
+  
+  component "Middleware Layer" as MiddlewareLayer {
+    component "JWT Middleware" as JWTMiddleware
+    component "RBAC Middleware" as RBACMiddleware
+    component "Validation Middleware" as ValidationMiddleware
+    component "Error Handler" as ErrorHandler
+  }
+  
+  component "Real-Time Layer" as RTLayer {
+    component "Socket.io Server" as SocketServer
+    component "Event Emitter" as EventEmitter
+    component "Connection Manager" as ConnManager
+  }
+  
+  component "Data Access Layer" as DAL {
+    component "User Repository" as UserRepo
+    component "Geofence Repository" as GeoRepo
+    component "Attendance Repository" as AttRepo
+    component "Task Repository" as TaskRepo
+    component "Report Repository" as ReportRepo
+  }
+  
+  component "Utility Layer" as UtilLayer {
+    component "Geo Calculator" as GeoCalc
+    component "Token Manager" as TokenMgr
+    component "Encryption Util" as EncUtil
+    component "File Generator" as FileGen
+  }
+}
+
+package "Data Layer" {
+  component "MongoDB Driver" as MongoDriver
+  component "Connection Pool" as ConnPool
+}
+
+package "External Services" {
+  component "OpenStreetMap API" as OSMApi
+  component "File Export Service" as FileExportSvc
+}
+
+' Mobile Layer Connections
+PresentationLayer --> BLLMobile: Uses
+BLLMobile --> DataLayerMobile: Uses
+BLLMobile --> CommLayer: Uses
+BLLMobile --> DeviceInt: Uses
+
+EmpScreens --> AuthMgr: Uses
+EmpScreens --> LocMgr: Uses
+EmpScreens --> AttMgr: Uses
+EmpScreens --> TaskMgr: Uses
+
+AdminScreens --> AuthMgr: Uses
+AdminScreens --> ReportMgr: Uses
+AdminScreens --> TaskMgr: Uses
+
+AuthMgr --> LocalStorage: Stores Tokens
+LocMgr --> GPSService: Gets Location
+LocMgr --> ConnMon: Checks Connectivity
+AttMgr --> OfflineQueue: Queues Offline
+TaskMgr --> LocalStorage: Caches Tasks
+
+HTTPClient --> CommLayer: Uses
+SocketClient --> CommLayer: Uses
+EncHandler --> CommLayer: Uses
+
+' Backend Layer Connections
+APILayer --> MiddlewareLayer: Uses
+APILayer --> ServiceLayer: Calls
+
+AuthRoutes --> UserService: Uses
+GeoRoutes --> GeoService: Uses
+AttRoutes --> AttService: Uses
+TaskRoutes --> TaskService: Uses
+ReportRoutes --> ReportService: Uses
+
+MiddlewareLayer --> JWTMiddleware
+MiddlewareLayer --> RBACMiddleware
+MiddlewareLayer --> ValidationMiddleware
+MiddlewareLayer --> ErrorHandler
+
+ServiceLayer --> DAL: Uses
+ServiceLayer --> UtilLayer: Uses
+ServiceLayer --> RTLayer: Emits Events
+
+UserService --> UserRepo: Uses
+GeoService --> GeoRepo: Uses
+AttService --> AttRepo: Uses
+TaskService --> TaskRepo: Uses
+ReportService --> ReportRepo: Uses
+
+NotifService --> EventEmitter: Emits
+EventEmitter --> SocketServer: Broadcasts
+
+GeoCalc --> GeoService: Used By
+TokenMgr --> UserService: Used By
+EncUtil --> UserService: Used By
+FileGen --> ReportService: Used By
+
+' Data Layer Connections
+DAL --> MongoDriver: Uses
+MongoDriver --> ConnPool: Uses
+
+' External Services
+GeoService --> OSMApi: Gets Map Data
+ReportService --> FileExportSvc: Generates Files
+
+' Mobile to Backend
+CommLayer --> APILayer: HTTP Requests
+SocketClient --> SocketServer: WebSocket
+
+@enduml

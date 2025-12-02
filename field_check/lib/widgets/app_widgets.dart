@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:field_check/utils/app_theme.dart';
 
@@ -23,10 +25,7 @@ class AppWidgets {
       child: Card(
         elevation: elevation ?? 2,
         color: backgroundColor,
-        child: Padding(
-          padding: padding,
-          child: child,
-        ),
+        child: Padding(padding: padding, child: child),
       ),
     );
   }
@@ -126,7 +125,10 @@ class AppWidgets {
   }) {
     return TextButton.icon(
       onPressed: onPressed,
-      icon: Icon(icon ?? Icons.arrow_forward, color: color ?? AppTheme.primaryColor),
+      icon: Icon(
+        icon ?? Icons.arrow_forward,
+        color: color ?? AppTheme.primaryColor,
+      ),
       label: Text(
         label,
         style: TextStyle(
@@ -166,10 +168,7 @@ class AppWidgets {
         hintText: hint,
         prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
         suffixIcon: suffixIcon != null
-            ? IconButton(
-                icon: Icon(suffixIcon),
-                onPressed: onSuffixIconPressed,
-              )
+            ? IconButton(icon: Icon(suffixIcon), onPressed: onSuffixIconPressed)
             : null,
       ),
     );
@@ -180,10 +179,7 @@ class AppWidgets {
   // ============================================================================
 
   /// Loading indicator with message
-  static Widget loadingIndicator({
-    String? message,
-    Color? color,
-  }) {
+  static Widget loadingIndicator({String? message, Color? color}) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -195,11 +191,7 @@ class AppWidgets {
           ),
           if (message != null) ...[
             const SizedBox(height: AppTheme.md),
-            Text(
-              message,
-              style: AppTheme.bodyMd,
-              textAlign: TextAlign.center,
-            ),
+            Text(message, style: AppTheme.bodyMd, textAlign: TextAlign.center),
           ],
         ],
       ),
@@ -236,16 +228,9 @@ class AppWidgets {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 64,
-            color: AppTheme.errorColor,
-          ),
+          Icon(icon, size: 64, color: AppTheme.errorColor),
           const SizedBox(height: AppTheme.lg),
-          Text(
-            'Error',
-            style: AppTheme.headingSm,
-          ),
+          Text('Error', style: AppTheme.headingSm),
           const SizedBox(height: AppTheme.md),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.lg),
@@ -280,16 +265,9 @@ class AppWidgets {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 64,
-            color: AppTheme.textTertiary,
-          ),
+          Icon(icon, size: 64, color: AppTheme.textTertiary),
           const SizedBox(height: AppTheme.lg),
-          Text(
-            title,
-            style: AppTheme.headingSm,
-          ),
+          Text(title, style: AppTheme.headingSm),
           const SizedBox(height: AppTheme.md),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.lg),
@@ -301,10 +279,7 @@ class AppWidgets {
           ),
           if (onAction != null && actionLabel != null) ...[
             const SizedBox(height: AppTheme.xl),
-            primaryButton(
-              label: actionLabel,
-              onPressed: onAction,
-            ),
+            primaryButton(label: actionLabel, onPressed: onAction),
           ],
         ],
       ),
@@ -394,10 +369,7 @@ class AppWidgets {
     EdgeInsets padding = const EdgeInsets.symmetric(vertical: AppTheme.lg),
   }) {
     if (label == null) {
-      return Padding(
-        padding: padding,
-        child: const Divider(height: 1),
-      );
+      return Padding(padding: padding, child: const Divider(height: 1));
     }
 
     return Padding(
@@ -407,10 +379,7 @@ class AppWidgets {
           const Expanded(child: Divider(height: 1)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.md),
-            child: Text(
-              label,
-              style: AppTheme.labelMd,
-            ),
+            child: Text(label, style: AppTheme.labelMd),
           ),
           const Expanded(child: Divider(height: 1)),
         ],
@@ -440,16 +409,10 @@ class AppWidgets {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: AppTheme.headingMd,
-                ),
+                Text(title, style: AppTheme.headingMd),
                 if (subtitle != null) ...[
                   const SizedBox(height: AppTheme.xs),
-                  Text(
-                    subtitle,
-                    style: AppTheme.bodySm,
-                  ),
+                  Text(subtitle, style: AppTheme.bodySm),
                 ],
               ],
             ),
@@ -492,16 +455,10 @@ class AppWidgets {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: AppTheme.bodyLg,
-                    ),
+                    Text(title, style: AppTheme.bodyLg),
                     if (subtitle != null) ...[
                       const SizedBox(height: AppTheme.xs),
-                      Text(
-                        subtitle,
-                        style: AppTheme.bodySm,
-                      ),
+                      Text(subtitle, style: AppTheme.bodySm),
                     ],
                   ],
                 ),

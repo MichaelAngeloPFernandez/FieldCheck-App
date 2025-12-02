@@ -67,7 +67,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   Future<void> _initializeServices() async {
     // Initialize realtime service in background (don't block UI)
     _realtimeService.initialize().ignore();
-    
+
     await _autosaveService.initialize();
 
     // Listen for real-time attendance updates
@@ -174,8 +174,23 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
   void _startLocationUpdates() {
     _locationUpdateTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      _updateLocation();
+      _updateLocationBackground();
     });
+  }
+
+  Future<void> _updateLocationBackground() async {
+    try {
+      final position = await _locationService.getCurrentLocation();
+      if (mounted) {
+        setState(() {
+          _userPosition = position;
+          _lastLocationUpdate = DateTime.now();
+        });
+        await _updateGeofenceStatus();
+      }
+    } catch (e) {
+      debugPrint('Error updating location: $e');
+    }
   }
 
   Future<void> _updateLocation() async {
@@ -183,7 +198,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       setState(() {
         _isLoading = true;
       });
-      
+
       final position = await _locationService.getCurrentLocation();
       if (mounted) {
         setState(() {
@@ -192,19 +207,6 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
           _isLoading = false;
         });
         await _updateGeofenceStatus();
-        
-        // Show success feedback
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Location updated: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)} (Accuracy: ${position.accuracy.toStringAsFixed(1)}m)',
-              ),
-              duration: const Duration(seconds: 3),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
       }
     } catch (e) {
       debugPrint('Error updating location: $e');
@@ -293,19 +295,21 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       if (_isCheckedIn) {
         final confirmed = await _confirmCheckout();
         if (!confirmed) {
-          if (mounted)
+          if (mounted) {
             setState(() {
               _isLoading = false;
             });
+          }
           return;
         }
       } else {
         final proceed = await _ensureTasksBeforeCheckIn();
         if (!proceed) {
-          if (mounted)
+          if (mounted) {
             setState(() {
               _isLoading = false;
             });
+          }
           return;
         }
       }
@@ -425,10 +429,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       if (userId == null) {
         final profile = await _userService.getProfile();
         userId = profile.id;
-        if (mounted)
+        if (mounted) {
           setState(() {
             _userModelId = userId;
           });
+        }
       }
       final tasks = await _taskService.fetchAssignedTasks(userId);
       if (tasks.isEmpty) {

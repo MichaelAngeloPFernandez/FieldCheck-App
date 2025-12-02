@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geolocator;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/user_service.dart';
@@ -38,22 +37,18 @@ class LocationSyncService {
       _socket = io.io(ApiConfig.baseUrl, options);
 
       _socket.onConnect((_) {
-        if (kDebugMode) print('LocationSyncService: Socket connected');
+        // Socket connected
       });
 
       _socket.onDisconnect((_) {
-        if (kDebugMode) print('LocationSyncService: Socket disconnected');
+        // Socket disconnected
       });
 
       _socket.on('locationUpdateRequired', (_) {
-        if (kDebugMode) {
-          print('LocationSyncService: Server requesting location update');
-        }
+        // Server requesting location update
       });
     } catch (e) {
-      if (kDebugMode) {
-        print('Failed to initialize socket in LocationSyncService: $e');
-      }
+      // Failed to initialize socket - ignored
     }
   }
 
@@ -73,7 +68,7 @@ class LocationSyncService {
     try {
       _positionSubscription?.cancel();
     } catch (e) {
-      if (kDebugMode) print('Error stopping location tracking: $e');
+      // Error stopping location tracking - ignored
     }
   }
 
@@ -86,29 +81,31 @@ class LocationSyncService {
               accuracy: geolocator.LocationAccuracy.bestForNavigation,
               distanceFilter:
                   2, // Update every 2 meters for responsive tracking
+              timeLimit: Duration(seconds: 30), // Allow 30s for GPS lock
             ),
           ).listen(
             (geolocator.Position position) {
-              // Only sync if accuracy is good (< 50m) to avoid sending bad data
-              if (position.accuracy > 0 && position.accuracy <= 50) {
+              // Accept positions with reasonable accuracy (< 100m)
+              // This is more lenient to handle poor GPS conditions
+              if (position.accuracy > 0 && position.accuracy <= 100) {
                 final now = DateTime.now();
 
-                // Sync location every 3 seconds for backend updates
+                // Sync location every 15 seconds for backend updates
                 if (_lastSyncTime == null ||
-                    now.difference(_lastSyncTime!).inSeconds >= 3) {
+                    now.difference(_lastSyncTime!).inSeconds >= 15) {
                   _lastSyncTime = now;
                   _syncLocationToBackend(position);
                 }
               }
             },
             onError: (e) {
-              if (kDebugMode) {
-                print('LocationSyncService: Position stream error: $e');
-              }
+              // Position stream error - retrying
+              Future.delayed(const Duration(seconds: 5), _startLocationStream);
             },
           );
     } catch (e) {
-      if (kDebugMode) print('Failed to start location stream: $e');
+      // Failed to start location stream - retrying
+      Future.delayed(const Duration(seconds: 5), _startLocationStream);
     }
   }
 
@@ -127,13 +124,9 @@ class LocationSyncService {
       // Emit location update with instant delivery
       _socket.emit('employeeLocationUpdate', locationData);
 
-      if (kDebugMode) {
-        print(
-          'LocationSyncService: Synced (${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}) • Accuracy: ${position.accuracy.toStringAsFixed(1)}m',
-        );
-      }
+      // Location synced silently
     } catch (e) {
-      if (kDebugMode) print('Error syncing location to backend: $e');
+      // Error syncing location - ignored
     }
   }
 
@@ -143,7 +136,7 @@ class LocationSyncService {
       _positionSubscription?.cancel();
       _socket.dispose();
     } catch (e) {
-      if (kDebugMode) print('Error disposing LocationSyncService: $e');
+      // Error disposing - ignored
     }
   }
 
