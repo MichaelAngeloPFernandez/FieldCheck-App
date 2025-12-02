@@ -67,7 +67,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   Future<void> _initializeServices() async {
     // Initialize realtime service in background (don't block UI)
     _realtimeService.initialize().ignore();
-    
+
     await _autosaveService.initialize();
 
     // Listen for real-time attendance updates
@@ -183,7 +183,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       setState(() {
         _isLoading = true;
       });
-      
+
       final position = await _locationService.getCurrentLocation();
       if (mounted) {
         setState(() {
@@ -192,7 +192,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
           _isLoading = false;
         });
         await _updateGeofenceStatus();
-        
+
         // Show success feedback
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -293,19 +293,21 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       if (_isCheckedIn) {
         final confirmed = await _confirmCheckout();
         if (!confirmed) {
-          if (mounted)
+          if (mounted) {
             setState(() {
               _isLoading = false;
             });
+          }
           return;
         }
       } else {
         final proceed = await _ensureTasksBeforeCheckIn();
         if (!proceed) {
-          if (mounted)
+          if (mounted) {
             setState(() {
               _isLoading = false;
             });
+          }
           return;
         }
       }
@@ -425,10 +427,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       if (userId == null) {
         final profile = await _userService.getProfile();
         userId = profile.id;
-        if (mounted)
+        if (mounted) {
           setState(() {
             _userModelId = userId;
           });
+        }
       }
       final tasks = await _taskService.fetchAssignedTasks(userId);
       if (tasks.isEmpty) {
