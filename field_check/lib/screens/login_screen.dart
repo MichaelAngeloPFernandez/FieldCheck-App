@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:field_check/main.dart';
 import 'package:field_check/screens/dashboard_screen.dart';
 import 'package:field_check/screens/admin_dashboard_screen.dart';
-import '../services/user_service.dart';
+import 'package:field_check/services/user_service.dart';
+import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/utils/logger.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,17 +25,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
+    
     setState(() {
       _isLoading = true;
       _error = null;
     });
+    
     try {
       final user = _usernameController.text.trim();
       final pass = _passwordController.text;
 
+      AppLogger.info(AppLogger.tagAuth, 'Login attempt for user: $user');
+      
       // Login by identifier: email or username supported by backend
       final loggedIn = await _userService.loginIdentifier(user, pass);
       if (!mounted) return;
+      
+      AppLogger.success(AppLogger.tagAuth, 'Login successful for user: $user (role: ${loggedIn.role})');
+      
       if (loggedIn.role.toLowerCase() == 'admin') {
         Navigator.pushReplacement(
           context,
@@ -45,9 +55,13 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
+      AppLogger.error(AppLogger.tagAuth, 'Login failed', e);
       setState(() {
-        _error = e.toString();
+        _error = e.toString().replaceAll('Exception: ', '');
       });
+      if (mounted) {
+        AppWidgets.showErrorSnackbar(context, _error ?? 'Login failed');
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -68,156 +82,198 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('FieldCheck'),
+        elevation: 0,
         actions: [
           IconButton(
             tooltip: 'Toggle theme',
             icon: Icon(
               Theme.of(context).brightness == Brightness.dark
-                  ? Icons.dark_mode
-                  : Icons.light_mode,
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
             ),
             onPressed: () => MyApp.of(context)?.toggleTheme(),
           ),
         ],
       ),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.lg),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.location_on,
-                  size: 80,
-                  color: Theme.of(context).colorScheme.primary,
+                // Header Section
+                SizedBox(height: MediaQuery.of(context).size.height * 0.08),
+                
+                // Logo & Branding
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryLight.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                  ),
+                  child: const Icon(
+                    Icons.location_on,
+                    size: 60,
+                    color: AppTheme.primaryColor,
+                  ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
+                const SizedBox(height: AppTheme.xl),
+                
+                // Title
+                Text(
                   'FieldCheck',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF2688d4),
+                  style: AppTheme.headingXl.copyWith(
+                    color: AppTheme.primaryColor,
                   ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Mobile Geofenced Attendance Verification',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
                 ),
-                const SizedBox(height: 48),
-                Card(
-                  elevation: 8.0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10.0),
+                const SizedBox(height: AppTheme.md),
+                
+                // Subtitle
+                Text(
+                  'Geofenced Attendance Verification',
+                  textAlign: TextAlign.center,
+                  style: AppTheme.bodyMd.copyWith(
+                    color: AppTheme.textSecondary,
                   ),
-                  margin: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        children: [
-                          if (_error != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12.0),
-                              child: Text(
-                                _error!,
-                                style: const TextStyle(color: Colors.red),
+                ),
+                
+                SizedBox(height: MediaQuery.of(context).size.height * 0.06),
+                
+                // Login Form Card
+                AppWidgets.roundedContainer(
+                  padding: const EdgeInsets.all(AppTheme.xl),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Error Message
+                        if (_error != null)
+                          Container(
+                            padding: const EdgeInsets.all(AppTheme.md),
+                            margin: const EdgeInsets.only(bottom: AppTheme.lg),
+                            decoration: BoxDecoration(
+                              color: AppTheme.errorColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                              border: Border.all(
+                                color: AppTheme.errorColor.withOpacity(0.3),
                               ),
                             ),
-                          TextFormField(
-                            controller: _usernameController,
-                            decoration: const InputDecoration(
-                              labelText: 'Username',
-                              hintText: 'Enter your username or email',
-                              prefixIcon: Icon(Icons.person),
-                            ),
-                            keyboardType: TextInputType.text,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Please enter your username';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _passwordController,
-                            decoration: const InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: Icon(Icons.lock),
-                            ),
-                            obscureText: true,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Please enter your password';
-                              }
-                              if (value.length < 4) {
-                                return 'Password must be at least 4 characters long';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 24),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _login,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.primary,
-                                foregroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.onPrimary,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.error_outline,
+                                  color: AppTheme.errorColor,
+                                  size: 20,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Login',
-                                      style: TextStyle(fontSize: 18),
+                                const SizedBox(width: AppTheme.md),
+                                Expanded(
+                                  child: Text(
+                                    _error!,
+                                    style: AppTheme.bodySm.copyWith(
+                                      color: AppTheme.errorColor,
                                     ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 16),
-                          TextButton(
+                        
+                        // Username Field
+                        Text(
+                          'Username or Email',
+                          style: AppTheme.labelLg,
+                        ),
+                        const SizedBox(height: AppTheme.sm),
+                        TextFormField(
+                          controller: _usernameController,
+                          decoration: InputDecoration(
+                            hintText: 'Enter your username or email',
+                            prefixIcon: const Icon(Icons.person_outline),
+                          ),
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your username or email';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: AppTheme.lg),
+                        
+                        // Password Field
+                        Text(
+                          'Password',
+                          style: AppTheme.labelLg,
+                        ),
+                        const SizedBox(height: AppTheme.sm),
+                        TextFormField(
+                          controller: _passwordController,
+                          decoration: InputDecoration(
+                            hintText: 'Enter your password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                          ),
+                          obscureText: true,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your password';
+                            }
+                            if (value.length < 4) {
+                              return 'Password must be at least 4 characters';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: AppTheme.xl),
+                        
+                        // Login Button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton.icon(
+                            onPressed: _isLoading ? null : _login,
+                            icon: _isLoading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : const Icon(Icons.login),
+                            label: Text(
+                              _isLoading ? 'Logging in...' : 'Login',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppTheme.lg),
+                        
+                        // Forgot Password Link
+                        Center(
+                          child: AppWidgets.textButton(
+                            label: 'Forgot Password?',
                             onPressed: () {
-                              Navigator.of(
-                                context,
-                              ).pushNamed('/forgot-password');
+                              Navigator.of(context).pushNamed('/forgot-password');
                             },
-                            style: TextButton.styleFrom(
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
-                            ),
-                            child: const Text(
-                              'Forgot Password?',
-                              style: TextStyle(fontSize: 16),
-                            ),
+                            icon: Icons.help_outline,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+                
+                SizedBox(height: MediaQuery.of(context).size.height * 0.08),
               ],
             ),
           ),

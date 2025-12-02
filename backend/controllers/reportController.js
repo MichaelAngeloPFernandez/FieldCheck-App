@@ -60,8 +60,9 @@ const createReport = asyncHandler(async (req, res) => {
 // @desc List reports
 // @route GET /api/reports
 // @access Private/Admin
+// Optional query: archived=true|false (default false)
 const listReports = asyncHandler(async (req, res) => {
-  const { type, employeeId, taskId, geofenceId, startDate, endDate } = req.query;
+  const { type, employeeId, taskId, geofenceId, startDate, endDate, archived } = req.query;
   const filter = {};
   if (type) filter.type = type;
   if (employeeId) filter.employee = employeeId;
@@ -71,6 +72,12 @@ const listReports = asyncHandler(async (req, res) => {
     filter.submittedAt = {};
     if (startDate) filter.submittedAt.$gte = new Date(startDate);
     if (endDate) filter.submittedAt.$lte = new Date(endDate);
+  }
+
+  if (archived === 'true') {
+    filter.isArchived = true;
+  } else if (archived === 'false' || archived === undefined) {
+    filter.isArchived = { $ne: true };
   }
 
   const reports = await Report.find(filter)
@@ -129,10 +136,70 @@ const deleteReport = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+// @desc Get current (non-archived) reports
+// @route GET /api/reports/current
+// @access Private/Admin
+const getCurrentReports = asyncHandler(async (req, res) => {
+  const reports = await Report.find({ isArchived: { $ne: true } })
+    .populate('employee', 'name email')
+    .populate('task', 'title description')
+    .populate('attendance')
+    .populate('geofence', 'name')
+    .sort({ submittedAt: -1 });
+  res.json(reports);
+});
+
+// @desc Get archived reports
+// @route GET /api/reports/archived
+// @access Private/Admin
+const getArchivedReports = asyncHandler(async (req, res) => {
+  const reports = await Report.find({ isArchived: true })
+    .populate('employee', 'name email')
+    .populate('task', 'title description')
+    .populate('attendance')
+    .populate('geofence', 'name')
+    .sort({ submittedAt: -1 });
+  res.json(reports);
+});
+
+// @desc Archive a report
+// @route PUT /api/reports/:id/archive
+// @access Private/Admin
+const archiveReport = asyncHandler(async (req, res) => {
+  const rep = await Report.findById(req.params.id);
+  if (!rep) {
+    res.status(404);
+    throw new Error('Report not found');
+  }
+  rep.isArchived = true;
+  const updated = await rep.save();
+  io.emit('reportArchived', updated);
+  res.json(updated);
+});
+
+// @desc Restore an archived report
+// @route PUT /api/reports/:id/restore
+// @access Private/Admin
+const restoreReport = asyncHandler(async (req, res) => {
+  const rep = await Report.findById(req.params.id);
+  if (!rep) {
+    res.status(404);
+    throw new Error('Report not found');
+  }
+  rep.isArchived = false;
+  const updated = await rep.save();
+  io.emit('reportRestored', updated);
+  res.json(updated);
+});
+
 module.exports = {
   createReport,
   listReports,
   getReportById,
   updateReportStatus,
   deleteReport,
+  getCurrentReports,
+  getArchivedReports,
+  archiveReport,
+  restoreReport,
 };

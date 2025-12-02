@@ -21,6 +21,8 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
   final RealtimeService _realtimeService = RealtimeService();
   final AutosaveService _autosaveService = AutosaveService();
 
+  String _statusFilter = 'all'; // all, pending, in_progress, completed
+
   @override
   void initState() {
     super.initState();
@@ -94,92 +96,128 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
             return Center(child: Text('Error: ${snapshot.error}'));
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return const Center(child: Text('No tasks assigned.'));
-          } else {
-            return ListView.builder(
-              itemCount: snapshot.data!.length,
-              itemBuilder: (context, index) {
-                final task = snapshot.data![index];
-                final isCompleted = task.status == 'completed';
-                return GestureDetector(
-                  onTap: isCompleted
-                      ? null
-                      : () => _completeTaskWithReport(task),
-                  child: Card(
-                    margin: const EdgeInsets.all(8.0),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            task.title,
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              decoration: isCompleted
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(task.description),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}',
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Text(
-                                'Status: ',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Chip(
-                                label: Text(task.status),
-                                backgroundColor: task.status == 'completed'
-                                    ? Colors.green[100]
-                                    : (task.status == 'in_progress'
-                                          ? Colors.orange[100]
-                                          : Colors.blue[100]),
-                                labelStyle: TextStyle(
-                                  color: task.status == 'completed'
-                                      ? Colors.green[900]
-                                      : (task.status == 'in_progress'
-                                            ? Colors.orange[900]
-                                            : Colors.blue[900]),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (task.assignedToMultiple.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Assigned to:',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            Wrap(
-                              spacing: 4,
-                              children: task.assignedToMultiple
-                                  .map(
-                                    (user) => Chip(
-                                      label: Text(user.name),
-                                      padding: EdgeInsets.zero,
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            );
           }
+
+          final tasks = snapshot.data!
+              .where((t) => !t.isArchived)
+              .where((t) => _statusFilter == 'all' ? true : t.status == _statusFilter)
+              .toList();
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('All'),
+                      selected: _statusFilter == 'all',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() => _statusFilter = 'all');
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Pending'),
+                      selected: _statusFilter == 'pending',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() => _statusFilter = 'pending');
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('In Progress'),
+                      selected: _statusFilter == 'in_progress',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() => _statusFilter = 'in_progress');
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Completed'),
+                      selected: _statusFilter == 'completed',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() => _statusFilter = 'completed');
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              if (tasks.isEmpty)
+                const Expanded(
+                  child: Center(child: Text('No tasks match this filter.')),
+                )
+              else
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: tasks.length,
+                    itemBuilder: (context, index) {
+                      final task = tasks[index];
+                      final isCompleted = task.status == 'completed';
+                      return GestureDetector(
+                        onTap: isCompleted ? null : () => _completeTaskWithReport(task),
+                        child: Card(
+                          margin: const EdgeInsets.all(8.0),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  task.title,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    decoration: isCompleted ? TextDecoration.lineThrough : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(task.description),
+                                const SizedBox(height: 8),
+                                Text('Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}'),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    const Text('Status: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                    Chip(
+                                      label: Text(task.status),
+                                      backgroundColor: task.status == 'completed'
+                                          ? Colors.green[100]
+                                          : (task.status == 'in_progress' ? Colors.orange[100] : Colors.blue[100]),
+                                      labelStyle: TextStyle(
+                                        color: task.status == 'completed'
+                                            ? Colors.green[900]
+                                            : (task.status == 'in_progress' ? Colors.orange[900] : Colors.blue[900]),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (task.assignedToMultiple.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  const Text('Assigned to:', style: TextStyle(fontWeight: FontWeight.w600)),
+                                  Wrap(
+                                    spacing: 4,
+                                    children: task.assignedToMultiple
+                                        .map((user) => Chip(
+                                          label: Text(user.name),
+                                          padding: EdgeInsets.zero,
+                                          visualDensity: VisualDensity.compact,
+                                        ))
+                                        .toList(),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          );
         },
       ),
     );

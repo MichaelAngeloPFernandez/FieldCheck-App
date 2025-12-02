@@ -28,6 +28,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   final RealtimeService _realtimeService = RealtimeService();
   bool _isSubmitting = false;
   bool _hasUnsavedChanges = false;
+  bool _statusMarkedInProgress = false;
   Timer? _autosaveTimer;
 
   @override
@@ -49,11 +50,35 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       if (_textController.text.isEmpty) return;
 
       _hasUnsavedChanges = true;
+
+      // Mark task as in_progress on first keystroke (if not already marked)
+      if (!_statusMarkedInProgress && widget.task.status == 'pending' && widget.task.userTaskId != null) {
+        _statusMarkedInProgress = true;
+        _markTaskInProgress();
+      }
+
       _autosaveTimer?.cancel();
       _autosaveTimer = Timer(const Duration(seconds: 2), () {
         _saveToAutosave();
       });
     });
+  }
+
+  Future<void> _markTaskInProgress() async {
+    try {
+      await TaskService().updateUserTaskStatus(widget.task.userTaskId!, 'in_progress');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Task marked as in progress'),
+            duration: Duration(seconds: 1),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error marking task as in_progress: $e');
+    }
   }
 
   Future<void> _loadAutosavedData() async {

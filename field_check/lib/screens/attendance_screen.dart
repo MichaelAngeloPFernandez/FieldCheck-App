@@ -47,6 +47,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Geofence? _nearestGeofence;
   StreamSubscription? _geofenceStatusSubscription;
   double? _currentDistanceMeters;
+  DateTime? _lastLocationUpdate;
   
   @override
   void initState() {
@@ -98,6 +99,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _locationErrorMessage = null;
         _fallbackLat = null;
         _fallbackLng = null;
+        _lastLocationUpdate = DateTime.now();
       });
 
       // Persist last known lat/lng for web fallback
@@ -191,6 +193,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _fallbackLng = null;
         _locationError = false;
         _locationErrorMessage = null;
+        _lastLocationUpdate = DateTime.now();
       });
   
       // Persist last known lat/lng for web fallback
@@ -242,6 +245,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Future<void> _toggleAttendance() async {
+    // Refresh location if we have no position yet or the last update is stale
+    final now = DateTime.now();
+    if (_enableLocationTrackingAdmin &&
+        (_userPosition == null ||
+            _lastLocationUpdate == null ||
+            now.difference(_lastLocationUpdate!).inSeconds > 15)) {
+      await _updateLocationAndGeofenceStatus();
+    }
+
     // Admin-enforced: block offline check if not allowed
     if (!_isOnline && !_allowOfflineModeAdmin) {
       _showOfflineNotAllowedDialog();

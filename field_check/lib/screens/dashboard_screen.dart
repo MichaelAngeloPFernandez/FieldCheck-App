@@ -10,9 +10,14 @@ import 'package:field_check/screens/login_screen.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
+import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/utils/logger.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final int? initialIndex;
+  
+  const DashboardScreen({super.key, this.initialIndex});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -30,6 +35,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    // Set initial index if provided (from drawer navigation)
+    if (widget.initialIndex != null) {
+      _selectedIndex = widget.initialIndex!;
+    }
     _loadUserId();
     _initServices();
   }
@@ -46,19 +55,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadUserId() async {
     try {
+      AppLogger.info(AppLogger.tagUI, 'Loading user profile...');
       final profile = await _userService.getProfile();
       if (!mounted) return;
       setState(() {
         _userModelId = profile.id;
         _loadingUserId = false;
       });
+      AppLogger.success(AppLogger.tagUI, 'User profile loaded: ${profile.id}');
     } catch (e) {
+      AppLogger.error(AppLogger.tagUI, 'Failed to load user profile', e);
       if (!mounted) return;
       setState(() {
         _loadingUserId = false;
       });
     }
   }
+
+  // Navigation labels for better debugging
+  static const List<String> _navLabels = [
+    'Attendance',
+    'Map',
+    'Profile',
+    'History',
+    'Settings',
+    'Tasks',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -69,38 +91,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const HistoryScreen(),
       const SettingsScreen(),
       _loadingUserId
-          ? const Center(child: CircularProgressIndicator())
+          ? AppWidgets.loadingIndicator(message: 'Loading tasks...')
           : (_userModelId == null
-                ? const Center(child: Text('Failed to load user ID'))
+                ? AppWidgets.emptyState(
+                    title: 'Error',
+                    message: 'Failed to load user information',
+                    icon: Icons.error_outline,
+                  )
                 : EmployeeTaskListScreen(userModelId: _userModelId!)),
     ];
 
     return Scaffold(
       appBar: AppBar(
+        elevation: 0,
         leading: _selectedIndex != 0
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
+                tooltip: 'Back to Attendance',
                 onPressed: () {
+                  AppLogger.info(AppLogger.tagNavigation, 'Navigating back to Attendance');
                   setState(() {
                     _selectedIndex = 0;
                   });
                 },
               )
             : null,
-        title: const Text('FieldCheck'),
+        title: Text(
+          _navLabels[_selectedIndex],
+          style: AppTheme.headingSm,
+        ),
         actions: [
           if (_isOfflineMode)
-            const Padding(
-              padding: EdgeInsets.only(right: 16.0),
-              child: Icon(Icons.cloud_off, color: Colors.white),
+            Tooltip(
+              message: 'Offline mode - changes will sync when online',
+              child: Padding(
+                padding: const EdgeInsets.only(right: AppTheme.lg),
+                child: Center(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cloud_off, size: 20),
+                      const SizedBox(width: AppTheme.sm),
+                      Text(
+                        'Offline',
+                        style: AppTheme.labelMd.copyWith(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout),
             onPressed: () async {
+              AppLogger.info(AppLogger.tagAuth, 'User logout initiated');
               try {
                 await _userService.logout();
-              } catch (_) {}
+              } catch (e) {
+                AppLogger.warning(AppLogger.tagAuth, 'Logout error (non-critical)', e);
+              }
               if (!mounted) return;
               Navigator.pushAndRemoveUntil(
                 context,
@@ -115,6 +164,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
+          AppLogger.debug(
+            AppLogger.tagNavigation,
+            'Navigation: ${_navLabels[_selectedIndex]} → ${_navLabels[index]}',
+          );
           setState(() {
             _selectedIndex = index;
           });
@@ -124,15 +177,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.location_on),
             label: 'Attendance',
+            tooltip: 'Check in/out',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Map'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.map),
+            label: 'Map',
+            tooltip: 'View geofences',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+            tooltip: 'User profile',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: 'History',
+            tooltip: 'Attendance history',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: 'Settings',
+            tooltip: 'App settings',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.task), label: 'Tasks'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.task),
+            label: 'Tasks',
+            tooltip: 'Task list',
+          ),
         ],
       ),
     );

@@ -45,6 +45,8 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   double? _currentDistanceMeters;
   String? _userModelId;
 
+  DateTime? _lastLocationUpdate;
+
   Timer? _locationUpdateTimer;
   StreamSubscription<Map<String, dynamic>>? _attendanceSubscription;
 
@@ -63,7 +65,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   }
 
   Future<void> _initializeServices() async {
-    await _realtimeService.initialize();
+    // Initialize realtime service in background (don't block UI)
+    _realtimeService.initialize().ignore();
+    
     await _autosaveService.initialize();
 
     // Listen for real-time attendance updates
@@ -157,6 +161,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
     try {
       _userPosition = await _locationService.getCurrentLocation();
+      _lastLocationUpdate = DateTime.now();
       await _updateGeofenceStatus();
     } catch (e) {
       debugPrint('Error getting location: $e');
@@ -175,15 +180,46 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
   Future<void> _updateLocation() async {
     try {
+      setState(() {
+        _isLoading = true;
+      });
+      
       final position = await _locationService.getCurrentLocation();
       if (mounted) {
         setState(() {
           _userPosition = position;
+          _lastLocationUpdate = DateTime.now();
+          _isLoading = false;
         });
         await _updateGeofenceStatus();
+        
+        // Show success feedback
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Location updated: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)} (Accuracy: ${position.accuracy.toStringAsFixed(1)}m)',
+              ),
+              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('Error updating location: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update location: $e'),
+            duration: const Duration(seconds: 3),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -236,6 +272,14 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   }
 
   Future<void> _toggleAttendance() async {
+    // Ensure we are using a fresh location before checking geofence status
+    final now = DateTime.now();
+    if (_userPosition == null ||
+        _lastLocationUpdate == null ||
+        now.difference(_lastLocationUpdate!).inSeconds > 15) {
+      await _updateLocation();
+    }
+
     if (!_isWithinAnyGeofence) {
       _showGeofenceErrorDialog();
       return;

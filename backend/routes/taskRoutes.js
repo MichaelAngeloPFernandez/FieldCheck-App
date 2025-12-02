@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const {
+  getTask,
   getTasks,
+  getCurrentTasks,
+  getArchivedTasks,
   createTask,
   updateTask,
   deleteTask,
@@ -10,21 +13,29 @@ const {
   assignTaskToUser,
   assignTaskToMultipleUsers,
   updateUserTaskStatus,
+  archiveTask,
+  restoreTask,
 } = require('../controllers/taskController');
+
 const { protect, admin } = require('../middleware/authMiddleware');
 
 // List and create tasks
 router.get('/', protect, getTasks);
 router.post('/', protect, admin, createTask);
 
-// User task operations (must be BEFORE /:id routes to avoid conflicts)
+// Specific routes (must be BEFORE /:id routes to avoid conflicts)
 router.get('/user/:userId', protect, getUserTasks);
 router.get('/assigned/:userId', protect, getAssignedTasks);
+router.get('/current', protect, admin, getCurrentTasks);
+router.get('/archived', protect, admin, getArchivedTasks);
 router.post('/:taskId/assign/:userId', protect, admin, assignTaskToUser);
 router.post('/:taskId/assign-multiple', protect, admin, assignTaskToMultipleUsers);
 router.put('/user-task/:userTaskId/status', protect, updateUserTaskStatus);
+router.put('/:id/archive', protect, admin, archiveTask);
+router.put('/:id/restore', protect, admin, restoreTask);
 
-// Update/delete specific task (must be AFTER specific routes)
+// Generic /:id routes (must be LAST to avoid conflicts)
+router.get('/:id', protect, getTask);
 router.put('/:id', protect, admin, updateTask);
 router.delete('/:id', protect, admin, deleteTask);
 

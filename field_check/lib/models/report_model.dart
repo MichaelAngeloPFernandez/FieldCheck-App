@@ -12,6 +12,7 @@ class ReportModel {
   final String? employeeEmail;
   final String? taskTitle;
   final String? geofenceName;
+  final bool isArchived;
 
   ReportModel({
     required this.id,
@@ -27,6 +28,7 @@ class ReportModel {
     this.employeeEmail,
     this.taskTitle,
     this.geofenceName,
+    this.isArchived = false,
   });
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
@@ -47,6 +49,7 @@ class ReportModel {
       employeeEmail: employee is Map ? employee['email'] : null,
       taskTitle: task is Map ? task['title'] : null,
       geofenceName: geofence is Map ? geofence['name'] : null,
+      isArchived: json['isArchived'] ?? false,
     );
   }
 }

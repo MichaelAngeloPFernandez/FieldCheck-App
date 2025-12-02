@@ -19,7 +19,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   final TaskService _taskService = TaskService();
   final UserService _userService = UserService();
   List<Task> _tasks = [];
+  List<Task> _archivedTasks = [];
   bool _isLoading = true;
+  bool _showArchived = false;
   late io.Socket _socket;
 
   @override
@@ -27,6 +29,44 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     super.initState();
     _fetchTasks();
     _initSocket();
+  }
+
+  Future<void> _archiveTask(Task task) async {
+    try {
+      await _taskService.archiveTask(task.id);
+      await _fetchTasks();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Task archived')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error archiving task: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to archive task: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _restoreTask(Task task) async {
+    try {
+      await _taskService.restoreTask(task.id);
+      await _fetchTasks();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Task restored')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error restoring task: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to restore task: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -93,9 +133,11 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
   Future<void> _fetchTasks() async {
     try {
-      final tasks = await _taskService.fetchAllTasks();
+      final current = await _taskService.getCurrentTasks();
+      final archived = await _taskService.getArchivedTasks();
       setState(() {
-        _tasks = tasks;
+        _tasks = current;
+        _archivedTasks = archived;
         _isLoading = false;
       });
     } catch (e) {
@@ -485,40 +527,94 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _tasks.isEmpty
-          ? const Center(child: Text('No tasks available.'))
-          : ListView.builder(
-              itemCount: _tasks.length,
-              itemBuilder: (context, index) {
-                final task = _tasks[index];
-                return Card(
-                  margin: const EdgeInsets.all(8.0),
-                  child: ListTile(
-                    title: Text(task.title),
-                    subtitle: Text(task.description),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _editTask(task),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.assignment_ind),
-                          onPressed: () => _assignTask(task),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete),
-                          onPressed: () => _deleteTask(task.id),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ChoiceChip(
+                  label: const Text('Current Tasks'),
+                  selected: !_showArchived,
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() {
+                      _showArchived = false;
+                    });
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Archived Tasks'),
+                  selected: _showArchived,
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() {
+                      _showArchived = true;
+                    });
+                  },
+                ),
+              ],
             ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : (_showArchived ? _archivedTasks : _tasks).isEmpty
+                    ? Center(
+                        child: Text(
+                          _showArchived
+                              ? 'No archived tasks.'
+                              : 'No tasks available.',
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount:
+                            _showArchived ? _archivedTasks.length : _tasks.length,
+                        itemBuilder: (context, index) {
+                          final task =
+                              _showArchived ? _archivedTasks[index] : _tasks[index];
+                          return Card(
+                            margin: const EdgeInsets.all(8.0),
+                            child: ListTile(
+                              title: Text(task.title),
+                              subtitle: Text(task.description),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!_showArchived) ...[
+                                    IconButton(
+                                      icon: const Icon(Icons.edit),
+                                      onPressed: () => _editTask(task),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.assignment_ind),
+                                      onPressed: () => _assignTask(task),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.archive),
+                                      onPressed: () => _archiveTask(task),
+                                    ),
+                                  ] else ...[
+                                    IconButton(
+                                      icon: const Icon(Icons.unarchive),
+                                      onPressed: () => _restoreTask(task),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete),
+                                      onPressed: () => _deleteTask(task.id),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
     );
   }
 }

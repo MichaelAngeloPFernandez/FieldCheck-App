@@ -19,13 +19,51 @@ function toTaskJson(doc, userTaskId) {
     geofenceId: doc.geofenceId?.toString() || undefined,
     latitude: doc.latitude,
     longitude: doc.longitude,
+    isArchived: !!doc.isArchived,
   };
 }
 
+// @route GET /api/tasks/:id
+// @access Private
+const getTask = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const task = await Task.findById(id);
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+  res.json(toTaskJson(task));
+});
+
 // @route GET /api/tasks
 // @access Private (admin or employee)
+// Optional query: archived=true|false (default false)
 const getTasks = asyncHandler(async (req, res) => {
-  const tasks = await Task.find({}).sort({ createdAt: -1 });
+  const { archived } = req.query;
+
+  const filter = {};
+  if (archived === 'true') {
+    filter.isArchived = true;
+  } else if (archived === 'false' || archived === undefined) {
+    // Default to current (non-archived) tasks when not specified
+    filter.isArchived = { $ne: true };
+  }
+
+  const tasks = await Task.find(filter).sort({ createdAt: -1 });
+  res.json(tasks.map((t) => toTaskJson(t)));
+});
+
+// @route GET /api/tasks/current
+// @access Private/Admin
+const getCurrentTasks = asyncHandler(async (req, res) => {
+  const tasks = await Task.find({ isArchived: { $ne: true } }).sort({ createdAt: -1 });
+  res.json(tasks.map((t) => toTaskJson(t)));
+});
+
+// @route GET /api/tasks/archived
+// @access Private/Admin
+const getArchivedTasks = asyncHandler(async (req, res) => {
+  const tasks = await Task.find({ isArchived: true }).sort({ createdAt: -1 });
   res.json(tasks.map((t) => toTaskJson(t)));
 });
 
@@ -86,6 +124,36 @@ const deleteTask = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+// @route PUT /api/tasks/:id/archive
+// @access Private/Admin
+const archiveTask = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const task = await Task.findById(id);
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+  task.isArchived = true;
+  const updated = await task.save();
+  io.emit('taskArchived', toTaskJson(updated));
+  res.json(toTaskJson(updated));
+});
+
+// @route PUT /api/tasks/:id/restore
+// @access Private/Admin
+const restoreTask = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const task = await Task.findById(id);
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+  task.isArchived = false;
+  const updated = await task.save();
+  io.emit('taskRestored', toTaskJson(updated));
+  res.json(toTaskJson(updated));
+});
+
 // @route GET /api/tasks/user/:userId
 // @access Private
 const getUserTasks = asyncHandler(async (req, res) => {
@@ -111,7 +179,7 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const assignments = await UserTask.find({ userId });
   const taskIds = assignments.map((a) => a.taskId);
-  const tasks = await Task.find({ _id: { $in: taskIds } });
+  const tasks = await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } });
   const userTaskIdMap = Object.fromEntries(assignments.map((a) => [a.taskId.toString(), a._id.toString()]));
   res.json(tasks.map((t) => toTaskJson(t, userTaskIdMap[t._id.toString()])));
 });
@@ -312,7 +380,10 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  getTask,
   getTasks,
+  getCurrentTasks,
+  getArchivedTasks,
   createTask,
   updateTask,
   deleteTask,
@@ -321,4 +392,6 @@ module.exports = {
   assignTaskToUser,
   assignTaskToMultipleUsers,
   updateUserTaskStatus,
+  archiveTask,
+  restoreTask,
 };
