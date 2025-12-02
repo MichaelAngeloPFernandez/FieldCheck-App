@@ -300,43 +300,59 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildStatsGrid() {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      childAspectRatio: 0.8,
-      children: [
-        _buildStatCard(
-          title: 'Total Employees',
-          value: _dashboardStats!.users.totalEmployees.toString(),
-          icon: Icons.people,
-          color: Colors.blue,
-          subtitle: '${_dashboardStats!.users.activeEmployees} active',
-        ),
-        _buildStatCard(
-          title: 'Geofences',
-          value: _dashboardStats!.geofences.total.toString(),
-          icon: Icons.location_on,
-          color: Colors.green,
-          subtitle: '${_dashboardStats!.geofences.active} active',
-        ),
-        _buildStatCard(
-          title: 'Tasks',
-          value: _dashboardStats!.tasks.total.toString(),
-          icon: Icons.task,
-          color: Colors.orange,
-          subtitle: '${_dashboardStats!.tasks.pending} pending',
-        ),
-        _buildStatCard(
-          title: 'Today\'s Attendance',
-          value: _dashboardStats!.attendance.today.toString(),
-          icon: Icons.check_circle,
-          color: Colors.purple,
-          subtitle: '${_dashboardStats!.attendance.todayCheckIns} check-ins',
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final itemWidth = (availableWidth - 16) / 2; // 16 = run spacing
+
+        return Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            SizedBox(
+              width: itemWidth,
+              child: _buildStatCard(
+                title: 'Total Employees',
+                value: _dashboardStats!.users.totalEmployees.toString(),
+                icon: Icons.people,
+                color: Colors.blue,
+                subtitle: '${_dashboardStats!.users.activeEmployees} active',
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _buildStatCard(
+                title: 'Geofences',
+                value: _dashboardStats!.geofences.total.toString(),
+                icon: Icons.location_on,
+                color: Colors.green,
+                subtitle: '${_dashboardStats!.geofences.active} active',
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _buildStatCard(
+                title: 'Tasks',
+                value: _dashboardStats!.tasks.total.toString(),
+                icon: Icons.task,
+                color: Colors.orange,
+                subtitle: '${_dashboardStats!.tasks.pending} pending',
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _buildStatCard(
+                title: 'Today\'s Attendance',
+                value: _dashboardStats!.attendance.today.toString(),
+                icon: Icons.check_circle,
+                color: Colors.purple,
+                subtitle:
+                    '${_dashboardStats!.attendance.todayCheckIns} check-ins',
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
