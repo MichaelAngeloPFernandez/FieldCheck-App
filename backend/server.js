@@ -8,6 +8,10 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const morgan = require('morgan');
+const jwt = require('jsonwebtoken');
+const path = require('path');
+const User = require('./models/User');
+const EmployeeLocation = require('./models/EmployeeLocation');
 
 console.log('🚀 Starting server initialization...');
 
@@ -31,10 +35,25 @@ console.log('🔌 Socket.io initialized');
 
 // Track employee locations for real-time dashboard updates
 const employeeLocations = new Map(); // { userId: { lat, lng, accuracy, timestamp } }
+module.exports.employeeLocations = employeeLocations;
 
 // --- Presence tracking & real-time location monitoring ---
 let lastBroadcastCount = 0;
 io.on('connection', (socket) => {
+  let userIdFromToken = socket.id;
+  try {
+    const authHeader =
+      (socket.handshake.headers && socket.handshake.headers.authorization) ||
+      (socket.handshake.headers && socket.handshake.headers.Authorization);
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded && decoded.id) {
+        userIdFromToken = decoded.id;
+      }
+    }
+  } catch (_) {}
+
   try {
     const count = io.of('/').sockets.size;
     if (count !== lastBroadcastCount) {
@@ -47,7 +66,7 @@ io.on('connection', (socket) => {
   socket.on('employeeLocationUpdate', (data, callback) => {
     try {
       const { latitude, longitude, accuracy, timestamp } = data;
-      const userId = socket.handshake.auth?.userId || socket.id;
+      const userId = userIdFromToken;
       
       // Store latest location instantly
       employeeLocations.set(userId, {
@@ -56,6 +75,17 @@ io.on('connection', (socket) => {
         accuracy: accuracy,
         timestamp: timestamp,
       });
+
+      if (typeof userId === 'string' && userId.length === 24) {
+        const locationDoc = {
+          user: userId,
+          latitude,
+          longitude,
+          accuracy,
+          timestamp: timestamp ? new Date(timestamp) : new Date(),
+        };
+        EmployeeLocation.create(locationDoc).catch(() => {});
+      }
 
       // Send immediate ACK for low-latency feedback
       if (typeof callback === 'function') {
@@ -124,6 +154,8 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const exportRoutes = require('./routes/exportRoutes');
 const taskRoutes = require('./routes/taskRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const availabilityRoutes = require('./routes/availabilityRoutes');
 
 app.use(express.json({ limit: '200kb' })); // To parse JSON bodies (limited)
 app.use(cors({
@@ -131,6 +163,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// Serve uploaded files (e.g., report attachments)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -148,6 +183,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/availability', availabilityRoutes);
 
 // Offline sync endpoint
 const { protect } = require('./middleware/authMiddleware');

@@ -10,15 +10,17 @@ class RealtimeService {
   RealtimeService._internal();
 
   io.Socket? _socket;
-  final StreamController<Map<String, dynamic>> _eventController = 
+  final StreamController<Map<String, dynamic>> _eventController =
       StreamController<Map<String, dynamic>>.broadcast();
-  final StreamController<int> _onlineCountController = 
+  final StreamController<int> _onlineCountController =
       StreamController<int>.broadcast();
-  final StreamController<Map<String, dynamic>> _attendanceController = 
+  final StreamController<Map<String, dynamic>> _attendanceController =
       StreamController<Map<String, dynamic>>.broadcast();
-  final StreamController<Map<String, dynamic>> _taskController = 
+  final StreamController<Map<String, dynamic>> _taskController =
       StreamController<Map<String, dynamic>>.broadcast();
-  final StreamController<Map<String, dynamic>> _userController = 
+  final StreamController<Map<String, dynamic>> _userController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _locationController =
       StreamController<Map<String, dynamic>>.broadcast();
 
   bool _isConnected = false;
@@ -28,9 +30,11 @@ class RealtimeService {
 
   Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
   Stream<int> get onlineCountStream => _onlineCountController.stream;
-  Stream<Map<String, dynamic>> get attendanceStream => _attendanceController.stream;
+  Stream<Map<String, dynamic>> get attendanceStream =>
+      _attendanceController.stream;
   Stream<Map<String, dynamic>> get taskStream => _taskController.stream;
   Stream<Map<String, dynamic>> get userStream => _userController.stream;
+  Stream<Map<String, dynamic>> get locationStream => _locationController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -42,7 +46,7 @@ class RealtimeService {
       final options = io.OptionBuilder()
           .setTransports(['websocket'])
           .setExtraHeaders({
-            if (token != null) 'Authorization': 'Bearer $token'
+            if (token != null) 'Authorization': 'Bearer $token',
           })
           .setTimeout(20000)
           .build();
@@ -73,7 +77,6 @@ class RealtimeService {
 
       // Listen for real-time events
       _setupEventListeners();
-
     } catch (e) {
       print('RealtimeService: Failed to initialize: $e');
     }
@@ -96,13 +99,21 @@ class RealtimeService {
     _socket!.on('newAttendanceRecord', (data) {
       print('RealtimeService: New attendance record: $data');
       _attendanceController.add({'type': 'new', 'data': data});
-      _eventController.add({'type': 'attendance', 'action': 'new', 'data': data});
+      _eventController.add({
+        'type': 'attendance',
+        'action': 'new',
+        'data': data,
+      });
     });
 
     _socket!.on('updatedAttendanceRecord', (data) {
       print('RealtimeService: Updated attendance record: $data');
       _attendanceController.add({'type': 'updated', 'data': data});
-      _eventController.add({'type': 'attendance', 'action': 'updated', 'data': data});
+      _eventController.add({
+        'type': 'attendance',
+        'action': 'updated',
+        'data': data,
+      });
     });
 
     // Task events
@@ -127,7 +138,28 @@ class RealtimeService {
     _socket!.on('updatedUserTaskStatus', (data) {
       print('RealtimeService: Updated user task status: $data');
       _taskController.add({'type': 'status_updated', 'data': data});
-      _eventController.add({'type': 'task', 'action': 'status_updated', 'data': data});
+      _eventController.add({
+        'type': 'task',
+        'action': 'status_updated',
+        'data': data,
+      });
+    });
+
+    // Live employee locations (for admin world map / tracking)
+    _socket!.on('liveEmployeeLocation', (data) {
+      print('RealtimeService: Live employee location: $data');
+      try {
+        if (data is Map<String, dynamic>) {
+          _locationController.add(data);
+          _eventController.add({
+            'type': 'location',
+            'action': 'live',
+            'data': data,
+          });
+        }
+      } catch (e) {
+        print('Error processing liveEmployeeLocation: $e');
+      }
     });
 
     // Report events
@@ -138,7 +170,11 @@ class RealtimeService {
 
     _socket!.on('updatedReport', (data) {
       print('RealtimeService: Updated report: $data');
-      _eventController.add({'type': 'report', 'action': 'updated', 'data': data});
+      _eventController.add({
+        'type': 'report',
+        'action': 'updated',
+        'data': data,
+      });
     });
 
     // User account events for real-time sync
@@ -157,13 +193,21 @@ class RealtimeService {
     _socket!.on('userDeactivated', (data) {
       print('RealtimeService: User deactivated: $data');
       _userController.add({'type': 'deactivated', 'data': data});
-      _eventController.add({'type': 'user', 'action': 'deactivated', 'data': data});
+      _eventController.add({
+        'type': 'user',
+        'action': 'deactivated',
+        'data': data,
+      });
     });
 
     _socket!.on('userReactivated', (data) {
       print('RealtimeService: User reactivated: $data');
       _userController.add({'type': 'reactivated', 'data': data});
-      _eventController.add({'type': 'user', 'action': 'reactivated', 'data': data});
+      _eventController.add({
+        'type': 'user',
+        'action': 'reactivated',
+        'data': data,
+      });
     });
   }
 
@@ -176,7 +220,9 @@ class RealtimeService {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(seconds: 2 * (_reconnectAttempts + 1)), () {
       _reconnectAttempts++;
-      print('RealtimeService: Attempting reconnection $_reconnectAttempts/$maxReconnectAttempts');
+      print(
+        'RealtimeService: Attempting reconnection $_reconnectAttempts/$maxReconnectAttempts',
+      );
       initialize();
     });
   }
@@ -215,5 +261,6 @@ class RealtimeService {
     _attendanceController.close();
     _taskController.close();
     _userController.close();
+    _locationController.close();
   }
 }

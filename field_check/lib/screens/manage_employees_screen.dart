@@ -178,6 +178,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     final nameController = TextEditingController();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
+    final phoneController = TextEditingController();
 
     final formKey = GlobalKey<FormState>();
     final result = await showDialog<bool>(
@@ -203,6 +204,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                   validator: (v) => (v == null || !v.contains('@'))
                       ? 'Enter a valid email'
                       : null,
+                ),
+                TextFormField(
+                  controller: phoneController,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone (SMS)',
+                    hintText: '+63...',
+                  ),
+                  keyboardType: TextInputType.phone,
                 ),
                 TextFormField(
                   controller: passwordController,
@@ -241,6 +250,9 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           emailController.text.trim(),
           passwordController.text,
           role: 'employee',
+          phone: phoneController.text.trim().isEmpty
+              ? null
+              : phoneController.text.trim(),
         );
         if (!mounted) return;
         ScaffoldMessenger.of(
@@ -329,6 +341,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
   Future<void> _edit(UserModel user) async {
     final nameController = TextEditingController(text: user.name);
     final emailController = TextEditingController(text: user.email);
+    final phoneController = TextEditingController(text: user.phone ?? '');
     String role = user.role;
     final formKey = GlobalKey<FormState>();
 
@@ -355,6 +368,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                   validator: (v) => (v == null || !v.contains('@'))
                       ? 'Enter a valid email'
                       : null,
+                ),
+                TextFormField(
+                  controller: phoneController,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone (SMS)',
+                    hintText: '+63...',
+                  ),
+                  keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
@@ -397,6 +418,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           name: nameController.text.trim(),
           email: emailController.text.trim(),
           role: role,
+          phone: phoneController.text.trim(),
         );
         if (!mounted) return;
         ScaffoldMessenger.of(
@@ -635,7 +657,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                             : const CircleAvatar(child: Icon(Icons.person)),
                         title: Text(user.name),
                         subtitle: Text(
-                          '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}',
+                          '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),

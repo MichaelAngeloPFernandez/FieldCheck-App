@@ -14,6 +14,11 @@ const createReport = asyncHandler(async (req, res) => {
     throw new Error('Invalid report type');
   }
 
+  if (content && typeof content === 'string' && content.length > 10000) {
+    res.status(400);
+    throw new Error('Report content is too long (max 10000 characters)');
+  }
+
   // Validate user is authenticated
   if (!req.user || !req.user._id) {
     res.status(401);

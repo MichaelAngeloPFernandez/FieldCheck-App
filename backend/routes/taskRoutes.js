@@ -15,6 +15,7 @@ const {
   updateUserTaskStatus,
   archiveTask,
   restoreTask,
+  escalateTask,
 } = require('../controllers/taskController');
 
 const { protect, admin } = require('../middleware/authMiddleware');
@@ -33,6 +34,7 @@ router.post('/:taskId/assign-multiple', protect, admin, assignTaskToMultipleUser
 router.put('/user-task/:userTaskId/status', protect, updateUserTaskStatus);
 router.put('/:id/archive', protect, admin, archiveTask);
 router.put('/:id/restore', protect, admin, restoreTask);
+router.post('/:id/escalate', protect, admin, escalateTask);
 
 // Generic /:id routes (must be LAST to avoid conflicts)
 router.get('/:id', protect, getTask);

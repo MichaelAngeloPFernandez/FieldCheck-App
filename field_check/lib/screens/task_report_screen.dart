@@ -52,7 +52,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       _hasUnsavedChanges = true;
 
       // Mark task as in_progress on first keystroke (if not already marked)
-      if (!_statusMarkedInProgress && widget.task.status == 'pending' && widget.task.userTaskId != null) {
+      if (!_statusMarkedInProgress &&
+          widget.task.status == 'pending' &&
+          widget.task.userTaskId != null) {
         _statusMarkedInProgress = true;
         _markTaskInProgress();
       }
@@ -66,7 +68,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
   Future<void> _markTaskInProgress() async {
     try {
-      await TaskService().updateUserTaskStatus(widget.task.userTaskId!, 'in_progress');
+      await TaskService().updateUserTaskStatus(
+        widget.task.userTaskId!,
+        'in_progress',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -195,11 +200,28 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       // Get the text content
       final content = _textController.text.trim();
 
+      // Upload attachments (if any) and collect their URLs
+      final List<String> attachmentPaths = [];
+      for (final file in _selectedFiles) {
+        final filePath = file.path;
+        if (filePath == null || filePath.isEmpty) {
+          continue;
+        }
+        final uploadedPath = await ReportService().uploadAttachment(
+          filePath: filePath,
+          fileName: file.name,
+          taskId: widget.task.id,
+          employeeId: widget.employeeId,
+        );
+        attachmentPaths.add(uploadedPath);
+      }
+
       // Create the report
       await ReportService().createTaskReport(
         taskId: widget.task.id,
         employeeId: widget.employeeId,
         content: content,
+        attachments: attachmentPaths,
       );
 
       // Update task status

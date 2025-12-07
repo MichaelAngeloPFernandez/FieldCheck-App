@@ -68,6 +68,30 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     });
   }
 
+  double _statusToProgressValue(String status) {
+    switch (status) {
+      case 'completed':
+        return 1.0;
+      case 'in_progress':
+        return 0.5;
+      case 'pending':
+      default:
+        return 0.0;
+    }
+  }
+
+  String _statusToProgressLabel(String status) {
+    switch (status) {
+      case 'completed':
+        return '100%';
+      case 'in_progress':
+        return '50%';
+      case 'pending':
+      default:
+        return '0%';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -189,6 +213,35 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                                   const SizedBox(height: 8),
                                   Text(task.description),
                                   const SizedBox(height: 8),
+                                  if ((task.type != null &&
+                                          task.type!.isNotEmpty) ||
+                                      (task.difficulty != null &&
+                                          task.difficulty!.isNotEmpty))
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 8.0,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          if (task.type != null &&
+                                              task.type!.isNotEmpty)
+                                            Chip(
+                                              label: Text(task.type!),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                            ),
+                                          if (task.difficulty != null &&
+                                              task.difficulty!.isNotEmpty) ...[
+                                            const SizedBox(width: 4),
+                                            Chip(
+                                              label: Text(task.difficulty!),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
                                   Text(
                                     'Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}',
                                   ),
@@ -218,6 +271,19 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  LinearProgressIndicator(
+                                    value: _statusToProgressValue(task.status),
+                                    backgroundColor: Colors.grey[200],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Progress: ${_statusToProgressLabel(task.status)}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black54,
+                                    ),
                                   ),
                                   if (task.assignedToMultiple.isNotEmpty) ...[
                                     const SizedBox(height: 8),

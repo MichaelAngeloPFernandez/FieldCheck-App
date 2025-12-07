@@ -23,6 +23,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _usernameController;
+  late TextEditingController _phoneController;
 
   @override
   void initState() {
@@ -30,6 +31,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     _nameController = TextEditingController();
     _emailController = TextEditingController();
     _usernameController = TextEditingController();
+    _phoneController = TextEditingController();
     _loadUserData();
   }
 
@@ -38,6 +40,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _usernameController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -53,6 +56,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
           _nameController.text = profile.name;
           _emailController.text = profile.email;
           _usernameController.text = profile.username ?? '';
+          _phoneController.text = profile.phone ?? '';
           _isLoading = false;
         });
       }
@@ -77,6 +81,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         name: _nameController.text,
         email: _emailController.text,
         username: _usernameController.text,
+        phone: _phoneController.text,
       );
 
       if (mounted) {
@@ -140,6 +145,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   _nameController.text = _userProfile!.name;
                   _emailController.text = _userProfile!.email;
                   _usernameController.text = _userProfile!.username ?? '';
+                  _phoneController.text = _userProfile!.phone ?? '';
                 }
                 _isEditing = !_isEditing;
               });
@@ -354,6 +360,13 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                           'Username',
                           _usernameController,
                           Icons.account_box,
+                          _isEditing,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildProfileField(
+                          'Phone (SMS)',
+                          _phoneController,
+                          Icons.phone,
                           _isEditing,
                         ),
                         if (_isEditing) ...[

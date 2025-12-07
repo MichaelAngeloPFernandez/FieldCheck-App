@@ -51,6 +51,7 @@ const authUser = asyncHandler(async (req, res) => {
     name: user.name,
     username: user.username,
     email: user.email,
+    phone: user.phone,
     role: user.role,
     token: generateToken(user._id),
     refreshToken: generateRefreshToken(user._id, user.tokenVersion || 0),
@@ -61,7 +62,8 @@ const authUser = asyncHandler(async (req, res) => {
 // @route   POST /api/users
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, username, email, password, role } = req.body;
+  const { name, username, email, password, role, phone } = req.body;
+
   const io = require('../server').io;
 
   const emailStr = (email || '').toString().trim().toLowerCase();
@@ -89,6 +91,7 @@ const registerUser = asyncHandler(async (req, res) => {
     email: emailStr,
     password,
     role,
+    phone: phone || undefined,
     verificationToken,
     verificationTokenExpires: Date.now() + 3600000, // 1 hour
   });
@@ -115,6 +118,7 @@ const registerUser = asyncHandler(async (req, res) => {
       name: user.name,
       username: user.username,
       email: user.email,
+      phone: user.phone,
       role: user.role,
       token: generateToken(user._id),
       refreshToken: generateRefreshToken(user._id, user.tokenVersion || 0),
@@ -137,6 +141,7 @@ const registerUser = asyncHandler(async (req, res) => {
       name: user.name,
       username: user.username,
       email: user.email,
+      phone: user.phone,
       role: user.role,
       message: 'Verification email sent',
     });
@@ -242,7 +247,14 @@ const resetPassword = asyncHandler(async (req, res) => {
 const getUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (user) {
-    res.json({ _id: user._id, name: user.name, username: user.username, email: user.email, role: user.role });
+    res.json({
+      _id: user._id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+    });
   } else {
     res.status(404);
     throw new Error('User not found');
@@ -258,6 +270,9 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     user.name = req.body.name || user.name;
     user.username = (req.body.username || user.username || '').toString().trim().toLowerCase();
     user.email = (req.body.email || user.email || '').toString().trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(req.body, 'phone')) {
+      user.phone = req.body.phone;
+    }
     user.avatarUrl = req.body.avatarUrl || user.avatarUrl; // Update avatarUrl
 
     if (req.body.password) {
@@ -269,6 +284,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       name: updatedUser.name,
       username: updatedUser.username,
       email: updatedUser.email,
+      phone: updatedUser.phone,
       avatarUrl: updatedUser.avatarUrl, // Include avatarUrl in the response
       role: updatedUser.role,
       token: generateToken(updatedUser._id),
@@ -367,7 +383,7 @@ const getUsers = asyncHandler(async (req, res) => {
   if (role) {
     query.role = role;
   }
-  const users = await User.find(query).select('_id name username email role isActive isVerified');
+  const users = await User.find(query).select('_id name username email phone role isActive isVerified');
   res.json(users);
 });
 
@@ -383,10 +399,21 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
   user.name = req.body.name ?? user.name;
   user.username = (req.body.username ?? user.username ?? '').toString().trim().toLowerCase();
   user.email = (req.body.email ?? user.email ?? '').toString().trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(req.body, 'phone')) {
+    user.phone = req.body.phone;
+  }
   if (req.body.role) user.role = req.body.role;
   if (typeof req.body.isActive !== 'undefined') user.isActive = req.body.isActive;
   const updatedUser = await user.save();
-  res.json({ _id: updatedUser._id, name: updatedUser.name, username: updatedUser.username, email: updatedUser.email, role: updatedUser.role, isActive: updatedUser.isActive });
+  res.json({
+    _id: updatedUser._id,
+    name: updatedUser.name,
+    username: updatedUser.username,
+    email: updatedUser.email,
+    phone: updatedUser.phone,
+    role: updatedUser.role,
+    isActive: updatedUser.isActive,
+  });
 });
 
 // @desc    Import users from JSON (admin)
@@ -414,10 +441,11 @@ const importUsers = asyncHandler(async (req, res) => {
       const role = raw.role === 'admin' ? 'admin' : 'employee';
       const isActive = typeof raw.isActive === 'boolean' ? raw.isActive : true;
       const password = raw.password || 'Temp@123';
+      const phone = raw.phone && String(raw.phone).trim();
 
       const existing = await User.findOne({ email });
       if (!existing) {
-        await User.create({ name, username, email, password, role, isVerified: true, isActive });
+        await User.create({ name, username, email, password, role, isVerified: true, isActive, phone });
         result.created++;
       } else {
         existing.name = name ?? existing.name;
@@ -425,6 +453,7 @@ const importUsers = asyncHandler(async (req, res) => {
         if (raw.password) existing.password = raw.password; // will be hashed by pre-save
         if (raw.role) existing.role = role;
         if (typeof raw.isActive !== 'undefined') existing.isActive = isActive;
+        if (typeof phone !== 'undefined' && phone !== null) existing.phone = phone;
         await existing.save();
         result.updated++;
       }

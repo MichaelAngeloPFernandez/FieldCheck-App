@@ -19,7 +19,10 @@ class TaskService {
   /// Fetch non-archived (current) tasks
   Future<List<Task>> getCurrentTasks() async {
     final response = await http
-        .get(Uri.parse('$_baseUrl?archived=false'), headers: await _headers(jsonContent: false))
+        .get(
+          Uri.parse('$_baseUrl?archived=false'),
+          headers: await _headers(jsonContent: false),
+        )
         .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 200) {
@@ -33,7 +36,10 @@ class TaskService {
   /// Fetch archived tasks
   Future<List<Task>> getArchivedTasks() async {
     final response = await http
-        .get(Uri.parse('$_baseUrl?archived=true'), headers: await _headers(jsonContent: false))
+        .get(
+          Uri.parse('$_baseUrl?archived=true'),
+          headers: await _headers(jsonContent: false),
+        )
         .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 200) {
@@ -64,6 +70,8 @@ class TaskService {
       'dueDate': task.dueDate.toIso8601String(),
       'status': task.status,
       'geofenceId': task.geofenceId,
+      'type': task.type,
+      'difficulty': task.difficulty,
     };
     final response = await http.post(
       Uri.parse(_baseUrl),
@@ -85,6 +93,8 @@ class TaskService {
       'dueDate': task.dueDate.toIso8601String(),
       'status': task.status,
       'geofenceId': task.geofenceId,
+      'type': task.type,
+      'difficulty': task.difficulty,
     };
     final response = await http.put(
       Uri.parse('$_baseUrl/${task.id}'),
@@ -108,7 +118,7 @@ class TaskService {
     }
   }
 
-  Future<void> assignTaskToMultiple(
+  Future<Map<String, dynamic>> assignTaskToMultiple(
     String taskId,
     List<String> employeeIds,
   ) async {
@@ -120,12 +130,42 @@ class TaskService {
         )
         .timeout(const Duration(seconds: 30));
 
-    if (!(response.statusCode == 201 || response.statusCode == 200)) {
-      final errorMsg = response.body.isNotEmpty
-          ? response.body
-          : 'Failed to assign task to multiple employees';
-      throw Exception(errorMsg);
+    final bool ok = response.statusCode == 201 || response.statusCode == 200;
+
+    dynamic decoded;
+    if (response.body.isNotEmpty) {
+      try {
+        decoded = json.decode(response.body);
+      } catch (_) {
+        decoded = null;
+      }
     }
+
+    if (!ok) {
+      String message = 'Failed to assign task to multiple employees';
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['message'] is String) {
+          message = decoded['message'] as String;
+        } else if (decoded['summary'] is Map<String, dynamic>) {
+          final summary = decoded['summary'] as Map<String, dynamic>;
+          final total = summary['total'];
+          final failed = summary['failed'];
+          if (total is int && failed is int) {
+            message =
+                'Failed to assign task to $failed of $total employees (see details).';
+          }
+        }
+      } else if (response.body.isNotEmpty) {
+        message = response.body;
+      }
+      throw Exception(message);
+    }
+
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+
+    return <String, dynamic>{};
   }
 
   Future<UserTask> assignTaskToUser(String taskId, String userModelId) async {
@@ -216,4 +256,25 @@ class TaskService {
     }
   }
 
+  Future<Map<String, dynamic>> escalateTask(String taskId) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/$taskId/escalate'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to escalate task');
+    }
+
+    if (response.body.isEmpty) {
+      return <String, dynamic>{};
+    }
+
+    final decoded = json.decode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+
+    return <String, dynamic>{};
+  }
 }

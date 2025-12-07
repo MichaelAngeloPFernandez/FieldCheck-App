@@ -8,10 +8,16 @@
 
 const cron = require('node-cron');
 const User = require('../models/User');
+const Task = require('../models/Task');
+const UserTask = require('../models/UserTask');
+const notificationService = require('../services/notificationService');
 
 // Run daily cleanup at 2 AM (UTC)
 // Format: '0 2 * * *' = every day at 02:00
 const CLEANUP_SCHEDULE = '0 2 * * *';
+
+// Check for overdue tasks every 15 minutes
+const OVERDUE_TASK_SCHEDULE = '*/15 * * * *';
 
 // Alternatively, for testing: run every 1 minute
 // const CLEANUP_SCHEDULE = '* * * * *';
@@ -44,6 +50,49 @@ const cleanupUnverifiedUsers = async () => {
   } catch (error) {
     console.error('❌ Cleanup failed:', error.message);
     cleanupJobActive = false;
+  }
+};
+
+/**
+ * Detect tasks that are overdue and notify assigned employees via SMS.
+ * Uses the Task.overdueNotified flag to avoid duplicate notifications.
+ */
+const notifyOverdueTasks = async () => {
+  try {
+    const now = new Date();
+    const overdueTasks = await Task.find({
+      dueDate: { $lt: now },
+      status: { $ne: 'completed' },
+      isArchived: { $ne: true },
+      overdueNotified: { $ne: true },
+    });
+
+    if (!overdueTasks.length) {
+      return;
+    }
+
+    for (const task of overdueTasks) {
+      try {
+        const assignments = await UserTask.find({ taskId: task._id });
+        if (!assignments.length) {
+          continue;
+        }
+
+        const userIds = assignments.map((a) => a.userId);
+        const users = await User.find({ _id: { $in: userIds } });
+
+        await Promise.all(
+          users.map((u) => notificationService.notifyTaskOverdue(u, task))
+        );
+
+        task.overdueNotified = true;
+        await task.save();
+      } catch (e) {
+        console.error('Error processing overdue task notification:', e.message || e);
+      }
+    }
+  } catch (e) {
+    console.error('notifyOverdueTasks failed:', e.message || e);
   }
 };
 
@@ -89,6 +138,15 @@ const initializeAutomation = () => {
     cleanupUnverifiedUsers();
     cleanupExpiredTokens();
   }, 10000);
+
+   // Schedule overdue task checks
+   cron.schedule(OVERDUE_TASK_SCHEDULE, notifyOverdueTasks, {
+     scheduled: true,
+     timezone: 'UTC',
+   });
+   console.log(
+     `✅ Scheduled overdue task notifications: ${OVERDUE_TASK_SCHEDULE} (every 15 minutes)`
+   );
 };
 
 /**
@@ -105,4 +163,5 @@ module.exports = {
   manualCleanup,
   cleanupUnverifiedUsers,
   cleanupExpiredTokens,
+  notifyOverdueTasks,
 };

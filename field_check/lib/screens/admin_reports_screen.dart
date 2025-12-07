@@ -21,6 +21,7 @@ class AdminReportsScreen extends StatefulWidget {
 
 class _AdminReportsScreenState extends State<AdminReportsScreen> {
   List<AttendanceRecord> _attendanceRecords = [];
+  final List<AttendanceRecord> _archivedAttendanceRecords = [];
   List<Geofence> _geofences = [];
   late io.Socket _socket;
   List<ReportModel> _taskReports = [];
@@ -30,6 +31,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   bool _isLoadingTaskReports = false;
   String? _taskReportsError;
   bool _showArchivedReports = false;
+  bool _showArchivedAttendance = false;
 
   final String _filterDate = 'All Dates';
   final String _filterLocation = 'All Locations';
@@ -348,8 +350,42 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     if (_viewMode == 'attendance') const SizedBox(height: 12),
 
                     if (_viewMode == 'attendance')
-                      _attendanceRecords.isEmpty
+                      Row(
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Current'),
+                            selected: !_showArchivedAttendance,
+                            onSelected: (sel) {
+                              if (!sel) return;
+                              setState(() {
+                                _showArchivedAttendance = false;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Archived'),
+                            selected: _showArchivedAttendance,
+                            onSelected: (sel) {
+                              if (!sel) return;
+                              setState(() {
+                                _showArchivedAttendance = true;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+
+                    if (_viewMode == 'attendance') const SizedBox(height: 12),
+
+                    if (_viewMode == 'attendance')
+                      _attendanceRecords.isEmpty && !_showArchivedAttendance
                           ? const Center(child: Text('No attendance records'))
+                          : _archivedAttendanceRecords.isEmpty &&
+                                _showArchivedAttendance
+                          ? const Center(
+                              child: Text('No archived attendance records'),
+                            )
                           : Card(
                               elevation: 2,
                               child: Padding(
@@ -366,50 +402,61 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                           DataColumn(label: Text('Time')),
                                           DataColumn(label: Text('Status')),
                                         ],
-                                        rows: _attendanceRecords.map((record) {
-                                          final time = formatTime(
-                                            record.timestamp,
-                                          );
-                                          final status = record.isCheckIn
-                                              ? 'Checked In'
-                                              : 'Checked Out';
-                                          final date = record.timestamp
-                                              .toLocal()
-                                              .toString()
-                                              .split(' ')[0];
-
-                                          return DataRow(
-                                            cells: [
-                                              DataCell(
-                                                Text(
-                                                  record.employeeName ??
-                                                      'Unknown',
-                                                ),
-                                              ),
-                                              DataCell(
-                                                Text(
-                                                  record.geofenceName ?? 'N/A',
-                                                ),
-                                              ),
-                                              DataCell(Text(date)),
-                                              DataCell(Text(time)),
-                                              DataCell(
-                                                Chip(
-                                                  label: Text(status),
-                                                  backgroundColor:
+                                        rows:
+                                            (_showArchivedAttendance
+                                                    ? _archivedAttendanceRecords
+                                                    : _attendanceRecords)
+                                                .map((record) {
+                                                  final time = formatTime(
+                                                    record.timestamp,
+                                                  );
+                                                  final status =
                                                       record.isCheckIn
-                                                      ? Colors.green[100]
-                                                      : Colors.red[100],
-                                                  labelStyle: TextStyle(
-                                                    color: record.isCheckIn
-                                                        ? Colors.green[900]
-                                                        : Colors.red[900],
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          );
-                                        }).toList(),
+                                                      ? 'Checked In'
+                                                      : 'Checked Out';
+                                                  final date = record.timestamp
+                                                      .toLocal()
+                                                      .toString()
+                                                      .split(' ')[0];
+
+                                                  return DataRow(
+                                                    cells: [
+                                                      DataCell(
+                                                        Text(
+                                                          record.employeeName ??
+                                                              'Unknown',
+                                                        ),
+                                                      ),
+                                                      DataCell(
+                                                        Text(
+                                                          record.geofenceName ??
+                                                              'N/A',
+                                                        ),
+                                                      ),
+                                                      DataCell(Text(date)),
+                                                      DataCell(Text(time)),
+                                                      DataCell(
+                                                        Chip(
+                                                          label: Text(status),
+                                                          backgroundColor:
+                                                              record.isCheckIn
+                                                              ? Colors
+                                                                    .green[100]
+                                                              : Colors.red[100],
+                                                          labelStyle: TextStyle(
+                                                            color:
+                                                                record.isCheckIn
+                                                                ? Colors
+                                                                      .green[900]
+                                                                : Colors
+                                                                      .red[900],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  );
+                                                })
+                                                .toList(),
                                       ),
                                     );
                                   },
@@ -479,6 +526,31 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal()),
               ),
               if (r.content.isNotEmpty) _buildDetailRow('Content:', r.content),
+              if (r.attachments.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Attachments:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: r.attachments
+                      .map(
+                        (path) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: SelectableText(
+                            path,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.blueGrey,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
             ],
           ),
         ),

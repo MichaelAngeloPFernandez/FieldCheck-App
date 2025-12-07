@@ -186,6 +186,7 @@ class UserService {
     String password, {
     String role = 'employee',
     String? username,
+    String? phone,
   }) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/users'),
@@ -196,6 +197,7 @@ class UserService {
         'email': email,
         'password': password,
         'role': role,
+        'phone': phone,
       }),
     );
     if (response.statusCode == 201 || response.statusCode == 200) {
@@ -282,6 +284,7 @@ class UserService {
     String? email,
     String? avatarUrl,
     String? username,
+    String? phone,
   }) async {
     final token = await getToken();
     final payload = <String, dynamic>{};
@@ -291,6 +294,7 @@ class UserService {
     if (avatarUrl != null) {
       payload['avatarUrl'] = avatarUrl; // Add avatarUrl to payload
     }
+    if (phone != null) payload['phone'] = phone;
 
     final response = await http.put(
       Uri.parse('$_baseUrl/users/profile'),
@@ -417,6 +421,7 @@ class UserService {
     String? role,
     bool? isActive,
     String? username,
+    String? phone,
   }) async {
     final token = await getToken();
     final payload = <String, dynamic>{};
@@ -425,6 +430,7 @@ class UserService {
     if (role != null) payload['role'] = role;
     if (isActive != null) payload['isActive'] = isActive;
     if (username != null) payload['username'] = username;
+    if (phone != null) payload['phone'] = phone;
 
     final response = await http.put(
       Uri.parse('$_baseUrl/users/$userModelId'),

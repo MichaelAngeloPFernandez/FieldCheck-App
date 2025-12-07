@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/location_service.dart';
+import '../services/location_sync_service.dart';
 import '../services/geofence_service.dart';
 import '../services/realtime_service.dart';
 import '../services/autosave_service.dart';
@@ -30,6 +31,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   final AttendanceService _attendanceService = AttendanceService();
   final TaskService _taskService = TaskService();
   final UserService _userService = UserService();
+  final LocationSyncService _locationSyncService = LocationSyncService();
 
   bool _isCheckedIn = false;
   bool _isLoading = false;
@@ -61,6 +63,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   void dispose() {
     _locationUpdateTimer?.cancel();
     _attendanceSubscription?.cancel();
+    _locationSyncService.dispose();
     super.dispose();
   }
 
@@ -148,6 +151,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
           _isCheckedIn = status.isCheckedIn;
           _lastCheckTime = status.lastCheckTime ?? "--:--";
         });
+        if (_isCheckedIn) {
+          _locationSyncService.startTracking();
+        } else {
+          _locationSyncService.stopTracking();
+        }
       }
     } catch (e) {
       debugPrint('Error loading attendance status: $e');
@@ -362,6 +370,13 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
           _isCheckedIn = attendanceData.isCheckedIn;
           _lastCheckTime = formattedTime;
         });
+
+        // Start or stop continuous real-time tracking based on new state
+        if (_isCheckedIn) {
+          _locationSyncService.startTracking();
+        } else {
+          _locationSyncService.stopTracking();
+        }
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -762,7 +777,8 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                 color: Colors.transparent,
                 child: InkWell(
                   customBorder: const CircleBorder(),
-                  onTap: (_isLoading || !_isWithinAnyGeofence)
+                  onTap:
+                      (_isLoading || (!_isWithinAnyGeofence && !_isCheckedIn))
                       ? null
                       : _toggleAttendance,
                   child: Center(
@@ -794,10 +810,26 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            if (!_isWithinAnyGeofence) ...[
+            if (!_isWithinAnyGeofence && !_isCheckedIn) ...[
               const Text(
-                'Move inside your assigned geofence to check in/out.',
+                'Move inside your assigned geofence to check in.',
                 style: TextStyle(color: Colors.red),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: _isLoading ? null : _updateLocation,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh Location'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+            if (!_isWithinAnyGeofence && _isCheckedIn) ...[
+              const Text(
+                'You are outside your geofence. You can still check out.',
+                style: TextStyle(color: Colors.orange),
               ),
               const SizedBox(height: 12),
               ElevatedButton.icon(

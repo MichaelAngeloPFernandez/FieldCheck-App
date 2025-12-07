@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
@@ -254,4 +255,147 @@ class AttendanceRecord {
       employeeEmail: employee?['email'] ?? json['employeeEmail'],
     );
   }
+}
+
+/// Location validation helper for geofence and mock location detection
+class LocationValidator {
+  static final UserService _userService = UserService();
+
+  /// Validates location for attendance check-in/out
+  /// Returns: {valid: bool, reason: String, isMockLocation: bool}
+  static Future<Map<String, dynamic>> validateLocation({
+    required double latitude,
+    required double longitude,
+    required double? accuracy,
+    required String? geofenceId,
+  }) async {
+    try {
+      // Check 1: Accuracy validation (mock location detection)
+      // Real GPS typically has accuracy < 30m, mocked locations often > 100m
+      if (accuracy != null && accuracy > 100.0) {
+        return {
+          'valid': false,
+          'reason':
+              'Location accuracy too low (${accuracy.toStringAsFixed(1)}m). Please enable high-accuracy GPS.',
+          'isMockLocation': true,
+        };
+      }
+
+      // Check 2: Impossible speed detection
+      // If location changed by > 500km in < 1 minute, it's likely spoofed
+      final token = await _userService.getToken();
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/attendance/last-location'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final lastLat = (data['latitude'] as num?)?.toDouble();
+        final lastLng = (data['longitude'] as num?)?.toDouble();
+        final lastTime = data['timestamp'] != null
+            ? DateTime.parse(data['timestamp'])
+            : null;
+
+        if (lastLat != null && lastLng != null && lastTime != null) {
+          final distance = _calculateDistance(
+            lastLat,
+            lastLng,
+            latitude,
+            longitude,
+          );
+          final timeDiff = DateTime.now().difference(lastTime).inSeconds;
+
+          // More than 500km in less than 1 minute = impossible
+          if (distance > 500 && timeDiff < 60) {
+            return {
+              'valid': false,
+              'reason':
+                  'Impossible location change detected. Please check your GPS.',
+              'isMockLocation': true,
+            };
+          }
+        }
+      }
+
+      // Check 3: Geofence validation
+      if (geofenceId != null && geofenceId.isNotEmpty) {
+        final geofenceResponse = await http.get(
+          Uri.parse('${ApiConfig.baseUrl}/api/geofences/$geofenceId'),
+          headers: {
+            'Content-Type': 'application/json',
+            if (token != null) 'Authorization': 'Bearer $token',
+          },
+        );
+
+        if (geofenceResponse.statusCode == 200) {
+          final geofence = jsonDecode(geofenceResponse.body);
+          final centerLat = (geofence['latitude'] as num?)?.toDouble();
+          final centerLng = (geofence['longitude'] as num?)?.toDouble();
+          final radius = (geofence['radius'] as num?)?.toDouble() ?? 100.0;
+
+          if (centerLat != null && centerLng != null) {
+            final distance = _calculateDistance(
+              centerLat,
+              centerLng,
+              latitude,
+              longitude,
+            );
+
+            if (distance > radius) {
+              return {
+                'valid': false,
+                'reason':
+                    'You are ${distance.toStringAsFixed(0)}m outside the geofence (${radius.toStringAsFixed(0)}m radius).',
+                'isMockLocation': false,
+              };
+            }
+          }
+        }
+      }
+
+      // All checks passed
+      return {
+        'valid': true,
+        'reason': 'Location verified',
+        'isMockLocation': false,
+      };
+    } catch (e) {
+      // If validation fails, allow but warn
+      return {
+        'valid': true,
+        'reason': 'Could not verify location: $e',
+        'isMockLocation': false,
+      };
+    }
+  }
+
+  /// Calculate distance between two coordinates using Haversine formula
+  /// Returns distance in kilometers
+  static double _calculateDistance(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
+    const earthRadiusKm = 6371.0;
+
+    final dLat = _toRad(lat2 - lat1);
+    final dLng = _toRad(lng2 - lng1);
+
+    final a =
+        (math.sin(dLat / 2) * math.sin(dLat / 2)) +
+        (math.cos(_toRad(lat1)) *
+            math.cos(_toRad(lat2)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2));
+
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  static double _toRad(double deg) => deg * (math.pi / 180.0);
 }

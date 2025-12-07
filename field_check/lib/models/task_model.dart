@@ -4,6 +4,8 @@ class Task {
   final String id;
   final String title;
   final String description;
+  final String? type;
+  final String? difficulty;
   final DateTime dueDate;
   final String assignedBy; // Admin user ID
   final DateTime createdAt;
@@ -17,11 +19,14 @@ class Task {
   final String? teamId; // Team assignment
   final List<String>? teamMembers; // List of team member IDs
   final bool isArchived;
+  final bool isOverdue;
 
   Task({
     required this.id,
     required this.title,
     required this.description,
+    this.type,
+    this.difficulty,
     required this.dueDate,
     required this.assignedBy,
     required this.createdAt,
@@ -35,6 +40,7 @@ class Task {
     this.teamId,
     this.teamMembers,
     this.isArchived = false,
+    this.isOverdue = false,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -49,6 +55,8 @@ class Task {
       id: json['_id'] ?? json['id'] ?? '',
       title: json['title'] ?? '',
       description: json['description'] ?? '',
+      type: json['type'],
+      difficulty: json['difficulty'],
       dueDate: DateTime.parse(json['dueDate']),
       assignedBy: json['assignedBy'] ?? '',
       createdAt: DateTime.parse(json['createdAt']),
@@ -66,6 +74,7 @@ class Task {
           ? List<String>.from(json['teamMembers'])
           : null,
       isArchived: json['isArchived'] ?? false,
+      isOverdue: json['isOverdue'] ?? false,
     );
   }
 
@@ -74,6 +83,8 @@ class Task {
       '_id': id,
       'title': title,
       'description': description,
+      'type': type,
+      'difficulty': difficulty,
       'dueDate': dueDate.toIso8601String(),
       'assignedBy': assignedBy,
       'createdAt': createdAt.toIso8601String(),
@@ -87,6 +98,7 @@ class Task {
       'teamId': teamId,
       'teamMembers': teamMembers,
       'isArchived': isArchived,
+      'isOverdue': isOverdue,
     };
   }
 
@@ -94,6 +106,8 @@ class Task {
     String? id,
     String? title,
     String? description,
+    String? type,
+    String? difficulty,
     DateTime? dueDate,
     String? assignedBy,
     DateTime? createdAt,
@@ -107,11 +121,14 @@ class Task {
     String? teamId,
     List<String>? teamMembers,
     bool? isArchived,
+    bool? isOverdue,
   }) {
     return Task(
       id: id ?? this.id,
       title: title ?? this.title,
       description: description ?? this.description,
+      type: type ?? this.type,
+      difficulty: difficulty ?? this.difficulty,
       dueDate: dueDate ?? this.dueDate,
       assignedBy: assignedBy ?? this.assignedBy,
       createdAt: createdAt ?? this.createdAt,
@@ -125,6 +142,7 @@ class Task {
       teamId: teamId ?? this.teamId,
       teamMembers: teamMembers ?? this.teamMembers,
       isArchived: isArchived ?? this.isArchived,
+      isOverdue: isOverdue ?? this.isOverdue,
     );
   }
 }

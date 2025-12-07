@@ -14,6 +14,7 @@ import '../utils/export_util_stub.dart'
     as export_util;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/settings_service.dart';
+import '../services/notification_service.dart';
 import 'package:field_check/config/api_config.dart';
 
 class AdminSettingsScreen extends StatefulWidget {
@@ -32,6 +33,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
   final UserService _userService = UserService();
   final SettingsService _settingsService = SettingsService();
+  final NotificationService _notificationService = NotificationService();
+  final TextEditingController _urgentMessageController =
+      TextEditingController();
+  bool _isSendingUrgent = false;
   late io.Socket _socket;
 
   @override
@@ -122,6 +127,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   @override
   void dispose() {
     _socket.dispose();
+    _urgentMessageController.dispose();
     super.dispose();
   }
 
@@ -364,6 +370,123 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               leading: const Icon(Icons.delete_forever),
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
               onTap: () => _openRoleChooserAndNavigate('delete'),
+            ),
+
+            // Urgent Notifications
+            _buildSectionHeader('Urgent Notifications'),
+            Card(
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Send urgent SMS to all active employees',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _urgentMessageController,
+                      maxLines: 3,
+                      maxLength: 320,
+                      decoration: const InputDecoration(
+                        hintText:
+                            'Enter urgent message (e.g., system outage, safety alert)...',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            _isSendingUrgent ||
+                                _urgentMessageController.text.trim().isEmpty
+                            ? null
+                            : () async {
+                                final text = _urgentMessageController.text
+                                    .trim();
+                                final ok =
+                                    await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        title: const Text('Send Urgent SMS'),
+                                        content: Text(
+                                          'Send this message to all active employees with a phone number?\n\n$text',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, true),
+                                            child: const Text('Send'),
+                                          ),
+                                        ],
+                                      ),
+                                    ) ??
+                                    false;
+                                if (!ok) return;
+
+                                setState(() {
+                                  _isSendingUrgent = true;
+                                });
+                                try {
+                                  await _notificationService
+                                      .sendUrgentSmsToEmployees(text);
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Urgent SMS sent: "${text.length > 40 ? '${text.substring(0, 40)}...' : text}"',
+                                      ),
+                                    ),
+                                  );
+                                  _urgentMessageController.clear();
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Failed to send urgent SMS: $e',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                } finally {
+                                  if (mounted) {
+                                    setState(() {
+                                      _isSendingUrgent = false;
+                                    });
+                                  }
+                                }
+                              },
+                        icon: _isSendingUrgent
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.sms_failed_outlined),
+                        label: const Text('Send Urgent SMS'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
 
             // System Settings

@@ -10,13 +10,14 @@ import 'package:field_check/screens/login_screen.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
+import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/logger.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int? initialIndex;
-  
+
   const DashboardScreen({super.key, this.initialIndex});
 
   @override
@@ -29,6 +30,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final UserService _userService = UserService();
   final RealtimeService _realtimeService = RealtimeService();
   final AutosaveService _autosaveService = AutosaveService();
+  final LocationSyncService _locationSyncService = LocationSyncService();
   String? _userModelId;
   bool _loadingUserId = true;
 
@@ -46,10 +48,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _initServices() async {
     await _realtimeService.initialize();
     await _autosaveService.initialize();
+    // Start location tracking immediately on login (not just on check-in)
+    await _locationSyncService.initializeSocket();
+    _locationSyncService.startTracking();
   }
 
   @override
   void dispose() {
+    _locationSyncService.stopTracking();
     super.dispose();
   }
 
@@ -109,17 +115,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 icon: const Icon(Icons.arrow_back),
                 tooltip: 'Back to Attendance',
                 onPressed: () {
-                  AppLogger.info(AppLogger.tagNavigation, 'Navigating back to Attendance');
+                  AppLogger.info(
+                    AppLogger.tagNavigation,
+                    'Navigating back to Attendance',
+                  );
                   setState(() {
                     _selectedIndex = 0;
                   });
                 },
               )
             : null,
-        title: Text(
-          _navLabels[_selectedIndex],
-          style: AppTheme.headingSm,
-        ),
+        title: Text(_navLabels[_selectedIndex], style: AppTheme.headingSm),
         actions: [
           if (_isOfflineMode)
             Tooltip(
@@ -148,7 +154,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               try {
                 await _userService.logout();
               } catch (e) {
-                AppLogger.warning(AppLogger.tagAuth, 'Logout error (non-critical)', e);
+                AppLogger.warning(
+                  AppLogger.tagAuth,
+                  'Logout error (non-critical)',
+                  e,
+                );
               }
               if (!mounted) return;
               Navigator.pushAndRemoveUntil(
