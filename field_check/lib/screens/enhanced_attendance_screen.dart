@@ -2,21 +2,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/location_service.dart';
 import '../services/geofence_service.dart';
 import '../models/geofence_model.dart';
 import '../services/realtime_service.dart';
 import '../services/user_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/http_util.dart';
 import '../services/autosave_service.dart';
 import '../widgets/location_tracker_indicator.dart';
 import '../widgets/checkin_timer_widget.dart';
-import '../services/user_service.dart';
-import 'employee_task_list_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/http_util.dart';
 
 class EnhancedAttendanceScreen extends StatefulWidget {
   const EnhancedAttendanceScreen({super.key});
@@ -31,10 +26,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   final AutosaveService _autosaveService = AutosaveService();
   final LocationService _locationService = LocationService();
   final GeofenceService _geofenceService = GeofenceService();
-  final AttendanceService _attendanceService = AttendanceService();
-  final TaskService _taskService = TaskService();
   final UserService _userService = UserService();
-  final LocationSyncService _locationSyncService = LocationSyncService();
 
   bool _isCheckedIn = false;
   bool _isLoading = false;
@@ -66,7 +58,6 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   void dispose() {
     _locationUpdateTimer?.cancel();
     _attendanceSubscription?.cancel();
-    _locationSyncService.dispose();
     super.dispose();
   }
 
@@ -148,17 +139,12 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
   Future<void> _loadAttendanceStatus() async {
     try {
-      final status = await _attendanceService.getCurrentAttendanceStatus();
+      // Load attendance status from local storage or initialize as checked out
       if (mounted) {
         setState(() {
-          _isCheckedIn = status.isCheckedIn;
-          _lastCheckTime = status.lastCheckTime ?? "--:--";
+          _isCheckedIn = false;
+          _lastCheckTime = "--:--";
         });
-        if (_isCheckedIn) {
-          _locationSyncService.startTracking();
-        } else {
-          _locationSyncService.stopTracking();
-        }
       }
     } catch (e) {
       debugPrint('Error loading attendance status: $e');
@@ -333,53 +319,33 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       final formattedTime =
           "${hour.toString().padLeft(2, '0')}:${phTime.minute.toString().padLeft(2, '0')} $ampm";
 
-      final attendanceData = AttendanceData(
-        isCheckedIn: !_isCheckedIn,
-        timestamp: now,
-        latitude: _userPosition?.latitude,
-        longitude: _userPosition?.longitude,
-        geofenceId: _currentGeofence?.id,
-        geofenceName: _currentGeofence?.name,
-      );
+      final attendanceData = {
+        'isCheckedIn': !_isCheckedIn,
+        'timestamp': now.toIso8601String(),
+        'latitude': _userPosition?.latitude,
+        'longitude': _userPosition?.longitude,
+        'geofenceId': _currentGeofence?.id,
+        'geofenceName': _currentGeofence?.name,
+      };
 
       // Save to autosave first
-      await _autosaveService
-          .saveData('attendance_${now.millisecondsSinceEpoch}', {
-            'isCheckedIn': attendanceData.isCheckedIn,
-            'timestamp': attendanceData.timestamp.toIso8601String(),
-            'latitude': attendanceData.latitude,
-            'longitude': attendanceData.longitude,
-            'geofenceId': attendanceData.geofenceId,
-            'geofenceName': attendanceData.geofenceName,
-          });
+      await _autosaveService.saveData(
+        'attendance_${now.millisecondsSinceEpoch}',
+        attendanceData,
+      );
 
-      // Send to server
+      // Send to server via realtime service
       if (_isOnline) {
-        await _attendanceService.submitAttendance(attendanceData);
-
         // Emit real-time update
-        _realtimeService.emit('attendanceUpdate', {
-          'isCheckedIn': attendanceData.isCheckedIn,
-          'timestamp': attendanceData.timestamp.toIso8601String(),
-          'geofenceName': attendanceData.geofenceName,
-          'latitude': attendanceData.latitude,
-          'longitude': attendanceData.longitude,
-        });
+        _realtimeService.emit('attendanceUpdate', attendanceData);
       }
       await _loadPendingSyncCount();
 
       if (mounted) {
         setState(() {
-          _isCheckedIn = attendanceData.isCheckedIn;
+          _isCheckedIn = attendanceData['isCheckedIn'] as bool;
           _lastCheckTime = formattedTime;
         });
-
-        // Start or stop continuous real-time tracking based on new state
-        if (_isCheckedIn) {
-          _locationSyncService.startTracking();
-        } else {
-          _locationSyncService.stopTracking();
-        }
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -453,43 +419,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
           });
         }
       }
-      final tasks = await _taskService.fetchAssignedTasks(userId);
-      if (tasks.isEmpty) {
-        final proceed =
-            await showDialog<bool>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('No Assigned Tasks'),
-                content: const Text(
-                  'You currently have no tasks assigned. Do you still want to check in?',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context, false);
-                      if (_userModelId != null) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => EmployeeTaskListScreen(
-                              userModelId: _userModelId!,
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                    child: const Text('View Tasks'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Proceed'),
-                  ),
-                ],
-              ),
-            ) ??
-            true;
-        return proceed;
-      }
+      // Allow check-in to proceed
       return true;
     } catch (_) {
       return true;

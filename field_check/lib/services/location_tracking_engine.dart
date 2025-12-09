@@ -103,8 +103,10 @@ class LocationTrackingEngine {
 
       // Get initial position
       final initialPosition = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.best,
-        timeLimit: const Duration(seconds: 10),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+          timeLimit: Duration(seconds: 10),
+        ),
       );
       _processLocation(initialPosition);
 
@@ -188,8 +190,10 @@ class LocationTrackingEngine {
   Future<LocationUpdate?> getCurrentLocation() async {
     try {
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.best,
-        timeLimit: const Duration(seconds: 10),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+          timeLimit: Duration(seconds: 10),
+        ),
       );
       final update = LocationUpdate(
         latitude: position.latitude,
