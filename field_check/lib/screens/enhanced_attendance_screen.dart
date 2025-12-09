@@ -2,14 +2,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:async';
 import '../services/location_service.dart';
-import '../services/location_sync_service.dart';
 import '../services/geofence_service.dart';
-import '../services/realtime_service.dart';
-import '../services/autosave_service.dart';
-import '../services/attendance_service.dart';
 import '../models/geofence_model.dart';
-import '../services/task_service.dart';
+import '../services/realtime_service.dart';
+import '../services/user_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/http_util.dart';
+import '../services/autosave_service.dart';
+import '../widgets/location_tracker_indicator.dart';
+import '../widgets/checkin_timer_widget.dart';
 import '../services/user_service.dart';
 import 'employee_task_list_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -761,6 +764,24 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               ),
               textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 16),
+            // Location Tracker Indicator
+            LocationTrackerIndicator(
+              isCheckedIn: _isCheckedIn,
+              onTap: _updateLocation,
+            ),
+            const SizedBox(height: 16),
+            // Check-In Timer Widget
+            if (_isCheckedIn)
+              CheckInTimerWidget(
+                employeeId: _userModelId ?? 'unknown',
+                isCheckedIn: _isCheckedIn,
+                customTimeout: const Duration(hours: 8),
+                onTimerExpired: (employeeId) {
+                  debugPrint('Timer expired for $employeeId');
+                  // Handle timer expiration - mark attendance as incomplete
+                },
+              ),
             const SizedBox(height: 24),
             Container(
               width: 200,
