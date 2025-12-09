@@ -156,6 +156,7 @@ const exportRoutes = require('./routes/exportRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const availabilityRoutes = require('./routes/availabilityRoutes');
+const employeeTrackingRoutes = require('./routes/employeeTrackingRoutes');
 
 app.use(express.json({ limit: '200kb' })); // To parse JSON bodies (limited)
 app.use(cors({
@@ -185,6 +186,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/availability', availabilityRoutes);
+app.use('/api/employee-tracking', employeeTrackingRoutes);
 
 // Offline sync endpoint
 const { protect } = require('./middleware/authMiddleware');
