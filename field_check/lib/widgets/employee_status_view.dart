@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/employee_location_service.dart';
+import '../screens/admin_reports_screen.dart';
 import 'employee_details_modal.dart';
 import 'admin_actions_modal.dart';
 
@@ -311,16 +312,15 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
           );
         },
         onViewReports: () {
-          // Navigate to reports screen
+          // Navigate to reports screen with employee filter
           Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Opening reports for ${employee.name}'),
-              duration: const Duration(seconds: 2),
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  AdminReportsScreen(employeeId: employee.employeeId),
             ),
           );
-          // TODO: Navigate to admin_reports_screen with employee filter
-          // Navigator.pushNamed(context, '/admin-reports', arguments: employee.employeeId);
         },
       ),
     );

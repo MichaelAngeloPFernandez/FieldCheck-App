@@ -13,7 +13,9 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 
 class AdminReportsScreen extends StatefulWidget {
-  const AdminReportsScreen({super.key});
+  final String? employeeId;
+
+  const AdminReportsScreen({super.key, this.employeeId});
 
   @override
   State<AdminReportsScreen> createState() => _AdminReportsScreenState();
@@ -37,11 +39,17 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   final String _filterLocation = 'All Locations';
   final String _filterStatus = 'All Status';
   String _reportStatusFilter = 'All';
+  String? _filterEmployeeId;
+  String? _filterEmployeeName;
   Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
+    // Set employee filter if provided
+    if (widget.employeeId != null) {
+      _filterEmployeeId = widget.employeeId;
+    }
     _fetchGeofences();
     _fetchAttendanceRecords();
     _fetchTaskReports();
@@ -203,8 +211,21 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   List<ReportModel> _filteredTaskReports() {
     final base = _showArchivedReports ? _archivedTaskReports : _taskReports;
-    if (_reportStatusFilter == 'All') return base;
-    return base
+    var filtered = base;
+
+    // Filter by employee if specified
+    if (_filterEmployeeId != null) {
+      filtered = filtered
+          .where((r) => r.employeeId == _filterEmployeeId)
+          .toList();
+      _filterEmployeeName = filtered.isNotEmpty
+          ? filtered.first.employeeName
+          : null;
+    }
+
+    // Filter by status
+    if (_reportStatusFilter == 'All') return filtered;
+    return filtered
         .where(
           (r) => r.status.toLowerCase() == _reportStatusFilter.toLowerCase(),
         )
@@ -247,9 +268,41 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Admin Reports'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Admin Reports'),
+            if (_filterEmployeeId != null)
+              Text(
+                'Filtered: ${_filterEmployeeName ?? _filterEmployeeId}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+          ],
+        ),
         backgroundColor: brandColor,
         actions: [
+          if (_filterEmployeeId != null)
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _filterEmployeeId = null;
+                    _filterEmployeeName = null;
+                  });
+                },
+                icon: const Icon(Icons.clear),
+                label: const Text('Clear Filter'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.red,
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: ElevatedButton.icon(
