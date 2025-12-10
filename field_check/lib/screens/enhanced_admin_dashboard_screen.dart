@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../services/employee_location_service.dart';
 import '../widgets/employee_status_view.dart';
 
@@ -15,11 +16,18 @@ class _EnhancedAdminDashboardScreenState
   final EmployeeLocationService _locationService = EmployeeLocationService();
   List<EmployeeLocation> _employees = [];
   bool _isLoading = true;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _initializeLocationService();
+    // Auto-refresh every 5 seconds for real-time updates
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   Future<void> _initializeLocationService() async {
@@ -43,6 +51,7 @@ class _EnhancedAdminDashboardScreenState
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _locationService.dispose();
     super.dispose();
   }
@@ -142,6 +151,48 @@ class _EnhancedAdminDashboardScreenState
                         Colors.grey,
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Real-time location updates indicator
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Real-time location tracking active',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${_employees.where((e) => e.isOnline).length} online',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
