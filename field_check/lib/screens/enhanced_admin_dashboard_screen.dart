@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../services/employee_location_service.dart';
 import '../widgets/employee_status_view.dart';
+import '../widgets/live_employee_map.dart';
 
 class EnhancedAdminDashboardScreen extends StatefulWidget {
   const EnhancedAdminDashboardScreen({super.key});
@@ -193,6 +194,28 @@ class _EnhancedAdminDashboardScreenState
                         ),
                       ],
                     ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                // Live employee map
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: LiveEmployeeMap(
+                    employees: _employees,
+                    height: 300,
+                    onStatusChange: (employeeId, newStatus) {
+                      _locationService.requestStatusUpdate(
+                        employeeId,
+                        newStatus,
+                      );
+                    },
+                    onRefresh: () {
+                      setState(() => _isLoading = true);
+                      Future.delayed(const Duration(seconds: 1), () {
+                        if (mounted) setState(() => _isLoading = false);
+                      });
+                    },
                   ),
                 ),
                 const SizedBox(height: 16),
