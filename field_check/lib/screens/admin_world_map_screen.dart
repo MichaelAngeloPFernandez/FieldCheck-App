@@ -12,6 +12,7 @@ import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/services/availability_service.dart';
+import 'package:field_check/services/employee_location_service.dart';
 
 class AdminWorldMapScreen extends StatefulWidget {
   const AdminWorldMapScreen({super.key});
@@ -25,14 +26,17 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   final UserService _userService = UserService();
   final TaskService _taskService = TaskService();
   final AvailabilityService _availabilityService = AvailabilityService();
+  final EmployeeLocationService _locationService = EmployeeLocationService();
 
   final Map<String, UserModel> _employees = {};
   final Map<String, LatLng> _liveLocations = {};
   final Map<String, List<LatLng>> _trails = {};
+  List<EmployeeLocation> _employeeLocations = [];
 
   final Map<String, _WorldAvailability> _availability = {};
 
   StreamSubscription<Map<String, dynamic>>? _locationSub;
+  StreamSubscription<List<EmployeeLocation>>? _employeeLocationSub;
   bool _loadingUsers = true;
   String? _selectedUserId;
   List<Task> _selectedUserTasks = const [];
@@ -50,9 +54,38 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
 
   Future<void> _init() async {
     await _realtimeService.initialize();
+    await _locationService.initialize();
     await _loadEmployees();
     _subscribeToLocations();
+    _subscribeToEmployeeLocations();
     await _refreshAvailability();
+  }
+
+  void _subscribeToEmployeeLocations() {
+    _employeeLocationSub = _locationService.employeeLocationsStream.listen((
+      locations,
+    ) {
+      if (mounted) {
+        setState(() {
+          _employeeLocations = locations;
+          // Update live locations
+          for (final emp in locations) {
+            final point = LatLng(emp.latitude, emp.longitude);
+            _liveLocations[emp.employeeId] = point;
+
+            // Update trails
+            final trail = _trails[emp.employeeId] ?? <LatLng>[];
+            if (trail.isEmpty || trail.last != point) {
+              trail.add(point);
+              if (trail.length > 50) {
+                trail.removeRange(0, trail.length - 50);
+              }
+              _trails[emp.employeeId] = trail;
+            }
+          }
+        });
+      }
+    });
   }
 
   Future<void> _loadEmployees() async {
@@ -152,6 +185,8 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   @override
   void dispose() {
     _locationSub?.cancel();
+    _employeeLocationSub?.cancel();
+    _locationService.dispose();
     super.dispose();
   }
 
@@ -228,35 +263,105 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                 MarkerLayer(
                   markers: _liveLocations.entries.map((entry) {
                     final user = _employees[entry.key];
-                    final info = _availability[entry.key];
+                    final empLocation = _employeeLocations.firstWhere(
+                      (e) => e.employeeId == entry.key,
+                      orElse: () => _employeeLocations.isNotEmpty
+                          ? _employeeLocations.first
+                          : EmployeeLocation(
+                              employeeId: entry.key,
+                              name: user?.name ?? 'Unknown',
+                              latitude: entry.value.latitude,
+                              longitude: entry.value.longitude,
+                              accuracy: 0,
+                              status: EmployeeStatus.offline,
+                              timestamp: DateTime.now(),
+                              activeTaskCount: 0,
+                              workloadScore: 0,
+                              isOnline: false,
+                            ),
+                    );
+
+                    // Get color based on EmployeeStatus
                     Color markerColor;
-                    if (info == null) {
-                      markerColor = Colors.blueGrey;
-                    } else {
-                      switch (info.workloadStatus) {
-                        case 'overloaded':
-                          markerColor = Colors.redAccent;
-                          break;
-                        case 'busy':
-                          markerColor = Colors.orange;
-                          break;
-                        default:
-                          markerColor = Colors.green;
-                      }
+                    IconData markerIcon;
+                    switch (empLocation.status) {
+                      case EmployeeStatus.available:
+                        markerColor = Colors.green;
+                        markerIcon = Icons.check_circle;
+                        break;
+                      case EmployeeStatus.moving:
+                        markerColor = Colors.blue;
+                        markerIcon = Icons.directions_run;
+                        break;
+                      case EmployeeStatus.busy:
+                        markerColor = Colors.red;
+                        markerIcon = Icons.schedule;
+                        break;
+                      case EmployeeStatus.offline:
+                        markerColor = Colors.grey;
+                        markerIcon = Icons.cloud_off;
+                        break;
                     }
+
                     return Marker(
                       point: entry.value,
-                      width: 40,
-                      height: 40,
+                      width: 50,
+                      height: 50,
                       child: GestureDetector(
                         onTap: () => _onEmployeeTap(entry.key),
-                        child: Tooltip(
-                          message: user?.name ?? entry.key,
-                          child: Icon(
-                            Icons.location_history,
-                            color: markerColor,
-                            size: 32,
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: markerColor,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: markerColor.withValues(alpha: 0.5),
+                                    blurRadius: 8,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              padding: const EdgeInsets.all(6),
+                              child: Icon(
+                                markerIcon,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(3),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                user?.name.split(' ').first ?? 'Emp',
+                                style: const TextStyle(
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     );
