@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/employee_location_service.dart';
+import 'admin_actions_modal.dart';
 
 class EmployeeDetailsModal extends StatefulWidget {
   final EmployeeLocation employee;
@@ -306,6 +307,33 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => AdminActionsModal(
+                                employeeId: employee.employeeId,
+                                employeeName: employee.name,
+                                onActionComplete: () {
+                                  Navigator.pop(context);
+                                },
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.admin_panel_settings),
+                          label: const Text('Admin Actions'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () {
