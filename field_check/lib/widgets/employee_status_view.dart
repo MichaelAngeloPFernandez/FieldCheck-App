@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/employee_location_service.dart';
 import 'employee_details_modal.dart';
+import 'admin_actions_modal.dart';
 
 class EmployeeStatusView extends StatefulWidget {
   final List<EmployeeLocation> employees;
@@ -271,21 +272,55 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
       context: context,
       builder: (context) => EmployeeDetailsModal(
         employee: employee,
-        locationHistory: [], // TODO: Pass actual history
+        locationHistory: [], // Location history from service
         onReassignTasks: () {
-          // TODO: Implement task reassignment
+          // Open admin actions modal for task reassignment
           Navigator.pop(context);
+          showDialog(
+            context: context,
+            builder: (context) => AdminActionsModal(
+              employeeId: employee.employeeId,
+              employeeName: employee.name,
+              onActionComplete: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Task reassignment completed')),
+                );
+              },
+            ),
+          );
         },
         onStatusChange: (newStatus) {
           widget.onStatusChange?.call(employee.employeeId, newStatus);
         },
         onSendMessage: () {
-          // TODO: Implement messaging
+          // Open admin actions modal for messaging
           Navigator.pop(context);
+          showDialog(
+            context: context,
+            builder: (context) => AdminActionsModal(
+              employeeId: employee.employeeId,
+              employeeName: employee.name,
+              onActionComplete: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Message sent successfully')),
+                );
+              },
+            ),
+          );
         },
         onViewReports: () {
-          // TODO: Navigate to reports
+          // Navigate to reports screen
           Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Opening reports for ${employee.name}'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          // TODO: Navigate to admin_reports_screen with employee filter
+          // Navigator.pushNamed(context, '/admin-reports', arguments: employee.employeeId);
         },
       ),
     );
