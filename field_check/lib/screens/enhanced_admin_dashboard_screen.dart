@@ -3,6 +3,7 @@ import 'dart:async';
 import '../services/employee_location_service.dart';
 import '../widgets/employee_status_view.dart';
 import '../widgets/live_employee_map.dart';
+import '../widgets/employee_management_modal.dart';
 
 class EnhancedAdminDashboardScreen extends StatefulWidget {
   const EnhancedAdminDashboardScreen({super.key});
@@ -448,29 +449,15 @@ class _EnhancedAdminDashboardScreenState
   void _showTotalEmployeesView(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-        child: Column(
-          children: [
-            AppBar(
-              title: const Text('All Employees'),
-              automaticallyImplyLeading: false,
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            Expanded(
-              child: EmployeeStatusView(
-                employees: _employees,
-                onStatusChange: (employeeId, newStatus) {
-                  _locationService.requestStatusUpdate(employeeId, newStatus);
-                },
-              ),
-            ),
-          ],
-        ),
+      builder: (context) => EmployeeManagementModal(
+        employees: _employees,
+        onConfigUpdate: (employeeId, config) {
+          debugPrint(
+            'Updated config for $employeeId: '
+            'checkout=${config.autoCheckoutMinutes}min, '
+            'maxTasks=${config.maxTasksPerDay}',
+          );
+        },
       ),
     );
   }
