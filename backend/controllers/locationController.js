@@ -331,6 +331,112 @@ exports.updateEmployeeStatus = async (req, res) => {
 };
 
 /**
+ * Auto-checkout employee due to offline status
+ * POST /api/location/auto-checkout/:employeeId
+ */
+exports.autoCheckoutEmployee = async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { reason = 'Offline for extended period' } = req.body;
+
+    const user = await User.findById(employeeId);
+    if (!user) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    // Find active attendance record
+    const attendance = await Attendance.findOne({
+      userId: employeeId,
+      checkOutTime: null,
+      isVoid: false,
+    });
+
+    if (!attendance) {
+      return res.status(400).json({ error: 'No active check-in found' });
+    }
+
+    // Mark attendance as void and auto-checkout
+    const now = new Date();
+    attendance.checkOutTime = now;
+    attendance.isVoid = true;
+    attendance.voidReason = reason;
+    attendance.autoCheckout = true;
+    await attendance.save();
+
+    // Update user status
+    await User.findByIdAndUpdate(employeeId, {
+      isOnline: false,
+      status: 'offline',
+    });
+
+    // Emit auto-checkout event
+    if (global.io) {
+      global.io.emit('employeeAutoCheckout', {
+        employeeId,
+        employeeName: user.name,
+        reason,
+        timestamp: now.toISOString(),
+        isVoid: true,
+      });
+    }
+
+    console.log(`✅ Auto-checkout: ${user.name} (${employeeId}) - ${reason}`);
+
+    res.json({
+      success: true,
+      message: 'Employee auto-checked out',
+      data: {
+        employeeId,
+        checkOutTime: now,
+        isVoid: true,
+        reason,
+      },
+    });
+  } catch (error) {
+    console.error('Error auto-checking out employee:', error);
+    res.status(500).json({ error: 'Failed to auto-checkout employee' });
+  }
+};
+
+/**
+ * Send auto-checkout warning to employee
+ * POST /api/location/checkout-warning/:employeeId
+ */
+exports.sendCheckoutWarning = async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { minutesRemaining = 5 } = req.body;
+
+    const user = await User.findById(employeeId);
+    if (!user) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    // Emit warning event
+    if (global.io) {
+      global.io.emit('checkoutWarning', {
+        employeeId,
+        employeeName: user.name,
+        minutesRemaining,
+        message: `⚠️ You will be auto-checked out in ${minutesRemaining} minutes if you remain offline`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    console.log(`⚠️ Checkout warning sent to ${user.name}`);
+
+    res.json({
+      success: true,
+      message: 'Warning sent',
+      data: { employeeId, minutesRemaining },
+    });
+  } catch (error) {
+    console.error('Error sending checkout warning:', error);
+    res.status(500).json({ error: 'Failed to send warning' });
+  }
+};
+
+/**
  * Utility function to calculate distance between two coordinates (Haversine formula)
  */
 function calculateDistance(lat1, lon1, lat2, lon2) {

@@ -26,4 +26,10 @@ router.get('/:employeeId', authenticate, locationController.getEmployeeLocation)
 // Admin: Update employee status
 router.post('/status/:employeeId', authenticate, admin, locationController.updateEmployeeStatus);
 
+// Admin: Auto-checkout employee due to offline status
+router.post('/auto-checkout/:employeeId', authenticate, admin, locationController.autoCheckoutEmployee);
+
+// Admin: Send checkout warning to employee
+router.post('/checkout-warning/:employeeId', authenticate, admin, locationController.sendCheckoutWarning);
+
 module.exports = router;
