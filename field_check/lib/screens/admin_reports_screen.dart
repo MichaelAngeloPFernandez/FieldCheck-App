@@ -39,6 +39,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   final String _filterLocation = 'All Locations';
   final String _filterStatus = 'All Status';
   String _reportStatusFilter = 'All';
+  String _attendanceStatusFilter = 'All';
   String? _filterEmployeeId;
   String? _filterEmployeeName;
   Timer? _debounce;
@@ -429,6 +430,55 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         ],
                       ),
 
+                    if (_viewMode == 'attendance') const SizedBox(height: 8),
+
+                    if (_viewMode == 'attendance')
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('All'),
+                            selected: _attendanceStatusFilter == 'All',
+                            onSelected: (sel) {
+                              if (!sel) return;
+                              setState(() {
+                                _attendanceStatusFilter = 'All';
+                              });
+                            },
+                          ),
+                          ChoiceChip(
+                            label: const Text('Normal'),
+                            selected: _attendanceStatusFilter == 'Normal',
+                            onSelected: (sel) {
+                              if (!sel) return;
+                              setState(() {
+                                _attendanceStatusFilter = 'Normal';
+                              });
+                            },
+                          ),
+                          ChoiceChip(
+                            label: const Text('Void'),
+                            selected: _attendanceStatusFilter == 'Void',
+                            onSelected: (sel) {
+                              if (!sel) return;
+                              setState(() {
+                                _attendanceStatusFilter = 'Void';
+                              });
+                            },
+                          ),
+                          ChoiceChip(
+                            label: const Text('Auto Checkout'),
+                            selected: _attendanceStatusFilter == 'Auto',
+                            onSelected: (sel) {
+                              if (!sel) return;
+                              setState(() {
+                                _attendanceStatusFilter = 'Auto';
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+
                     if (_viewMode == 'attendance') const SizedBox(height: 12),
 
                     if (_viewMode == 'attendance')
@@ -459,14 +509,47 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                             (_showArchivedAttendance
                                                     ? _archivedAttendanceRecords
                                                     : _attendanceRecords)
+                                                .where((record) {
+                                                  switch (_attendanceStatusFilter) {
+                                                    case 'Normal':
+                                                      return !record.isVoid;
+                                                    case 'Void':
+                                                      return record.isVoid &&
+                                                          !record.autoCheckout;
+                                                    case 'Auto':
+                                                      return record.isVoid &&
+                                                          record.autoCheckout;
+                                                    default:
+                                                      return true;
+                                                  }
+                                                })
                                                 .map((record) {
                                                   final time = formatTime(
                                                     record.timestamp,
                                                   );
-                                                  final status =
-                                                      record.isCheckIn
-                                                      ? 'Checked In'
-                                                      : 'Checked Out';
+                                                  String status;
+                                                  Color? chipBg;
+                                                  Color? chipFg;
+
+                                                  if (record.isVoid &&
+                                                      record.autoCheckout) {
+                                                    status =
+                                                        'Auto Checkout (Void)';
+                                                    chipBg = Colors.red[100];
+                                                    chipFg = Colors.red[900];
+                                                  } else if (record.isVoid) {
+                                                    status = 'Void';
+                                                    chipBg = Colors.grey[300];
+                                                    chipFg = Colors.grey[900];
+                                                  } else if (record.isCheckIn) {
+                                                    status = 'Checked In';
+                                                    chipBg = Colors.green[100];
+                                                    chipFg = Colors.green[900];
+                                                  } else {
+                                                    status = 'Checked Out';
+                                                    chipBg = Colors.blue[100];
+                                                    chipFg = Colors.blue[900];
+                                                  }
                                                   final date = record.timestamp
                                                       .toLocal()
                                                       .toString()
@@ -492,17 +575,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                         Chip(
                                                           label: Text(status),
                                                           backgroundColor:
-                                                              record.isCheckIn
-                                                              ? Colors
-                                                                    .green[100]
-                                                              : Colors.red[100],
+                                                              chipBg,
                                                           labelStyle: TextStyle(
-                                                            color:
-                                                                record.isCheckIn
-                                                                ? Colors
-                                                                      .green[900]
-                                                                : Colors
-                                                                      .red[900],
+                                                            color: chipFg,
                                                           ),
                                                         ),
                                                       ),

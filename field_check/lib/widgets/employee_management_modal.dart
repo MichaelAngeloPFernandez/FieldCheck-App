@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/employee_location_service.dart';
 import '../services/auto_checkout_service.dart';
+import '../services/admin_actions_service.dart';
 
 class EmployeeManagementModal extends StatefulWidget {
   final List<EmployeeLocation> employees;
@@ -23,6 +24,7 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
   String _selectedFilter = 'all'; // all, online, busy, moving, offline
   List<EmployeeLocation> _filteredEmployees = [];
   final Map<String, EmployeeCheckoutConfig> _configs = {};
+  final AdminActionsService _adminActions = AdminActionsService();
 
   @override
   void initState() {
@@ -99,26 +101,55 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
     }
   }
 
-  void _showEmployeeOptions(EmployeeLocation employee) {
-    final config =
+  Future<void> _showEmployeeOptions(EmployeeLocation employee) async {
+    // Start from cached or default config
+    EmployeeCheckoutConfig config =
         _configs[employee.employeeId] ??
         EmployeeCheckoutConfig(employeeId: employee.employeeId);
+
+    // Attempt to load existing config from backend
+    try {
+      final remoteConfig = await _adminActions.getEmployeeCheckoutConfig(
+        employee.employeeId,
+      );
+      if (remoteConfig != null) {
+        config = remoteConfig;
+      }
+    } catch (e) {
+      debugPrint(
+        'Error loading checkout config for ${employee.employeeId}: $e',
+      );
+    }
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
       builder: (context) => EmployeeOptionsDialog(
         employee: employee,
         config: config,
-        onSave: (updatedConfig) {
+        onSave: (updatedConfig) async {
           setState(() {
             _configs[employee.employeeId] = updatedConfig;
           });
           widget.onConfigUpdate?.call(employee.employeeId, updatedConfig);
+
+          // Persist to backend Settings
+          final success = await _adminActions.saveEmployeeCheckoutConfig(
+            updatedConfig,
+          );
+          if (!mounted) return;
+
           Navigator.pop(context);
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${employee.name} settings updated'),
-              duration: const Duration(seconds: 2),
+              content: Text(
+                success
+                    ? '${employee.name} settings updated'
+                    : 'Failed to save settings for ${employee.name}',
+              ),
+              duration: const Duration(seconds: 3),
             ),
           );
         },

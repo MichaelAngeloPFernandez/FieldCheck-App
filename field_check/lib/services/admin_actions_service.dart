@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../utils/http_util.dart';
 import '../config/api_config.dart';
+import 'auto_checkout_service.dart';
 
 /// Admin Actions Service - Handles all admin-level operations
 class AdminActionsService {
@@ -435,6 +437,67 @@ class AdminActionsService {
     } catch (e) {
       debugPrint('❌ Error batch exporting data: $e');
       return null;
+    }
+  }
+
+  /// Get per-employee auto-checkout configuration from backend Settings
+  Future<EmployeeCheckoutConfig?> getEmployeeCheckoutConfig(
+    String employeeId,
+  ) async {
+    try {
+      final key = 'employeeCheckout.$employeeId';
+      final response = await _http.get('/api/settings/$key');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        final value = data['value'];
+        if (value is Map<String, dynamic>) {
+          return EmployeeCheckoutConfig.fromMap(value);
+        }
+      } else if (response.statusCode == 404) {
+        // No config yet for this employee
+        return null;
+      } else {
+        debugPrint(
+          '❌ Failed to load checkout config for $employeeId: '
+          '${response.statusCode} ${response.body}',
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading checkout config for $employeeId: $e');
+    }
+    return null;
+  }
+
+  /// Save per-employee auto-checkout configuration to backend Settings
+  Future<bool> saveEmployeeCheckoutConfig(EmployeeCheckoutConfig config) async {
+    try {
+      final key = 'employeeCheckout.${config.employeeId}';
+      final response = await _http.put(
+        '/api/settings/$key',
+        body: {
+          'value': config.toMap(),
+          'description':
+              'Per-employee auto-checkout configuration (minutes & limits)',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint(
+          '✅ Saved checkout config for ${config.employeeId}: '
+          '${config.autoCheckoutMinutes} min, maxTasks=${config.maxTasksPerDay}',
+        );
+        return true;
+      }
+
+      debugPrint(
+        '❌ Failed to save checkout config for ${config.employeeId}: '
+        '${response.statusCode} ${response.body}',
+      );
+      return false;
+    } catch (e) {
+      debugPrint('❌ Error saving checkout config for ${config.employeeId}: $e');
+      return false;
     }
   }
 }

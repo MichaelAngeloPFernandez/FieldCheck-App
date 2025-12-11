@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Attendance = require('../models/Attendance');
 const Task = require('../models/Task');
 const Geofence = require('../models/Geofence');
+const Report = require('../models/Report');
 
 /**
  * Location Controller - Handles real-time employee location tracking
@@ -344,11 +345,11 @@ exports.autoCheckoutEmployee = async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    // Find active attendance record
+    // Find active attendance record (no checkout yet and not already voided)
     const attendance = await Attendance.findOne({
-      userId: employeeId,
-      checkOutTime: null,
-      isVoid: false,
+      employee: employeeId,
+      checkOut: { $exists: false },
+      isVoid: { $ne: true },
     });
 
     if (!attendance) {
@@ -357,7 +358,8 @@ exports.autoCheckoutEmployee = async (req, res) => {
 
     // Mark attendance as void and auto-checkout
     const now = new Date();
-    attendance.checkOutTime = now;
+    attendance.checkOut = now;
+    attendance.status = 'out';
     attendance.isVoid = true;
     attendance.voidReason = reason;
     attendance.autoCheckout = true;
@@ -369,7 +371,23 @@ exports.autoCheckoutEmployee = async (req, res) => {
       status: 'offline',
     });
 
-    // Emit auto-checkout event
+    // Auto-create attendance report for auto-checkout
+    try {
+      const rep = await Report.create({
+        type: 'attendance',
+        attendance: attendance._id,
+        employee: employeeId,
+        geofence: attendance.geofence,
+        content: 'Attendance auto-checked out and voided (offline too long)',
+      });
+      if (global.io) {
+        global.io.emit('newReport', rep);
+      }
+    } catch (e) {
+      console.error('Failed to auto-create auto-checkout report:', e);
+    }
+
+    // Emit auto-checkout event for realtime notifications
     if (global.io) {
       global.io.emit('employeeAutoCheckout', {
         employeeId,

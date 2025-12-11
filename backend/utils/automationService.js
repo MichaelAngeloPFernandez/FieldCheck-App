@@ -10,6 +10,9 @@ const cron = require('node-cron');
 const User = require('../models/User');
 const Task = require('../models/Task');
 const UserTask = require('../models/UserTask');
+const Attendance = require('../models/Attendance');
+const Report = require('../models/Report');
+const Settings = require('../models/Settings');
 const notificationService = require('../services/notificationService');
 
 // Run daily cleanup at 2 AM (UTC)
@@ -18,6 +21,13 @@ const CLEANUP_SCHEDULE = '0 2 * * *';
 
 // Check for overdue tasks every 15 minutes
 const OVERDUE_TASK_SCHEDULE = '*/15 * * * *';
+
+// Auto-checkout scan: check offline employees every 5 minutes
+const AUTO_CHECKOUT_SCHEDULE = '*/5 * * * *';
+
+// Auto-checkout thresholds (minutes) - default values
+const AUTO_CHECKOUT_WARNING_MINUTES = 25;
+const AUTO_CHECKOUT_MINUTES = 30;
 
 // Alternatively, for testing: run every 1 minute
 // const CLEANUP_SCHEDULE = '* * * * *';
@@ -50,6 +60,187 @@ const cleanupUnverifiedUsers = async () => {
   } catch (error) {
     console.error('❌ Cleanup failed:', error.message);
     cleanupJobActive = false;
+  }
+};
+
+/**
+ * Load per-employee auto-checkout config from Settings collection.
+ * Key: `employeeCheckout.<employeeId>`
+ * Value shape: { autoCheckoutMinutes: number, maxTasksPerDay: number, autoCheckoutEnabled: bool }
+ */
+const getEmployeeCheckoutConfig = async (employeeId) => {
+  try {
+    const key = `employeeCheckout.${String(employeeId)}`;
+    const setting = await Settings.findOne({ key });
+    if (!setting || !setting.value) return null;
+    return setting.value;
+  } catch (e) {
+    console.error('getEmployeeCheckoutConfig failed:', e.message || e);
+    return null;
+  }
+};
+
+/**
+ * Auto-checkout employees who have been offline for too long
+ * Default rule:
+ *  - At 25 minutes offline: send warning (once)
+ *  - At 30+ minutes offline: auto-checkout and void attendance
+ * Per-employee overrides are loaded from Settings if present.
+ */
+const autoCheckoutOfflineEmployees = async () => {
+  try {
+    const now = new Date();
+
+    // Find all open attendance records (no checkout, not voided)
+    const openRecords = await Attendance.find({
+      checkOut: { $exists: false },
+      isVoid: { $ne: true },
+    }).populate('employee', 'name lastLocationUpdate isOnline');
+
+    if (!openRecords.length) {
+      return;
+    }
+
+    for (const record of openRecords) {
+      try {
+        const employee = record.employee;
+        if (!employee) continue;
+
+        const lastLocationUpdate = employee.lastLocationUpdate;
+        if (!lastLocationUpdate) continue;
+
+        const diffMs = now.getTime() - new Date(lastLocationUpdate).getTime();
+        const diffMinutes = diffMs / (60 * 1000);
+
+        // Load per-employee configuration (if any)
+        let autoMinutes = AUTO_CHECKOUT_MINUTES;
+        let warningMinutes = AUTO_CHECKOUT_WARNING_MINUTES;
+        let autoEnabled = true;
+
+        try {
+          const cfg = await getEmployeeCheckoutConfig(employee._id);
+          if (cfg && typeof cfg === 'object') {
+            if (
+              Object.prototype.hasOwnProperty.call(cfg, 'autoCheckoutEnabled') &&
+              cfg.autoCheckoutEnabled === false
+            ) {
+              autoEnabled = false;
+            }
+            if (
+              Object.prototype.hasOwnProperty.call(cfg, 'autoCheckoutMinutes') &&
+              typeof cfg.autoCheckoutMinutes === 'number' &&
+              cfg.autoCheckoutMinutes > 0
+            ) {
+              autoMinutes = cfg.autoCheckoutMinutes;
+            }
+          }
+        } catch (e) {
+          console.error(
+            'Error loading employee auto-checkout config:',
+            e.message || e,
+          );
+        }
+
+        // If auto-checkout disabled for this employee, skip
+        if (!autoEnabled) {
+          continue;
+        }
+
+        // Derive warning threshold as 5 minutes before auto-checkout (min 1)
+        warningMinutes = Math.max(1, autoMinutes - 5);
+
+        // Send warning once between warningMinutes and autoMinutes
+        if (
+          diffMinutes >= warningMinutes &&
+          diffMinutes < autoMinutes &&
+          !record.checkoutWarningSent
+        ) {
+          const minutesRemaining = Math.max(
+            1,
+            Math.round(autoMinutes - diffMinutes),
+          );
+
+          // Emit Socket.io warning event
+          if (global.io) {
+            global.io.emit('checkoutWarning', {
+              employeeId: String(employee._id),
+              employeeName: employee.name,
+              minutesRemaining,
+              message: `⚠️ You will be auto-checked out in ${minutesRemaining} minutes if you remain offline`,
+              timestamp: now.toISOString(),
+            });
+          }
+
+          // Optional: notification service (SMS/email) if configured
+          try {
+            if (notificationService.notifyAutoCheckoutWarning) {
+              await notificationService.notifyAutoCheckoutWarning(
+                employee,
+                minutesRemaining,
+              );
+            }
+          } catch (_) {}
+
+          record.checkoutWarningSent = true;
+          await record.save();
+          console.log(
+            `⚠️ Auto-checkout warning sent to ${employee.name} (${employee._id})`,
+          );
+        }
+
+        // Auto-checkout at autoMinutes or more offline
+        if (diffMinutes >= autoMinutes && !record.autoCheckout) {
+          record.checkOut = now;
+          record.status = 'out';
+          record.isVoid = true;
+          record.voidReason = 'Offline for extended period';
+          record.autoCheckout = true;
+          await record.save();
+
+          // Create attendance report
+          try {
+            const rep = await Report.create({
+              type: 'attendance',
+              attendance: record._id,
+              employee: record.employee,
+              geofence: record.geofence,
+              content:
+                'Attendance auto-checked out and voided (offline too long)',
+            });
+            if (global.io) {
+              global.io.emit('newReport', rep);
+            }
+          } catch (e) {
+            console.error(
+              'Failed to auto-create auto-checkout report (cron):',
+              e.message || e,
+            );
+          }
+
+          // Emit auto-checkout event
+          if (global.io) {
+            global.io.emit('employeeAutoCheckout', {
+              employeeId: String(employee._id),
+              employeeName: employee.name,
+              reason: 'Offline for extended period',
+              timestamp: now.toISOString(),
+              isVoid: true,
+            });
+          }
+
+          console.log(
+            `🔴 Auto-checkout (cron) for ${employee.name} (${employee._id})`,
+          );
+        }
+      } catch (e) {
+        console.error(
+          'Error processing auto-checkout record:',
+          e.message || e,
+        );
+      }
+    }
+  } catch (e) {
+    console.error('autoCheckoutOfflineEmployees failed:', e.message || e);
   }
 };
 
@@ -139,14 +330,23 @@ const initializeAutomation = () => {
     cleanupExpiredTokens();
   }, 10000);
 
-   // Schedule overdue task checks
-   cron.schedule(OVERDUE_TASK_SCHEDULE, notifyOverdueTasks, {
-     scheduled: true,
-     timezone: 'UTC',
-   });
-   console.log(
-     `✅ Scheduled overdue task notifications: ${OVERDUE_TASK_SCHEDULE} (every 15 minutes)`
-   );
+  // Schedule overdue task checks
+  cron.schedule(OVERDUE_TASK_SCHEDULE, notifyOverdueTasks, {
+    scheduled: true,
+    timezone: 'UTC',
+  });
+  console.log(
+    `✅ Scheduled overdue task notifications: ${OVERDUE_TASK_SCHEDULE} (every 15 minutes)`,
+  );
+
+  // Schedule auto-checkout/offline scan
+  cron.schedule(AUTO_CHECKOUT_SCHEDULE, autoCheckoutOfflineEmployees, {
+    scheduled: true,
+    timezone: 'UTC',
+  });
+  console.log(
+    `✅ Scheduled auto-checkout scan: ${AUTO_CHECKOUT_SCHEDULE} (every 5 minutes)`,
+  );
 };
 
 /**
@@ -164,4 +364,5 @@ module.exports = {
   cleanupUnverifiedUsers,
   cleanupExpiredTokens,
   notifyOverdueTasks,
+  autoCheckoutOfflineEmployees,
 };

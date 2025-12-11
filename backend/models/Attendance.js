@@ -28,6 +28,22 @@ const attendanceSchema = mongoose.Schema(
       lat: { type: Number, required: true },
       lng: { type: Number, required: true },
     },
+    // Auto-checkout & void tracking
+    isVoid: {
+      type: Boolean,
+      default: false,
+    },
+    voidReason: {
+      type: String,
+    },
+    autoCheckout: {
+      type: Boolean,
+      default: false,
+    },
+    checkoutWarningSent: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../services/employee_location_service.dart';
+import '../services/checkout_notification_service.dart';
 import '../widgets/employee_status_view.dart';
 import '../widgets/live_employee_map.dart';
 import '../widgets/employee_management_modal.dart';
@@ -19,6 +20,10 @@ class _EnhancedAdminDashboardScreenState
   List<EmployeeLocation> _employees = [];
   bool _isLoading = true;
   Timer? _refreshTimer;
+  final CheckoutNotificationService _checkoutService =
+      CheckoutNotificationService();
+  StreamSubscription<CheckoutWarning>? _warningSub;
+  StreamSubscription<AutoCheckoutEvent>? _autoCheckoutSub;
 
   @override
   void initState() {
@@ -30,6 +35,8 @@ class _EnhancedAdminDashboardScreenState
         setState(() {});
       }
     });
+
+    _initCheckoutNotifications();
   }
 
   Future<void> _initializeLocationService() async {
@@ -55,7 +62,45 @@ class _EnhancedAdminDashboardScreenState
   void dispose() {
     _refreshTimer?.cancel();
     _locationService.dispose();
+    _warningSub?.cancel();
+    _autoCheckoutSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _initCheckoutNotifications() async {
+    try {
+      await _checkoutService.initialize();
+
+      _warningSub = _checkoutService.warningStream.listen((warning) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Warning: ${warning.employeeName} will be auto-checked out '
+              'in ${warning.minutesRemaining} minutes.',
+            ),
+            duration: const Duration(seconds: 4),
+            backgroundColor: Colors.orange[700],
+          ),
+        );
+      });
+
+      _autoCheckoutSub = _checkoutService.checkoutStream.listen((autoEvent) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${autoEvent.employeeName} was auto-checked out '
+              '(attendance voided).',
+            ),
+            duration: const Duration(seconds: 5),
+            backgroundColor: Colors.red[700],
+          ),
+        );
+      });
+    } catch (e) {
+      debugPrint('Error initializing checkout notifications: $e');
+    }
   }
 
   @override
@@ -91,7 +136,7 @@ class _EnhancedAdminDashboardScreenState
                           _employees.length.toString(),
                           Icons.people,
                           Colors.blue,
-                          onTap: () => _showEmployeeModal(context),
+                          onTap: () => _showTotalEmployeesView(context),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -307,96 +352,6 @@ class _EnhancedAdminDashboardScreenState
           ),
         ),
       ],
-    );
-  }
-
-  void _showEmployeeModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-      ),
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.7,
-        maxChildSize: 0.95,
-        builder: (context, scrollController) => Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Employee Management',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(),
-            // Two main options
-            Expanded(
-              child: ListView(
-                controller: scrollController,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        _buildOptionCard(
-                          'Employee Status',
-                          'View all employees and their real-time status',
-                          Icons.person_search,
-                          Colors.blue,
-                          onTap: () {
-                            Navigator.pop(context);
-                            // Show employee status view in full screen
-                            showDialog(
-                              context: context,
-                              builder: (context) => Dialog(
-                                child: EmployeeStatusView(
-                                  employees: _employees,
-                                  onStatusChange: (employeeId, newStatus) {
-                                    _locationService.requestStatusUpdate(
-                                      employeeId,
-                                      newStatus,
-                                    );
-                                  },
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        _buildOptionCard(
-                          'Total Employees',
-                          'View all registered employees',
-                          Icons.people,
-                          Colors.green,
-                          onTap: () {
-                            Navigator.pop(context);
-                            _showTotalEmployeesView(context);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

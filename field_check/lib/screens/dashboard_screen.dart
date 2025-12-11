@@ -1,4 +1,5 @@
 // ignore_for_file: use_build_context_synchronously
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:field_check/screens/enhanced_attendance_screen.dart';
 import 'package:field_check/screens/history_screen.dart';
@@ -11,6 +12,7 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
+import 'package:field_check/services/checkout_notification_service.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/logger.dart';
 import 'package:field_check/widgets/app_widgets.dart';
@@ -31,6 +33,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final RealtimeService _realtimeService = RealtimeService();
   final AutosaveService _autosaveService = AutosaveService();
   final LocationSyncService _locationSyncService = LocationSyncService();
+  final CheckoutNotificationService _checkoutService =
+      CheckoutNotificationService();
+
+  StreamSubscription<CheckoutWarning>? _checkoutWarningSub;
+  StreamSubscription<AutoCheckoutEvent>? _autoCheckoutSub;
   String? _userModelId;
   bool _loadingUserId = true;
 
@@ -51,11 +58,70 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Start location tracking immediately on login (not just on check-in)
     await _locationSyncService.initializeSocket();
     _locationSyncService.startTracking();
+
+    // Initialize auto-checkout notifications (warnings + events)
+    await _checkoutService.initialize();
+    _checkoutWarningSub = _checkoutService.warningStream.listen(
+      _handleCheckoutWarning,
+    );
+    _autoCheckoutSub = _checkoutService.checkoutStream.listen(
+      _handleAutoCheckoutEvent,
+    );
+  }
+
+  void _handleCheckoutWarning(CheckoutWarning warning) {
+    if (!mounted) return;
+    // Only show to the current employee
+    if (_userModelId != null && warning.employeeId != _userModelId) {
+      return;
+    }
+
+    setState(() {
+      // Ensure user sees Attendance tab when warning arrives
+      _selectedIndex = 0;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Auto-checkout warning: You will be auto-checked out in '
+          '${warning.minutesRemaining} minutes if you don\'t check out.',
+        ),
+        duration: const Duration(seconds: 5),
+        backgroundColor: Colors.orange[700],
+      ),
+    );
+  }
+
+  void _handleAutoCheckoutEvent(AutoCheckoutEvent event) {
+    if (!mounted) return;
+    // Only show to the current employee
+    if (_userModelId != null && event.employeeId != _userModelId) {
+      return;
+    }
+
+    setState(() {
+      // After auto-checkout, direct user attention to History tab
+      _selectedIndex = 3; // History
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          'You have been auto-checked out. Your attendance was marked void '
+          'and recorded in the reports.',
+        ),
+        duration: const Duration(seconds: 6),
+        backgroundColor: Colors.red[700],
+      ),
+    );
   }
 
   @override
   void dispose() {
     _locationSyncService.stopTracking();
+    _checkoutWarningSub?.cancel();
+    _autoCheckoutSub?.cancel();
     super.dispose();
   }
 

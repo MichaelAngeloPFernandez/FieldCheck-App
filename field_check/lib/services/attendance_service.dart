@@ -209,6 +209,9 @@ class AttendanceRecord {
   final String userId;
   final String? employeeName;
   final String? employeeEmail;
+  final bool isVoid;
+  final bool autoCheckout;
+  final String? voidReason;
 
   AttendanceRecord({
     required this.id,
@@ -221,6 +224,9 @@ class AttendanceRecord {
     required this.userId,
     this.employeeName,
     this.employeeEmail,
+    this.isVoid = false,
+    this.autoCheckout = false,
+    this.voidReason,
   });
 
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
@@ -229,9 +235,14 @@ class AttendanceRecord {
     final employee = json['employee'] as Map<String, dynamic>?;
     final geofence = json['geofence'] as Map<String, dynamic>?;
 
-    // Determine if it's check-in or check-out based on content
-    final content = json['content'] as String? ?? '';
-    final isCheckIn = content.toLowerCase().contains('checked in');
+    // Determine if it's check-in or check-out
+    bool isCheckIn;
+    if (attendance['status'] != null) {
+      isCheckIn = (attendance['status'] as String).toLowerCase() == 'in';
+    } else {
+      final content = json['content'] as String? ?? '';
+      isCheckIn = content.toLowerCase().contains('checked in');
+    }
 
     return AttendanceRecord(
       id: json['_id'] ?? json['id'] ?? '',
@@ -253,6 +264,14 @@ class AttendanceRecord {
       userId: employee?['_id'] ?? json['userId'] ?? '',
       employeeName: employee?['name'] ?? json['employeeName'],
       employeeEmail: employee?['email'] ?? json['employeeEmail'],
+      isVoid:
+          (attendance['isVoid'] as bool?) ?? (json['isVoid'] as bool?) ?? false,
+      autoCheckout:
+          (attendance['autoCheckout'] as bool?) ??
+          (json['autoCheckout'] as bool?) ??
+          false,
+      voidReason:
+          attendance['voidReason'] as String? ?? json['voidReason'] as String?,
     );
   }
 }
