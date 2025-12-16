@@ -18,6 +18,7 @@ class ReportExportPreviewScreen extends StatefulWidget {
   final String? locationFilter;
   final String? statusFilter;
   final List<ReportModel>? taskReports;
+  final String? employeeIdFilter;
 
   const ReportExportPreviewScreen({
     super.key,
@@ -28,6 +29,7 @@ class ReportExportPreviewScreen extends StatefulWidget {
     this.locationFilter,
     this.statusFilter,
     this.taskReports,
+    this.employeeIdFilter,
   });
 
   @override
@@ -124,13 +126,18 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         queryParams['startDate'] = widget.startDate!.toIso8601String();
       }
       if (widget.endDate != null) {
-        queryParams['endDate'] = widget.endDate!.toIso8601String();
+        // Treat endDate as inclusive in UI, but send exclusive bound to API
+        final exclusiveEnd = widget.endDate!.add(const Duration(days: 1));
+        queryParams['endDate'] = exclusiveEnd.toIso8601String();
       }
       if (widget.locationFilter != null) {
         queryParams['geofenceId'] = widget.locationFilter!;
       }
       if (widget.statusFilter != null) {
         queryParams['status'] = widget.statusFilter!;
+      }
+      if (widget.employeeIdFilter != null) {
+        queryParams['employeeId'] = widget.employeeIdFilter!;
       }
 
       final uri = Uri.parse(
@@ -244,13 +251,18 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         queryParams['startDate'] = widget.startDate!.toIso8601String();
       }
       if (widget.endDate != null) {
-        queryParams['endDate'] = widget.endDate!.toIso8601String();
+        // Treat endDate as inclusive in UI, but send exclusive bound to API
+        final exclusiveEnd = widget.endDate!.add(const Duration(days: 1));
+        queryParams['endDate'] = exclusiveEnd.toIso8601String();
       }
       if (widget.locationFilter != null) {
         queryParams['geofenceId'] = widget.locationFilter!;
       }
       if (widget.statusFilter != null) {
         queryParams['status'] = widget.statusFilter!;
+      }
+      if (widget.employeeIdFilter != null) {
+        queryParams['employeeId'] = widget.employeeIdFilter!;
       }
 
       final uri = Uri.parse(

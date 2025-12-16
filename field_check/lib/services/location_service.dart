@@ -38,32 +38,44 @@ class LocationService {
 
     // When we reach here, permissions are granted and we can
     // continue accessing the position of the device.
+
+    // Fast path: use a recent, accurate last-known location if available.
+    const double desiredAccuracyMeters = 50;
     try {
-      // Try high accuracy first with reasonable timeout
-      return await geolocator.Geolocator.getCurrentPosition(
+      final lastPosition = await geolocator.Geolocator.getLastKnownPosition();
+
+      if (lastPosition != null &&
+          lastPosition.accuracy > 0 &&
+          lastPosition.accuracy <= desiredAccuracyMeters) {
+        return lastPosition;
+      }
+    } catch (_) {
+      // Ignore last-known errors and fall through to a live request.
+    }
+
+    // Fallback: single live request with adequate timeout for GPS lock
+    try {
+      final current = await geolocator.Geolocator.getCurrentPosition(
         locationSettings: const geolocator.LocationSettings(
-          accuracy: geolocator.LocationAccuracy.bestForNavigation,
-          timeLimit: Duration(seconds: 15), // Increased to 15 seconds
+          accuracy: geolocator.LocationAccuracy.high,
+          timeLimit: Duration(seconds: 20),
         ),
       );
+
+      // Geofence checks are adaptive to accuracy, so we return whatever
+      // the OS can provide within the timeout.
+      return current;
     } catch (e) {
-      // If high accuracy times out, try reduced accuracy
+      // If the live request fails or times out, fall back once more to
+      // any last-known position before giving up.
       try {
-        return await geolocator.Geolocator.getCurrentPosition(
-          locationSettings: const geolocator.LocationSettings(
-            accuracy: geolocator.LocationAccuracy.high,
-            timeLimit: Duration(seconds: 10),
-          ),
-        );
-      } catch (e2) {
-        // If still failing, use last known position as fallback
         final lastPosition = await geolocator.Geolocator.getLastKnownPosition();
         if (lastPosition != null) {
           return lastPosition;
         }
-        // If all fails, throw original error
-        rethrow;
-      }
+      } catch (_) {}
+
+      rethrow;
     }
   }
 
@@ -97,6 +109,12 @@ class LocationService {
     // Stream all positions without artificial delays
     await for (final pos in baseStream) {
       final now = DateTime.now();
+
+      // Accept positions with reasonable accuracy (up to 200m for indoor/outdoor GPS)
+      // Indoor GPS can have accuracy 50-200m, outdoor 5-10m
+      if (pos.accuracy <= 0 || pos.accuracy > 200) {
+        continue;
+      }
 
       // Skip GPS spikes: implausible jumps > 500m/s (1800 km/h)
       if (last != null && lastTime != null) {

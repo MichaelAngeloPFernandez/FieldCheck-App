@@ -10,6 +10,7 @@ import '../services/realtime_service.dart';
 import '../services/user_service.dart';
 import '../utils/http_util.dart';
 import '../services/autosave_service.dart';
+import '../services/attendance_service.dart';
 import '../widgets/location_tracker_indicator.dart';
 import '../widgets/checkin_timer_widget.dart';
 
@@ -27,12 +28,14 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   final LocationService _locationService = LocationService();
   final GeofenceService _geofenceService = GeofenceService();
   final UserService _userService = UserService();
+  final AttendanceService _attendanceService = AttendanceService();
 
   bool _isCheckedIn = false;
   bool _isLoading = false;
   bool _isOnline = true;
   String _lastCheckTime = "--:--";
   int _pendingSyncCount = 0;
+  DateTime? _lastCheckTimestamp;
 
   Position? _userPosition;
   List<Geofence> _assignedGeofences = [];
@@ -43,9 +46,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   String? _userModelId;
 
   DateTime? _lastLocationUpdate;
-
   Timer? _locationUpdateTimer;
-  StreamSubscription<Map<String, dynamic>>? _attendanceSubscription;
 
   @override
   void initState() {
@@ -57,7 +58,6 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   @override
   void dispose() {
     _locationUpdateTimer?.cancel();
-    _attendanceSubscription?.cancel();
     super.dispose();
   }
 
@@ -67,18 +67,12 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
     await _autosaveService.initialize();
 
-    // Listen for real-time attendance updates
-    _attendanceSubscription = _realtimeService.attendanceStream.listen((event) {
-      if (mounted) {
-        _handleRealtimeAttendanceUpdate(event);
-      }
-    });
-
     await _loadUserSettings();
     await _loadCurrentUser();
     await _loadAssignedGeofences();
     await _initializeLocation();
-    _startLocationUpdates();
+    // Note: Location updates only happen on-demand when user taps check-in/out
+    // Do NOT call _startLocationUpdates() - it causes unnecessary location polling
     await _loadPendingSyncCount();
   }
 
@@ -118,19 +112,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   Future<void> _loadAssignedGeofences() async {
     try {
       final geofences = await _geofenceService.fetchGeofences();
-      List<Geofence> assigned = geofences;
-      if (_userModelId != null) {
-        assigned = geofences.where((g) {
-          if (!g.isActive) return false;
-          final employees = g.assignedEmployees ?? const [];
-          return employees.any((u) => u.id == _userModelId);
-        }).toList();
-      } else {
-        assigned = geofences.where((g) => g.isActive).toList();
-      }
+      // Load ALL active geofences (not just assigned) so employees can check in anywhere
+      final allActive = geofences.where((g) => g.isActive).toList();
       setState(() {
         _allGeofences = geofences;
-        _assignedGeofences = assigned;
+        _assignedGeofences = allActive;
       });
     } catch (e) {
       debugPrint('Error loading geofences: $e');
@@ -139,11 +125,12 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
   Future<void> _loadAttendanceStatus() async {
     try {
-      // Load attendance status from local storage or initialize as checked out
+      final status = await _attendanceService.getCurrentAttendanceStatus();
       if (mounted) {
         setState(() {
-          _isCheckedIn = false;
-          _lastCheckTime = "--:--";
+          _isCheckedIn = status.isCheckedIn;
+          _lastCheckTime = status.lastCheckTime ?? "--:--";
+          _lastCheckTimestamp = status.lastCheckTimestamp;
         });
       }
     } catch (e) {
@@ -223,13 +210,23 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   }
 
   Future<void> _updateGeofenceStatus() async {
-    if (_userPosition == null || _assignedGeofences.isEmpty) return;
+    if (_userPosition == null || _allGeofences.isEmpty) return;
 
     double minDistance = double.infinity;
     Geofence? nearestGeofence;
     bool withinAnyGeofence = false;
 
-    for (final geofence in _assignedGeofences) {
+    final accuracy = _userPosition!.accuracy;
+    double extraTolerance = 0;
+    if (accuracy > 0) {
+      // Allow larger tolerance to support indoor GPS (often 50-200m accuracy)
+      extraTolerance = accuracy.clamp(5, 200).toDouble();
+    }
+
+    // Check against ALL geofences (not just assigned) to find nearest and check if inside any
+    for (final geofence in _allGeofences) {
+      if (!geofence.isActive) continue;
+
       final distance = Geolocator.distanceBetween(
         _userPosition!.latitude,
         _userPosition!.longitude,
@@ -242,8 +239,8 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         nearestGeofence = geofence;
       }
 
-      // Check if within geofence radius (without extra tolerance for stricter checking)
-      if (distance <= geofence.radius) {
+      // Check if within geofence radius (with tolerance for GPS accuracy)
+      if (distance <= geofence.radius + extraTolerance) {
         withinAnyGeofence = true;
       }
     }
@@ -251,35 +248,24 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     if (mounted) {
       setState(() {
         _currentGeofence = nearestGeofence;
-        _currentDistanceMeters = minDistance;
+        _currentDistanceMeters = minDistance == double.infinity
+            ? null
+            : minDistance;
         _isWithinAnyGeofence = withinAnyGeofence;
       });
     }
   }
 
-  void _handleRealtimeAttendanceUpdate(Map<String, dynamic> event) {
-    final action = event['action'] as String;
-    final data = event['data'] as Map<String, dynamic>;
-
-    if (action == 'new' || action == 'updated') {
-      // Update local state based on real-time data
-      setState(() {
-        _isCheckedIn = data['isCheckedIn'] ?? _isCheckedIn;
-        _lastCheckTime = data['lastCheckTime'] ?? _lastCheckTime;
-      });
-    }
-  }
-
   Future<void> _toggleAttendance() async {
-    // Ensure we are using a fresh location before checking geofence status
+    // Only refresh location if it's stale (> 10 seconds old) or missing
     final now = DateTime.now();
     if (_userPosition == null ||
         _lastLocationUpdate == null ||
-        now.difference(_lastLocationUpdate!).inSeconds > 15) {
+        now.difference(_lastLocationUpdate!).inSeconds > 10) {
       await _updateLocation();
     }
 
-    if (!_isWithinAnyGeofence) {
+    if (!_isCheckedIn && !_isWithinAnyGeofence) {
       _showGeofenceErrorDialog();
       return;
     }
@@ -319,32 +305,54 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       final formattedTime =
           "${hour.toString().padLeft(2, '0')}:${phTime.minute.toString().padLeft(2, '0')} $ampm";
 
+      // For checkout, use current geofence or find the one from the open attendance record
+      String? geofenceIdForSubmission = _currentGeofence?.id;
+
       final attendanceData = {
         'isCheckedIn': !_isCheckedIn,
         'timestamp': now.toIso8601String(),
         'latitude': _userPosition?.latitude,
         'longitude': _userPosition?.longitude,
-        'geofenceId': _currentGeofence?.id,
+        'geofenceId': geofenceIdForSubmission,
         'geofenceName': _currentGeofence?.name,
       };
 
-      // Save to autosave first
-      await _autosaveService.saveData(
-        'attendance_${now.millisecondsSinceEpoch}',
-        attendanceData,
-      );
+      // Save to autosave first (for offline sync support)
+      final storageKey = 'attendance_${now.millisecondsSinceEpoch}';
+      await _autosaveService.saveData(storageKey, attendanceData);
 
-      // Send to server via realtime service
+      // When online, persist attendance immediately via REST API
       if (_isOnline) {
-        // Emit real-time update
-        _realtimeService.emit('attendanceUpdate', attendanceData);
+        try {
+          await _attendanceService.submitAttendance(
+            AttendanceData(
+              isCheckedIn: !_isCheckedIn,
+              timestamp: now,
+              latitude: _userPosition?.latitude,
+              longitude: _userPosition?.longitude,
+              geofenceId: geofenceIdForSubmission,
+              geofenceName: _currentGeofence?.name,
+            ),
+          );
+
+          // Clear autosave copy for successfully synced records
+          await _autosaveService.clearData(storageKey);
+        } catch (e) {
+          // Remove the autosave entry for this failed attempt to avoid
+          // counting it as a pending sync, then rethrow so UI shows error.
+          await _autosaveService.clearData(storageKey);
+          rethrow;
+        }
       }
+
+      // Refresh pending sync count for offline mode banner
       await _loadPendingSyncCount();
 
       if (mounted) {
         setState(() {
           _isCheckedIn = attendanceData['isCheckedIn'] as bool;
           _lastCheckTime = formattedTime;
+          _lastCheckTimestamp = now;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -706,11 +714,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               CheckInTimerWidget(
                 employeeId: _userModelId ?? 'unknown',
                 isCheckedIn: _isCheckedIn,
-                customTimeout: const Duration(hours: 8),
-                onTimerExpired: (employeeId) {
-                  debugPrint('Timer expired for $employeeId');
-                  // Handle timer expiration - mark attendance as incomplete
-                },
+                checkInTimestamp: _lastCheckTimestamp,
               ),
             const SizedBox(height: 24),
             Container(

@@ -1,5 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const Geofence = require('../models/Geofence');
+const Attendance = require('../models/Attendance');
+const Report = require('../models/Report');
 const { io } = require('../server');
 
 // @desc    Create a new geofence
@@ -83,6 +85,11 @@ const updateGeofence = asyncHandler(async (req, res) => {
   const geofence = await Geofence.findById(req.params.id);
 
   if (geofence) {
+    // Track which employees were removed from assignment
+    const previousEmployeeIds = geofence.assignedEmployees.map(id => id.toString());
+    const newEmployeeIds = Array.isArray(assignedEmployees) ? assignedEmployees.map(id => id.toString()) : [];
+    const removedEmployeeIds = previousEmployeeIds.filter(id => !newEmployeeIds.includes(id));
+
     // Update all fields with proper null/undefined handling
     if (name !== undefined && name !== null) geofence.name = name;
     if (address !== undefined && address !== null) geofence.address = address;
@@ -95,6 +102,61 @@ const updateGeofence = asyncHandler(async (req, res) => {
     if (Array.isArray(assignedEmployees)) geofence.assignedEmployees = assignedEmployees;
 
     const updatedGeofence = await geofence.save();
+
+    // Auto-checkout employees removed from this geofence
+    if (removedEmployeeIds.length > 0) {
+      setImmediate(async () => {
+        try {
+          for (const employeeId of removedEmployeeIds) {
+            // Find active attendance record for this employee at this geofence
+            const openRecord = await Attendance.findOne({
+              employee: employeeId,
+              geofence: geofence._id,
+              checkOut: { $exists: false },
+            }).populate('employee', 'name');
+
+            if (openRecord) {
+              // Auto-checkout the employee
+              const now = new Date();
+              openRecord.checkOut = now;
+              openRecord.status = 'out';
+              openRecord.isVoid = true;
+              openRecord.voidReason = 'Auto-checkout: Employee removed from geofence assignment';
+              await openRecord.save();
+
+              // Create void attendance report
+              try {
+                const report = await Report.create({
+                  type: 'attendance',
+                  attendance: openRecord._id,
+                  employee: employeeId,
+                  geofence: geofence._id,
+                  content: `Auto-checkout: Employee removed from geofence assignment by admin`,
+                });
+                io.emit('newReport', report);
+              } catch (e) {
+                console.error('Failed to create auto-checkout report:', e);
+              }
+
+              // Emit auto-checkout event
+              io.emit('employeeAutoCheckout', {
+                employeeId,
+                employeeName: openRecord.employee?.name || 'Unknown',
+                geofenceName: geofence.name,
+                reason: 'Employee removed from geofence assignment',
+                checkOutTime: now,
+                isVoid: true,
+              });
+
+              console.log(`✅ Auto-checkout: ${openRecord.employee?.name} from ${geofence.name} (removed from assignment)`);
+            }
+          }
+        } catch (e) {
+          console.error('Error auto-checking out removed employees:', e);
+        }
+      });
+    }
+
     // Populate assignedEmployees before emitting to ensure frontend has complete data
     const populatedGeofence = await Geofence.findById(updatedGeofence._id)
       .populate('assignedEmployees', '_id name email role');

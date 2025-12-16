@@ -10,6 +10,7 @@ class EmployeeDetailsModal extends StatefulWidget {
   final Function(EmployeeStatus)? onStatusChange;
   final VoidCallback? onSendMessage;
   final VoidCallback? onViewReports;
+  final VoidCallback? onViewHistory;
 
   const EmployeeDetailsModal({
     super.key,
@@ -19,6 +20,7 @@ class EmployeeDetailsModal extends StatefulWidget {
     this.onStatusChange,
     this.onSendMessage,
     this.onViewReports,
+    this.onViewHistory,
   });
 
   @override
@@ -411,7 +413,7 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
       case EmployeeStatus.available:
         return Colors.green;
       case EmployeeStatus.moving:
-        return Colors.blue;
+        return Colors.green;
       case EmployeeStatus.busy:
         return Colors.red;
       case EmployeeStatus.offline:
@@ -424,7 +426,7 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
       case EmployeeStatus.available:
         return '🟢 Available';
       case EmployeeStatus.moving:
-        return '🔵 Moving';
+        return '🟢 Moving';
       case EmployeeStatus.busy:
         return '🔴 Busy';
       case EmployeeStatus.offline:

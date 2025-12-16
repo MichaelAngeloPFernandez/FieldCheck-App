@@ -21,7 +21,7 @@ class EmployeeManagementModal extends StatefulWidget {
 
 class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
   late TextEditingController _searchController;
-  String _selectedFilter = 'all'; // all, online, busy, moving, offline
+  final String _selectedFilter = 'all'; // all, online, busy, moving, offline
   List<EmployeeLocation> _filteredEmployees = [];
   final Map<String, EmployeeCheckoutConfig> _configs = {};
   final AdminActionsService _adminActions = AdminActionsService();
@@ -80,7 +80,7 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
       case EmployeeStatus.available:
         return Colors.green;
       case EmployeeStatus.moving:
-        return Colors.blue;
+        return Colors.green;
       case EmployeeStatus.busy:
         return Colors.red;
       case EmployeeStatus.offline:
@@ -134,15 +134,17 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
           });
           widget.onConfigUpdate?.call(employee.employeeId, updatedConfig);
 
-          // Persist to backend Settings
+          Navigator.pop(context);
+
+          // Persist to backend Settings AFTER closing dialog to avoid
+          // using this dialog's BuildContext across async gaps.
           final success = await _adminActions.saveEmployeeCheckoutConfig(
             updatedConfig,
           );
+
           if (!mounted) return;
-
-          Navigator.pop(context);
-
-          ScaffoldMessenger.of(context).showSnackBar(
+          // Use the parent modal's context for feedback
+          ScaffoldMessenger.of(this.context).showSnackBar(
             SnackBar(
               content: Text(
                 success
@@ -218,28 +220,6 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
               ),
             ),
           ),
-
-          // Filter chips
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _buildFilterChip('All', 'all'),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('Online', 'online', Colors.green),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('Busy', 'busy', Colors.red),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('Moving', 'moving', Colors.blue),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('Offline', 'offline', Colors.grey),
-                ],
-              ),
-            ),
-          ),
-
           const SizedBox(height: 12),
 
           // Employee list
@@ -307,26 +287,6 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, String value, [Color? color]) {
-    final isSelected = _selectedFilter == value;
-    return FilterChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        setState(() {
-          _selectedFilter = value;
-          _applyFilters();
-        });
-      },
-      backgroundColor: color?.withValues(alpha: 0.2),
-      selectedColor: color ?? Colors.blue.withValues(alpha: 0.3),
-      labelStyle: TextStyle(
-        color: isSelected ? (color ?? Colors.blue) : Colors.grey,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
       ),
     );
   }

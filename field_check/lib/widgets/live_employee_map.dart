@@ -152,8 +152,8 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildLegendItem('🟢', 'Available', Colors.green),
-                  _buildLegendItem('🔵', 'Moving', Colors.blue),
+                  _buildLegendItem('🟢', 'Available / Standby', Colors.green),
+                  _buildLegendItem('🟢', 'Moving / On the go', Colors.green),
                   _buildLegendItem('🔴', 'Busy', Colors.red),
                   _buildLegendItem('⚫', 'Offline', Colors.grey),
                 ],
@@ -394,7 +394,7 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
       case EmployeeStatus.available:
         return Colors.green;
       case EmployeeStatus.moving:
-        return Colors.blue;
+        return Colors.green;
       case EmployeeStatus.busy:
         return Colors.red;
       case EmployeeStatus.offline:

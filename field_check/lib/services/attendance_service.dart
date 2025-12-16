@@ -105,10 +105,66 @@ class AttendanceService {
     }
   }
 
+  Future<void> deleteMyAttendanceRecord(String id) async {
+    try {
+      final token = await _userService.getToken();
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/api/attendance/history/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Failed to delete attendance record');
+      }
+    } catch (e) {
+      throw Exception('Error deleting attendance record: $e');
+    }
+  }
+
+  Future<int> deleteMyAttendanceHistoryForMonth(int year, int month) async {
+    try {
+      final token = await _userService.getToken();
+      final uri = Uri.parse('${ApiConfig.baseUrl}/api/attendance/history')
+          .replace(
+            queryParameters: {
+              'year': year.toString(),
+              'month': month.toString(),
+            },
+          );
+
+      final response = await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        try {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          return (data['deletedCount'] as int?) ?? 0;
+        } catch (_) {
+          return 0;
+        }
+      } else if (response.statusCode == 204) {
+        return 0;
+      } else {
+        throw Exception('Failed to delete attendance history for month');
+      }
+    } catch (e) {
+      throw Exception('Error deleting attendance history for month: $e');
+    }
+  }
+
   Future<List<AttendanceRecord>> getAttendanceRecords({
     DateTime? date,
     String? locationId,
     String? status,
+    String? employeeId,
   }) async {
     try {
       final token = await _userService.getToken();
@@ -125,6 +181,9 @@ class AttendanceService {
       }
       if (status != null) {
         queryParams['status'] = status;
+      }
+      if (employeeId != null) {
+        queryParams['employeeId'] = employeeId;
       }
 
       final uri = Uri.parse(
@@ -237,22 +296,37 @@ class AttendanceRecord {
 
     // Determine if it's check-in or check-out
     bool isCheckIn;
-    if (attendance['status'] != null) {
+    final hasCheckOut = attendance['checkOut'] != null;
+
+    if (hasCheckOut) {
+      // If a checkout timestamp exists, the record should be treated as
+      // a completed (checked-out) attendance entry regardless of status.
+      isCheckIn = false;
+    } else if (attendance['status'] != null) {
       isCheckIn = (attendance['status'] as String).toLowerCase() == 'in';
     } else {
       final content = json['content'] as String? ?? '';
       isCheckIn = content.toLowerCase().contains('checked in');
     }
 
+    String? timestampStr;
+
+    if (hasCheckOut && attendance['checkOut'] != null) {
+      timestampStr = attendance['checkOut']?.toString();
+    } else if (attendance['checkIn'] != null) {
+      timestampStr = attendance['checkIn']?.toString();
+    } else {
+      timestampStr = (json['submittedAt'] ?? json['timestamp'])?.toString();
+    }
+
+    final DateTime parsedTimestamp = timestampStr != null
+        ? DateTime.parse(timestampStr)
+        : DateTime.now();
+
     return AttendanceRecord(
       id: json['_id'] ?? json['id'] ?? '',
       isCheckIn: isCheckIn,
-      timestamp: DateTime.parse(
-        attendance['checkIn'] ??
-            json['submittedAt'] ??
-            json['timestamp'] ??
-            DateTime.now().toIso8601String(),
-      ),
+      timestamp: parsedTimestamp,
       latitude:
           (attendance['location']?['coordinates']?[1] as num?)?.toDouble() ??
           (attendance['latitude'] as num?)?.toDouble(),

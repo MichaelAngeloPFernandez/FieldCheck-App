@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../services/employee_location_service.dart';
 import '../services/checkout_notification_service.dart';
+import '../services/task_monitoring_service.dart';
+import '../services/task_service.dart';
 import '../widgets/employee_status_view.dart';
 import '../widgets/live_employee_map.dart';
 import '../widgets/employee_management_modal.dart';
@@ -24,6 +26,9 @@ class _EnhancedAdminDashboardScreenState
       CheckoutNotificationService();
   StreamSubscription<CheckoutWarning>? _warningSub;
   StreamSubscription<AutoCheckoutEvent>? _autoCheckoutSub;
+  final TaskMonitoringService _taskMonitoringService = TaskMonitoringService();
+  TaskStatistics? _taskStatistics;
+  Map<String, double> _employeeTaskLoad = {};
 
   @override
   void initState() {
@@ -37,6 +42,7 @@ class _EnhancedAdminDashboardScreenState
     });
 
     _initCheckoutNotifications();
+    _loadTaskStatistics();
   }
 
   Future<void> _initializeLocationService() async {
@@ -103,6 +109,60 @@ class _EnhancedAdminDashboardScreenState
     }
   }
 
+  Future<void> _loadTaskStatistics() async {
+    try {
+      final stats = await _taskMonitoringService.getTaskStatistics();
+      if (!mounted) return;
+      setState(() {
+        _taskStatistics = stats;
+      });
+      await _loadEmployeeTaskLoad();
+    } catch (e) {
+      debugPrint('Error loading task statistics: $e');
+    }
+  }
+
+  Future<void> _loadEmployeeTaskLoad() async {
+    try {
+      final tasks = await TaskService().getCurrentTasks();
+      final load = <String, double>{};
+
+      for (final task in tasks) {
+        if (task.status == 'completed') continue;
+
+        double weight = 1.0;
+        switch (task.difficulty?.toLowerCase() ?? 'medium') {
+          case 'easy':
+            weight = 1.0;
+            break;
+          case 'medium':
+            weight = 2.0;
+            break;
+          case 'hard':
+            weight = 3.0;
+            break;
+          case 'critical':
+            weight = 5.0;
+            break;
+          default:
+            weight = 2.0;
+        }
+
+        for (final assignee in task.assignedToMultiple) {
+          final key = assignee.employeeId ?? assignee.id;
+          load[key] = (load[key] ?? 0.0) + weight;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _employeeTaskLoad = load;
+      });
+    } catch (e) {
+      debugPrint('Error loading employee task load: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -163,6 +223,32 @@ class _EnhancedAdminDashboardScreenState
                     ],
                   ),
                 ),
+                if (_taskStatistics != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'Active Tasks',
+                            _taskStatistics!.activeTasks.toString(),
+                            Icons.task_alt,
+                            Colors.deepPurple,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Weighted Load',
+                            _taskStatistics!.totalDifficultyWeight
+                                .toStringAsFixed(1),
+                            Icons.scale,
+                            Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 // Status breakdown
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -177,11 +263,11 @@ class _EnhancedAdminDashboardScreenState
                         Colors.green,
                       ),
                       _buildStatusBadge(
-                        '🔵 Moving',
+                        '🟢 Moving',
                         _employees
                             .where((e) => e.status == EmployeeStatus.moving)
                             .length,
-                        Colors.blue,
+                        Colors.green,
                       ),
                       _buildStatusBadge(
                         '🔴 Busy',
@@ -242,6 +328,27 @@ class _EnhancedAdminDashboardScreenState
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                const Divider(),
+                // Per-employee task load breakdown
+                if (_employeeTaskLoad.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Top Employees by Task Load',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ..._buildTopEmployeesList(),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 const Divider(),
                 // Live employee map
@@ -355,50 +462,80 @@ class _EnhancedAdminDashboardScreenState
     );
   }
 
-  Widget _buildOptionCard(
-    String title,
-    String subtitle,
-    IconData icon,
-    Color color, {
-    VoidCallback? onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
+  List<Widget> _buildTopEmployeesList() {
+    final sorted = _employeeTaskLoad.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final top = sorted.take(5).toList();
+
+    return top.map((entry) {
+      final employeeId = entry.key;
+      final load = entry.value;
+      final employee = _employees.firstWhere(
+        (e) => e.employeeId == employeeId,
+        orElse: () => EmployeeLocation(
+          employeeId: employeeId,
+          name: 'Unknown Employee',
+          latitude: 0,
+          longitude: 0,
+          accuracy: 0,
+          status: EmployeeStatus.offline,
+          timestamp: DateTime.now(),
+          activeTaskCount: 0,
+          workloadScore: 0,
+          isOnline: false,
         ),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+      );
+
+      final loadColor = load > 8.0
+          ? Colors.red
+          : load > 5.0
+          ? Colors.orange
+          : Colors.green;
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: loadColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: loadColor.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  employee.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
+                ),
               ),
-            ),
-            Icon(Icons.arrow_forward, color: color),
-          ],
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: loadColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  load.toStringAsFixed(1),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    }).toList();
   }
 
   void _showTotalEmployeesView(BuildContext context) {

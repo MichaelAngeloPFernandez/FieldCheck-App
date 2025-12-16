@@ -197,6 +197,11 @@ const autoCheckoutOfflineEmployees = async () => {
           record.autoCheckout = true;
           await record.save();
 
+          await User.findByIdAndUpdate(employee._id, {
+            isOnline: false,
+            status: 'offline',
+          });
+
           // Create attendance report
           try {
             const rep = await Report.create({
@@ -225,6 +230,10 @@ const autoCheckoutOfflineEmployees = async () => {
               reason: 'Offline for extended period',
               timestamp: now.toISOString(),
               isVoid: true,
+            });
+            global.io.emit('employeeOffline', {
+              employeeId: String(employee._id),
+              timestamp: now.toISOString(),
             });
           }
 

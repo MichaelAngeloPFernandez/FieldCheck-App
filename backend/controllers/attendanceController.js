@@ -23,18 +23,9 @@ const checkIn = asyncHandler(async (req, res) => {
     throw new Error('Geofence not found');
   }
 
-  // Server-side geofence validation
-  if (geofence.isActive === false) {
-    res.status(403);
-    throw new Error('Geofence inactive');
-  }
-  if (Array.isArray(geofence.assignedEmployees) && geofence.assignedEmployees.length > 0) {
-    const isAssigned = geofence.assignedEmployees.some((e) => e.toString() === req.user._id.toString());
-    if (!isAssigned) {
-      res.status(403);
-      throw new Error('Employee not assigned to this geofence');
-    }
-  }
+  // Note: We allow any employee to check in at any geofence if within boundary.
+  // Geofence active status is not enforced - employees can check in at inactive geofences.
+  // Assignment is optional and not enforced at check-in time.
   const toRad = (deg) => (deg * Math.PI) / 180;
   const haversineMeters = (lat1, lon1, lat2, lon2) => {
     const R = 6371000; // meters
@@ -75,25 +66,44 @@ const checkIn = asyncHandler(async (req, res) => {
   });
 
   const created = await attendance.save();
-  // Populate before emitting to ensure complete data
-  const populatedAttendance = await Attendance.findById(created._id)
-    .populate('employee', 'name email')
-    .populate('geofence', 'name');
-  io.emit('newAttendanceRecord', populatedAttendance);
+  
+  // Emit immediately with basic data for fast UI update
+  io.emit('newAttendanceRecord', {
+    _id: created._id,
+    employee: { _id: req.user._id, name: req.user.name },
+    geofence: { _id: geofence._id, name: geofence.name },
+    checkIn: created.checkIn,
+    status: created.status,
+    location: created.location,
+  });
 
-  // Auto-create attendance report on check-in
-  try {
-    const rep = await Report.create({
-      type: 'attendance',
-      attendance: created._id,
-      employee: req.user._id,
-      geofence: geofence._id,
-      content: 'Employee checked in',
-    });
-    io.emit('newReport', rep);
-  } catch (e) {
-    console.error('Failed to auto-create attendance check-in report:', e);
-  }
+  // Populate and emit full data asynchronously (don't block response)
+  setImmediate(async () => {
+    try {
+      const populatedAttendance = await Attendance.findById(created._id)
+        .populate('employee', 'name email')
+        .populate('geofence', 'name');
+      io.emit('newAttendanceRecord', populatedAttendance);
+    } catch (e) {
+      console.error('Error populating attendance:', e);
+    }
+  });
+
+  // Auto-create attendance report in background (don't block response)
+  setImmediate(async () => {
+    try {
+      const rep = await Report.create({
+        type: 'attendance',
+        attendance: created._id,
+        employee: req.user._id,
+        geofence: geofence._id,
+        content: 'Employee checked in',
+      });
+      io.emit('newReport', rep);
+    } catch (e) {
+      console.error('Failed to auto-create attendance check-in report:', e);
+    }
+  });
 
   res.status(201).json(created);
 });
@@ -148,34 +158,9 @@ const checkOut = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Geofence not found in database');
   }
-  if (geofence.isActive === false) {
-    res.status(403);
-    throw new Error('Geofence inactive');
-  }
-  if (Array.isArray(geofence.assignedEmployees) && geofence.assignedEmployees.length > 0) {
-    const isAssigned = geofence.assignedEmployees.some((e) => e.toString() === req.user._id.toString());
-    if (!isAssigned) {
-      res.status(403);
-      throw new Error('Employee not assigned to this geofence');
-    }
-  }
-  const toRad = (deg) => (deg * Math.PI) / 180;
-  const haversineMeters = (lat1, lon1, lat2, lon2) => {
-    const R = 6371000; // meters
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-  const distanceMeters = haversineMeters(geofence.latitude, geofence.longitude, latitude, longitude);
-  if (distanceMeters > geofence.radius) {
-    res.status(403);
-    throw new Error('Outside geofence boundary');
-  }
+  // Note: We skip geofence active/assignment/distance checks on checkout.
+  // Client already validated on check-in. Employees should be able to check out
+  // even if they've moved outside the geofence or if the geofence is inactive.
 
   // Record time in Philippine timezone (UTC+8)
   const phTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
@@ -185,25 +170,45 @@ const checkOut = asyncHandler(async (req, res) => {
   openRecord.location = { lat: latitude, lng: longitude };
 
   const updated = await openRecord.save();
-  // Populate before emitting to ensure complete data
-  const populatedAttendance = await Attendance.findById(updated._id)
-    .populate('employee', 'name email')
-    .populate('geofence', 'name');
-  io.emit('updatedAttendanceRecord', populatedAttendance);
+  
+  // Emit immediately with basic data for fast UI update
+  io.emit('updatedAttendanceRecord', {
+    _id: updated._id,
+    employee: { _id: req.user._id, name: req.user.name },
+    geofence: { _id: geofence._id, name: geofence.name },
+    checkIn: updated.checkIn,
+    checkOut: updated.checkOut,
+    status: updated.status,
+    location: updated.location,
+  });
 
-  // Auto-create attendance report on check-out
-  try {
-    const rep = await Report.create({
-      type: 'attendance',
-      attendance: updated._id,
-      employee: req.user._id,
-      geofence: updated.geofence,
-      content: 'Employee checked out',
-    });
-    io.emit('newReport', rep);
-  } catch (e) {
-    console.error('Failed to auto-create attendance check-out report:', e);
-  }
+  // Populate and emit full data asynchronously (don't block response)
+  setImmediate(async () => {
+    try {
+      const populatedAttendance = await Attendance.findById(updated._id)
+        .populate('employee', 'name email')
+        .populate('geofence', 'name');
+      io.emit('updatedAttendanceRecord', populatedAttendance);
+    } catch (e) {
+      console.error('Error populating attendance:', e);
+    }
+  });
+
+  // Auto-create attendance report in background (don't block response)
+  setImmediate(async () => {
+    try {
+      const rep = await Report.create({
+        type: 'attendance',
+        attendance: updated._id,
+        employee: req.user._id,
+        geofence: updated.geofence,
+        content: 'Employee checked out',
+      });
+      io.emit('newReport', rep);
+    } catch (e) {
+      console.error('Failed to auto-create attendance check-out report:', e);
+    }
+  });
 
   res.json(updated);
 });
@@ -311,6 +316,26 @@ const deleteAttendance = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+// @desc    Delete a single attendance record for the logged-in employee
+// @route   DELETE /api/attendance/history/:id
+// @access  Private
+const deleteMyAttendanceRecord = asyncHandler(async (req, res) => {
+  const attendance = await Attendance.findById(req.params.id);
+
+  if (!attendance) {
+    res.status(404);
+    throw new Error('Attendance record not found');
+  }
+
+  if (attendance.employee.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error('Not authorized to delete this attendance record');
+  }
+
+  await attendance.deleteOne();
+  res.status(204).send();
+});
+
 // @desc    Get current attendance status for employee
 // @route   GET /api/attendance/status
 // @access  Private
@@ -400,6 +425,36 @@ const getAttendanceHistory = asyncHandler(async (req, res) => {
   res.json({ records });
 });
 
+// @desc    Delete attendance history for logged-in employee for a specific month
+// @route   DELETE /api/attendance/history?year=YYYY&month=MM
+// @access  Private
+const deleteMyAttendanceHistoryByMonth = asyncHandler(async (req, res) => {
+  const { year, month } = req.query;
+
+  if (!year || !month) {
+    res.status(400);
+    throw new Error('Year and month are required');
+  }
+
+  const y = parseInt(year, 10);
+  const m = parseInt(month, 10);
+
+  if (Number.isNaN(y) || Number.isNaN(m) || m < 1 || m > 12) {
+    res.status(400);
+    throw new Error('Invalid year or month');
+  }
+
+  const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+
+  const result = await Attendance.deleteMany({
+    employee: req.user._id,
+    checkIn: { $gte: start, $lte: end },
+  });
+
+  res.json({ deletedCount: result.deletedCount || 0 });
+});
+
 module.exports = {
   checkIn,
   checkOut,
@@ -410,4 +465,6 @@ module.exports = {
   deleteAttendance,
   getAttendanceStatus,
   getAttendanceHistory,
+  deleteMyAttendanceRecord,
+  deleteMyAttendanceHistoryByMonth,
 };

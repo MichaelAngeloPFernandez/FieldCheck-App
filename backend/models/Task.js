@@ -9,7 +9,19 @@ const taskSchema = new mongoose.Schema(
     assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     status: {
       type: String,
-      enum: ['pending', 'in_progress', 'completed'],
+      enum: [
+        'pending',
+        'in_progress',
+        'completed',
+        'created',
+        'assigned',
+        'accepted',
+        'blocked',
+        'reviewed',
+        'closed',
+      ],
+      // Keep legacy default "pending" to avoid breaking existing flows,
+      // while still allowing richer lifecycle values when explicitly set.
       default: 'pending',
     },
     type: {
@@ -28,6 +40,25 @@ const taskSchema = new mongoose.Schema(
     isArchived: { type: Boolean, default: false },
     // One-time flag used to prevent repeat overdue notifications
     overdueNotified: { type: Boolean, default: false },
+    progressPercent: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    checklist: [
+      {
+        label: { type: String, required: true },
+        isCompleted: { type: Boolean, default: false },
+        completedAt: { type: Date },
+      },
+    ],
+    attachments: {
+      images: [{ type: String }],
+      documents: [{ type: String }],
+      others: [{ type: String }],
+    },
+    blockReason: { type: String },
   },
 
   { timestamps: true }

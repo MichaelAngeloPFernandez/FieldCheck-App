@@ -23,10 +23,14 @@ class TaskReportScreen extends StatefulWidget {
 
 class _TaskReportScreenState extends State<TaskReportScreen> {
   final TextEditingController _textController = TextEditingController();
-  final List<PlatformFile> _selectedFiles = [];
+  final List<PlatformFile> _beforeFiles = [];
+  final List<PlatformFile> _afterFiles = [];
+  final List<PlatformFile> _documentFiles = [];
   final AutosaveService _autosaveService = AutosaveService();
   final RealtimeService _realtimeService = RealtimeService();
+  late Task _task;
   bool _isSubmitting = false;
+  bool _isBlocking = false;
   bool _hasUnsavedChanges = false;
   bool _statusMarkedInProgress = false;
   Timer? _autosaveTimer;
@@ -34,6 +38,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   @override
   void initState() {
     super.initState();
+    _task = widget.task;
     _loadAutosavedData();
     _startAutosave();
   }
@@ -53,8 +58,8 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
       // Mark task as in_progress on first keystroke (if not already marked)
       if (!_statusMarkedInProgress &&
-          widget.task.status == 'pending' &&
-          widget.task.userTaskId != null) {
+          _task.status == 'pending' &&
+          _task.userTaskId != null) {
         _statusMarkedInProgress = true;
         _markTaskInProgress();
       }
@@ -69,7 +74,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   Future<void> _markTaskInProgress() async {
     try {
       await TaskService().updateUserTaskStatus(
-        widget.task.userTaskId!,
+        _task.userTaskId!,
         'in_progress',
       );
       if (mounted) {
@@ -97,20 +102,43 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           _textController.text = content;
         }
 
-        final files = autosavedData['files'] as List<dynamic>?;
-        if (files != null) {
-          setState(() {
-            _selectedFiles.clear();
-            for (final fileData in files) {
-              final file = PlatformFile(
-                name: fileData['name'],
-                size: fileData['size'],
-                path: fileData['path'],
-              );
-              _selectedFiles.add(file);
-            }
-          });
+        final beforeFiles = autosavedData['beforeFiles'] as List<dynamic>?;
+        final afterFiles = autosavedData['afterFiles'] as List<dynamic>?;
+        List<dynamic>? documentFiles =
+            autosavedData['documentFiles'] as List<dynamic>?;
+
+        // Backwards compatibility with legacy single files list
+        final legacyFiles = autosavedData['files'] as List<dynamic>?;
+        if ((beforeFiles == null || beforeFiles.isEmpty) &&
+            (afterFiles == null || afterFiles.isEmpty) &&
+            (documentFiles == null || documentFiles.isEmpty) &&
+            legacyFiles != null) {
+          documentFiles = legacyFiles;
         }
+
+        void loadFiles(List<dynamic>? src, List<PlatformFile> target) {
+          if (src == null) return;
+          for (final fileData in src) {
+            if (fileData is Map<String, dynamic>) {
+              final file = PlatformFile(
+                name: fileData['name'] ?? '',
+                size: fileData['size'] is int ? fileData['size'] as int : 0,
+                path: fileData['path'] as String?,
+              );
+              target.add(file);
+            }
+          }
+        }
+
+        setState(() {
+          _beforeFiles.clear();
+          _afterFiles.clear();
+          _documentFiles.clear();
+
+          loadFiles(beforeFiles, _beforeFiles);
+          loadFiles(afterFiles, _afterFiles);
+          loadFiles(documentFiles, _documentFiles);
+        });
       }
     } catch (e) {
       debugPrint('Error loading autosaved data: $e');
@@ -122,7 +150,17 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
     try {
       final content = _textController.text;
-      final files = _selectedFiles
+      final beforeFiles = _beforeFiles
+          .map(
+            (file) => {'name': file.name, 'size': file.size, 'path': file.path},
+          )
+          .toList();
+      final afterFiles = _afterFiles
+          .map(
+            (file) => {'name': file.name, 'size': file.size, 'path': file.path},
+          )
+          .toList();
+      final documentFiles = _documentFiles
           .map(
             (file) => {'name': file.name, 'size': file.size, 'path': file.path},
           )
@@ -130,7 +168,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
       await _autosaveService.saveData('task_report_${widget.task.id}', {
         'content': content,
-        'files': files,
+        'beforeFiles': beforeFiles,
+        'afterFiles': afterFiles,
+        'documentFiles': documentFiles,
         'taskId': widget.task.id,
         'employeeId': widget.employeeId,
       });
@@ -150,7 +190,55 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     }
   }
 
-  Future<void> _pickFiles() async {
+  Future<void> _pickBeforePhotos() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.image,
+        withData: false,
+      );
+
+      if (result != null) {
+        setState(() {
+          _beforeFiles.addAll(result.files);
+        });
+        _hasUnsavedChanges = true;
+        _saveToAutosave();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking before photos: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickAfterPhotos() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.image,
+        withData: false,
+      );
+
+      if (result != null) {
+        setState(() {
+          _afterFiles.addAll(result.files);
+        });
+        _hasUnsavedChanges = true;
+        _saveToAutosave();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking after photos: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickDocuments() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
@@ -160,7 +248,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
       if (result != null) {
         setState(() {
-          _selectedFiles.addAll(result.files);
+          _documentFiles.addAll(result.files);
         });
         _hasUnsavedChanges = true;
         _saveToAutosave();
@@ -169,17 +257,221 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error picking files: $e')));
+        ).showSnackBar(SnackBar(content: Text('Error picking documents: $e')));
       }
     }
   }
 
-  void _removeFile(int index) {
+  Future<void> _showAttachmentTypePicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Add Before Photos'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickBeforePhotos();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera),
+                title: const Text('Add After Photos'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickAfterPhotos();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.description),
+                title: const Text('Add Documents'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickDocuments();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _removeBeforeFile(int index) {
     setState(() {
-      _selectedFiles.removeAt(index);
+      _beforeFiles.removeAt(index);
     });
     _hasUnsavedChanges = true;
     _saveToAutosave();
+  }
+
+  void _removeAfterFile(int index) {
+    setState(() {
+      _afterFiles.removeAt(index);
+    });
+    _hasUnsavedChanges = true;
+    _saveToAutosave();
+  }
+
+  void _removeDocumentFile(int index) {
+    setState(() {
+      _documentFiles.removeAt(index);
+    });
+    _hasUnsavedChanges = true;
+    _saveToAutosave();
+  }
+
+  Future<void> _toggleChecklistItem(int index, bool isCompleted) async {
+    try {
+      final updated = await TaskService().updateTaskChecklistItem(
+        taskId: _task.id,
+        index: index,
+        isCompleted: isCompleted,
+      );
+      if (!mounted) return;
+      setState(() {
+        _task = updated;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isCompleted
+                ? 'Checklist item marked as completed'
+                : 'Checklist item marked as incomplete',
+          ),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update checklist: $e')));
+    }
+  }
+
+  Future<void> _blockTask() async {
+    if (_isBlocking) return;
+
+    const presetReasons = <String>[
+      'Customer unavailable',
+      'Location inaccessible',
+      'Missing materials or tools',
+      'Safety concerns',
+      'Other',
+    ];
+
+    String selectedReason = presetReasons.first;
+    String customReason = '';
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Block Task'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Select a reason for blocking this task:'),
+                    const SizedBox(height: 8),
+                    ...presetReasons.map(
+                      (reason) => RadioListTile<String>(
+                        title: Text(reason),
+                        value: reason,
+                        // ignore: deprecated_member_use
+                        groupValue: selectedReason,
+                        // ignore: deprecated_member_use
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setStateDialog(() {
+                            selectedReason = value;
+                          });
+                        },
+                      ),
+                    ),
+                    if (selectedReason == 'Other') ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Custom reason',
+                        ),
+                        onChanged: (value) {
+                          customReason = value;
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    String finalReason = selectedReason;
+                    if (selectedReason == 'Other') {
+                      finalReason = customReason.trim();
+                    }
+
+                    if (finalReason.isEmpty) {
+                      return;
+                    }
+
+                    Navigator.of(context).pop(finalReason);
+                  },
+                  child: const Text('Confirm'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null || result.trim().isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isBlocking = true;
+    });
+
+    try {
+      final updated = await TaskService().blockTask(_task.id, result.trim());
+      if (!mounted) return;
+      setState(() {
+        _task = updated;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Task has been marked as blocked'),
+          backgroundColor: Colors.red,
+        ),
+      );
+
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to block task: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBlocking = false;
+        });
+      }
+    }
   }
 
   Future<void> _submitReport() async {
@@ -202,33 +494,36 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
       // Upload attachments (if any) and collect their URLs
       final List<String> attachmentPaths = [];
-      for (final file in _selectedFiles) {
-        final filePath = file.path;
-        if (filePath == null || filePath.isEmpty) {
-          continue;
+      Future<void> uploadGroup(List<PlatformFile> files, String prefix) async {
+        for (final file in files) {
+          final filePath = file.path;
+          if (filePath == null || filePath.isEmpty) {
+            continue;
+          }
+          final uploadedPath = await ReportService().uploadAttachment(
+            filePath: filePath,
+            fileName: '${prefix}_${file.name}',
+            taskId: _task.id,
+            employeeId: widget.employeeId,
+          );
+          attachmentPaths.add(uploadedPath);
         }
-        final uploadedPath = await ReportService().uploadAttachment(
-          filePath: filePath,
-          fileName: file.name,
-          taskId: widget.task.id,
-          employeeId: widget.employeeId,
-        );
-        attachmentPaths.add(uploadedPath);
       }
+
+      await uploadGroup(_beforeFiles, 'before');
+      await uploadGroup(_afterFiles, 'after');
+      await uploadGroup(_documentFiles, 'doc');
 
       // Create the report
       await ReportService().createTaskReport(
-        taskId: widget.task.id,
+        taskId: _task.id,
         employeeId: widget.employeeId,
         content: content,
         attachments: attachmentPaths,
       );
 
       // Update task status
-      await TaskService().updateUserTaskStatus(
-        widget.task.userTaskId!,
-        'completed',
-      );
+      await TaskService().updateUserTaskStatus(_task.userTaskId!, 'completed');
 
       // Clear autosaved data
       await _autosaveService.clearData('task_report_${widget.task.id}');
@@ -277,7 +572,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.attach_file),
-            onPressed: _pickFiles,
+            onPressed: _showAttachmentTypePicker,
             tooltip: 'Attach Files',
           ),
         ],
@@ -310,11 +605,33 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     Icon(Icons.schedule, size: 16, color: Colors.grey.shade600),
                     const SizedBox(width: 4),
                     Text(
-                      'Due: ${widget.task.dueDate.toLocal().toString().split(' ')[0]}',
+                      'Due: ${_task.dueDate.toLocal().toString().split(' ')[0]}',
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                if (_task.checklist.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Progress: ${_task.progressPercent.clamp(0, 100)}%',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  LinearProgressIndicator(
+                    value: _task.progressPercent.clamp(0, 100) / 100.0,
+                    backgroundColor: Colors.grey.shade300,
+                  ),
+                ],
               ],
             ),
           ),
@@ -325,6 +642,55 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
+                  if (_task.checklist.isNotEmpty) ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Checklist:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey.shade800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _task.checklist.length,
+                        separatorBuilder: (context, _) =>
+                            Divider(height: 1, color: Colors.grey.shade300),
+                        itemBuilder: (context, index) {
+                          final item = _task.checklist[index];
+                          final isDisabled =
+                              _task.rawStatus == 'blocked' || _isSubmitting;
+                          return CheckboxListTile(
+                            value: item.isCompleted,
+                            onChanged: isDisabled
+                                ? null
+                                : (value) {
+                                    if (value == null) return;
+                                    _toggleChecklistItem(index, value);
+                                  },
+                            title: Text(item.label),
+                            subtitle: item.completedAt != null
+                                ? Text(
+                                    'Completed at: ${item.completedAt!.toLocal().toString().split('.')[0]}',
+                                    style: const TextStyle(fontSize: 12),
+                                  )
+                                : null,
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   const Text(
                     'Write your report:',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
@@ -356,38 +722,83 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           ),
 
           // Selected files
-          if (_selectedFiles.isNotEmpty)
+          if (_beforeFiles.isNotEmpty ||
+              _afterFiles.isNotEmpty ||
+              _documentFiles.isNotEmpty)
             Container(
-              height: 120,
+              width: double.infinity,
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Attached Files:',
-                    style: TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _selectedFiles.length,
-                      itemBuilder: (context, index) {
-                        final file = _selectedFiles[index];
-                        return Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          child: Chip(
-                            label: Text(
-                              file.name,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            deleteIcon: const Icon(Icons.close, size: 16),
-                            onDeleted: () => _removeFile(index),
-                          ),
-                        );
-                      },
+                  if (_beforeFiles.isNotEmpty) ...[
+                    const Text(
+                      'Before Photos:',
+                      style: TextStyle(fontWeight: FontWeight.w500),
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: List.generate(_beforeFiles.length, (index) {
+                        final file = _beforeFiles[index];
+                        return Chip(
+                          label: Text(
+                            file.name,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () => _removeBeforeFile(index),
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_afterFiles.isNotEmpty) ...[
+                    const Text(
+                      'After Photos:',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: List.generate(_afterFiles.length, (index) {
+                        final file = _afterFiles[index];
+                        return Chip(
+                          label: Text(
+                            file.name,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () => _removeAfterFile(index),
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_documentFiles.isNotEmpty) ...[
+                    const Text(
+                      'Documents:',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: List.generate(_documentFiles.length, (index) {
+                        final file = _documentFiles[index];
+                        return Chip(
+                          label: Text(
+                            file.name,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () => _removeDocumentFile(index),
+                        );
+                      }),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -395,40 +806,77 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           // Submit button
           Container(
             padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submitReport,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: _isSubmitting
-                    ? const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed:
+                        _isSubmitting ||
+                            _isBlocking ||
+                            _task.rawStatus == 'blocked'
+                        ? null
+                        : _blockTask,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: _isBlocking
+                        ? const SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
+                                Colors.red,
                               ),
                             ),
+                          )
+                        : const Text(
+                            'Block Task',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                          SizedBox(width: 8),
-                          Text('Submitting...'),
-                        ],
-                      )
-                    : const Text(
-                        'Submit Report',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-              ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isSubmitting ? null : _submitReport,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: _isSubmitting
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Text('Submitting...'),
+                            ],
+                          )
+                        : const Text(
+                            'Submit Report',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

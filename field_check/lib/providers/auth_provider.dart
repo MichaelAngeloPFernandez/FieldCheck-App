@@ -115,13 +115,25 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Register new user
-  Future<bool> register(String name, String email, String password, String role, {String? username}) async {
+  Future<bool> register(
+    String name,
+    String email,
+    String password,
+    String role, {
+    String? username,
+  }) async {
     try {
       _isLoading = true;
       _error = null;
       notifyListeners();
 
-      await _userService.register(name, email, password, role: role, username: username);
+      await _userService.register(
+        name,
+        email,
+        password,
+        role: role,
+        username: username,
+      );
 
       // Don't auto-login after registration - user needs to verify email first
       _error = null;
@@ -180,7 +192,12 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Update user profile
-  Future<bool> updateProfile({String? name, String? email, String? username, String? avatarUrl}) async {
+  Future<bool> updateProfile({
+    String? name,
+    String? email,
+    String? username,
+    String? avatarUrl,
+  }) async {
     try {
       _isLoading = true;
       _error = null;
@@ -212,6 +229,10 @@ class AuthProvider with ChangeNotifier {
     try {
       _isLoading = true;
       notifyListeners();
+
+      try {
+        await _userService.markOffline();
+      } catch (_) {}
 
       // Clear backend token
       await _userService.logout();

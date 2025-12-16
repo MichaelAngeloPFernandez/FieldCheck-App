@@ -16,6 +16,7 @@ import 'package:field_check/services/checkout_notification_service.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/logger.dart';
 import 'package:field_check/widgets/app_widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int? initialIndex;
@@ -40,6 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<AutoCheckoutEvent>? _autoCheckoutSub;
   String? _userModelId;
   bool _loadingUserId = true;
+  bool _isTrackingLocation = true;
 
   @override
   void initState() {
@@ -55,9 +57,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _initServices() async {
     await _realtimeService.initialize();
     await _autosaveService.initialize();
-    // Start location tracking immediately on login (not just on check-in)
+    // Initialize socket for optional continuous location tracking
     await _locationSyncService.initializeSocket();
-    _locationSyncService.startTracking();
+
+    // Load persisted preference for continuous tracking that powers
+    // admin maps (Employees / World Map)
+    bool enabled = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      enabled = prefs.getBool('user.locationTrackingEnabled') ?? true;
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _isTrackingLocation = enabled;
+      });
+    }
+
+    // Note: Location tracking will start when employee manually checks in
+    // Do NOT call startTracking() here - it should only happen on manual check-in
 
     // Initialize auto-checkout notifications (warnings + events)
     await _checkoutService.initialize();
@@ -66,6 +84,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
     _autoCheckoutSub = _checkoutService.checkoutStream.listen(
       _handleAutoCheckoutEvent,
+    );
+  }
+
+  Future<void> _toggleLocationTracking() async {
+    final newValue = !_isTrackingLocation;
+
+    setState(() {
+      _isTrackingLocation = newValue;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('user.locationTrackingEnabled', newValue);
+    } catch (_) {}
+
+    if (newValue) {
+      _locationSyncService.startTracking();
+    } else {
+      _locationSyncService.stopTracking();
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          newValue
+              ? 'Location tracking enabled. Admins can see your live location on the map.'
+              : 'Location tracking disabled. Admins will no longer see your live location.',
+        ),
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
@@ -193,6 +242,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             : null,
         title: Text(_navLabels[_selectedIndex], style: AppTheme.headingSm),
         actions: [
+          IconButton(
+            tooltip: _isTrackingLocation
+                ? 'Location tracking: ON'
+                : 'Location tracking: OFF',
+            icon: Icon(
+              _isTrackingLocation
+                  ? Icons.location_searching
+                  : Icons.location_disabled,
+            ),
+            onPressed: _toggleLocationTracking,
+          ),
           if (_isOfflineMode)
             Tooltip(
               message: 'Offline mode - changes will sync when online',
@@ -217,6 +277,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: const Icon(Icons.logout),
             onPressed: () async {
               AppLogger.info(AppLogger.tagAuth, 'User logout initiated');
+              try {
+                await _userService.markOffline();
+              } catch (e) {
+                AppLogger.warning(
+                  AppLogger.tagAuth,
+                  'Mark offline error (non-critical)',
+                  e,
+                );
+              }
+
+              try {
+                _locationSyncService.stopTracking();
+                _locationSyncService.dispose();
+              } catch (_) {}
+
               try {
                 await _userService.logout();
               } catch (e) {

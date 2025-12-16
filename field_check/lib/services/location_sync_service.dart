@@ -87,7 +87,7 @@ class LocationSyncService {
             (geolocator.Position position) {
               // Accept positions with reasonable accuracy (< 100m)
               // This is more lenient to handle poor GPS conditions
-              if (position.accuracy > 0 && position.accuracy <= 100) {
+              if (position.accuracy > 0 && position.accuracy <= 50) {
                 final now = DateTime.now();
 
                 // Sync location every 15 seconds for backend updates

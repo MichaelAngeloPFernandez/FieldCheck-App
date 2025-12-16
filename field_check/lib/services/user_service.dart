@@ -72,6 +72,27 @@ class UserService {
     }
   }
 
+  Future<List<Map<String, dynamic>>?> getOnlineEmployees() async {
+    try {
+      final token = await getToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/location/online-employees'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        return null;
+      }
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<UserModel> loginIdentifier(String identifier, String password) async {
     try {
       final response = await http
@@ -378,6 +399,28 @@ class UserService {
     await prefs.remove('auth_token');
     await prefs.remove('refresh_token');
     _cachedProfile = null;
+  }
+
+  /// Explicitly mark the current employee as offline for presence tracking.
+  ///
+  /// This calls the /api/location/offline endpoint, which sets isOnline=false
+  /// in the backend and emits an employeeOffline Socket.io event so admin
+  /// dashboards drop the user from "online" lists.
+  Future<void> markOffline() async {
+    final token = await getToken();
+    if (token == null) return;
+
+    try {
+      await http.post(
+        Uri.parse('$_baseUrl/location/offline'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (_) {
+      // Ignore errors - offline marking is best-effort only.
+    }
   }
 
   // Admin-only operations

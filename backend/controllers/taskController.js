@@ -28,14 +28,80 @@ async function getMaxActiveTasksPerEmployee() {
   }
 }
 
+// --- Task status helpers ----------------------------------------------------
+
+const TERMINAL_TASK_STATUSES = ['completed', 'reviewed', 'closed'];
+
+function normalizeTaskStatus(status) {
+  if (!status) return 'pending';
+  return String(status).toLowerCase();
+}
+
+function isTerminalTaskStatus(status) {
+  return TERMINAL_TASK_STATUSES.includes(normalizeTaskStatus(status));
+}
+
+function canTransitionTaskStatus(fromStatus, toStatus) {
+  const from = normalizeTaskStatus(fromStatus);
+  const to = normalizeTaskStatus(toStatus);
+
+  if (from === to) return true;
+
+  // Prevent going back from any terminal/done state to an active state
+  if (isTerminalTaskStatus(from) && !isTerminalTaskStatus(to)) {
+    return false;
+  }
+
+  // Otherwise allow the transition for now (future phases can tighten rules)
+  return true;
+}
+
+function recalculateChecklistProgress(taskDoc) {
+  if (!Array.isArray(taskDoc.checklist) || taskDoc.checklist.length === 0) {
+    return;
+  }
+
+  const total = taskDoc.checklist.length;
+  const completed = taskDoc.checklist.filter((item) => item && item.isCompleted).length;
+  if (!total) {
+    return;
+  }
+
+  const percent = Math.round((completed / total) * 100);
+  if (!Number.isNaN(percent)) {
+    taskDoc.progressPercent = Math.max(0, Math.min(100, percent));
+  }
+}
+
 // Map Task mongoose doc to Flutter-friendly shape
 function toTaskJson(doc, userTaskId) {
   const now = new Date();
   const isOverdue =
     !!doc.dueDate &&
     doc.dueDate < now &&
-    doc.status !== 'completed' &&
+    normalizeTaskStatus(doc.status) !== 'completed' &&
     !doc.isArchived;
+
+  const rawStatus = normalizeTaskStatus(doc.status);
+
+  // Map rich lifecycle statuses into the legacy 3-state UI model
+  // so existing Flutter UI (pending / in_progress / completed) keeps working.
+  let uiStatus = rawStatus || 'pending';
+  if (['created', 'assigned', 'accepted'].includes(rawStatus)) {
+    uiStatus = 'pending';
+  } else if (['blocked', 'in_progress'].includes(rawStatus)) {
+    uiStatus = 'in_progress';
+  } else if (['completed', 'reviewed', 'closed'].includes(rawStatus)) {
+    uiStatus = 'completed';
+  }
+
+  // Keep progressPercent in sync with checklist completion when a checklist exists
+  recalculateChecklistProgress(doc);
+
+  const progressPercent =
+    typeof doc.progressPercent === 'number'
+      ? Math.max(0, Math.min(100, doc.progressPercent))
+      : 0;
 
   return {
     id: doc._id.toString(),
@@ -44,7 +110,7 @@ function toTaskJson(doc, userTaskId) {
     dueDate: doc.dueDate ? doc.dueDate.toISOString() : new Date().toISOString(),
     assignedBy: doc.assignedBy?.toString() || '',
     createdAt: doc.createdAt?.toISOString() || new Date().toISOString(),
-    status: doc.status || 'pending',
+    status: uiStatus,
     userTaskId: userTaskId || undefined,
     geofenceId: doc.geofenceId?.toString() || undefined,
     latitude: doc.latitude,
@@ -53,6 +119,22 @@ function toTaskJson(doc, userTaskId) {
     difficulty: doc.difficulty || 'medium',
     isArchived: !!doc.isArchived,
     isOverdue,
+    // Expose richer fields for future UI without breaking current clients
+    rawStatus,
+    progressPercent,
+    checklist: Array.isArray(doc.checklist)
+      ? doc.checklist.map((item) => ({
+          label: item.label,
+          isCompleted: !!item.isCompleted,
+          completedAt: item.completedAt ? item.completedAt.toISOString() : null,
+        }))
+      : [],
+    attachments: doc.attachments || {
+      images: [],
+      documents: [],
+      others: [],
+    },
+    blockReason: doc.blockReason || '',
   };
 }
 
@@ -104,6 +186,7 @@ const getArchivedTasks = asyncHandler(async (req, res) => {
 // @access Private/Admin
 const createTask = asyncHandler(async (req, res) => {
   const { title, description, dueDate, status, geofenceId, type, difficulty } = req.body;
+
   if (!title) {
     res.status(400);
     throw new Error('Title is required');
@@ -151,12 +234,29 @@ const updateTask = asyncHandler(async (req, res) => {
   // Only update if values are explicitly provided (not undefined)
   if (req.body.title !== undefined) task.title = req.body.title;
   if (req.body.description !== undefined) task.description = req.body.description;
-  if (req.body.status !== undefined) task.status = req.body.status;
+  if (req.body.status !== undefined) {
+    const nextStatus = req.body.status;
+    if (!canTransitionTaskStatus(task.status, nextStatus)) {
+      res.status(400);
+      throw new Error(
+        `Invalid task status transition from ${task.status || 'none'} to ${nextStatus}`,
+      );
+    }
+    task.status = nextStatus;
+  }
   if (req.body.geofenceId !== undefined) task.geofenceId = req.body.geofenceId;
   if (req.body.dueDate !== undefined) task.dueDate = new Date(req.body.dueDate);
   if (req.body.type !== undefined) task.type = req.body.type;
   if (req.body.difficulty !== undefined) task.difficulty = req.body.difficulty;
-  
+  if (req.body.progressPercent !== undefined) {
+    const val = Number(req.body.progressPercent);
+    if (!Number.isFinite(val) || val < 0 || val > 100) {
+      res.status(400);
+      throw new Error('progressPercent must be a number between 0 and 100');
+    }
+    task.progressPercent = Math.round(val);
+  }
+
   const updated = await task.save();
   io.emit('updatedTask', toTaskJson(updated));
   res.json(toTaskJson(updated));
@@ -249,7 +349,6 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
   }
   const existing = await UserTask.findOne({ taskId, userId });
   if (existing) {
-
     return res.status(200).json({
       id: existing._id.toString(),
       userId: existing.userId.toString(),
@@ -261,6 +360,7 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
   }
 
   const maxActive = await getMaxActiveTasksPerEmployee();
+
   const activeAssignments = await UserTask.find({
     userId,
     status: { $ne: 'completed' },
@@ -274,11 +374,18 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
   if (activeCount >= maxActive) {
     res.status(400);
     throw new Error(
-      `User has reached the maximum number of active tasks (${activeCount}/${maxActive})`
+      `User has reached the maximum number of active tasks (${activeCount}/${maxActive})`,
     );
   }
 
   const ut = await UserTask.create({ taskId, userId });
+
+  // Auto-set task status on assignment if it hasn't started/completed yet
+  if (!isTerminalTaskStatus(task.status) && normalizeTaskStatus(task.status) !== 'in_progress') {
+    task.status = 'assigned';
+    await task.save();
+    io.emit('updatedTask', toTaskJson(task));
+  }
 
   // Fire-and-forget SMS notification for new assignment
   (async () => {
@@ -320,7 +427,7 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
   }
 
   // Validate all user IDs are strings
-  if (!userIds.every(id => typeof id === 'string' && id.trim() !== '')) {
+  if (!userIds.every((id) => typeof id === 'string' && id.trim() !== '')) {
     res.status(400);
     throw new Error('All user IDs must be non-empty strings');
   }
@@ -329,6 +436,13 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
   if (!task) {
     res.status(404);
     throw new Error('Task not found');
+  }
+
+  // Auto-set task status on assignment if it hasn't started/completed yet
+  if (!isTerminalTaskStatus(task.status) && normalizeTaskStatus(task.status) !== 'in_progress') {
+    task.status = 'assigned';
+    await task.save();
+    io.emit('updatedTask', toTaskJson(task));
   }
 
   const maxActive = await getMaxActiveTasksPerEmployee();
@@ -345,7 +459,6 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
         isArchived: { $ne: true },
       }).select('_id')
     : [];
-
   const activeTaskIdSet = new Set(activeTasks.map((t) => t._id.toString()));
   const activeCounts = new Map();
   for (const a of nonCompletedAssignments) {
@@ -356,7 +469,6 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
 
   const results = [];
   for (const userId of userIds) {
-
     try {
       // Validate user exists
       const user = await User.findById(userId);
@@ -403,7 +515,6 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
 
         // Fire-and-forget SMS per newly assigned user
         (async () => {
-
           try {
             const user = await User.findById(userId);
             if (user) {
@@ -443,11 +554,11 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
 
   // Always return 201 with results, even if some failed
   const statusCode = successCount > 0 ? 201 : 400;
-  
+
   if (successCount > 0) {
-    io.emit('taskAssignedToMultiple', { taskId, userIds: results.filter(r => r.success).map(r => r.userId) });
+    io.emit('taskAssignedToMultiple', { taskId, userIds: results.filter((r) => r.success).map((r) => r.userId) });
   }
-  
+
   res.status(statusCode).json({
     taskId,
     results,
@@ -469,22 +580,51 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('UserTask not found');
   }
-  ut.status = status;
-  if (status === 'completed') {
+  const nextStatus = status;
+
+  // Validate transition against the owning Task (if it still exists)
+  let taskForStatusUpdate = null;
+  try {
+    taskForStatusUpdate = await Task.findById(ut.taskId);
+  } catch (_) {
+    taskForStatusUpdate = null;
+  }
+
+  if (taskForStatusUpdate && !canTransitionTaskStatus(taskForStatusUpdate.status, nextStatus)) {
+    res.status(400);
+    throw new Error(
+      `Invalid task status transition from ${taskForStatusUpdate.status || 'none'} to ${nextStatus}`,
+    );
+  }
+
+  ut.status = nextStatus;
+  if (nextStatus === 'completed') {
     ut.completedAt = new Date();
-  } else if (!status || status === 'pending') {
+  } else if (!nextStatus || nextStatus === 'pending') {
     ut.completedAt = undefined;
   }
   await ut.save();
-  
-  // IMPORTANT: Also update the Task status so frontend sees the change
-  try {
-    const Task = require('../models/Task');
-    await Task.findByIdAndUpdate(ut.taskId, { status: status }, { new: true });
-    console.log(`✓ Updated Task ${ut.taskId} status to ${status}`);
-  } catch (e) {
-    console.warn(`⚠️ Failed to update Task status: ${e.message}`);
+
+  // IMPORTANT: Also update the Task status and basic progress so frontend sees the change
+  if (taskForStatusUpdate) {
+    taskForStatusUpdate.status = nextStatus;
+
+    // Simple default progress mapping; can be overridden manually via progressPercent API
+    if (nextStatus === 'in_progress' &&
+        (typeof taskForStatusUpdate.progressPercent !== 'number' || taskForStatusUpdate.progressPercent < 1)) {
+      taskForStatusUpdate.progressPercent = 50;
+    } else if (nextStatus === 'completed') {
+      taskForStatusUpdate.progressPercent = 100;
+    }
+
+    try {
+      await taskForStatusUpdate.save();
+      console.log(`✓ Updated Task ${ut.taskId} status to ${nextStatus}`);
+    } catch (e) {
+      console.warn(`⚠️ Failed to update Task status: ${e.message}`);
+    }
   }
+
   // Auto-create a simple task report on completion
   if (status === 'completed') {
     try {
@@ -555,6 +695,104 @@ const escalateTask = asyncHandler(async (req, res) => {
   });
 });
 
+// @route PUT /api/tasks/:id/checklist-item
+// @access Private (assigned employee or admin)
+const updateTaskChecklistItem = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { index, isCompleted } = req.body;
+
+  const task = await Task.findById(id);
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authenticated');
+  }
+
+  if (req.user.role !== 'admin') {
+    const isAssigned = await UserTask.exists({ taskId: task._id, userId: req.user._id });
+    if (!isAssigned) {
+      res.status(403);
+      throw new Error('Not authorized to update this task');
+    }
+  }
+
+  const idx = Number(index);
+  if (
+    !Number.isInteger(idx) ||
+    idx < 0 ||
+    !Array.isArray(task.checklist) ||
+    idx >= task.checklist.length
+  ) {
+    res.status(400);
+    throw new Error('Invalid checklist index');
+  }
+
+  const item = task.checklist[idx];
+  const complete = !!isCompleted;
+  item.isCompleted = complete;
+  item.completedAt = complete ? new Date() : undefined;
+
+  recalculateChecklistProgress(task);
+
+  const updated = await task.save();
+  io.emit('updatedTask', toTaskJson(updated));
+  res.json(toTaskJson(updated));
+});
+
+// @route PUT /api/tasks/:id/block
+// @access Private (assigned employee or admin)
+const blockTask = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  const task = await Task.findById(id);
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authenticated');
+  }
+
+  if (req.user.role !== 'admin') {
+    const isAssigned = await UserTask.exists({ taskId: task._id, userId: req.user._id });
+    if (!isAssigned) {
+      res.status(403);
+      throw new Error('Not authorized to update this task');
+    }
+  }
+
+  task.status = 'blocked';
+  task.blockReason =
+    typeof reason === 'string' && reason.trim().length > 0
+      ? reason.trim()
+      : 'No reason provided';
+
+  const updated = await task.save();
+
+  // Create a simple task report so admins can see the block reason
+  try {
+    const report = await Report.create({
+      type: 'task',
+      task: updated._id,
+      employee: req.user._id,
+      content: `Task blocked: ${updated.blockReason}`,
+    });
+    io.emit('newReport', report);
+  } catch (e) {
+    console.error('Failed to create task blocked report:', e);
+  }
+
+  io.emit('updatedTask', toTaskJson(updated));
+  res.json(toTaskJson(updated));
+});
+
 module.exports = {
   getTask,
   getTasks,
@@ -568,6 +806,8 @@ module.exports = {
   assignTaskToUser,
   assignTaskToMultipleUsers,
   updateUserTaskStatus,
+  updateTaskChecklistItem,
+  blockTask,
   archiveTask,
   restoreTask,
   escalateTask,

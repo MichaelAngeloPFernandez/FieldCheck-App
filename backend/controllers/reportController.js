@@ -87,7 +87,7 @@ const listReports = asyncHandler(async (req, res) => {
 
   const reports = await Report.find(filter)
     .populate('employee', 'name email')
-    .populate('task', 'title description')
+    .populate('task', 'title description difficulty')
     .populate('attendance')
     .populate('geofence', 'name')
     .sort({ submittedAt: -1 });
@@ -101,7 +101,7 @@ const listReports = asyncHandler(async (req, res) => {
 const getReportById = asyncHandler(async (req, res) => {
   const rep = await Report.findById(req.params.id)
     .populate('employee', 'name email')
-    .populate('task', 'title description')
+    .populate('task', 'title description difficulty')
     .populate('attendance')
     .populate('geofence', 'name');
   if (!rep) {
@@ -147,7 +147,7 @@ const deleteReport = asyncHandler(async (req, res) => {
 const getCurrentReports = asyncHandler(async (req, res) => {
   const reports = await Report.find({ isArchived: { $ne: true } })
     .populate('employee', 'name email')
-    .populate('task', 'title description')
+    .populate('task', 'title description difficulty')
     .populate('attendance')
     .populate('geofence', 'name')
     .sort({ submittedAt: -1 });
@@ -160,7 +160,7 @@ const getCurrentReports = asyncHandler(async (req, res) => {
 const getArchivedReports = asyncHandler(async (req, res) => {
   const reports = await Report.find({ isArchived: true })
     .populate('employee', 'name email')
-    .populate('task', 'title description')
+    .populate('task', 'title description difficulty')
     .populate('attendance')
     .populate('geofence', 'name')
     .sort({ submittedAt: -1 });

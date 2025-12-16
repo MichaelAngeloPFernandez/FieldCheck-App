@@ -65,6 +65,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _logout() async {
+    // Best-effort: mark this employee as offline for admin dashboards
+    try {
+      await _userService.markOffline();
+    } catch (_) {}
+
     await _userService.logout();
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(

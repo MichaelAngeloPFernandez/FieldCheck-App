@@ -96,7 +96,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // Listen for real-time updates
     _realtimeService.attendanceStream.listen((event) {
       if (mounted) {
-        _loadRealtimeUpdates();
+        _loadDashboardData();
       }
     });
 
@@ -107,17 +107,68 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
 
     _realtimeService.onlineCountStream.listen((count) {
-      if (mounted) {
-        final current = _realtimeUpdates;
-        setState(() {
-          _realtimeUpdates = RealtimeUpdates(
-            onlineUsers: count,
-            recentCheckIns: current?.recentCheckIns ?? [],
-            pendingTasksToday: current?.pendingTasksToday ?? [],
-            timestamp: DateTime.now(),
-          );
-        });
+      // Socket-level online count is currently unused; HTTP realtime
+      // endpoint provides authoritative employee online counts.
+      if (!mounted) {
+        return;
       }
+    });
+
+    _realtimeService.eventStream.listen((event) {
+      if (!mounted) {
+        return;
+      }
+
+      final type = event['type'] as String? ?? '';
+      final action = event['action'] as String? ?? '';
+
+      if (type != 'attendance' && type != 'report') {
+        return;
+      }
+
+      String title;
+      String message;
+      String notifType = type;
+
+      if (type == 'attendance') {
+        if (action == 'new') {
+          title = 'Employee check-in';
+          message = 'A new check-in was recorded.';
+        } else if (action == 'updated') {
+          title = 'Employee check-out';
+          message = 'An attendance record was updated.';
+        } else {
+          title = 'Attendance activity';
+          message = 'Attendance activity detected.';
+        }
+      } else {
+        if (action == 'new') {
+          title = 'New report submitted';
+          message = 'A new report was created.';
+        } else if (action == 'updated') {
+          title = 'Report updated';
+          message = 'A report was updated.';
+        } else {
+          title = 'Report activity';
+          message = 'Report activity detected.';
+        }
+      }
+
+      setState(() {
+        _notifications.insert(
+          0,
+          DashboardNotification(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            title: title,
+            message: message,
+            type: notifType,
+            timestamp: DateTime.now(),
+          ),
+        );
+        if (_notifications.length > 50) {
+          _notifications.removeLast();
+        }
+      });
     });
   }
 
@@ -194,6 +245,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
+              try {
+                await _userService.markOffline();
+              } catch (_) {}
+
               await _userService.logout();
               if (!mounted) return;
               Navigator.pushAndRemoveUntil(
@@ -738,36 +793,45 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       }).toList(),
                     ),
                     MarkerLayer(
-                      markers: _liveLocations.entries.map((entry) {
-                        final user = _employees[entry.key];
-                        return Marker(
-                          point: entry.value,
-                          width: 40,
-                          height: 40,
-                          child: GestureDetector(
-                            onTap: () {
-                              _showEmployeeDetails(entry.key, user);
-                            },
-                            child: Tooltip(
-                              message: user?.name ?? entry.key,
-                              child: Icon(
-                                Icons.location_history,
-                                color: Colors.green,
-                                size: 32,
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    blurRadius: 4,
+                      markers: _liveLocations.entries
+                          .where(
+                            (entry) => _employees[entry.key]?.isOnline == true,
+                          )
+                          .map((entry) {
+                            final user = _employees[entry.key];
+                            return Marker(
+                              point: entry.value,
+                              width: 40,
+                              height: 40,
+                              child: GestureDetector(
+                                onTap: () {
+                                  _showEmployeeDetails(entry.key, user);
+                                },
+                                child: Tooltip(
+                                  message: user?.name ?? entry.key,
+                                  child: Icon(
+                                    Icons.location_history,
+                                    color: Colors.green,
+                                    size: 32,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                        blurRadius: 4,
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                            );
+                          })
+                          .toList(),
                     ),
                   ],
                 ),
+                // Floating employee indicators at map edges
+                _buildFloatingEmployeeIndicators(),
                 if (_liveLocations.isEmpty && _showNoEmployeesPopup)
                   Align(
                     alignment: Alignment.center,
@@ -853,44 +917,177 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void _showEmployeeDetails(String userId, UserModel? user) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(user?.name ?? 'Employee'),
-            IconButton(
-              icon: const Icon(Icons.close),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(user?.name ?? 'Employee'),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: DefaultTabController(
+              length: 2,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TabBar(
+                    tabs: const [
+                      Tab(text: 'Details'),
+                      Tab(text: 'Status'),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        // Details Tab
+                        SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildDetailRow('Name', user?.name ?? 'N/A'),
+                              _buildDetailRow('Email', user?.email ?? 'N/A'),
+                              _buildDetailRow('Phone', user?.phone ?? 'N/A'),
+                              _buildDetailRow('Role', user?.role ?? 'N/A'),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Location',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 8),
+                              if (_liveLocations.containsKey(userId))
+                                Text(
+                                  'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                )
+                              else
+                                Text(
+                                  'Location not available',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        // Status Tab
+                        SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildStatusRow(
+                                'Online Status',
+                                user?.isOnline == true ? 'Online' : 'Offline',
+                                user?.isOnline == true
+                                    ? Colors.green
+                                    : Colors.grey,
+                              ),
+                              _buildStatusRow(
+                                'Active Tasks',
+                                '${user?.activeTaskCount ?? 0}',
+                                Colors.blue,
+                              ),
+                              _buildStatusRow(
+                                'Workload',
+                                _getWorkloadStatus(user?.workloadWeight ?? 0.0),
+                                _getWorkloadColor(user?.workloadWeight ?? 0.0),
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Availability',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildAvailabilityInfo(userId),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
               onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
             ),
           ],
         ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow('Email', user?.email ?? 'N/A'),
-              _buildDetailRow('Phone', user?.phone ?? 'N/A'),
-              _buildDetailRow('Role', user?.role ?? 'N/A'),
-              const SizedBox(height: 16),
-              const Text(
-                'Location',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              if (_liveLocations.containsKey(userId))
-                Text(
-                  'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-            ],
-          ),
+      ),
+    );
+  }
+
+  String _getWorkloadStatus(double workload) {
+    if (workload >= 0.8) return 'Overloaded';
+    if (workload >= 0.5) return 'Busy';
+    return 'Available';
+  }
+
+  Color _getWorkloadColor(double workload) {
+    if (workload >= 0.8) return Colors.red;
+    if (workload >= 0.5) return Colors.orange;
+    return Colors.green;
+  }
+
+  Widget _buildAvailabilityInfo(String userId) {
+    // Check if employee is in live locations (online)
+    final isOnline = _liveLocations.containsKey(userId);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildStatusRow(
+          'Current Status',
+          isOnline ? 'Online' : 'Offline',
+          isOnline ? Colors.green : Colors.grey,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
+        if (isOnline) ...[
+          _buildStatusRow('Vacancy', 'Available', Colors.green),
+          _buildStatusRow('Distance to Tasks', 'Checking...', Colors.blue),
+        ] else
+          _buildStatusRow('Last Seen', 'Offline', Colors.grey),
+      ],
+    );
+  }
+
+  Widget _buildStatusRow(String label, String value, Color valueColor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: valueColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: valueColor.withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12,
+                color: valueColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -919,6 +1116,256 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildFloatingEmployeeIndicators() {
+    // Get online employees only
+    final onlineEmployees = _liveLocations.entries
+        .where((entry) => _employees[entry.key]?.isOnline == true)
+        .toList();
+
+    if (onlineEmployees.isEmpty) return const SizedBox.shrink();
+
+    // Calculate rough map bounds (simplified for viewport)
+    // Assuming map is roughly 400px height and 3x zoom level
+    const double mapHeightDegrees = 10.0; // Approximate degrees visible
+    const double mapWidthDegrees = 15.0;
+
+    // Filter employees outside visible bounds
+    final outOfBoundsEmployees = onlineEmployees.where((entry) {
+      final empLat = entry.value.latitude;
+      final empLng = entry.value.longitude;
+      // Simple bounds check - in production, use actual map controller bounds
+      return empLat < (_defaultCenter.latitude - mapHeightDegrees / 2) ||
+          empLat > (_defaultCenter.latitude + mapHeightDegrees / 2) ||
+          empLng < (_defaultCenter.longitude - mapWidthDegrees / 2) ||
+          empLng > (_defaultCenter.longitude + mapWidthDegrees / 2);
+    }).toList();
+
+    if (outOfBoundsEmployees.isEmpty) return const SizedBox.shrink();
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          // Top edge indicators
+          if (outOfBoundsEmployees.any(
+            (e) => e.value.latitude > _defaultCenter.latitude + 4,
+          ))
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 50,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.02),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: outOfBoundsEmployees.length,
+                  itemBuilder: (context, index) {
+                    final entry = outOfBoundsEmployees[index];
+                    final user = _employees[entry.key];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      child: GestureDetector(
+                        onTap: () => _autoPanToEmployee(entry.key, entry.value),
+                        child: Tooltip(
+                          message: '${user?.name ?? "Employee"}\nClick to pan',
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 4,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          // Right edge indicators
+          if (outOfBoundsEmployees.any(
+            (e) => e.value.longitude > _defaultCenter.longitude + 6,
+          ))
+            Positioned(
+              right: 0,
+              top: 50,
+              bottom: 0,
+              width: 50,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.02),
+                child: ListView.builder(
+                  scrollDirection: Axis.vertical,
+                  itemCount: outOfBoundsEmployees.length,
+                  itemBuilder: (context, index) {
+                    final entry = outOfBoundsEmployees[index];
+                    final user = _employees[entry.key];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      child: GestureDetector(
+                        onTap: () => _autoPanToEmployee(entry.key, entry.value),
+                        child: Tooltip(
+                          message: '${user?.name ?? "Employee"}\nClick to pan',
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 4,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          // Bottom edge indicators
+          if (outOfBoundsEmployees.any(
+            (e) => e.value.latitude < _defaultCenter.latitude - 4,
+          ))
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 50,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.02),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: outOfBoundsEmployees.length,
+                  itemBuilder: (context, index) {
+                    final entry = outOfBoundsEmployees[index];
+                    final user = _employees[entry.key];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      child: GestureDetector(
+                        onTap: () => _autoPanToEmployee(entry.key, entry.value),
+                        child: Tooltip(
+                          message: '${user?.name ?? "Employee"}\nClick to pan',
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.orange,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 4,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          // Left edge indicators
+          if (outOfBoundsEmployees.any(
+            (e) => e.value.longitude < _defaultCenter.longitude - 7.5,
+          ))
+            Positioned(
+              left: 0,
+              top: 50,
+              bottom: 0,
+              width: 50,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.02),
+                child: ListView.builder(
+                  scrollDirection: Axis.vertical,
+                  itemCount: outOfBoundsEmployees.length,
+                  itemBuilder: (context, index) {
+                    final entry = outOfBoundsEmployees[index];
+                    final user = _employees[entry.key];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      child: GestureDetector(
+                        onTap: () => _autoPanToEmployee(entry.key, entry.value),
+                        child: Tooltip(
+                          message: '${user?.name ?? "Employee"}\nClick to pan',
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.purple,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 4,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _autoPanToEmployee(String userId, LatLng location) {
+    _showEmployeeDetails(userId, _employees[userId]);
   }
 
   void _showEmployeeAvailabilityDialog() {
@@ -1361,6 +1808,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _initMapData() async {
     await _loadEmployeesForMap();
+    await _loadOnlineEmployeeLocations();
     _subscribeToLocations();
   }
 
@@ -1376,6 +1824,41 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       }
     } catch (e) {
       debugPrint('Error loading employees for map: $e');
+    }
+  }
+
+  Future<void> _loadOnlineEmployeeLocations() async {
+    try {
+      // Fetch all online employees' locations from backend
+      final response = await _userService.getOnlineEmployees();
+      if (mounted && response != null) {
+        debugPrint(
+          '📍 Loaded ${response.length} online employees from backend',
+        );
+        setState(() {
+          for (final emp in response) {
+            final userId = emp['userId'] ?? emp['employeeId'] ?? '';
+            final lat = (emp['latitude'] as num?)?.toDouble();
+            final lng = (emp['longitude'] as num?)?.toDouble();
+            final name = emp['name'] ?? 'Unknown';
+
+            // Only add if we have valid userId and coordinates
+            if (userId.isNotEmpty && lat != null && lng != null) {
+              _liveLocations[userId] = LatLng(lat, lng);
+              debugPrint('✅ Added employee $name ($userId) at ($lat, $lng)');
+            } else {
+              debugPrint(
+                '⚠️ Skipped employee $name - missing location data: lat=$lat, lng=$lng',
+              );
+            }
+          }
+          debugPrint('📊 Total locations on map: ${_liveLocations.length}');
+        });
+      } else {
+        debugPrint('⚠️ No response from getOnlineEmployees');
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading online employee locations: $e');
     }
   }
 

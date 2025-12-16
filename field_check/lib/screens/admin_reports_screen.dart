@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
+import 'package:field_check/screens/admin_employee_history_screen.dart';
 
 class AdminReportsScreen extends StatefulWidget {
   final String? employeeId;
@@ -35,11 +36,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   bool _showArchivedReports = false;
   bool _showArchivedAttendance = false;
 
-  final String _filterDate = 'All Dates';
+  String _filterDate = 'All Dates';
   final String _filterLocation = 'All Locations';
   final String _filterStatus = 'All Status';
   String _reportStatusFilter = 'All';
   String _attendanceStatusFilter = 'All';
+  String _taskDifficultyFilter = 'All';
+  String _attendanceDateFilter = 'all'; // all, today, week, month, custom
+  DateTime? _attendanceStartDate;
+  DateTime? _attendanceEndDate;
   String? _filterEmployeeId;
   String? _filterEmployeeName;
   Timer? _debounce;
@@ -155,7 +160,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         'Fetching attendance records with filters: date=$_filterDate, location=$_filterLocation, status=$_filterStatus',
       );
       final records = await AttendanceService().getAttendanceRecords(
-        date: _filterDate != 'All Dates' ? DateTime.parse(_filterDate) : null,
         locationId: _filterLocation != 'All Locations'
             ? (_geofences
                       .where((g) => g.name == _filterLocation)
@@ -224,13 +228,24 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           : null;
     }
 
-    // Filter by status
-    if (_reportStatusFilter == 'All') return filtered;
-    return filtered
-        .where(
-          (r) => r.status.toLowerCase() == _reportStatusFilter.toLowerCase(),
-        )
-        .toList();
+    // Filter by report status
+    if (_reportStatusFilter != 'All') {
+      filtered = filtered
+          .where(
+            (r) => r.status.toLowerCase() == _reportStatusFilter.toLowerCase(),
+          )
+          .toList();
+    }
+
+    // Filter by task difficulty (for task reports)
+    if (_taskDifficultyFilter != 'All') {
+      final target = _taskDifficultyFilter.toLowerCase();
+      filtered = filtered
+          .where((r) => (r.taskDifficulty ?? '').toLowerCase() == target)
+          .toList();
+    }
+
+    return filtered;
   }
 
   /// Get count of employees with no check-in/out records
@@ -258,6 +273,124 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     }
 
     return incompleteCount;
+  }
+
+  List<AttendanceRecord> get _filteredAttendanceRecords {
+    final base = _showArchivedAttendance
+        ? _archivedAttendanceRecords
+        : _attendanceRecords;
+
+    Iterable<AttendanceRecord> result = base;
+
+    if (_attendanceStartDate != null || _attendanceEndDate != null) {
+      result = result.where((record) {
+        final dt = record.timestamp.toLocal();
+
+        if (_attendanceStartDate != null &&
+            dt.isBefore(_attendanceStartDate!)) {
+          return false;
+        }
+        if (_attendanceEndDate != null && !dt.isBefore(_attendanceEndDate!)) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    return result.where((record) {
+      switch (_attendanceStatusFilter) {
+        case 'Normal':
+          return !record.isVoid;
+        case 'Void':
+          return record.isVoid && !record.autoCheckout;
+        case 'Auto':
+          return record.isVoid && record.autoCheckout;
+        default:
+          return true;
+      }
+    }).toList();
+  }
+
+  void _setAttendanceQuickDateFilter(String value) {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+
+    DateTime? start;
+    DateTime? endExclusive;
+    String label = 'All Dates';
+
+    switch (value) {
+      case 'today':
+        start = todayStart;
+        endExclusive = todayStart.add(const Duration(days: 1));
+        label = DateFormat('yyyy-MM-dd').format(todayStart);
+        break;
+      case 'week':
+        final weekday = todayStart.weekday; // Monday = 1
+        start = todayStart.subtract(Duration(days: weekday - 1));
+        endExclusive = start.add(const Duration(days: 7));
+        final endInclusive = endExclusive.subtract(const Duration(days: 1));
+        label =
+            'Week of ${DateFormat('yyyy-MM-dd').format(start)} - ${DateFormat('yyyy-MM-dd').format(endInclusive)}';
+        break;
+      case 'month':
+        start = DateTime(todayStart.year, todayStart.month, 1);
+        final nextMonth = todayStart.month == 12
+            ? DateTime(todayStart.year + 1, 1, 1)
+            : DateTime(todayStart.year, todayStart.month + 1, 1);
+        endExclusive = nextMonth;
+        label = DateFormat('MMMM yyyy').format(start);
+        break;
+      case 'all':
+      default:
+        start = null;
+        endExclusive = null;
+        label = 'All Dates';
+        break;
+    }
+
+    setState(() {
+      _attendanceDateFilter = value;
+      _attendanceStartDate = start;
+      _attendanceEndDate = endExclusive;
+      _filterDate = label;
+    });
+  }
+
+  Future<void> _pickAttendanceCustomDateRange() async {
+    final now = DateTime.now();
+    final baseStart = _attendanceStartDate ?? DateTime(now.year, now.month, 1);
+    final baseEnd = _attendanceEndDate != null
+        ? _attendanceEndDate!.subtract(const Duration(days: 1))
+        : DateTime(now.year, now.month, now.day);
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 1),
+      initialDateRange: DateTimeRange(start: baseStart, end: baseEnd),
+    );
+
+    if (picked == null) return;
+
+    final start = DateTime(
+      picked.start.year,
+      picked.start.month,
+      picked.start.day,
+    );
+    final endExclusive = DateTime(
+      picked.end.year,
+      picked.end.month,
+      picked.end.day,
+    ).add(const Duration(days: 1));
+
+    setState(() {
+      _attendanceDateFilter = 'custom';
+      _attendanceStartDate = start;
+      _attendanceEndDate = endExclusive;
+      _filterDate =
+          '${DateFormat('yyyy-MM-dd').format(picked.start)} - ${DateFormat('yyyy-MM-dd').format(picked.end)}';
+    });
   }
 
   @override
@@ -433,6 +566,61 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     if (_viewMode == 'attendance') const SizedBox(height: 8),
 
                     if (_viewMode == 'attendance')
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            ChoiceChip(
+                              label: const Text('All time'),
+                              selected: _attendanceDateFilter == 'all',
+                              onSelected: (sel) {
+                                if (!sel) return;
+                                _setAttendanceQuickDateFilter('all');
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('Today'),
+                              selected: _attendanceDateFilter == 'today',
+                              onSelected: (sel) {
+                                if (!sel) return;
+                                _setAttendanceQuickDateFilter('today');
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('This week'),
+                              selected: _attendanceDateFilter == 'week',
+                              onSelected: (sel) {
+                                if (!sel) return;
+                                _setAttendanceQuickDateFilter('week');
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('This month'),
+                              selected: _attendanceDateFilter == 'month',
+                              onSelected: (sel) {
+                                if (!sel) return;
+                                _setAttendanceQuickDateFilter('month');
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('Custom'),
+                              selected: _attendanceDateFilter == 'custom',
+                              onSelected: (sel) async {
+                                if (!sel) return;
+                                await _pickAttendanceCustomDateRange();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    if (_viewMode == 'attendance') const SizedBox(height: 8),
+
+                    if (_viewMode == 'attendance')
                       Wrap(
                         spacing: 8,
                         children: [
@@ -504,87 +692,96 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                           DataColumn(label: Text('Date')),
                                           DataColumn(label: Text('Time')),
                                           DataColumn(label: Text('Status')),
+                                          DataColumn(label: Text('Actions')),
                                         ],
-                                        rows:
-                                            (_showArchivedAttendance
-                                                    ? _archivedAttendanceRecords
-                                                    : _attendanceRecords)
-                                                .where((record) {
-                                                  switch (_attendanceStatusFilter) {
-                                                    case 'Normal':
-                                                      return !record.isVoid;
-                                                    case 'Void':
-                                                      return record.isVoid &&
-                                                          !record.autoCheckout;
-                                                    case 'Auto':
-                                                      return record.isVoid &&
-                                                          record.autoCheckout;
-                                                    default:
-                                                      return true;
-                                                  }
-                                                })
-                                                .map((record) {
-                                                  final time = formatTime(
-                                                    record.timestamp,
-                                                  );
-                                                  String status;
-                                                  Color? chipBg;
-                                                  Color? chipFg;
+                                        rows: _filteredAttendanceRecords.map((
+                                          record,
+                                        ) {
+                                          final time = formatTime(
+                                            record.timestamp,
+                                          );
+                                          String status;
+                                          Color? chipBg;
+                                          Color? chipFg;
 
-                                                  if (record.isVoid &&
-                                                      record.autoCheckout) {
-                                                    status =
-                                                        'Auto Checkout (Void)';
-                                                    chipBg = Colors.red[100];
-                                                    chipFg = Colors.red[900];
-                                                  } else if (record.isVoid) {
-                                                    status = 'Void';
-                                                    chipBg = Colors.grey[300];
-                                                    chipFg = Colors.grey[900];
-                                                  } else if (record.isCheckIn) {
-                                                    status = 'Checked In';
-                                                    chipBg = Colors.green[100];
-                                                    chipFg = Colors.green[900];
-                                                  } else {
-                                                    status = 'Checked Out';
-                                                    chipBg = Colors.blue[100];
-                                                    chipFg = Colors.blue[900];
-                                                  }
-                                                  final date = record.timestamp
-                                                      .toLocal()
-                                                      .toString()
-                                                      .split(' ')[0];
+                                          if (record.isVoid &&
+                                              record.autoCheckout) {
+                                            status = 'Auto Checkout (Void)';
+                                            chipBg = Colors.red[100];
+                                            chipFg = Colors.red[900];
+                                          } else if (record.isVoid) {
+                                            status = 'Void';
+                                            chipBg = Colors.grey[300];
+                                            chipFg = Colors.grey[900];
+                                          } else if (record.isCheckIn) {
+                                            status = 'Checked In';
+                                            chipBg = Colors.green[100];
+                                            chipFg = Colors.green[900];
+                                          } else {
+                                            status = 'Checked Out';
+                                            chipBg = Colors.blue[100];
+                                            chipFg = Colors.blue[900];
+                                          }
+                                          final date = record.timestamp
+                                              .toLocal()
+                                              .toString()
+                                              .split(' ')[0];
 
-                                                  return DataRow(
-                                                    cells: [
-                                                      DataCell(
-                                                        Text(
-                                                          record.employeeName ??
-                                                              'Unknown',
-                                                        ),
+                                          return DataRow(
+                                            cells: [
+                                              DataCell(
+                                                Text(
+                                                  record.employeeName ??
+                                                      'Unknown',
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  record.geofenceName ?? 'N/A',
+                                                ),
+                                              ),
+                                              DataCell(Text(date)),
+                                              DataCell(Text(time)),
+                                              DataCell(
+                                                Chip(
+                                                  label: Text(status),
+                                                  backgroundColor: chipBg,
+                                                  labelStyle: TextStyle(
+                                                    color: chipFg,
+                                                  ),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                IconButton(
+                                                  icon: const Icon(
+                                                    Icons.history,
+                                                  ),
+                                                  tooltip:
+                                                      'View history for this employee',
+                                                  onPressed: () {
+                                                    final employeeId =
+                                                        record.userId;
+
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) =>
+                                                            AdminEmployeeHistoryScreen(
+                                                              employeeId:
+                                                                  employeeId,
+                                                              employeeName:
+                                                                  record
+                                                                      .employeeName ??
+                                                                  'Unknown',
+                                                            ),
                                                       ),
-                                                      DataCell(
-                                                        Text(
-                                                          record.geofenceName ??
-                                                              'N/A',
-                                                        ),
-                                                      ),
-                                                      DataCell(Text(date)),
-                                                      DataCell(Text(time)),
-                                                      DataCell(
-                                                        Chip(
-                                                          label: Text(status),
-                                                          backgroundColor:
-                                                              chipBg,
-                                                          labelStyle: TextStyle(
-                                                            color: chipFg,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  );
-                                                })
-                                                .toList(),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }).toList(),
                                       ),
                                     );
                                   },
@@ -787,6 +984,53 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               runSpacing: 8,
               children: [
                 ChoiceChip(
+                  label: const Text('All difficulties'),
+                  selected: _taskDifficultyFilter == 'All',
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() {
+                      _taskDifficultyFilter = 'All';
+                    });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Easy'),
+                  selected: _taskDifficultyFilter == 'easy',
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() {
+                      _taskDifficultyFilter = 'easy';
+                    });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Medium'),
+                  selected: _taskDifficultyFilter == 'medium',
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() {
+                      _taskDifficultyFilter = 'medium';
+                    });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Hard'),
+                  selected: _taskDifficultyFilter == 'hard',
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() {
+                      _taskDifficultyFilter = 'hard';
+                    });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
                   label: const Text('All'),
                   selected: _reportStatusFilter == 'All',
                   onSelected: (sel) {
@@ -825,6 +1069,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 columns: const [
                   DataColumn(label: Text('Employee')),
                   DataColumn(label: Text('Task')),
+                  DataColumn(label: Text('Difficulty')),
                   DataColumn(label: Text('Submitted')),
                   DataColumn(label: Text('Status')),
                   DataColumn(label: Text('Content')),
@@ -838,6 +1083,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     cells: [
                       DataCell(Text(r.employeeName ?? r.employeeId)),
                       DataCell(Text(r.taskTitle ?? (r.taskId ?? '-'))),
+                      DataCell(Text(r.taskDifficulty ?? '-')),
                       DataCell(Text(submitted)),
                       DataCell(Text(r.status)),
                       DataCell(Text(r.content)),
@@ -1000,27 +1246,43 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Future<void> _exportReport() async {
     // Show export preview with filters applied
     if (_viewMode == 'attendance') {
-      if (_attendanceRecords.isEmpty) {
+      final recordsToExport = _filteredAttendanceRecords;
+
+      if (recordsToExport.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No attendance records to export')),
+          const SnackBar(
+            content: Text(
+              'No attendance records to export for selected filters',
+            ),
+          ),
         );
         return;
       }
+
+      DateTime? inclusiveStart;
+      DateTime? inclusiveEnd;
+
+      if (_attendanceStartDate != null || _attendanceEndDate != null) {
+        inclusiveStart = _attendanceStartDate;
+        if (_attendanceEndDate != null) {
+          inclusiveEnd = _attendanceEndDate!.subtract(const Duration(days: 1));
+        }
+      }
+
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => ReportExportPreviewScreen(
-            records: _attendanceRecords,
+            records: recordsToExport,
             reportType: _viewMode,
             taskReports: _filteredTaskReports(),
-            startDate: _filterDate != 'All Dates'
-                ? DateTime.parse(_filterDate)
-                : null,
-            endDate: null,
+            startDate: inclusiveStart,
+            endDate: inclusiveEnd,
             locationFilter: _filterLocation != 'All Locations'
                 ? _filterLocation
                 : null,
             statusFilter: _filterStatus != 'All Status' ? _filterStatus : null,
+            employeeIdFilter: _filterEmployeeId,
           ),
         ),
       );

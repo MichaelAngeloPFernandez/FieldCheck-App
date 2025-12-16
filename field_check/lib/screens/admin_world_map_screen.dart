@@ -256,7 +256,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                     return Polyline(
                       points: e.value,
                       strokeWidth: 2,
-                      color: Colors.blue.withValues(alpha: 0.5),
+                      color: Colors.green.withValues(alpha: 0.5),
                     );
                   }).toList(),
                 ),
@@ -281,7 +281,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                             ),
                     );
 
-                    // Get color based on EmployeeStatus
+                    // Get color based on EmployeeStatus (green for available/moving, red for busy)
                     Color markerColor;
                     IconData markerIcon;
                     switch (empLocation.status) {
@@ -290,7 +290,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                         markerIcon = Icons.check_circle;
                         break;
                       case EmployeeStatus.moving:
-                        markerColor = Colors.blue;
+                        markerColor = Colors.green;
                         markerIcon = Icons.directions_run;
                         break;
                       case EmployeeStatus.busy:

@@ -13,6 +13,8 @@ const {
   assignTaskToUser,
   assignTaskToMultipleUsers,
   updateUserTaskStatus,
+  updateTaskChecklistItem,
+  blockTask,
   archiveTask,
   restoreTask,
   escalateTask,
@@ -35,6 +37,10 @@ router.put('/user-task/:userTaskId/status', protect, updateUserTaskStatus);
 router.put('/:id/archive', protect, admin, archiveTask);
 router.put('/:id/restore', protect, admin, restoreTask);
 router.post('/:id/escalate', protect, admin, escalateTask);
+
+// Employee/admin actions on a specific task
+router.put('/:id/checklist-item', protect, updateTaskChecklistItem);
+router.put('/:id/block', protect, blockTask);
 
 // Generic /:id routes (must be LAST to avoid conflicts)
 router.get('/:id', protect, getTask);

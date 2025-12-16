@@ -115,9 +115,11 @@ const getDashboardStats = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const getRealtimeUpdates = asyncHandler(async (req, res) => {
   try {
-    // True current online sockets count via Socket.IO
-    const { io } = require('../server');
-    const onlineUsers = io?.of('/')?.sockets?.size ?? 0;
+    // True current online employees based on User.isOnline flag
+    const onlineUsers = await User.countDocuments({
+      role: 'employee',
+      isOnline: true,
+    });
     
     // Get recent check-ins (last 5 minutes)
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);

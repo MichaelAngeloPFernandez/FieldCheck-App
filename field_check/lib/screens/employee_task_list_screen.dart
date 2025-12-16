@@ -68,8 +68,13 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     });
   }
 
-  double _statusToProgressValue(String status) {
-    switch (status) {
+  double _taskProgressValue(Task task) {
+    if (task.checklist.isNotEmpty) {
+      final clamped = task.progressPercent.clamp(0, 100);
+      return clamped / 100.0;
+    }
+
+    switch (task.status) {
       case 'completed':
         return 1.0;
       case 'in_progress':
@@ -80,8 +85,13 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     }
   }
 
-  String _statusToProgressLabel(String status) {
-    switch (status) {
+  String _taskProgressLabel(Task task) {
+    if (task.checklist.isNotEmpty) {
+      final clamped = task.progressPercent.clamp(0, 100);
+      return '$clamped%';
+    }
+
+    switch (task.status) {
       case 'completed':
         return '100%';
       case 'in_progress':
@@ -270,16 +280,27 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                                                     : Colors.blue[900]),
                                         ),
                                       ),
+                                      if (task.rawStatus == 'blocked') ...[
+                                        const SizedBox(width: 8),
+                                        Chip(
+                                          label: const Text('Blocked'),
+                                          backgroundColor: Colors.red[100],
+                                          labelStyle: TextStyle(
+                                            color: Colors.red[900],
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                   const SizedBox(height: 8),
                                   LinearProgressIndicator(
-                                    value: _statusToProgressValue(task.status),
+                                    value: _taskProgressValue(task),
                                     backgroundColor: Colors.grey[200],
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Progress: ${_statusToProgressLabel(task.status)}',
+                                    'Progress: ${_taskProgressLabel(task)}',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: Colors.black54,

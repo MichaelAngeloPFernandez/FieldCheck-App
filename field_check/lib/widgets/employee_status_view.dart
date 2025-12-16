@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/employee_location_service.dart';
 import '../screens/admin_reports_screen.dart';
+import '../screens/admin_employee_history_screen.dart';
 import 'employee_details_modal.dart';
 import 'admin_actions_modal.dart';
 
@@ -322,6 +323,18 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
             ),
           );
         },
+        onViewHistory: () {
+          Navigator.pop(context);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AdminEmployeeHistoryScreen(
+                employeeId: employee.employeeId,
+                employeeName: employee.name,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -331,7 +344,7 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
       case EmployeeStatus.available:
         return Colors.green;
       case EmployeeStatus.moving:
-        return Colors.blue;
+        return Colors.green;
       case EmployeeStatus.busy:
         return Colors.red;
       case EmployeeStatus.offline:

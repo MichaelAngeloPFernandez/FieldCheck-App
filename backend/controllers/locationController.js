@@ -132,57 +132,6 @@ exports.updateLocation = async (req, res) => {
   }
 };
 
-/**
- * Get all online employees with their locations
- * GET /api/location/online-employees
- */
-exports.getOnlineEmployees = async (req, res) => {
-  try {
-    const employees = await User.find({
-      isOnline: true,
-      role: 'employee',
-      lastLatitude: { $exists: true },
-      lastLongitude: { $exists: true },
-    }).select(
-      'id name lastLatitude lastLongitude lastLocationUpdate activeTaskCount workloadWeight'
-    );
-
-    // Enrich with status and task info
-    const enrichedEmployees = await Promise.all(
-      employees.map(async (emp) => {
-        const activeTasks = await Task.find({
-          assignedTo: emp._id,
-          status: { $in: ['assigned', 'in_progress'] },
-        });
-
-        let status = 'available';
-        if (activeTasks.length > 0) {
-          status = 'busy';
-        }
-
-        return {
-          employeeId: emp._id,
-          name: emp.name,
-          latitude: emp.lastLatitude,
-          longitude: emp.lastLongitude,
-          status,
-          activeTaskCount: activeTasks.length,
-          workloadScore: Math.min(activeTasks.length / 5, 1.0),
-          isOnline: true,
-          timestamp: emp.lastLocationUpdate,
-        };
-      })
-    );
-
-    res.json({
-      success: true,
-      data: enrichedEmployees,
-    });
-  } catch (error) {
-    console.error('Error fetching online employees:', error);
-    res.status(500).json({ error: 'Failed to fetch online employees' });
-  }
-};
 
 /**
  * Get employee location history
@@ -470,5 +419,33 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // Distance in meters
 }
+
+/**
+ * Get all online employees with their locations
+ * GET /api/location/online-employees
+ */
+exports.getOnlineEmployees = async (req, res) => {
+  try {
+    const onlineUsers = await User.find({ isOnline: true }).select('_id name lastLatitude lastLongitude lastLocationUpdate isOnline activeTaskCount workloadWeight');
+    
+    const locations = onlineUsers.map(user => ({
+      userId: user._id.toString(),
+      employeeId: user._id.toString(),
+      name: user.name,
+      latitude: user.lastLatitude || 0,
+      longitude: user.lastLongitude || 0,
+      accuracy: 0,
+      timestamp: user.lastLocationUpdate?.toISOString() || new Date().toISOString(),
+      isOnline: user.isOnline,
+      activeTaskCount: user.activeTaskCount || 0,
+      workloadScore: user.workloadWeight || 0,
+    }));
+
+    res.json(locations);
+  } catch (error) {
+    console.error('Error fetching online employees:', error);
+    res.status(500).json({ error: 'Failed to fetch online employees' });
+  }
+};
 
 module.exports = exports;

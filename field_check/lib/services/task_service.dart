@@ -234,6 +234,30 @@ class TaskService {
     }
   }
 
+  Future<Task> updateTaskChecklistItem({
+    required String taskId,
+    required int index,
+    required bool isCompleted,
+  }) async {
+    final response = await http
+        .put(
+          Uri.parse('$_baseUrl/$taskId/checklist-item'),
+          headers: await _headers(),
+          body: json.encode({'index': index, 'isCompleted': isCompleted}),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return Task.fromJson(decoded);
+      }
+      throw Exception('Invalid response when updating checklist item');
+    } else {
+      throw Exception('Failed to update checklist item');
+    }
+  }
+
   Future<void> archiveTask(String taskId) async {
     final response = await http.put(
       Uri.parse('$_baseUrl/$taskId/archive'),
@@ -253,6 +277,26 @@ class TaskService {
 
     if (response.statusCode != 200) {
       throw Exception('Failed to restore task');
+    }
+  }
+
+  Future<Task> blockTask(String taskId, String reason) async {
+    final response = await http
+        .put(
+          Uri.parse('$_baseUrl/$taskId/block'),
+          headers: await _headers(),
+          body: json.encode({'reason': reason}),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return Task.fromJson(decoded);
+      }
+      throw Exception('Invalid response when blocking task');
+    } else {
+      throw Exception('Failed to block task');
     }
   }
 

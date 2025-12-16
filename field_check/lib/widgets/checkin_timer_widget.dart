@@ -4,15 +4,13 @@ import 'package:field_check/services/checkin_timer_service.dart';
 class CheckInTimerWidget extends StatefulWidget {
   final String employeeId;
   final bool isCheckedIn;
-  final Duration? customTimeout;
-  final Function(String employeeId)? onTimerExpired;
+  final DateTime? checkInTimestamp;
 
   const CheckInTimerWidget({
     super.key,
     required this.employeeId,
     required this.isCheckedIn,
-    this.customTimeout,
-    this.onTimerExpired,
+    this.checkInTimestamp,
   });
 
   @override
@@ -21,7 +19,7 @@ class CheckInTimerWidget extends StatefulWidget {
 
 class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
   final CheckInTimerService _timerService = CheckInTimerService();
-  Duration _remainingTime = Duration.zero;
+  Duration _elapsedTime = Duration.zero;
 
   @override
   void initState() {
@@ -33,25 +31,15 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
     if (widget.isCheckedIn) {
       _timerService.startCheckInTimer(
         widget.employeeId,
-        customTimeout: widget.customTimeout,
+        checkInTime: widget.checkInTimestamp,
       );
 
       // Listen to timer updates
       _timerService.timerStream.listen((event) {
         if (event.employeeId == widget.employeeId && mounted) {
           setState(() {
-            _remainingTime = event.remainingTime;
+            _elapsedTime = event.elapsedTime;
           });
-        }
-      });
-
-      // Listen to expiration
-      _timerService.expirationStream.listen((employeeId) {
-        if (employeeId == widget.employeeId) {
-          widget.onTimerExpired?.call(employeeId);
-          if (mounted) {
-            _showExpirationDialog();
-          }
         }
       });
     }
@@ -67,25 +55,6 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
     }
   }
 
-  void _showExpirationDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Check-In Timer Expired'),
-        content: const Text(
-          'The check-in timer has expired. Your attendance has been marked as incomplete. '
-          'Please check out or contact your administrator.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _timerService.stopCheckInTimer(widget.employeeId);
@@ -98,18 +67,8 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
       return const SizedBox.shrink();
     }
 
-    final timerText = CheckInTimerService.formatDuration(_remainingTime);
-    final isWarning = _remainingTime.inMinutes < 30;
-    final isExpired = _remainingTime.inSeconds <= 0;
-
-    Color timerColor;
-    if (isExpired) {
-      timerColor = Colors.red;
-    } else if (isWarning) {
-      timerColor = Colors.orange;
-    } else {
-      timerColor = Colors.green;
-    }
+    final timerText = CheckInTimerService.formatDuration(_elapsedTime);
+    const Color timerColor = Colors.green;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -129,15 +88,11 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
                   Icon(Icons.timer, color: timerColor, size: 20),
                   const SizedBox(width: 8),
                   const Text(
-                    'Check-In Timer',
+                    'Time Since Check-In',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
-              if (isWarning && !isExpired)
-                const Icon(Icons.warning, color: Colors.orange, size: 16),
-              if (isExpired)
-                const Icon(Icons.error, color: Colors.red, size: 16),
             ],
           ),
           const SizedBox(height: 8),
@@ -150,12 +105,8 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            isExpired
-                ? 'Timer Expired - Attendance Incomplete'
-                : isWarning
-                ? 'Warning: Less than 30 minutes remaining'
-                : 'Time remaining for check-out',
+          const Text(
+            'Elapsed time since you checked in',
             style: TextStyle(fontSize: 10, color: timerColor),
             textAlign: TextAlign.center,
           ),

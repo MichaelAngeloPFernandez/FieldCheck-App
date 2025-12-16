@@ -31,6 +31,9 @@ const io = new Server(server, { // Initialize socket.io
 // Export io for use in other modules
 module.exports.io = io;
 
+// Also expose via global.io so controllers and utilities can emit events
+global.io = io;
+
 console.log('🔌 Socket.io initialized');
 
 // Track employee locations for real-time dashboard updates
@@ -93,14 +96,67 @@ io.on('connection', (socket) => {
       }
 
       // Broadcast to admins/dashboard for real-time monitoring (async)
-      setImmediate(() => {
-        io.emit('liveEmployeeLocation', {
-          userId,
-          latitude,
-          longitude,
-          accuracy,
-          timestamp,
-        });
+      setImmediate(async () => {
+        try {
+          // Update location, lastLocationUpdate, and isOnline in database for auto-checkout tracking and map display
+          if (typeof userId === 'string' && userId.length === 24) {
+            try {
+              await User.findByIdAndUpdate(userId, {
+                lastLatitude: latitude,
+                lastLongitude: longitude,
+                lastLocationUpdate: new Date(),
+                isOnline: true,
+              });
+            } catch (_) {}
+          }
+
+          // Enrich data for admin dashboards using EmployeeLocationService
+          let name = 'Unknown';
+          let isOnline = true;
+
+          if (typeof userId === 'string' && userId.length === 24) {
+            try {
+              const user = await User.findById(userId).select('name isOnline');
+              if (user) {
+                if (user.name) {
+                  name = user.name;
+                }
+                if (typeof user.isOnline === 'boolean') {
+                  isOnline = user.isOnline;
+                }
+              }
+            } catch (_) {}
+          }
+
+          // Emit rich EmployeeLocation-compatible payload for admin dashboard
+          io.emit('employeeLocationUpdate', {
+            employeeId: String(userId),
+            name,
+            latitude,
+            longitude,
+            accuracy: accuracy || 0,
+            speed: 0,
+            status: 'available',
+            timestamp: timestamp || new Date().toISOString(),
+            activeTaskCount: 0,
+            workloadScore: 0,
+            currentGeofence: null,
+            distanceToNearestTask: null,
+            isOnline,
+            batteryLevel: null,
+          });
+
+          // Existing lightweight event used by RealtimeService/AdminWorldMap
+          io.emit('liveEmployeeLocation', {
+            userId,
+            latitude,
+            longitude,
+            accuracy,
+            timestamp,
+          });
+        } catch (e) {
+          console.error('Error broadcasting live employee location:', e);
+        }
       });
 
       if (process.env.NODE_ENV === 'development') {
@@ -281,6 +337,10 @@ process.on('uncaughtException', (error) => {
     // Initialize automation jobs (email verification cleanup, etc.)
     const { initializeAutomation } = require('./utils/automationService');
     initializeAutomation();
+    
+    // Initialize offline employee void attendance job
+    const { initializeOfflineEmployeeVoidJob } = require('./utils/offlineEmployeeVoidJob');
+    initializeOfflineEmployeeVoidJob();
     
     server.listen(port, '0.0.0.0', () => { // Listen on all network interfaces
       console.log(`Backend server listening at http://0.0.0.0:${port}`);

@@ -11,6 +11,7 @@ class ReportModel {
   final String? employeeName;
   final String? employeeEmail;
   final String? taskTitle;
+  final String? taskDifficulty;
   final String? geofenceName;
   final bool isArchived;
   final List<String> attachments;
@@ -28,6 +29,7 @@ class ReportModel {
     this.employeeName,
     this.employeeEmail,
     this.taskTitle,
+    this.taskDifficulty,
     this.geofenceName,
     this.isArchived = false,
     this.attachments = const [],
@@ -56,6 +58,7 @@ class ReportModel {
       employeeName: employee is Map ? employee['name'] : null,
       employeeEmail: employee is Map ? employee['email'] : null,
       taskTitle: task is Map ? task['title'] : null,
+      taskDifficulty: task is Map ? task['difficulty'] : null,
       geofenceName: geofence is Map ? geofence['name'] : null,
       isArchived: json['isArchived'] ?? false,
       attachments: json['attachments'] is List
