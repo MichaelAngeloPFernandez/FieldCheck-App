@@ -39,8 +39,10 @@ class LocationService {
     // When we reach here, permissions are granted and we can
     // continue accessing the position of the device.
 
-    // Fast path: use a recent, accurate last-known location if available.
-    const double desiredAccuracyMeters = 50;
+    // Fast path: use a recent, reasonably accurate last-known location if available.
+    // Accept up to ~200m so indoor GPS fixes can be reused without waiting
+    // for a fresh lock every time.
+    const double desiredAccuracyMeters = 200;
     try {
       final lastPosition = await geolocator.Geolocator.getLastKnownPosition();
 
@@ -53,12 +55,12 @@ class LocationService {
       // Ignore last-known errors and fall through to a live request.
     }
 
-    // Fallback: single live request with adequate timeout for GPS lock
+    // Fallback: single live request with a balanced timeout for GPS lock
     try {
       final current = await geolocator.Geolocator.getCurrentPosition(
         locationSettings: const geolocator.LocationSettings(
           accuracy: geolocator.LocationAccuracy.high,
-          timeLimit: Duration(seconds: 20),
+          timeLimit: Duration(seconds: 10),
         ),
       );
 

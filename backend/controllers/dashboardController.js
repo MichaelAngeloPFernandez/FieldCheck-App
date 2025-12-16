@@ -115,14 +115,17 @@ const getDashboardStats = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const getRealtimeUpdates = asyncHandler(async (req, res) => {
   try {
-    // True current online employees based on User.isOnline flag
+    // Only treat employees as "online" if they are marked online AND
+    // have a recent location update (last 5 minutes).
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
     const onlineUsers = await User.countDocuments({
       role: 'employee',
       isOnline: true,
+      lastLocationUpdate: { $gte: fiveMinutesAgo },
     });
     
     // Get recent check-ins (last 5 minutes)
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     const recentCheckInsRaw = await Attendance.find({
       checkIn: { $gte: fiveMinutesAgo }
     }).populate('employee', 'name email').populate('geofence', 'name').sort({ checkIn: -1 }).lean();

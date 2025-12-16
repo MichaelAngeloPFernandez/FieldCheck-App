@@ -6,12 +6,15 @@ const Report = require('../models/Report');
 /**
  * Offline Employee Void Job
  * Automatically voids attendance records for employees who:
- * 1. Are offline for too long (> 30 minutes without location update)
- * 2. Are outside their geofence boundary
- * 3. Have an active check-in (no checkout yet)
+ * 1. Are offline for too long (> 60 minutes without location update)
+ * 2. Have an active check-in (no checkout yet)
+ *
+ * Once the offline threshold is reached, the attendance is voided
+ * regardless of last known position. If we have a last location and
+ * geofence, we include distance information in the reason/text.
  */
 
-const OFFLINE_THRESHOLD_MINUTES = 30; // Mark as void if offline for 30+ minutes
+const OFFLINE_THRESHOLD_MINUTES = 60; // Mark as void if offline for 60+ minutes
 const CHECK_INTERVAL_MINUTES = 5; // Run job every 5 minutes
 
 let jobInterval = null;
@@ -37,7 +40,6 @@ function initializeOfflineEmployeeVoidJob() {
 async function voidOfflineEmployeesOutsideGeofence() {
   try {
     const now = new Date();
-    const offlineThreshold = new Date(now.getTime() - OFFLINE_THRESHOLD_MINUTES * 60 * 1000);
 
     // Find all employees with active check-ins (no checkout)
     const activeAttendances = await Attendance.find({
@@ -58,47 +60,59 @@ async function voidOfflineEmployeesOutsideGeofence() {
           continue;
         }
 
-        // Check if employee is offline
+        // Check how long the employee has been offline
         const lastUpdate = employee.lastLocationUpdate ? new Date(employee.lastLocationUpdate) : null;
-        const isOffline = !lastUpdate || lastUpdate < offlineThreshold;
+        const minutesOffline = lastUpdate
+          ? Math.round((now - lastUpdate) / 60000)
+          : OFFLINE_THRESHOLD_MINUTES + 1; // Treat unknown lastUpdate as over threshold
 
-        if (!isOffline) {
-          continue; // Employee is online, skip
+        if (minutesOffline < OFFLINE_THRESHOLD_MINUTES) {
+          continue; // Not offline long enough, skip
         }
 
-        // Check if employee is outside geofence boundary
+        // Optional: compute distance to geofence if we have a last known location
         const lastLat = employee.lastLatitude;
         const lastLng = employee.lastLongitude;
+        let distanceMeters = null;
 
-        if (lastLat === undefined || lastLng === undefined || lastLat === null || lastLng === null) {
-          console.warn(`⚠️ Skipping ${employee.name}: no last known location`);
-          continue;
+        if (
+          lastLat !== undefined &&
+          lastLng !== undefined &&
+          lastLat !== null &&
+          lastLng !== null
+        ) {
+          distanceMeters = calculateDistance(
+            geofence.latitude,
+            geofence.longitude,
+            lastLat,
+            lastLng
+          );
         }
 
-        const distanceMeters = calculateDistance(
-          geofence.latitude,
-          geofence.longitude,
-          lastLat,
-          lastLng
-        );
-
-        const isOutsideGeofence = distanceMeters > geofence.radius;
-
-        if (!isOutsideGeofence) {
-          continue; // Employee is inside geofence, skip
-        }
-
-        // Employee is offline AND outside geofence - void their attendance
         console.log(
-          `🔴 Voiding attendance for ${employee.name}: offline for ${Math.round((now - lastUpdate) / 60000)} min, ${Math.round(distanceMeters)}m outside ${geofence.name}`
+          `🔴 Voiding attendance for ${employee.name}: offline for ${minutesOffline} min` +
+            (distanceMeters !== null
+              ? `, approx ${Math.round(distanceMeters)}m from ${geofence.name}`
+              : '')
         );
 
         // Mark attendance as void
         attendance.checkOut = now;
         attendance.status = 'out';
         attendance.isVoid = true;
-        attendance.voidReason = `Auto-void: Offline for ${OFFLINE_THRESHOLD_MINUTES}+ minutes and ${Math.round(distanceMeters)}m outside geofence`;
+        attendance.voidReason =
+          `Auto-void: Offline for ${minutesOffline} minutes` +
+          (distanceMeters !== null
+            ? ` and approximately ${Math.round(distanceMeters)}m from geofence`
+            : '');
         await attendance.save();
+
+        // Also mark the user as offline for presence tracking
+        try {
+          await User.findByIdAndUpdate(employee._id, { isOnline: false });
+        } catch (e) {
+          console.error('Failed to mark user offline during auto-void:', e);
+        }
 
         // Create void attendance report
         try {
@@ -107,7 +121,7 @@ async function voidOfflineEmployeesOutsideGeofence() {
             attendance: attendance._id,
             employee: employee._id,
             geofence: geofence._id,
-            content: `Auto-void: Employee offline for ${OFFLINE_THRESHOLD_MINUTES}+ minutes and outside geofence boundary`,
+            content: `Auto-void: Employee offline for ${minutesOffline} minutes and automatically checked out`,
           });
 
           if (global.io) {
@@ -123,7 +137,7 @@ async function voidOfflineEmployeesOutsideGeofence() {
             employeeId: employee._id,
             employeeName: employee.name,
             geofenceName: geofence.name,
-            reason: `Offline for ${OFFLINE_THRESHOLD_MINUTES}+ minutes and outside geofence`,
+            reason: `Offline for ${minutesOffline} minutes (auto-checkout)`,
             checkOutTime: now,
             isVoid: true,
           });

@@ -426,20 +426,32 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
  */
 exports.getOnlineEmployees = async (req, res) => {
   try {
-    const onlineUsers = await User.find({ isOnline: true }).select('_id name lastLatitude lastLongitude lastLocationUpdate isOnline activeTaskCount workloadWeight');
-    
-    const locations = onlineUsers.map(user => ({
-      userId: user._id.toString(),
-      employeeId: user._id.toString(),
-      name: user.name,
-      latitude: user.lastLatitude || 0,
-      longitude: user.lastLongitude || 0,
-      accuracy: 0,
-      timestamp: user.lastLocationUpdate?.toISOString() || new Date().toISOString(),
-      isOnline: user.isOnline,
-      activeTaskCount: user.activeTaskCount || 0,
-      workloadScore: user.workloadWeight || 0,
-    }));
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+    const onlineUsers = await User.find({
+      isOnline: true,
+      lastLocationUpdate: { $gte: fiveMinutesAgo },
+    }).select('_id name lastLatitude lastLongitude lastLocationUpdate isOnline activeTaskCount workloadWeight');
+
+    const locations = onlineUsers
+      .filter((user) =>
+        user.lastLatitude !== undefined &&
+        user.lastLongitude !== undefined &&
+        user.lastLatitude !== null &&
+        user.lastLongitude !== null
+      )
+      .map((user) => ({
+        userId: user._id.toString(),
+        employeeId: user._id.toString(),
+        name: user.name,
+        latitude: user.lastLatitude,
+        longitude: user.lastLongitude,
+        accuracy: 0,
+        timestamp: user.lastLocationUpdate?.toISOString() || new Date().toISOString(),
+        isOnline: user.isOnline,
+        activeTaskCount: user.activeTaskCount || 0,
+        workloadScore: user.workloadWeight || 0,
+      }));
 
     res.json(locations);
   } catch (error) {
