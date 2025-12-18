@@ -84,6 +84,11 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     ) {
       if (mounted) {
         setState(() {
+          // Cache full location objects so we can derive status/color per employee
+          _employeeLocations
+            ..clear()
+            ..addAll(locations);
+
           for (final empLoc in locations) {
             final pos = LatLng(empLoc.latitude, empLoc.longitude);
             _liveLocations[empLoc.employeeId] = pos;

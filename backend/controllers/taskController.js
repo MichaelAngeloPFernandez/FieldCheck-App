@@ -602,12 +602,13 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
 const updateUserTaskStatus = asyncHandler(async (req, res) => {
   const { userTaskId } = req.params;
   const { status } = req.body;
+  const normalizedNextStatus = normalizeTaskStatus(status);
   const ut = await UserTask.findById(userTaskId);
   if (!ut) {
     res.status(404);
     throw new Error('UserTask not found');
   }
-  const nextStatus = status;
+  const nextStatus = normalizedNextStatus;
 
   // Validate transition against the owning Task (if it still exists)
   let taskForStatusUpdate = null;
@@ -674,6 +675,38 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
     assignedAt: ut.assignedAt.toISOString(),
     completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
   }); // Emit real-time event
+
+  // Emit admin notification so dashboards can react to employee actions
+  try {
+    const user = await User.findById(ut.userId).select('name email');
+    const actorName = user?.name || 'Employee';
+    let action = nextStatus;
+    if (nextStatus === 'in_progress') {
+      action = 'accepted';
+    } else if (nextStatus === 'completed') {
+      action = 'completed';
+    }
+
+    io.emit('adminNotification', {
+      type: 'task',
+      action,
+      taskId: ut.taskId.toString(),
+      userTaskId: ut._id.toString(),
+      employeeId: ut.userId.toString(),
+      employeeName: actorName,
+      timestamp: new Date(),
+      message:
+        action === 'accepted'
+          ? `${actorName} accepted and started a task`
+          : action === 'completed'
+              ? `${actorName} completed a task`
+              : `${actorName} updated task status to ${nextStatus}`,
+      severity: action === 'completed' ? 'info' : 'warning',
+    });
+  } catch (e) {
+    console.warn('Failed to emit task status adminNotification:', e.message || e);
+  }
+
   res.json({
     id: ut._id.toString(),
     userId: ut.userId.toString(),
