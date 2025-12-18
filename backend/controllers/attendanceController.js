@@ -44,19 +44,57 @@ const checkIn = asyncHandler(async (req, res) => {
     throw new Error('Outside geofence boundary');
   }
 
-  // Check for existing open attendance to prevent double check-in
-  const existingOpen = await Attendance.findOne({ 
-    employee: req.user._id, 
-    checkOut: { $exists: false } 
-  });
-  if (existingOpen) {
-    res.status(400);
-    throw new Error('Employee already checked in. Check out first.');
+  // If there's any prior open attendance record for this employee, close it
+  // before creating a new check-in. This prevents stuck/open sessions when
+  // previous check-outs were missed due to client/network/timezone issues.
+  const now = new Date();
+  const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+
+  const priorOpen = await Attendance.findOne({
+    employee: req.user._id,
+    checkOut: { $exists: false },
+  }).sort({ createdAt: -1 }).populate('geofence');
+
+  if (priorOpen) {
+    try {
+      priorOpen.checkOut = phTime;
+      priorOpen.status = 'out';
+      priorOpen.autoCheckout = true;
+      priorOpen.voidReason = 'Auto-closed by new check-in to prevent overlapping sessions';
+      const saved = await priorOpen.save();
+
+      // Emit updated record and an admin notification about the auto-close
+      io.emit('updatedAttendanceRecord', {
+        _id: saved._id,
+        employee: { _id: req.user._id, name: req.user.name },
+        geofence: { _id: priorOpen.geofence?._id || null, name: priorOpen.geofence?.name || null },
+        checkIn: saved.checkIn,
+        checkOut: saved.checkOut,
+        status: saved.status,
+        location: saved.location,
+        autoCheckout: true,
+      });
+
+      io.emit('adminNotification', {
+        type: 'attendance',
+        action: 'auto-checkout',
+        employeeId: req.user._id,
+        employeeName: req.user.name,
+        geofenceName: priorOpen.geofence?.name || null,
+        checkInTime: saved.checkIn,
+        checkOutTime: saved.checkOut,
+        elapsedHours: saved.checkOut && saved.checkIn ? ((saved.checkOut - saved.checkIn) / (1000 * 60 * 60)).toFixed(2) : null,
+        timestamp: saved.checkOut,
+        message: `${req.user.name} previous session auto-closed before new check-in`,
+        severity: 'warning',
+      });
+    } catch (e) {
+      console.error('Failed to auto-close prior open attendance for', req.user._id, e.message || e);
+    }
   }
 
   // Record time in Philippine timezone (UTC+8)
-  const phTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
-  
+  // (phTime already computed above to support prior auto-close)
   const attendance = new Attendance({
     employee: req.user._id,
     geofence: geofence._id,
@@ -75,6 +113,18 @@ const checkIn = asyncHandler(async (req, res) => {
     checkIn: created.checkIn,
     status: created.status,
     location: created.location,
+  });
+
+  // Emit admin notification for check-in event
+  io.emit('adminNotification', {
+    type: 'attendance',
+    action: 'check-in',
+    employeeId: req.user._id,
+    employeeName: req.user.name,
+    geofenceName: geofence.name,
+    timestamp: created.checkIn,
+    message: `${req.user.name} checked in at ${geofence.name}`,
+    severity: 'info',
   });
 
   // Populate and emit full data asynchronously (don't block response)
@@ -114,21 +164,31 @@ const checkIn = asyncHandler(async (req, res) => {
 const checkOut = asyncHandler(async (req, res) => {
   const { latitude, longitude, geofenceId } = req.body;
   
+  console.log(`[CHECKOUT] Employee ${req.user._id} attempting checkout with geofenceId: ${geofenceId}`);
+  
   // Validate location coordinates
   if (isNaN(latitude) || isNaN(longitude) || latitude === undefined || longitude === undefined) {
     res.status(400);
     throw new Error('Invalid latitude or longitude');
   }
   
-  const openRecord = await Attendance.findOne({ 
-    employee: req.user._id, 
-    checkOut: { $exists: false } 
+  // Find the most recent open attendance record for this employee
+  // Do NOT restrict by local "today" window — sometimes date math
+  // mismatches (timezone shifts) can prevent finding the open record.
+  // Searching by employee + missing checkOut and sorting ensures we
+  // pick the latest open session to close out.
+  const openRecord = await Attendance.findOne({
+    employee: req.user._id,
+    checkOut: { $exists: false },
   }).sort({ createdAt: -1 }).populate('geofence');
 
   if (!openRecord) {
+    console.log(`[CHECKOUT] No open record found for employee ${req.user._id}`);
     res.status(400);
     throw new Error('No active attendance record to check out');
   }
+  
+  console.log(`[CHECKOUT] Found open record: ${openRecord._id}, geofence: ${openRecord.geofence?._id}`);
 
   // CRITICAL: Ensure geofence exists in the record
   if (!openRecord.geofence) {
@@ -180,6 +240,21 @@ const checkOut = asyncHandler(async (req, res) => {
     checkOut: updated.checkOut,
     status: updated.status,
     location: updated.location,
+  });
+
+  // Emit admin notification for check-out event
+  io.emit('adminNotification', {
+    type: 'attendance',
+    action: 'check-out',
+    employeeId: req.user._id,
+    employeeName: req.user.name,
+    geofenceName: geofence.name,
+    checkInTime: updated.checkIn,
+    checkOutTime: updated.checkOut,
+    elapsedHours: ((updated.checkOut - updated.checkIn) / (1000 * 60 * 60)).toFixed(2),
+    timestamp: updated.checkOut,
+    message: `${req.user.name} checked out from ${geofence.name}`,
+    severity: 'info',
   });
 
   // Populate and emit full data asynchronously (don't block response)
@@ -267,6 +342,63 @@ const getAttendanceRecords = asyncHandler(async (req, res) => {
   res.json(attendance);
 });
 
+// @desc    Get attendance status for all employees (Admin only)
+// @route   GET /api/attendance/admin/all-status
+// @access  Private/Admin
+const getAllEmployeesAttendanceStatus = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const phNow = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  const todayStart = new Date(Date.UTC(phNow.getUTCFullYear(), phNow.getUTCMonth(), phNow.getUTCDate(), 0, 0, 0));
+  const todayEnd = new Date(Date.UTC(phNow.getUTCFullYear(), phNow.getUTCMonth(), phNow.getUTCDate(), 23, 59, 59));
+
+  // Get all open attendance records for today
+  const openRecords = await Attendance.find({
+    checkOut: { $exists: false },
+    checkIn: { $gte: todayStart, $lte: todayEnd }
+  })
+    .populate('employee', 'name email')
+    .populate('geofence', 'name');
+
+  // Get all employees
+  const allEmployees = await User.find({ role: 'employee', isActive: true }).select('name email');
+
+  // Map attendance status by employee ID
+  const attendanceMap = new Map();
+  openRecords.forEach(record => {
+    attendanceMap.set(record.employee._id.toString(), {
+      isCheckedIn: true,
+      checkInTime: record.checkIn,
+      geofenceName: record.geofence?.name,
+      employeeName: record.employee.name,
+    });
+  });
+
+  // Build response with all employees
+  const result = allEmployees.map(emp => {
+    const status = attendanceMap.get(emp._id.toString());
+    if (status) {
+      return {
+        employeeId: emp._id,
+        employeeName: emp.name,
+        email: emp.email,
+        isCheckedIn: true,
+        checkInTime: status.checkInTime,
+        geofenceName: status.geofenceName,
+      };
+    }
+    return {
+      employeeId: emp._id,
+      employeeName: emp.name,
+      email: emp.email,
+      isCheckedIn: false,
+      checkInTime: null,
+      geofenceName: null,
+    };
+  });
+
+  res.json({ employees: result, timestamp: new Date() });
+});
+
 // @desc    Get attendance record by ID
 // @route   GET /api/attendance/:id
 // @access  Private/Admin
@@ -340,10 +472,18 @@ const deleteMyAttendanceRecord = asyncHandler(async (req, res) => {
 // @route   GET /api/attendance/status
 // @access  Private
 const getAttendanceStatus = asyncHandler(async (req, res) => {
-  const openRecord = await Attendance.findOne({ 
-    employee: req.user._id, 
-    checkOut: { $exists: false } 
+  // Find the most recent open attendance record (no date filter).
+  // Using a strict "today" filter here caused missed open records
+  // when timezone math drifted; show open state if there's any
+  // attendance record without a checkOut for the user.
+  const openRecord = await Attendance.findOne({
+    employee: req.user._id,
+    checkOut: { $exists: false },
   }).populate('geofence', 'name').sort({ createdAt: -1 });
+
+  // NOTE: removed fragile debug code that referenced undefined date window variables.
+  // This endpoint intentionally returns open state for any attendance record
+  // without a `checkOut` for the user (no date window).
 
   const isCheckedIn = !!openRecord;
   let lastCheckTime = null;
@@ -368,7 +508,7 @@ const getAttendanceStatus = asyncHandler(async (req, res) => {
     lastGeofenceName = openRecord.geofence?.name;
     lastCheckTimestamp = openRecord.checkIn;
   } else {
-    // Get last check-out time
+    // Get last check-out time (most recent record regardless of date)
     const lastRecord = await Attendance.findOne({ 
       employee: req.user._id 
     }).populate('geofence', 'name').sort({ createdAt: -1 });
@@ -408,19 +548,33 @@ const getAttendanceHistory = asyncHandler(async (req, res) => {
 
   const attendance = await Attendance.find(filter)
     .populate('geofence', 'name')
+    .populate('employee', 'name email')
     .sort({ checkIn: -1 })
     .limit(100); // Limit to last 100 records
 
-  const records = attendance.map(record => ({
-    id: record._id,
-    isCheckIn: record.status === 'in',
-    timestamp: record.checkIn,
-    latitude: record.location?.lat,
-    longitude: record.location?.lng,
-    geofenceId: record.geofence?._id,
-    geofenceName: record.geofence?.name,
-    userId: record.employee,
-  }));
+  const records = attendance.map(record => {
+    const elapsedMs = record.checkOut ? (record.checkOut - record.checkIn) : 0;
+    const elapsedHours = (elapsedMs / (1000 * 60 * 60)).toFixed(2);
+    
+    return {
+      id: record._id,
+      isCheckIn: record.status === 'in',
+      checkInTime: record.checkIn,
+      checkOutTime: record.checkOut,
+      elapsedHours: record.checkOut ? parseFloat(elapsedHours) : null,
+      status: record.status, // 'in' (open) or 'out' (closed)
+      latitude: record.location?.lat,
+      longitude: record.location?.lng,
+      geofenceId: record.geofence?._id,
+      geofenceName: record.geofence?.name || 'Unknown Location',
+      employeeName: record.employee?.name || 'Unknown Employee',
+      employeeEmail: record.employee?.email,
+      userId: record.employee?._id,
+      isVoid: record.isVoid || false,
+      autoCheckout: record.autoCheckout || false,
+      voidReason: record.voidReason,
+    };
+  });
 
   res.json({ records });
 });
@@ -467,4 +621,5 @@ module.exports = {
   getAttendanceHistory,
   deleteMyAttendanceRecord,
   deleteMyAttendanceHistoryByMonth,
+  getAllEmployeesAttendanceStatus,
 };
