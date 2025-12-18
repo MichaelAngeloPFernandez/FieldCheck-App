@@ -13,6 +13,7 @@ import 'package:field_check/screens/login_screen.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/dashboard_service.dart';
 import 'package:field_check/services/realtime_service.dart';
+import 'package:field_check/services/employee_location_service.dart';
 import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:intl/intl.dart';
@@ -48,6 +49,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final UserService _userService = UserService();
   final DashboardService _dashboardService = DashboardService();
   final RealtimeService _realtimeService = RealtimeService();
+  final EmployeeLocationService _locationService = EmployeeLocationService();
 
   DashboardStats? _dashboardStats;
   RealtimeUpdates? _realtimeUpdates;
@@ -59,6 +61,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Map<String, UserModel> _employees = {};
   final Map<String, LatLng> _liveLocations = {};
   final Map<String, List<LatLng>> _trails = {};
+  final Map<String, EmployeeLocation> _employeeLocations = {};
   static const LatLng _defaultCenter = LatLng(14.5995, 120.9842); // Manila
   bool _showNoEmployeesPopup = true;
 
@@ -81,13 +84,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _loadDashboardData();
     _initRealtimeService();
     _initMapData();
+    _initLocationService();
     _startRefreshTimer();
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _locationService.dispose();
     super.dispose();
+  }
+
+  Future<void> _initLocationService() async {
+    try {
+      await _locationService.initialize();
+      _locationService.employeeLocationsStream.listen((locations) {
+        if (mounted) {
+          setState(() {
+            _employeeLocations.clear();
+            for (final loc in locations) {
+              _employeeLocations[loc.employeeId] = loc;
+            }
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('Error initializing location service: $e');
+    }
   }
 
   Future<void> _initRealtimeService() async {
@@ -169,6 +192,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           _notifications.removeLast();
         }
       });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$title - $message'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     });
   }
 
@@ -799,6 +829,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           )
                           .map((entry) {
                             final user = _employees[entry.key];
+                            final empLocation = _employeeLocations[entry.key];
+
+                            // Determine marker color based on employee status
+                            Color markerColor = Colors.green;
+                            IconData markerIcon = Icons.check_circle;
+
+                            if (empLocation != null) {
+                              switch (empLocation.status) {
+                                case EmployeeStatus.available:
+                                  markerColor = Colors.green;
+                                  markerIcon = Icons.check_circle;
+                                  break;
+                                case EmployeeStatus.moving:
+                                  markerColor = Colors.blue;
+                                  markerIcon = Icons.directions_run;
+                                  break;
+                                case EmployeeStatus.busy:
+                                  markerColor = Colors.red;
+                                  markerIcon = Icons.schedule;
+                                  break;
+                                case EmployeeStatus.offline:
+                                  markerColor = Colors.grey;
+                                  markerIcon = Icons.cloud_off;
+                                  break;
+                              }
+                            }
+
                             return Marker(
                               point: entry.value,
                               width: 40,
@@ -809,18 +866,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 },
                                 child: Tooltip(
                                   message: user?.name ?? entry.key,
-                                  child: Icon(
-                                    Icons.location_history,
-                                    color: Colors.green,
-                                    size: 32,
-                                    shadows: [
-                                      Shadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.3,
-                                        ),
-                                        blurRadius: 4,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: markerColor,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
                                       ),
-                                    ],
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: markerColor.withValues(
+                                            alpha: 0.5,
+                                          ),
+                                          blurRadius: 8,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                    padding: const EdgeInsets.all(6),
+                                    child: Icon(
+                                      markerIcon,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
                                   ),
                                 ),
                               ),

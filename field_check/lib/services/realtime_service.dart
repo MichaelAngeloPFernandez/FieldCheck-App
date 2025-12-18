@@ -22,6 +22,8 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _locationController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _notificationController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   bool _isConnected = false;
   Timer? _reconnectTimer;
@@ -35,6 +37,8 @@ class RealtimeService {
   Stream<Map<String, dynamic>> get taskStream => _taskController.stream;
   Stream<Map<String, dynamic>> get userStream => _userController.stream;
   Stream<Map<String, dynamic>> get locationStream => _locationController.stream;
+  Stream<Map<String, dynamic>> get notificationStream =>
+      _notificationController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -209,6 +213,19 @@ class RealtimeService {
         'data': data,
       });
     });
+
+    // Admin notifications for check-in/check-out events
+    _socket!.on('adminNotification', (data) {
+      print('RealtimeService: Admin notification: $data');
+      if (data is Map<String, dynamic>) {
+        _notificationController.add(data);
+        _eventController.add({
+          'type': 'notification',
+          'action': data['action'] ?? 'info',
+          'data': data,
+        });
+      }
+    });
   }
 
   void _scheduleReconnect() {
@@ -262,5 +279,6 @@ class RealtimeService {
     _taskController.close();
     _userController.close();
     _locationController.close();
+    _notificationController.close();
   }
 }

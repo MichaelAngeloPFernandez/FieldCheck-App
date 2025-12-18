@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:field_check/services/checkin_timer_service.dart';
 
@@ -20,6 +21,8 @@ class CheckInTimerWidget extends StatefulWidget {
 class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
   final CheckInTimerService _timerService = CheckInTimerService();
   Duration _elapsedTime = Duration.zero;
+  StreamSubscription<CheckInTimerEvent>? _subscription;
+  String? _activeEmployeeId;
 
   @override
   void initState() {
@@ -28,36 +31,56 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
   }
 
   void _initializeTimer() {
-    if (widget.isCheckedIn) {
-      _timerService.startCheckInTimer(
-        widget.employeeId,
-        checkInTime: widget.checkInTimestamp,
-      );
+    _subscription?.cancel();
 
-      // Listen to timer updates
-      _timerService.timerStream.listen((event) {
-        if (event.employeeId == widget.employeeId && mounted) {
-          setState(() {
-            _elapsedTime = event.elapsedTime;
-          });
-        }
-      });
+    if (_activeEmployeeId != null) {
+      _timerService.stopCheckInTimer(_activeEmployeeId!);
+      _activeEmployeeId = null;
     }
+
+    if (!widget.isCheckedIn) {
+      _elapsedTime = Duration.zero;
+      return;
+    }
+
+    _activeEmployeeId = widget.employeeId;
+
+    // Always start timer from the provided checkInTimestamp
+    // This ensures timer resets to 0 on each new check-in
+    _timerService.startCheckInTimer(
+      _activeEmployeeId!,
+      checkInTime: widget.checkInTimestamp,
+    );
+
+    _subscription = _timerService.timerStream.listen((event) {
+      if (!mounted) return;
+      if (event.employeeId != _activeEmployeeId) return;
+      setState(() {
+        _elapsedTime = event.elapsedTime;
+      });
+    });
   }
 
   @override
   void didUpdateWidget(CheckInTimerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isCheckedIn && !oldWidget.isCheckedIn) {
+    final bool checkInStateChanged =
+        widget.isCheckedIn != oldWidget.isCheckedIn;
+    final bool employeeChanged = widget.employeeId != oldWidget.employeeId;
+    final bool timestampChanged =
+        widget.checkInTimestamp != oldWidget.checkInTimestamp;
+
+    if (checkInStateChanged || employeeChanged || timestampChanged) {
       _initializeTimer();
-    } else if (!widget.isCheckedIn && oldWidget.isCheckedIn) {
-      _timerService.stopCheckInTimer(widget.employeeId);
     }
   }
 
   @override
   void dispose() {
-    _timerService.stopCheckInTimer(widget.employeeId);
+    _subscription?.cancel();
+    if (_activeEmployeeId != null) {
+      _timerService.stopCheckInTimer(_activeEmployeeId!);
+    }
     super.dispose();
   }
 

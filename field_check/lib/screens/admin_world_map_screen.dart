@@ -8,7 +8,6 @@ import 'package:latlong2/latlong.dart';
 
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/services/user_service.dart';
-import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/services/availability_service.dart';
@@ -22,7 +21,6 @@ class AdminWorldMapScreen extends StatefulWidget {
 }
 
 class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
-  final RealtimeService _realtimeService = RealtimeService();
   final UserService _userService = UserService();
   final TaskService _taskService = TaskService();
   final AvailabilityService _availabilityService = AvailabilityService();
@@ -31,11 +29,10 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   final Map<String, UserModel> _employees = {};
   final Map<String, LatLng> _liveLocations = {};
   final Map<String, List<LatLng>> _trails = {};
-  List<EmployeeLocation> _employeeLocations = [];
+  final List<EmployeeLocation> _employeeLocations = [];
 
   final Map<String, _WorldAvailability> _availability = {};
 
-  StreamSubscription<Map<String, dynamic>>? _locationSub;
   StreamSubscription<List<EmployeeLocation>>? _employeeLocationSub;
   bool _loadingUsers = true;
   String? _selectedUserId;
@@ -53,39 +50,10 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   }
 
   Future<void> _init() async {
-    await _realtimeService.initialize();
     await _locationService.initialize();
     await _loadEmployees();
     _subscribeToLocations();
-    _subscribeToEmployeeLocations();
     await _refreshAvailability();
-  }
-
-  void _subscribeToEmployeeLocations() {
-    _employeeLocationSub = _locationService.employeeLocationsStream.listen((
-      locations,
-    ) {
-      if (mounted) {
-        setState(() {
-          _employeeLocations = locations;
-          // Update live locations
-          for (final emp in locations) {
-            final point = LatLng(emp.latitude, emp.longitude);
-            _liveLocations[emp.employeeId] = point;
-
-            // Update trails
-            final trail = _trails[emp.employeeId] ?? <LatLng>[];
-            if (trail.isEmpty || trail.last != point) {
-              trail.add(point);
-              if (trail.length > 50) {
-                trail.removeRange(0, trail.length - 50);
-              }
-              _trails[emp.employeeId] = trail;
-            }
-          }
-        });
-      }
-    });
   }
 
   Future<void> _loadEmployees() async {
@@ -110,23 +78,28 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   }
 
   void _subscribeToLocations() {
-    _locationSub = _realtimeService.locationStream.listen((event) {
-      final userId = event['userId']?.toString();
-      final lat = (event['latitude'] as num?)?.toDouble();
-      final lng = (event['longitude'] as num?)?.toDouble();
-      if (userId == null || lat == null || lng == null) return;
+    // Subscribe to employee locations from EmployeeLocationService for consistency
+    _employeeLocationSub = _locationService.employeeLocationsStream.listen((
+      locations,
+    ) {
+      if (mounted) {
+        setState(() {
+          for (final empLoc in locations) {
+            final pos = LatLng(empLoc.latitude, empLoc.longitude);
+            _liveLocations[empLoc.employeeId] = pos;
 
-      final pos = LatLng(lat, lng);
-      setState(() {
-        _liveLocations[userId] = pos;
-        final trail = _trails[userId] ?? <LatLng>[];
-        trail.add(pos);
-        // Keep only last 50 points per employee to avoid memory bloat
-        if (trail.length > 50) {
-          trail.removeRange(0, trail.length - 50);
-        }
-        _trails[userId] = trail;
-      });
+            final trail = _trails[empLoc.employeeId] ?? <LatLng>[];
+            if (trail.isEmpty || trail.last != pos) {
+              trail.add(pos);
+              // Keep only last 50 points per employee to avoid memory bloat
+              if (trail.length > 50) {
+                trail.removeRange(0, trail.length - 50);
+              }
+              _trails[empLoc.employeeId] = trail;
+            }
+          }
+        });
+      }
     });
   }
 
@@ -184,7 +157,6 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
 
   @override
   void dispose() {
-    _locationSub?.cancel();
     _employeeLocationSub?.cancel();
     _locationService.dispose();
     super.dispose();
@@ -281,7 +253,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                             ),
                     );
 
-                    // Get color based on EmployeeStatus (green for available/moving, red for busy)
+                    // Get color based on EmployeeStatus: green (checked in), blue (outside geofence), red (busy)
                     Color markerColor;
                     IconData markerIcon;
                     switch (empLocation.status) {
@@ -290,7 +262,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                         markerIcon = Icons.check_circle;
                         break;
                       case EmployeeStatus.moving:
-                        markerColor = Colors.green;
+                        markerColor = Colors.blue;
                         markerIcon = Icons.directions_run;
                         break;
                       case EmployeeStatus.busy:

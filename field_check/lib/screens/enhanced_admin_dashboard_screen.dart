@@ -4,6 +4,7 @@ import '../services/employee_location_service.dart';
 import '../services/checkout_notification_service.dart';
 import '../services/task_monitoring_service.dart';
 import '../services/task_service.dart';
+import '../services/realtime_service.dart';
 import '../widgets/employee_status_view.dart';
 import '../widgets/live_employee_map.dart';
 import '../widgets/employee_management_modal.dart';
@@ -19,6 +20,7 @@ class EnhancedAdminDashboardScreen extends StatefulWidget {
 class _EnhancedAdminDashboardScreenState
     extends State<EnhancedAdminDashboardScreen> {
   final EmployeeLocationService _locationService = EmployeeLocationService();
+  final RealtimeService _realtimeService = RealtimeService();
   List<EmployeeLocation> _employees = [];
   bool _isLoading = true;
   Timer? _refreshTimer;
@@ -29,6 +31,17 @@ class _EnhancedAdminDashboardScreenState
   final TaskMonitoringService _taskMonitoringService = TaskMonitoringService();
   TaskStatistics? _taskStatistics;
   Map<String, double> _employeeTaskLoad = {};
+
+  // Notification tracking
+  int _notificationBadgeCount = 0;
+  final List<Map<String, dynamic>> _recentNotifications = [];
+  StreamSubscription<Map<String, dynamic>>? _notificationSub;
+  StreamSubscription<Map<String, dynamic>>? _attendanceSub;
+
+  // Per-box notification counters
+  int _attendanceNotificationCount = 0;
+  int _taskNotificationCount = 0;
+  int _reportNotificationCount = 0;
 
   @override
   void initState() {
@@ -43,6 +56,7 @@ class _EnhancedAdminDashboardScreenState
 
     _initCheckoutNotifications();
     _loadTaskStatistics();
+    _initNotificationListener();
   }
 
   Future<void> _initializeLocationService() async {
@@ -70,6 +84,8 @@ class _EnhancedAdminDashboardScreenState
     _locationService.dispose();
     _warningSub?.cancel();
     _autoCheckoutSub?.cancel();
+    _attendanceSub?.cancel();
+    _notificationSub?.cancel();
     super.dispose();
   }
 
@@ -107,6 +123,79 @@ class _EnhancedAdminDashboardScreenState
     } catch (e) {
       debugPrint('Error initializing checkout notifications: $e');
     }
+  }
+
+  void _initNotificationListener() {
+    try {
+      _realtimeService.initialize().then((_) {
+        // Listen for attendance updates (check-in/out) and refresh location data
+        _attendanceSub = _realtimeService.attendanceStream.listen((event) {
+          if (mounted) {
+            // Force refresh of location/employee data when attendance changes
+            setState(() {});
+          }
+        });
+
+        _notificationSub = _realtimeService.notificationStream.listen((
+          notification,
+        ) {
+          if (!mounted) return;
+          debugPrint('Admin received notification: $notification');
+
+          setState(() {
+            _notificationBadgeCount++;
+            _recentNotifications.insert(0, notification);
+            // Keep only last 20 notifications
+            if (_recentNotifications.length > 20) {
+              _recentNotifications.removeLast();
+            }
+
+            // Track per-type notification counts
+            final notificationType = notification['type'] as String? ?? '';
+            if (notificationType == 'attendance') {
+              _attendanceNotificationCount++;
+            } else if (notificationType == 'task') {
+              _taskNotificationCount++;
+            } else if (notificationType == 'report') {
+              _reportNotificationCount++;
+            }
+          });
+
+          // Show snackbar for all notifications
+          final notificationType = notification['type'] as String? ?? '';
+          final action = notification['action'] ?? 'event';
+          final message = notification['message'] ?? 'New notification';
+
+          Color snackbarColor = Colors.blue;
+          if (notificationType == 'attendance') {
+            snackbarColor = action == 'check-in' ? Colors.green : Colors.orange;
+          } else if (notificationType == 'task') {
+            snackbarColor = Colors.deepPurple;
+          } else if (notificationType == 'report') {
+            snackbarColor = Colors.amber;
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              duration: const Duration(seconds: 4),
+              backgroundColor: snackbarColor,
+            ),
+          );
+        });
+      });
+    } catch (e) {
+      debugPrint('Error initializing notification listener: $e');
+    }
+  }
+
+  void _clearNotificationBadge() {
+    setState(() {
+      _notificationBadgeCount = 0;
+      _attendanceNotificationCount = 0;
+      _taskNotificationCount = 0;
+      _reportNotificationCount = 0;
+    });
   }
 
   Future<void> _loadTaskStatistics() async {
@@ -170,6 +259,40 @@ class _EnhancedAdminDashboardScreenState
         title: const Text('Admin Dashboard'),
         elevation: 0,
         actions: [
+          // Notification badge
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: _clearNotificationBadge,
+              ),
+              if (_notificationBadgeCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 20,
+                      minHeight: 20,
+                    ),
+                    child: Text(
+                      _notificationBadgeCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -197,6 +320,7 @@ class _EnhancedAdminDashboardScreenState
                           Icons.people,
                           Colors.blue,
                           onTap: () => _showTotalEmployeesView(context),
+                          notificationCount: _attendanceNotificationCount,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -234,6 +358,7 @@ class _EnhancedAdminDashboardScreenState
                             _taskStatistics!.activeTasks.toString(),
                             Icons.task_alt,
                             Colors.deepPurple,
+                            notificationCount: _taskNotificationCount,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -402,35 +527,63 @@ class _EnhancedAdminDashboardScreenState
     IconData icon,
     Color color, {
     VoidCallback? onTap,
+    int notificationCount = 0,
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: color,
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              children: [
+                Icon(icon, color: color, size: 24),
+                const SizedBox(height: 8),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          // Notification badge
+          if (notificationCount > 0)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                child: Text(
+                  notificationCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

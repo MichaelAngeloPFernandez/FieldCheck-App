@@ -113,9 +113,16 @@ io.on('connection', (socket) => {
           // Enrich data for admin dashboards using EmployeeLocationService
           let name = 'Unknown';
           let isOnline = true;
+          let status = 'available';
+          let currentGeofence = null;
+          let isCheckedIn = false;
 
           if (typeof userId === 'string' && userId.length === 24) {
             try {
+              const Attendance = require('./models/Attendance');
+              const Geofence = require('./models/Geofence');
+              const Task = require('./models/Task');
+
               const user = await User.findById(userId).select('name isOnline');
               if (user) {
                 if (user.name) {
@@ -124,6 +131,53 @@ io.on('connection', (socket) => {
                 if (typeof user.isOnline === 'boolean') {
                   isOnline = user.isOnline;
                 }
+              }
+
+              // Check if employee is currently checked in
+              const openAttendance = await Attendance.findOne({
+                employee: userId,
+                checkOut: { $exists: false },
+              }).populate('geofence');
+
+              if (openAttendance) {
+                isCheckedIn = true;
+                currentGeofence = openAttendance.geofence?.name || null;
+              }
+
+              // Check if employee has active tasks (busy status)
+              const activeTasks = await Task.find({
+                assignedTo: userId,
+                status: { $in: ['assigned', 'in_progress'] },
+              });
+
+              if (activeTasks.length > 0) {
+                status = 'busy';
+              } else if (isCheckedIn) {
+                status = 'available';
+              }
+
+              // Check if employee is within any geofence
+              let isWithinGeofence = false;
+              if (isCheckedIn && currentGeofence) {
+                const geofences = await Geofence.find({ isActive: true });
+                for (const geofence of geofences) {
+                  const dx = latitude - geofence.latitude;
+                  const dy = longitude - geofence.longitude;
+                  const distance = Math.sqrt(dx * dx + dy * dy) * 111000;
+                  if (distance <= geofence.radius) {
+                    isWithinGeofence = true;
+                    break;
+                  }
+                }
+              }
+
+              // Override status for map display: green (checked in), blue (outside geofence), red (busy)
+              if (activeTasks.length > 0) {
+                status = 'busy';
+              } else if (isCheckedIn && !isWithinGeofence) {
+                status = 'moving';
+              } else if (isCheckedIn) {
+                status = 'available';
               }
             } catch (_) {}
           }
@@ -136,11 +190,11 @@ io.on('connection', (socket) => {
             longitude,
             accuracy: accuracy || 0,
             speed: 0,
-            status: 'available',
+            status,
             timestamp: timestamp || new Date().toISOString(),
             activeTaskCount: 0,
             workloadScore: 0,
-            currentGeofence: null,
+            currentGeofence,
             distanceToNearestTask: null,
             isOnline,
             batteryLevel: null,

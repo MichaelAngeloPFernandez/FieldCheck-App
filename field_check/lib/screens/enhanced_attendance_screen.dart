@@ -47,6 +47,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
   DateTime? _lastLocationUpdate;
   Timer? _locationUpdateTimer;
+  StreamSubscription? _attendanceSub;
 
   @override
   void initState() {
@@ -58,12 +59,42 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   @override
   void dispose() {
     _locationUpdateTimer?.cancel();
+    _attendanceSub?.cancel();
     super.dispose();
   }
 
   Future<void> _initializeServices() async {
     // Initialize realtime service in background (don't block UI)
     _realtimeService.initialize().ignore();
+
+    // Listen for attendance updates relevant to this user and refresh status
+    _attendanceSub = _realtimeService.attendanceStream.listen((event) {
+      try {
+        final type = event['type'] as String? ?? '';
+        final data = event['data'];
+        if (data == null) return;
+
+        String? employeeId;
+        if (data is Map<String, dynamic>) {
+          final emp = data['employee'];
+          if (emp is Map) {
+            employeeId = (emp['_id'] ?? emp['id'] ?? emp['employeeId'])
+                ?.toString();
+          } else if (emp != null) {
+            employeeId = emp.toString();
+          }
+        }
+
+        if (employeeId != null &&
+            _userModelId != null &&
+            employeeId == _userModelId) {
+          // Refresh authoritative status so timer widgets and UI update
+          _loadAttendanceStatus();
+        }
+      } catch (e) {
+        debugPrint('Error processing realtime attendance event: $e');
+      }
+    });
 
     await _autosaveService.initialize();
 
@@ -112,11 +143,38 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   Future<void> _loadAssignedGeofences() async {
     try {
       final geofences = await _geofenceService.fetchGeofences();
-      // Load ALL active geofences (not just assigned) so employees can check in anywhere
+      // Determine assigned geofences for the current user. The backend
+      // returns `assignedEmployees` inside each geofence; prefer those.
+      String? userId = _userModelId;
+      if (userId == null) {
+        try {
+          final profile = await _userService.getProfile();
+          userId = profile.id;
+          if (mounted) {
+            setState(() {
+              _userModelId = userId;
+            });
+          }
+        } catch (_) {
+          // ignore - we'll still show all geofences as fallback
+        }
+      }
+
       final allActive = geofences.where((g) => g.isActive).toList();
+      List<Geofence> assigned = [];
+      if (userId != null) {
+        assigned = allActive.where((g) {
+          final list = g.assignedEmployees;
+          if (list == null || list.isEmpty) return false;
+          return list.any((u) => (u.id == userId) || (u.employeeId == userId));
+        }).toList();
+      }
+
+      // If no explicit assigned geofences found, keep assigned list empty
+      // so fallback logic will choose nearest overall geofence instead.
       setState(() {
         _allGeofences = geofences;
-        _assignedGeofences = allActive;
+        _assignedGeofences = assigned;
       });
     } catch (e) {
       debugPrint('Error loading geofences: $e');
@@ -156,13 +214,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     }
   }
 
-  void _startLocationUpdates() {
-    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      _updateLocationBackground();
-    });
-  }
-
-  Future<void> _updateLocationBackground() async {
+  void _updateLocationBackground() async {
     try {
       final position = await _locationService.getCurrentLocation();
       if (mounted) {
@@ -212,19 +264,19 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   Future<void> _updateGeofenceStatus() async {
     if (_userPosition == null || _allGeofences.isEmpty) return;
 
-    double minDistance = double.infinity;
-    Geofence? nearestGeofence;
-    bool withinAnyGeofence = false;
-
     final accuracy = _userPosition!.accuracy;
-    double extraTolerance = 0;
+    double extraTolerance = 50;
     if (accuracy > 0) {
-      // Allow larger tolerance to support indoor GPS (often 50-200m accuracy)
-      extraTolerance = accuracy.clamp(5, 200).toDouble();
+      extraTolerance = (accuracy * 1.5).clamp(50, 300).toDouble();
     }
 
-    // Check against ALL geofences (not just assigned) to find nearest and check if inside any
-    for (final geofence in _allGeofences) {
+    // PRIORITY 1: Check if employee is inside any ASSIGNED geofence
+    Geofence? selectedGeofence;
+    double minDistance = double.infinity;
+    Geofence? nearestAssignedGeofence;
+    bool withinAnyGeofence = false;
+
+    for (final geofence in _assignedGeofences) {
       if (!geofence.isActive) continue;
 
       final distance = Geolocator.distanceBetween(
@@ -234,23 +286,60 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         geofence.longitude,
       );
 
+      // Track nearest assigned geofence as fallback
       if (distance < minDistance) {
         minDistance = distance;
-        nearestGeofence = geofence;
+        nearestAssignedGeofence = geofence;
       }
 
-      // Check if within geofence radius (with tolerance for GPS accuracy)
+      // If inside this assigned geofence, prefer it
       if (distance <= geofence.radius + extraTolerance) {
         withinAnyGeofence = true;
+        selectedGeofence = geofence; // Use first assigned geofence we're inside
+        break; // Stop at first match (inside assigned geofence)
+      }
+    }
+
+    // PRIORITY 2: If not inside any assigned geofence, use nearest assigned geofence
+    if (selectedGeofence == null && nearestAssignedGeofence != null) {
+      selectedGeofence = nearestAssignedGeofence;
+    }
+
+    // PRIORITY 3: If no assigned geofences or employee unassigned, fall back to nearest overall
+    if (selectedGeofence == null) {
+      minDistance = double.infinity;
+      for (final geofence in _allGeofences) {
+        if (!geofence.isActive) continue;
+
+        final distance = Geolocator.distanceBetween(
+          _userPosition!.latitude,
+          _userPosition!.longitude,
+          geofence.latitude,
+          geofence.longitude,
+        );
+
+        if (distance < minDistance) {
+          minDistance = distance;
+          selectedGeofence = geofence;
+        }
+
+        if (distance <= geofence.radius + extraTolerance) {
+          withinAnyGeofence = true;
+        }
       }
     }
 
     if (mounted) {
       setState(() {
-        _currentGeofence = nearestGeofence;
-        _currentDistanceMeters = minDistance == double.infinity
-            ? null
-            : minDistance;
+        _currentGeofence = selectedGeofence;
+        _currentDistanceMeters = selectedGeofence != null
+            ? Geolocator.distanceBetween(
+                _userPosition!.latitude,
+                _userPosition!.longitude,
+                selectedGeofence.latitude,
+                selectedGeofence.longitude,
+              )
+            : null;
         _isWithinAnyGeofence = withinAnyGeofence;
       });
     }
@@ -262,11 +351,39 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     if (_userPosition == null ||
         _lastLocationUpdate == null ||
         now.difference(_lastLocationUpdate!).inSeconds > 10) {
-      await _updateLocation();
+      try {
+        await _updateLocation().timeout(
+          const Duration(seconds: 8),
+          onTimeout: () {
+            debugPrint(
+              'Location update timed out, proceeding with last known position',
+            );
+          },
+        );
+      } catch (e) {
+        debugPrint(
+          'Location update failed: $e, proceeding with last known position',
+        );
+      }
     }
 
     if (!_isCheckedIn && !_isWithinAnyGeofence) {
       _showGeofenceErrorDialog();
+      return;
+    }
+
+    if (_isCheckedIn && _userPosition == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to get location. Please enable GPS and try again.',
+            ),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
       return;
     }
 
@@ -297,16 +414,19 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         }
       }
 
-      // Get PH timezone time (UTC+8)
+      // Get time now
       final now = DateTime.now();
-      final phTime = now.add(Duration(hours: 8 - now.timeZoneOffset.inHours));
-      final hour = phTime.hour % 12 == 0 ? 12 : phTime.hour % 12;
-      final ampm = phTime.hour >= 12 ? 'PM' : 'AM';
-      final formattedTime =
-          "${hour.toString().padLeft(2, '0')}:${phTime.minute.toString().padLeft(2, '0')} $ampm";
 
       // For checkout, use current geofence or find the one from the open attendance record
       String? geofenceIdForSubmission = _currentGeofence?.id;
+
+      // If no current geofence, try to use the first assigned geofence as fallback
+      if (geofenceIdForSubmission == null && _assignedGeofences.isNotEmpty) {
+        geofenceIdForSubmission = _assignedGeofences.first.id;
+        debugPrint(
+          'Using fallback geofence for checkout: $geofenceIdForSubmission',
+        );
+      }
 
       final attendanceData = {
         'isCheckedIn': !_isCheckedIn,
@@ -314,55 +434,99 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         'latitude': _userPosition?.latitude,
         'longitude': _userPosition?.longitude,
         'geofenceId': geofenceIdForSubmission,
-        'geofenceName': _currentGeofence?.name,
+        'geofenceName':
+            _currentGeofence?.name ??
+            (_assignedGeofences.isNotEmpty
+                ? _assignedGeofences.first.name
+                : null),
       };
+
+      // DEBUG: Log geofence selection and lists to help diagnose wrong-location bug
+      try {
+        debugPrint('=== Attendance submit debug ===');
+        debugPrint('UserId: ${_userModelId ?? 'unknown'}');
+        debugPrint(
+          'Selected geofenceIdForSubmission: $geofenceIdForSubmission',
+        );
+        debugPrint('CurrentGeofence.name: ${_currentGeofence?.name}');
+        debugPrint(
+          'Assigned geofences (${_assignedGeofences.length}): ' +
+              _assignedGeofences
+                  .map((g) => '${g.id ?? 'no-id'}:${g.name}')
+                  .join(', '),
+        );
+        debugPrint(
+          'All geofences (${_allGeofences.length}): ' +
+              _allGeofences
+                  .map((g) => '${g.id ?? 'no-id'}:${g.name}')
+                  .join(', '),
+        );
+        debugPrint('Attendance payload: $attendanceData');
+      } catch (e) {
+        debugPrint('Error while logging attendance debug: $e');
+      }
+
+      // Quick user-visible confirmation of selected geofence to help testing
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Submitting to: ${attendanceData['geofenceName'] ?? 'N/A'} (${attendanceData['geofenceId'] ?? 'no-id'})',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
 
       // Save to autosave first (for offline sync support)
       final storageKey = 'attendance_${now.millisecondsSinceEpoch}';
       await _autosaveService.saveData(storageKey, attendanceData);
 
-      // When online, persist attendance immediately via REST API
-      if (_isOnline) {
-        try {
-          await _attendanceService.submitAttendance(
-            AttendanceData(
-              isCheckedIn: !_isCheckedIn,
-              timestamp: now,
-              latitude: _userPosition?.latitude,
-              longitude: _userPosition?.longitude,
-              geofenceId: geofenceIdForSubmission,
-              geofenceName: _currentGeofence?.name,
+      // Try to persist attendance immediately via REST API. We saved an
+      // autosave copy above so that if submission fails we can retry later.
+      try {
+        await _attendanceService.submitAttendance(
+          AttendanceData(
+            isCheckedIn: !_isCheckedIn,
+            timestamp: now,
+            latitude: _userPosition?.latitude,
+            longitude: _userPosition?.longitude,
+            geofenceId: geofenceIdForSubmission,
+            geofenceName: _currentGeofence?.name,
+          ),
+        );
+
+        // Clear autosave copy for successfully synced records
+        await _autosaveService.clearData(storageKey);
+      } catch (e) {
+        // Keep autosave entry for retry and inform the user; do not clear it.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Attendance submit failed: $e — saved for retry'),
+              backgroundColor: Colors.orange,
             ),
           );
-
-          // Clear autosave copy for successfully synced records
-          await _autosaveService.clearData(storageKey);
-        } catch (e) {
-          // Remove the autosave entry for this failed attempt to avoid
-          // counting it as a pending sync, then rethrow so UI shows error.
-          await _autosaveService.clearData(storageKey);
-          rethrow;
         }
       }
 
       // Refresh pending sync count for offline mode banner
       await _loadPendingSyncCount();
 
-      if (mounted) {
-        setState(() {
-          _isCheckedIn = attendanceData['isCheckedIn'] as bool;
-          _lastCheckTime = formattedTime;
-          _lastCheckTimestamp = now;
-        });
+      // CRITICAL: Reload attendance status from backend to ensure accurate state
+      await _loadAttendanceStatus();
 
+      if (mounted) {
+        final newIsCheckedIn = _isCheckedIn; // authoritative server state
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _isCheckedIn
+              newIsCheckedIn
                   ? 'Successfully checked in!'
                   : 'Successfully checked out!',
             ),
-            backgroundColor: _isCheckedIn ? Colors.green : Colors.blue,
+            backgroundColor: newIsCheckedIn ? Colors.green : Colors.blue,
+            duration: const Duration(seconds: 3),
           ),
         );
       }

@@ -49,8 +49,14 @@ class CheckInTimerService {
       (timer) => _updateTimer(employeeId),
     );
 
-    // Emit initial event
-    _updateTimer(employeeId);
+    // Emit initial event with 0 elapsed time to show 00:00 on first display
+    _timerStream.add(
+      CheckInTimerEvent(
+        employeeId: employeeId,
+        checkInTime: startTime,
+        elapsedTime: Duration.zero,
+      ),
+    );
   }
 
   /// Stop check-in timer

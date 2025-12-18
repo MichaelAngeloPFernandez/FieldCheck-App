@@ -12,12 +12,14 @@ const {
   getAttendanceHistory,
   deleteMyAttendanceRecord,
   deleteMyAttendanceHistoryByMonth,
+  getAllEmployeesAttendanceStatus,
 } = require('../controllers/attendanceController');
 
 const { protect } = require('../middleware/authMiddleware');
 
 // Order matters: more specific routes before generic ones
 router.get('/status', protect, getAttendanceStatus);
+router.get('/admin/all-status', protect, getAllEmployeesAttendanceStatus);
 router.get('/history', protect, getAttendanceHistory);
 router.delete('/history', protect, deleteMyAttendanceHistoryByMonth);
 router.delete('/history/:id', protect, deleteMyAttendanceRecord);

@@ -32,21 +32,35 @@ class AttendanceService {
   Future<void> submitAttendance(AttendanceData attendanceData) async {
     try {
       final token = await _userService.getToken();
-      final response = await http.post(
-        Uri.parse(
-          '${ApiConfig.baseUrl}/api/attendance/${attendanceData.isCheckedIn ? 'checkin' : 'checkout'}',
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'latitude': attendanceData.latitude,
-          'longitude': attendanceData.longitude,
-          'geofenceId': attendanceData.geofenceId,
-          'timestamp': attendanceData.timestamp.toIso8601String(),
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse(
+              '${ApiConfig.baseUrl}/api/attendance/${attendanceData.isCheckedIn ? 'checkin' : 'checkout'}',
+            ),
+            headers: {
+              'Content-Type': 'application/json',
+              if (token != null) 'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'latitude': attendanceData.latitude,
+              'longitude': attendanceData.longitude,
+              'geofenceId': attendanceData.geofenceId,
+              'timestamp': attendanceData.timestamp.toIso8601String(),
+            }),
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw Exception(
+              'Attendance request timed out. Please check your connection and try again.',
+            ),
+          );
+
+      // Log server response for debugging
+      try {
+        debugPrint(
+          'Attendance submit response: status=${response.statusCode} body=${response.body}',
+        );
+      } catch (_) {}
 
       // Treat any 2xx as success (check-in returns 201, checkout 200)
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -260,7 +274,10 @@ class AttendanceData {
 class AttendanceRecord {
   final String id;
   final bool isCheckIn;
-  final DateTime timestamp;
+  final DateTime checkInTime;
+  final DateTime? checkOutTime;
+  final double? elapsedHours;
+  final String status; // 'in' or 'out'
   final double? latitude;
   final double? longitude;
   final String? geofenceId;
@@ -275,7 +292,10 @@ class AttendanceRecord {
   AttendanceRecord({
     required this.id,
     required this.isCheckIn,
-    required this.timestamp,
+    required this.checkInTime,
+    this.checkOutTime,
+    this.elapsedHours,
+    required this.status,
     this.latitude,
     this.longitude,
     this.geofenceId,
@@ -288,52 +308,67 @@ class AttendanceRecord {
     this.voidReason,
   });
 
+  // Backward compatibility: timestamp is an alias to checkInTime
+  DateTime get timestamp => checkInTime;
+
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
     // Handle both direct attendance records and report objects
     final attendance = json['attendance'] as Map<String, dynamic>? ?? json;
     final employee = json['employee'] as Map<String, dynamic>?;
     final geofence = json['geofence'] as Map<String, dynamic>?;
 
-    // Determine if it's check-in or check-out
-    bool isCheckIn;
-    final hasCheckOut = attendance['checkOut'] != null;
+    // Parse timestamps
+    final checkInStr = json['checkInTime'] ?? attendance['checkIn'];
+    final checkOutStr = json['checkOutTime'] ?? attendance['checkOut'];
 
-    if (hasCheckOut) {
-      // If a checkout timestamp exists, the record should be treated as
-      // a completed (checked-out) attendance entry regardless of status.
-      isCheckIn = false;
-    } else if (attendance['status'] != null) {
-      isCheckIn = (attendance['status'] as String).toLowerCase() == 'in';
-    } else {
-      final content = json['content'] as String? ?? '';
-      isCheckIn = content.toLowerCase().contains('checked in');
-    }
-
-    String? timestampStr;
-
-    if (hasCheckOut && attendance['checkOut'] != null) {
-      timestampStr = attendance['checkOut']?.toString();
-    } else if (attendance['checkIn'] != null) {
-      timestampStr = attendance['checkIn']?.toString();
-    } else {
-      timestampStr = (json['submittedAt'] ?? json['timestamp'])?.toString();
-    }
-
-    final DateTime parsedTimestamp = timestampStr != null
-        ? DateTime.parse(timestampStr)
+    final checkInTime = checkInStr != null
+        ? DateTime.parse(checkInStr.toString())
         : DateTime.now();
+    final checkOutTime = checkOutStr != null
+        ? DateTime.parse(checkOutStr.toString())
+        : null;
+
+    // Debug: log what we're parsing
+    try {
+      if (json['checkOutTime'] != null || attendance['checkOut'] != null) {
+        debugPrint(
+          'AttendanceRecord.fromJson: checkOutTime=$checkOutTime, elapsedHours=${json['elapsedHours']}',
+        );
+      }
+    } catch (_) {}
+
+    // Determine if it's check-in or check-out
+    bool isCheckIn =
+        checkOutTime == null; // if no checkout, it's still checked in
+    final status =
+        json['status'] ??
+        attendance['status'] ??
+        (checkOutTime != null ? 'out' : 'in');
+
+    // Calculate elapsed hours
+    double? elapsedHours;
+    if (checkOutTime != null) {
+      final elapsed = checkOutTime.difference(checkInTime);
+      elapsedHours = elapsed.inSeconds / 3600.0;
+    }
 
     return AttendanceRecord(
-      id: json['_id'] ?? json['id'] ?? '',
+      id: json['id'] ?? json['_id'] ?? '',
       isCheckIn: isCheckIn,
-      timestamp: parsedTimestamp,
+      checkInTime: checkInTime,
+      checkOutTime: checkOutTime,
+      elapsedHours: elapsedHours,
+      status: status.toString(),
       latitude:
           (attendance['location']?['coordinates']?[1] as num?)?.toDouble() ??
-          (attendance['latitude'] as num?)?.toDouble(),
+          (attendance['latitude'] as num?)?.toDouble() ??
+          (json['latitude'] as num?)?.toDouble(),
       longitude:
           (attendance['location']?['coordinates']?[0] as num?)?.toDouble() ??
-          (attendance['longitude'] as num?)?.toDouble(),
-      geofenceId: geofence?['_id'] ?? json['geofenceId'],
+          (attendance['longitude'] as num?)?.toDouble() ??
+          (json['longitude'] as num?)?.toDouble(),
+      geofenceId:
+          geofence?['_id'] ?? json['geofenceId'] ?? attendance['geofence'],
       geofenceName: geofence?['name'] ?? json['geofenceName'],
       userId: employee?['_id'] ?? json['userId'] ?? '',
       employeeName: employee?['name'] ?? json['employeeName'],

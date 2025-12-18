@@ -211,6 +211,19 @@ const createTask = asyncHandler(async (req, res) => {
   };
   const task = await Task.create(taskData);
   io.emit('newTask', toTaskJson(task)); // Emit real-time event
+  
+  // Emit admin notification for new task
+  io.emit('adminNotification', {
+    type: 'task',
+    action: 'created',
+    taskId: task._id,
+    taskTitle: task.title,
+    createdBy: req.user.name,
+    timestamp: new Date(),
+    message: `New task: "${task.title}" created by ${req.user.name}`,
+    severity: 'info',
+  });
+  
   res.status(201).json(toTaskJson(task));
 });
 
@@ -259,6 +272,20 @@ const updateTask = asyncHandler(async (req, res) => {
 
   const updated = await task.save();
   io.emit('updatedTask', toTaskJson(updated));
+  
+  // Emit admin notification for task update
+  io.emit('adminNotification', {
+    type: 'task',
+    action: 'updated',
+    taskId: updated._id,
+    taskTitle: updated.title,
+    updatedBy: req.user.name,
+    newStatus: updated.status,
+    timestamp: new Date(),
+    message: `Task "${updated.title}" updated by ${req.user.name}`,
+    severity: 'info',
+  });
+  
   res.json(toTaskJson(updated));
 });
 

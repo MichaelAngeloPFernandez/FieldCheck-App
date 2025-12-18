@@ -600,6 +600,15 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                     ),
                                   ),
                                 ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Duration',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -650,6 +659,15 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                             : Colors.red,
                                         fontWeight: FontWeight.bold,
                                       ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      record.elapsedHours != null
+                                          ? '${record.elapsedHours!.toStringAsFixed(2)} hrs'
+                                          : 'Ongoing',
+                                      style: const TextStyle(fontSize: 12),
                                     ),
                                   ),
                                 ],

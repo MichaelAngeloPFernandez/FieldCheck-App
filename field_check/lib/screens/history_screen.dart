@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:field_check/services/attendance_service.dart';
+import 'package:field_check/services/realtime_service.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -11,7 +13,9 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final AttendanceService _attendanceService = AttendanceService();
+  final RealtimeService _realtimeService = RealtimeService();
   final TextEditingController _searchController = TextEditingController();
+  StreamSubscription? _attendanceSub;
 
   bool _isLoading = true;
   String? _error;
@@ -23,11 +27,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    // Expand the current month by default
+    final now = DateTime.now();
+    final currentMonthKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    _expandedMonths.add(currentMonthKey);
+
+    // Subscribe to realtime attendance updates and refresh history
+    _attendanceSub = _realtimeService.attendanceStream.listen((event) {
+      if (mounted) {
+        _loadHistory();
+      }
+    });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _attendanceSub?.cancel();
     super.dispose();
   }
 
@@ -39,6 +56,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     try {
       final records = await _attendanceService.getAttendanceHistory();
+      // Sort records by check-in time in descending order (latest first)
+      records.sort((a, b) => b.checkInTime.compareTo(a.checkInTime));
       setState(() {
         _allRecords = records;
       });
@@ -60,11 +79,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final q = _searchQuery.toLowerCase();
 
     return _allRecords.where((record) {
-      final dt = record.timestamp.toLocal();
+      final dt = record.checkInTime.toLocal();
       final dateStr = DateFormat('yyyy-MM-dd').format(dt);
       final timeStr = TimeOfDay.fromDateTime(dt).format(context);
       final locationName = record.geofenceName ?? 'Unknown location';
-      final typeLabel = record.isCheckIn ? 'Check-in' : 'Check-out';
+      final typeLabel = record.status == 'out' ? 'Check-out' : 'Check-in';
 
       final parts = <String>[dateStr, timeStr, locationName, typeLabel];
 
@@ -90,7 +109,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final Map<String, List<AttendanceRecord>> grouped = {};
 
     for (final record in records) {
-      final dt = record.timestamp.toLocal();
+      final dt = record.checkInTime.toLocal();
       final key = '${dt.year}-${dt.month.toString().padLeft(2, '0')}';
       grouped.putIfAbsent(key, () => <AttendanceRecord>[]).add(record);
     }
@@ -203,10 +222,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   void _showRecordInfo(AttendanceRecord record) {
-    final dt = record.timestamp.toLocal();
-    final dateStr = DateFormat('yyyy-MM-dd').format(dt);
-    final timeStr = TimeOfDay.fromDateTime(dt).format(context);
-    final locationName = record.geofenceName ?? 'Unknown location';
+    final dtIn = record.checkInTime.toLocal();
+    final dateStr = DateFormat('yyyy-MM-dd').format(dtIn);
+    final timeInStr = TimeOfDay.fromDateTime(dtIn).format(context);
+
+    String? timeOutStr;
+    String? elapsedStr;
+    if (record.checkOutTime != null) {
+      final dtOut = record.checkOutTime!.toLocal();
+      timeOutStr = TimeOfDay.fromDateTime(dtOut).format(context);
+      if (record.elapsedHours != null) {
+        final hours = record.elapsedHours!.toStringAsFixed(2);
+        elapsedStr = '$hours hours';
+      }
+    }
+
+    final locationName = record.geofenceName?.isNotEmpty ?? false
+        ? record.geofenceName!
+        : 'Unknown location';
 
     showDialog(
       context: context,
@@ -217,11 +250,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Date: $dateStr'),
-            Text('Time: $timeStr'),
+            Text('Location: $locationName'),
+            Text('Check-in Time: $timeInStr'),
+            if (timeOutStr != null) ...[
+              const SizedBox(height: 8),
+              Text('Check-out Time: $timeOutStr'),
+            ],
+            if (elapsedStr != null) ...[
+              const SizedBox(height: 8),
+              Text('Duration: $elapsedStr'),
+            ],
             const SizedBox(height: 8),
             Text('Location: $locationName'),
             const SizedBox(height: 8),
-            Text('Type: ${record.isCheckIn ? 'Check-in' : 'Check-out'}'),
+            Text('Status: ${record.status == 'out' ? 'Completed' : 'Open'}'),
             if (record.isVoid) ...[
               const SizedBox(height: 8),
               const Text('Status: VOID'),
@@ -243,11 +285,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _buildRecordTile(AttendanceRecord record) {
-    final dt = record.timestamp.toLocal();
-    final dateStr = DateFormat('yyyy-MM-dd').format(dt);
-    final timeStr = TimeOfDay.fromDateTime(dt).format(context);
+    final dtIn = record.checkInTime.toLocal();
+    final dateStr = DateFormat('yyyy-MM-dd').format(dtIn);
+    final timeInStr = TimeOfDay.fromDateTime(dtIn).format(context);
     final locationName = record.geofenceName ?? 'Unknown location';
-    final typeLabel = record.isCheckIn ? 'Check-in' : 'Check-out';
+
+    // Determine if completed (has checkout)
+    final isCompleted = record.checkOutTime != null;
+    final typeLabel = isCompleted ? 'Completed' : 'Checked In';
 
     Color chipBg;
     Color chipFg;
@@ -258,12 +303,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } else if (record.isVoid) {
       chipBg = Colors.grey.shade300;
       chipFg = Colors.grey.shade900;
-    } else if (record.isCheckIn) {
+    } else if (isCompleted) {
+      chipBg = Colors.blue.shade100;
+      chipFg = Colors.blue.shade900;
+    } else {
       chipBg = Colors.green.shade100;
       chipFg = Colors.green.shade900;
-    } else {
-      chipBg = Colors.red.shade100;
-      chipFg = Colors.red.shade900;
     }
 
     return Card(
@@ -295,9 +340,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
               children: [
                 const Icon(Icons.access_time, size: 16),
                 const SizedBox(width: 4),
-                Text(timeStr),
+                Text('In: $timeInStr'),
               ],
             ),
+            if (record.checkOutTime != null) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.logout, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Out: ${TimeOfDay.fromDateTime(record.checkOutTime!.toLocal()).format(context)}',
+                  ),
+                ],
+              ),
+              if (record.elapsedHours != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Duration: ${record.elapsedHours!.toStringAsFixed(2)} hours',
+                ),
+              ],
+            ],
             const SizedBox(height: 6),
             Row(
               children: [
