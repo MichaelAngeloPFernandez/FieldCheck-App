@@ -31,6 +31,22 @@ class ReportService {
     }
   }
 
+  Future<ReportModel> getReportById(String id) async {
+    final response = await HttpUtil().get(
+      '$_basePath/$id',
+      headers: await _headers(jsonContent: false),
+    );
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return ReportModel.fromJson(decoded);
+      }
+      throw Exception('Invalid report payload');
+    } else {
+      throw Exception('Failed to fetch report');
+    }
+  }
+
   Future<List<ReportModel>> getCurrentReports({String? type}) async {
     final queryParams = <String, String>{'archived': 'false'};
     if (type != null) queryParams['type'] = type;

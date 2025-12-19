@@ -36,23 +36,45 @@ class ReportModel {
   });
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> src = (json['report'] is Map<String, dynamic>)
+        ? json['report']
+        : json;
+
+    String _readString(dynamic v) {
+      if (v == null) return '';
+      if (v is String) return v;
+      return v.toString();
+    }
+
+    final dynamic contentRaw = src.containsKey('content')
+        ? src['content']
+        : (src.containsKey('message')
+              ? src['message']
+              : (src.containsKey('description')
+                    ? src['description']
+                    : (src.containsKey('text')
+                          ? src['text']
+                          : (src.containsKey('details')
+                                ? src['details']
+                                : null))));
+
     final employee = json['employee'];
     final task = json['task'];
     final geofence = json['geofence'];
     return ReportModel(
-      id: json['_id'] ?? json['id'] ?? '',
-      type: json['type'] ?? 'task',
+      id: src['_id'] ?? src['id'] ?? '',
+      type: src['type'] ?? 'task',
       taskId: task is Map ? task['_id'] : task,
-      attendanceId: json['attendance'] is Map
-          ? json['attendance']['_id']
-          : json['attendance'],
+      attendanceId: src['attendance'] is Map
+          ? src['attendance']['_id']
+          : src['attendance'],
       employeeId: employee is Map ? employee['_id'] : employee,
       geofenceId: geofence is Map ? geofence['_id'] : geofence,
-      content: json['content'] ?? '',
-      status: json['status'] ?? 'submitted',
+      content: _readString(contentRaw),
+      status: src['status'] ?? 'submitted',
       submittedAt: DateTime.parse(
-        json['submittedAt'] ??
-            json['createdAt'] ??
+        src['submittedAt'] ??
+            src['createdAt'] ??
             DateTime.now().toIso8601String(),
       ),
       employeeName: employee is Map ? employee['name'] : null,
@@ -60,9 +82,9 @@ class ReportModel {
       taskTitle: task is Map ? task['title'] : null,
       taskDifficulty: task is Map ? task['difficulty'] : null,
       geofenceName: geofence is Map ? geofence['name'] : null,
-      isArchived: json['isArchived'] ?? false,
-      attachments: json['attachments'] is List
-          ? List<String>.from(json['attachments'])
+      isArchived: src['isArchived'] ?? false,
+      attachments: src['attachments'] is List
+          ? List<String>.from(src['attachments'])
           : const [],
     );
   }

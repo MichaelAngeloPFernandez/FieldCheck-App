@@ -322,6 +322,12 @@ class AttendanceRecord {
     final checkInStr = json['checkInTime'] ?? attendance['checkIn'];
     final checkOutStr = json['checkOutTime'] ?? attendance['checkOut'];
 
+    String _readString(dynamic v) {
+      if (v == null) return '';
+      if (v is String) return v;
+      return v.toString();
+    }
+
     final checkInTime = checkInStr != null
         ? DateTime.parse(checkInStr.toString())
         : DateTime.now();
@@ -372,9 +378,26 @@ class AttendanceRecord {
           attendance['geofenceName'] ??
           json['location'] ??
           'Unknown Location',
-      userId: employee?['_id'] ?? json['userId'] ?? '',
-      employeeName: employee?['name'] ?? json['employeeName'],
-      employeeEmail: employee?['email'] ?? json['employeeEmail'],
+      userId:
+          employee?['_id'] ??
+          (json['userId'] is Map<String, dynamic>
+              ? (json['userId'] as Map<String, dynamic>)['_id']
+              : json['userId']) ??
+          '',
+      employeeName:
+          employee?['name'] ??
+          (json['employeeName'] is Map<String, dynamic>
+              ? (json['employeeName'] as Map<String, dynamic>)['name']
+              : _readString(json['employeeName']).isNotEmpty
+              ? _readString(json['employeeName'])
+              : null),
+      employeeEmail:
+          employee?['email'] ??
+          (json['employeeEmail'] is Map<String, dynamic>
+              ? (json['employeeEmail'] as Map<String, dynamic>)['email']
+              : _readString(json['employeeEmail']).isNotEmpty
+              ? _readString(json['employeeEmail'])
+              : null),
       isVoid:
           (attendance['isVoid'] as bool?) ?? (json['isVoid'] as bool?) ?? false,
       autoCheckout:

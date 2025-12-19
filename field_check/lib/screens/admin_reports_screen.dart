@@ -73,9 +73,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final base = ApiConfig.baseUrl;
     final token = await UserService().getToken();
     final options = io.OptionBuilder()
-        .setTransports(['websocket'])
+        .setTransports(['websocket', 'polling'])
         .enableAutoConnect()
-        .setTimeout(20000)
+        .setTimeout(60000)
         .build();
     if (token != null) {
       options['extraHeaders'] = {'Authorization': 'Bearer $token'};

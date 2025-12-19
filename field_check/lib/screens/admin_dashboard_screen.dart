@@ -14,8 +14,10 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/dashboard_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/employee_location_service.dart';
+import 'package:field_check/services/report_service.dart';
 import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
+import 'package:field_check/models/report_model.dart';
 import 'package:intl/intl.dart';
 
 // Notification model for dashboard alerts
@@ -26,6 +28,8 @@ class DashboardNotification {
   final String type; // 'employee', 'task', 'attendance', 'geofence'
   final DateTime timestamp;
   bool isRead;
+  final Map<String, dynamic>? data;
+  final String? reportId;
 
   DashboardNotification({
     required this.id,
@@ -34,6 +38,8 @@ class DashboardNotification {
     required this.type,
     required this.timestamp,
     this.isRead = false,
+    this.data,
+    this.reportId,
   });
 }
 
@@ -144,10 +150,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       final type = event['type'] as String? ?? '';
       final action = event['action'] as String? ?? '';
+      final Map<String, dynamic>? eventData =
+          event['data'] is Map<String, dynamic>
+          ? (event['data'] as Map<String, dynamic>)
+          : null;
 
       String title;
       String message;
       String notifType;
+      String? reportId;
 
       // Handle rich adminNotification events
       if (type == 'notification') {
@@ -215,6 +226,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         } else if (srcType == 'report') {
           title = 'Report activity';
           message = data['message']?.toString() ?? 'Report activity detected.';
+          reportId =
+              data['_id']?.toString() ??
+              data['id']?.toString() ??
+              data['reportId']?.toString();
         } else {
           title = 'Notification';
           message = data['message']?.toString() ?? 'New notification received.';
@@ -244,6 +259,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             title = 'Report activity';
             message = 'Report activity detected.';
           }
+
+          // Try to capture report id from payload if present
+          reportId =
+              eventData?['_id']?.toString() ??
+              eventData?['id']?.toString() ??
+              eventData?['reportId']?.toString();
         }
       } else {
         // Ignore unrelated event types
@@ -259,6 +280,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             message: message,
             type: notifType,
             timestamp: DateTime.now(),
+            data: eventData,
+            reportId: reportId,
           ),
         );
         if (_notifications.length > 50) {
@@ -273,6 +296,130 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
       );
     });
+  }
+
+  void _openNotification(DashboardNotification notif) {
+    setState(() {
+      notif.isRead = true;
+    });
+
+    if (notif.type == 'report') {
+      final String? reportId = notif.reportId;
+      final Map<String, dynamic>? raw = notif.data;
+
+      Future<ReportModel?> resolve() async {
+        if (raw != null) {
+          try {
+            return ReportModel.fromJson(raw);
+          } catch (_) {
+            // ignore
+          }
+        }
+        if (reportId != null && reportId.isNotEmpty) {
+          try {
+            return await ReportService().getReportById(reportId);
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to load report: $e')),
+              );
+            }
+          }
+        }
+        return null;
+      }
+
+      resolve().then((model) {
+        if (!mounted || model == null) {
+          // Fall back: open the reports screen.
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminReportsScreen()));
+          return;
+        }
+
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(model.taskTitle ?? 'Report Details'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDetailRow(
+                    'Employee:',
+                    (model.employeeName != null &&
+                            model.employeeName!.trim().isNotEmpty)
+                        ? model.employeeName!
+                        : 'Unknown employee',
+                  ),
+                  if (model.employeeId.trim().isNotEmpty)
+                    _buildDetailRow('Employee ID:', model.employeeId),
+                  if (model.taskTitle != null)
+                    _buildDetailRow('Task:', model.taskTitle!),
+                  _buildDetailRow('Status:', model.status),
+                  _buildDetailRow(
+                    'Submitted:',
+                    DateFormat(
+                      'yyyy-MM-dd HH:mm',
+                    ).format(model.submittedAt.toLocal()),
+                  ),
+                  if (model.content.isNotEmpty)
+                    _buildDetailRow('Content:', model.content),
+                  if (model.attachments.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Attachments:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: model.attachments
+                          .map(
+                            (path) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: SelectableText(
+                                path,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blueGrey,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AdminReportsScreen(),
+                    ),
+                  );
+                },
+                child: const Text('Open Reports'),
+              ),
+            ],
+          ),
+        );
+      });
+
+      return;
+    }
+
+    // Non-report notifications: keep existing behavior for now.
   }
 
   void _startRefreshTimer() {
@@ -1865,72 +2012,76 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         typeIcon = Icons.notifications;
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: notif.isRead ? Colors.grey.shade50 : Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: notif.isRead
-              ? Colors.grey.shade200
-              : typeColor.withValues(alpha: 0.3),
+    return InkWell(
+      onTap: () => _openNotification(notif),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: notif.isRead ? Colors.grey.shade50 : Colors.blue.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: notif.isRead
+                ? Colors.grey.shade200
+                : typeColor.withValues(alpha: 0.3),
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          if (!notif.isRead)
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(4),
+        child: Row(
+          children: [
+            if (!notif.isRead)
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                margin: const EdgeInsets.only(right: 8),
               ),
-              margin: const EdgeInsets.only(right: 8),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: typeColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(typeIcon, color: typeColor, size: 16),
             ),
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: typeColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(typeIcon, color: typeColor, size: 16),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  notif.title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    notif.title,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  notif.message,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+                  Text(
+                    notif.message,
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _notifications.remove(notif);
-              });
-            },
-            child: Icon(Icons.close, size: 16, color: Colors.grey.shade400),
-          ),
-        ],
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _notifications.remove(notif);
+                });
+              },
+              child: Icon(Icons.close, size: 16, color: Colors.grey.shade400),
+            ),
+          ],
+        ),
       ),
     );
   }
