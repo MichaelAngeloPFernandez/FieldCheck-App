@@ -688,100 +688,115 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                       child: DataTable(
                                         columns: const [
                                           DataColumn(label: Text('Employee')),
-                                          DataColumn(label: Text('Location')),
                                           DataColumn(label: Text('Date')),
-                                          DataColumn(label: Text('Time')),
-                                          DataColumn(label: Text('Status')),
+                                          DataColumn(label: Text('Check-In')),
+                                          DataColumn(label: Text('Check-Out')),
+                                          DataColumn(label: Text('Location')),
+                                          DataColumn(label: Text('Duration')),
                                           DataColumn(label: Text('Actions')),
                                         ],
-                                        rows: _filteredAttendanceRecords.map((
-                                          record,
-                                        ) {
-                                          final time = formatTime(
-                                            record.timestamp,
-                                          );
-                                          String status;
-                                          Color? chipBg;
-                                          Color? chipFg;
+                                        rows: _filteredAttendanceRecords
+                                            .where(
+                                              (r) => r.checkOutTime != null,
+                                            )
+                                            .map((record) {
+                                              final date = record.checkInTime
+                                                  .toLocal()
+                                                  .toString()
+                                                  .split(' ')[0];
+                                              final checkInTime = formatTime(
+                                                record.checkInTime,
+                                              );
+                                              final checkOutTime =
+                                                  record.checkOutTime != null
+                                                  ? formatTime(
+                                                      record.checkOutTime!,
+                                                    )
+                                                  : 'N/A';
+                                              final elapsedDisplay =
+                                                  record.elapsedHours != null
+                                                  ? record.elapsedHours! >= 1
+                                                        ? '${record.elapsedHours!.toStringAsFixed(2)} hrs'
+                                                        : '${(record.elapsedHours! * 60).toStringAsFixed(0)} min'
+                                                  : 'Ongoing';
 
-                                          if (record.isVoid &&
-                                              record.autoCheckout) {
-                                            status = 'Auto Checkout (Void)';
-                                            chipBg = Colors.red[100];
-                                            chipFg = Colors.red[900];
-                                          } else if (record.isVoid) {
-                                            status = 'Void';
-                                            chipBg = Colors.grey[300];
-                                            chipFg = Colors.grey[900];
-                                          } else if (record.isCheckIn) {
-                                            status = 'Checked In';
-                                            chipBg = Colors.green[100];
-                                            chipFg = Colors.green[900];
-                                          } else {
-                                            status = 'Checked Out';
-                                            chipBg = Colors.blue[100];
-                                            chipFg = Colors.blue[900];
-                                          }
-                                          final date = record.timestamp
-                                              .toLocal()
-                                              .toString()
-                                              .split(' ')[0];
-
-                                          return DataRow(
-                                            cells: [
-                                              DataCell(
-                                                Text(
-                                                  record.employeeName ??
-                                                      'Unknown',
-                                                ),
-                                              ),
-                                              DataCell(
-                                                Text(
-                                                  record.geofenceName ?? 'N/A',
-                                                ),
-                                              ),
-                                              DataCell(Text(date)),
-                                              DataCell(Text(time)),
-                                              DataCell(
-                                                Chip(
-                                                  label: Text(status),
-                                                  backgroundColor: chipBg,
-                                                  labelStyle: TextStyle(
-                                                    color: chipFg,
+                                              return DataRow(
+                                                cells: [
+                                                  DataCell(
+                                                    Text(
+                                                      record.employeeName ??
+                                                          'Unknown',
+                                                    ),
                                                   ),
-                                                ),
-                                              ),
-                                              DataCell(
-                                                IconButton(
-                                                  icon: const Icon(
-                                                    Icons.history,
-                                                  ),
-                                                  tooltip:
-                                                      'View history for this employee',
-                                                  onPressed: () {
-                                                    final employeeId =
-                                                        record.userId;
-
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (context) =>
-                                                            AdminEmployeeHistoryScreen(
-                                                              employeeId:
-                                                                  employeeId,
-                                                              employeeName:
-                                                                  record
-                                                                      .employeeName ??
-                                                                  'Unknown',
-                                                            ),
+                                                  DataCell(Text(date)),
+                                                  DataCell(
+                                                    Text(
+                                                      checkInTime,
+                                                      style: const TextStyle(
+                                                        color: Colors.green,
+                                                        fontWeight:
+                                                            FontWeight.w500,
                                                       ),
-                                                    );
-                                                  },
-                                                ),
-                                              ),
-                                            ],
-                                          );
-                                        }).toList(),
+                                                    ),
+                                                  ),
+                                                  DataCell(
+                                                    Text(
+                                                      checkOutTime,
+                                                      style: const TextStyle(
+                                                        color: Colors.red,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  DataCell(
+                                                    Text(
+                                                      record.geofenceName ??
+                                                          'N/A',
+                                                    ),
+                                                  ),
+                                                  DataCell(
+                                                    Text(
+                                                      elapsedDisplay,
+                                                      style: const TextStyle(
+                                                        color: Colors.purple,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  DataCell(
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                        Icons.history,
+                                                      ),
+                                                      tooltip:
+                                                          'View history for this employee',
+                                                      onPressed: () {
+                                                        final employeeId =
+                                                            record.userId;
+
+                                                        Navigator.push(
+                                                          context,
+                                                          MaterialPageRoute(
+                                                            builder: (context) =>
+                                                                AdminEmployeeHistoryScreen(
+                                                                  employeeId:
+                                                                      employeeId,
+                                                                  employeeName:
+                                                                      record
+                                                                          .employeeName ??
+                                                                      'Unknown',
+                                                                ),
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                ],
+                                              );
+                                            })
+                                            .toList(),
                                       ),
                                     );
                                   },

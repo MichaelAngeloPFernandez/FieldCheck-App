@@ -249,18 +249,65 @@ class _HistoryScreenState extends State<HistoryScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Date: $dateStr'),
-            Text('Location: $locationName'),
-            Text('Check-in Time: $timeInStr'),
+            Text(
+              'Date: $dateStr',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.login, size: 16, color: Colors.green),
+                const SizedBox(width: 8),
+                Text(
+                  'Check-in: $timeInStr',
+                  style: const TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
             if (timeOutStr != null) ...[
               const SizedBox(height: 8),
-              Text('Check-out Time: $timeOutStr'),
+              Row(
+                children: [
+                  const Icon(Icons.logout, size: 16, color: Colors.red),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Check-out: $timeOutStr',
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
             ],
             if (elapsedStr != null) ...[
               const SizedBox(height: 8),
-              Text('Duration: $elapsedStr'),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  border: Border.all(color: Colors.purple.shade200),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.timer, size: 16, color: Colors.purple),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Duration: $elapsedStr',
+                      style: const TextStyle(
+                        color: Colors.purple,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text('Location: $locationName'),
             const SizedBox(height: 8),
             Text('Status: ${record.status == 'out' ? 'Completed' : 'Open'}'),
@@ -311,6 +358,43 @@ class _HistoryScreenState extends State<HistoryScreen> {
       chipFg = Colors.green.shade900;
     }
 
+    // Format elapsed time - use actual values from backend
+    String elapsedTimeStr = 'N/A';
+    if (record.checkOutTime != null && record.elapsedHours != null) {
+      final totalHours = record.elapsedHours!;
+      final hours = totalHours.floor();
+      final minutes = ((totalHours - hours) * 60).toInt();
+
+      if (hours > 0) {
+        elapsedTimeStr = '$hours h $minutes m';
+      } else if (minutes > 0) {
+        elapsedTimeStr = '$minutes m';
+      } else {
+        elapsedTimeStr = 'Just now';
+      }
+    } else if (record.checkOutTime != null && record.elapsedHours == null) {
+      // If checkout exists but no elapsed hours, calculate it
+      final duration = record.checkOutTime!.difference(record.checkInTime);
+      final hours = duration.inHours;
+      final minutes = duration.inMinutes.remainder(60);
+
+      if (hours > 0) {
+        elapsedTimeStr = '$hours h $minutes m';
+      } else if (minutes > 0) {
+        elapsedTimeStr = '$minutes m';
+      } else {
+        elapsedTimeStr = 'Just now';
+      }
+    }
+
+    // Get checkout time if exists
+    String? timeOutStr;
+    if (record.checkOutTime != null) {
+      timeOutStr = TimeOfDay.fromDateTime(
+        record.checkOutTime!.toLocal(),
+      ).format(context);
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -336,37 +420,117 @@ class _HistoryScreenState extends State<HistoryScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(Icons.access_time, size: 16),
-                const SizedBox(width: 4),
-                Text('In: $timeInStr'),
-              ],
-            ),
-            if (record.checkOutTime != null) ...[
-              const SizedBox(height: 4),
-              Row(
+            // Check-in tag (GREEN)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                border: Border.all(color: Colors.green.shade200),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.logout, size: 16),
+                  const Icon(Icons.login, size: 14, color: Colors.green),
                   const SizedBox(width: 4),
                   Text(
-                    'Out: ${TimeOfDay.fromDateTime(record.checkOutTime!.toLocal()).format(context)}',
+                    'Checked In: $timeInStr',
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
-              if (record.elapsedHours != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Duration: ${record.elapsedHours!.toStringAsFixed(2)} hours',
+            ),
+            const SizedBox(height: 6),
+            // Check-out tag (RED) - if exists, else show as not checked out
+            if (timeOutStr != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  border: Border.all(color: Colors.red.shade200),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.logout, size: 14, color: Colors.red),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Checked Out: $timeOutStr',
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.logout, size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Not Checked Out',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
+            const SizedBox(height: 6),
+            // Elapsed time prominently displayed
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade50,
+                border: Border.all(color: Colors.purple.shade200),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.timer, size: 16, color: Colors.purple),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Elapsed: $elapsedTimeStr',
+                    style: const TextStyle(
+                      color: Colors.purple,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 6),
             Row(
               children: [
                 const Icon(Icons.location_on, size: 16),
                 const SizedBox(width: 4),
-                Expanded(child: Text(locationName)),
+                Expanded(
+                  child: Text(
+                    locationName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ],

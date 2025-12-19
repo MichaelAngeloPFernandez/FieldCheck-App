@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
@@ -345,12 +346,8 @@ class AttendanceRecord {
         attendance['status'] ??
         (checkOutTime != null ? 'out' : 'in');
 
-    // Calculate elapsed hours
-    double? elapsedHours;
-    if (checkOutTime != null) {
-      final elapsed = checkOutTime.difference(checkInTime);
-      elapsedHours = elapsed.inSeconds / 3600.0;
-    }
+    // Use backend-provided elapsedHours; it's already calculated server-side
+    double? elapsedHours = (json['elapsedHours'] as num?)?.toDouble();
 
     return AttendanceRecord(
       id: json['id'] ?? json['_id'] ?? '',
@@ -369,7 +366,12 @@ class AttendanceRecord {
           (json['longitude'] as num?)?.toDouble(),
       geofenceId:
           geofence?['_id'] ?? json['geofenceId'] ?? attendance['geofence'],
-      geofenceName: geofence?['name'] ?? json['geofenceName'],
+      geofenceName:
+          geofence?['name'] ??
+          json['geofenceName'] ??
+          attendance['geofenceName'] ??
+          json['location'] ??
+          'Unknown Location',
       userId: employee?['_id'] ?? json['userId'] ?? '',
       employeeName: employee?['name'] ?? json['employeeName'],
       employeeEmail: employee?['email'] ?? json['employeeEmail'],
