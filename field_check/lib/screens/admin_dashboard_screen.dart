@@ -145,36 +145,109 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final type = event['type'] as String? ?? '';
       final action = event['action'] as String? ?? '';
 
-      if (type != 'attendance' && type != 'report') {
-        return;
-      }
-
       String title;
       String message;
-      String notifType = type;
+      String notifType;
 
-      if (type == 'attendance') {
-        if (action == 'new') {
-          title = 'Employee check-in';
-          message = 'A new check-in was recorded.';
-        } else if (action == 'updated') {
-          title = 'Employee check-out';
-          message = 'An attendance record was updated.';
+      // Handle rich adminNotification events
+      if (type == 'notification') {
+        final data = event['data'] as Map<String, dynamic>? ?? {};
+        final srcType = (data['type'] as String? ?? '').toLowerCase();
+        final act = (data['action'] as String? ?? action).toLowerCase();
+        final employeeName = data['employeeName'] as String? ?? 'Employee';
+
+        notifType = srcType.isNotEmpty ? srcType : 'notification';
+
+        if (srcType == 'presence') {
+          if (act == 'login') {
+            title = 'Employee logged in';
+            message = '$employeeName just logged in.';
+          } else if (act == 'online') {
+            title = 'Employee online';
+            message = '$employeeName is now online.';
+          } else if (act == 'logout' || act == 'offline') {
+            title = 'Employee offline';
+            message = '$employeeName went offline.';
+          } else {
+            title = 'Presence update';
+            message = '$employeeName status changed.';
+          }
+
+          // Show a modal dialog for presence events so admin cannot miss them
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(title),
+              content: Text(message),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        } else if (srcType == 'attendance') {
+          if (act == 'check-in') {
+            title = 'Check-in';
+            message = '$employeeName checked in.';
+          } else if (act == 'check-out') {
+            title = 'Check-out';
+            message = '$employeeName checked out.';
+          } else {
+            title = 'Attendance activity';
+            message = data['message']?.toString() ?? 'Attendance updated.';
+          }
+        } else if (srcType == 'task') {
+          if (act == 'created') {
+            title = 'New task created';
+            message = data['message']?.toString() ?? 'A new task was created.';
+          } else if (act == 'accepted') {
+            title = 'Task accepted';
+            message = '$employeeName accepted a task.';
+          } else if (act == 'completed') {
+            title = 'Task completed';
+            message = '$employeeName completed a task.';
+          } else {
+            title = 'Task updated';
+            message = data['message']?.toString() ?? 'Task activity detected.';
+          }
+        } else if (srcType == 'report') {
+          title = 'Report activity';
+          message = data['message']?.toString() ?? 'Report activity detected.';
         } else {
-          title = 'Attendance activity';
-          message = 'Attendance activity detected.';
+          title = 'Notification';
+          message = data['message']?.toString() ?? 'New notification received.';
+        }
+      } else if (type == 'attendance' || type == 'report') {
+        // Backwards-compatible path for legacy events
+        notifType = type;
+        if (type == 'attendance') {
+          if (action == 'new') {
+            title = 'Employee check-in';
+            message = 'A new check-in was recorded.';
+          } else if (action == 'updated') {
+            title = 'Employee check-out';
+            message = 'An attendance record was updated.';
+          } else {
+            title = 'Attendance activity';
+            message = 'Attendance activity detected.';
+          }
+        } else {
+          if (action == 'new') {
+            title = 'New report submitted';
+            message = 'A new report was created.';
+          } else if (action == 'updated') {
+            title = 'Report updated';
+            message = 'A report was updated.';
+          } else {
+            title = 'Report activity';
+            message = 'Report activity detected.';
+          }
         }
       } else {
-        if (action == 'new') {
-          title = 'New report submitted';
-          message = 'A new report was created.';
-        } else if (action == 'updated') {
-          title = 'Report updated';
-          message = 'A report was updated.';
-        } else {
-          title = 'Report activity';
-          message = 'Report activity detected.';
-        }
+        // Ignore unrelated event types
+        return;
       }
 
       setState(() {
@@ -1923,6 +1996,50 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           }
           debugPrint('📊 Total locations on map: ${_liveLocations.length}');
         });
+
+        // When admin opens dashboard and there are online employees,
+        // show a one-time modal summarizing who is currently online.
+        if (_showNoEmployeesPopup && _liveLocations.isNotEmpty) {
+          _showNoEmployeesPopup = false;
+          final names = response
+              .map((e) => (e['name'] ?? e['email'] ?? 'Employee').toString())
+              .toList();
+          // Delay slightly to ensure context is ready
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Employees Online'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'The following employees are currently online:',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    const SizedBox(height: 12),
+                    ...names.map(
+                      (n) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text('• $n'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          );
+        }
       } else {
         debugPrint('⚠️ No response from getOnlineEmployees');
       }

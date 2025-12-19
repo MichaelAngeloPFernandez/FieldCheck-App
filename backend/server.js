@@ -65,6 +65,33 @@ io.on('connection', (socket) => {
     }
   } catch (_) {}
 
+  // When a socket connects for an employee, mark them online and notify admins
+  setImmediate(async () => {
+    try {
+      if (typeof userIdFromToken === 'string' && userIdFromToken.length === 24) {
+        const user = await User.findById(userIdFromToken).select('name role isOnline');
+        if (user && user.role === 'employee') {
+          if (!user.isOnline) {
+            user.isOnline = true;
+            user.lastLocationUpdate = new Date();
+            await user.save();
+          }
+          io.emit('adminNotification', {
+            type: 'presence',
+            action: 'online',
+            employeeId: user._id,
+            employeeName: user.name,
+            timestamp: new Date(),
+            message: `${user.name} is online`,
+            severity: 'info',
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Presence tracking on connect failed:', e.message || e);
+    }
+  });
+
   // Handle real-time location updates from employees while checked in
   socket.on('employeeLocationUpdate', (data, callback) => {
     try {
@@ -232,6 +259,31 @@ io.on('connection', (socket) => {
         io.emit('onlineCount', count);
       }
     } catch (_) {}
+
+    // Best-effort presence update on disconnect
+    setImmediate(async () => {
+      try {
+        if (typeof userIdFromToken === 'string' && userIdFromToken.length === 24) {
+          const user = await User.findById(userIdFromToken).select('name role isOnline');
+          if (user && user.role === 'employee') {
+            user.isOnline = false;
+            await user.save();
+            io.emit('employeeOffline', { employeeId: user._id.toString() });
+            io.emit('adminNotification', {
+              type: 'presence',
+              action: 'offline',
+              employeeId: user._id,
+              employeeName: user.name,
+              timestamp: new Date(),
+              message: `${user.name} went offline`,
+              severity: 'warning',
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Presence tracking on disconnect failed:', e.message || e);
+      }
+    });
   });
 });
 
