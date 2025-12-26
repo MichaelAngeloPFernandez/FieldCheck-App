@@ -1,0 +1,104 @@
+@startuml FieldCheck_ReportGeneration
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam activityBackgroundColor #AED6F1
+skinparam activityBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.5 (Extended): Report Generation Activity Diagram\nFieldCheck - Admin Report Generation and Export Process
+
+start
+:Administrator Opens\nReport Screen;
+
+:Select Report Type:
+- Attendance Report
+- Task Report;
+
+if (Report Type?) then
+  case Attendance
+    :Select Date Range;
+    :Select Employees\n(Optional);
+    :Select Geofences\n(Optional);
+  case Task
+    :Select Date Range;
+    :Select Task Status;
+    :Select Priority\n(Optional);
+  case Archive Status
+    :Select Current/Archived;
+end
+
+:Click "Generate Report";
+
+:Backend Receives Request;
+
+:Query Database:
+- Attendance Records or
+- Task Records;
+
+if (Filters Applied?) then
+  :Apply Filters:
+  - Date Range
+  - Employee/Geofence
+  - Status/Priority;
+else
+  :Use All Records;
+endif
+
+:Aggregate Data:
+- Calculate Statistics
+- Count Records
+- Calculate Totals;
+
+:Format Report Data:
+- Create Summary Section
+- Create Details Section
+- Add Charts/Graphs;
+
+:User Selects Export Format;
+
+if (Export Format?) then
+  case PDF
+    :Generate PDF:
+    - Use PDFKit
+    - Add Header/Footer
+    - Format Tables
+    - Add Branding;
+  case Excel
+    :Generate Excel:
+    - Use ExcelJS
+    - Create Sheets
+    - Format Cells
+    - Add Formulas;
+end
+
+:Send File to Mobile App;
+
+:Mobile App Receives File;
+
+:Display Download Options:
+- Save to Device
+- Share File
+- View Preview;
+
+:User Selects Action;
+
+if (User Action?) then
+  case Save
+    :Save to Downloads Folder;
+    :Show Confirmation;
+  case Share
+    :Open Share Dialog;
+    :User Selects App;
+    :Share File;
+  case View
+    :Open PDF/Excel Viewer;
+    :Display File;
+end
+
+:Archive Report\n(Optional);
+
+:Report Generation Complete;
+
+stop
+
+@enduml

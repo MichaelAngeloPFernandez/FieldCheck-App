@@ -1,0 +1,77 @@
+@startuml FieldCheck_StateDiagram_Attendance
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam stateBackgroundColor #AED6F1
+skinparam stateBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.4 (Extended): Attendance State Diagram\nFieldCheck - Attendance Record States and Transitions
+
+[*] --> NotCheckedIn
+
+state NotCheckedIn {
+  [*] --> WaitingForCheckIn
+  WaitingForCheckIn: Employee is not at job site
+}
+
+state CheckingIn {
+  [*] --> ValidatingLocation
+  ValidatingLocation: Validating GPS location\nagainst geofence
+  ValidatingLocation --> LocationValid: Within geofence\nradius
+  ValidatingLocation --> LocationInvalid: Outside geofence\nradius
+  LocationInvalid --> [*]
+}
+
+state CheckedIn {
+  [*] --> ActiveShift
+  ActiveShift: Employee is checked in\nand working
+}
+
+state CheckingOut {
+  [*] --> ValidatingCheckOut
+  ValidatingCheckOut: Validating GPS location\nfor check-out
+  ValidatingCheckOut --> CheckOutValid: Within geofence\nradius
+  ValidatingCheckOut --> CheckOutInvalid: Outside geofence\nradius
+  CheckOutInvalid --> [*]
+}
+
+state CheckedOut {
+  [*] --> ShiftComplete
+  ShiftComplete: Shift completed\nAttendance recorded
+}
+
+state OfflineMode {
+  [*] --> OfflineCheckIn
+  OfflineCheckIn: Check-in saved\nlocally (no internet)
+  OfflineCheckIn --> OfflineSyncing: Internet restored
+  OfflineSyncing: Syncing with server
+  OfflineSyncing --> SyncSuccess: Data synced\nsuccessfully
+  OfflineSyncing --> SyncFailed: Sync failed\nRetrying...
+  SyncFailed --> OfflineSyncing
+}
+
+WaitingForCheckIn --> CheckingIn: Employee taps\nCheck-In button
+
+LocationValid --> CheckedIn: Check-in recorded\nin database
+
+LocationInvalid --> WaitingForCheckIn: Error: Not at\nauthorized location
+
+ActiveShift --> CheckingOut: Employee taps\nCheck-Out button
+
+CheckOutValid --> CheckedOut: Check-out recorded\nin database
+
+CheckOutInvalid --> ActiveShift: Error: Not at\nauthorized location
+
+CheckedOut --> NotCheckedIn: Shift ended
+
+WaitingForCheckIn --> OfflineMode: No internet\nconnection
+
+OfflineMode --> CheckedIn: Sync successful
+
+OfflineMode --> WaitingForCheckIn: Sync failed\nRetry later
+
+CheckedIn --> OfflineMode: Internet lost\nduring shift
+
+OfflineMode --> CheckedIn: Internet restored\nShift continues
+
+@enduml

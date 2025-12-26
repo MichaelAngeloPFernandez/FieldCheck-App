@@ -1,0 +1,109 @@
+PENDING ISSUES - FIELDCHECK APP
+================================
+Date: Nov 30, 2025, 10:10 PM
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 1: EXPORT PREVIEW
+═══════════════════════════════════════════════════════════════════════
+
+Status: PENDING
+
+Description:
+When user clicks "Export PDF" or "Export CSV", they should see a preview
+of the report content BEFORE the actual export happens.
+
+Current Behavior:
+- Clicking PDF/CSV button directly exports without preview
+- User can't verify content before exporting
+
+Expected Behavior:
+- Show preview table with filtered data
+- Display format: Employee | Date | Time | Location | Status | Tasks Done
+- User can then confirm to export or cancel
+
+Files to Modify:
+- field_check/lib/screens/report_export_preview_screen.dart
+  * Add preview table showing export data
+  * Show PDF/CSV buttons after preview
+  * Format data according to spec
+
+Implementation Notes:
+- Preview should show same data that will be exported
+- Include both attendance and task data
+- Format columns as: Employee|Date|Time|Location|Status|Tasks Done
+- Add "Export" button after preview is shown
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 2: NEW EMPLOYEE/ADMIN SYNC WITHOUT LOGOUT
+═══════════════════════════════════════════════════════════════════════
+
+Status: PENDING
+
+Description:
+When admin adds a new employee or admin credentials, the data should
+sync immediately without requiring logout and re-login.
+
+Current Behavior:
+- New employee/admin data only appears after logout/login
+- User must re-authenticate to see new data
+
+Expected Behavior:
+- New employee/admin appears in list immediately
+- No logout/login required
+- Real-time sync via Socket.IO
+
+Files to Modify:
+- Backend: controllers/userController.js
+  * Emit socket event when new user created
+  * Emit socket event when admin added
+  
+- Frontend: services/realtime_service.dart
+  * Listen for userCreated event
+  * Listen for userAdded event
+  * Refresh user list on event
+  
+- Frontend: screens/admin_user_management_screen.dart (or similar)
+  * Listen to real-time events
+  * Update user list without reload
+  * Show success notification
+
+Implementation Notes:
+- Use Socket.IO to emit events
+- Refresh user list on real-time event
+- No page reload needed
+- Show toast notification of new user added
+
+═══════════════════════════════════════════════════════════════════════
+COMPLETED FIXES (This Session)
+═══════════════════════════════════════════════════════════════════════
+
+✅ Location tracking faster (10-second timeout)
+✅ Refresh Location button for geofence validation
+✅ Checkout geofence error fixed (fallback geofenceId)
+✅ Task status updates on report submission
+✅ Export button moved to navbar
+✅ Green export button removed from UI
+✅ Export filters applied (date, location, status)
+✅ Task data included in exports
+✅ Export token authentication fixed
+✅ All employees shown in attendance table (not grouped)
+✅ Reports UI filters working correctly
+
+═══════════════════════════════════════════════════════════════════════
+NEXT STEPS
+═══════════════════════════════════════════════════════════════════════
+
+1. Implement export preview functionality
+   - Show data preview before export
+   - Format as specified
+
+2. Implement real-time user sync
+   - Socket events for new users
+   - Auto-refresh user list
+   - No logout required
+
+3. Test all features end-to-end
+
+4. Deploy to Render
+
+═══════════════════════════════════════════════════════════════════════

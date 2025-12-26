@@ -1,0 +1,138 @@
+@startuml FieldCheck Database Schema
+
+!define TABLE(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define PK(x) <b><color:#b8861b><&key></color> x</b>
+!define FK(x) <color:#aaaaaa><&key></color> x
+!define NOT_NULL(x) <color:#333333>x</color>
+
+skinparam class {
+    BackgroundColor White
+    ArrowColor #2688d4
+    BorderColor #2688d4
+}
+
+title FieldCheck: Database Schema
+
+TABLE(Users, "Users") {
+    PK(user_id) : INT AUTO_INCREMENT
+    NOT_NULL(username) : VARCHAR(50)
+    NOT_NULL(password_hash) : VARCHAR(255)
+    NOT_NULL(email) : VARCHAR(100)
+    NOT_NULL(full_name) : VARCHAR(100)
+    NOT_NULL(role) : ENUM('admin', 'employee')
+    NOT_NULL(created_at) : TIMESTAMP
+    NOT_NULL(updated_at) : TIMESTAMP
+    NOT_NULL(is_active) : BOOLEAN
+    profile_image : VARCHAR(255)
+    phone_number : VARCHAR(20)
+}
+
+TABLE(Locations, "Locations") {
+    PK(location_id) : INT AUTO_INCREMENT
+    NOT_NULL(name) : VARCHAR(100)
+    NOT_NULL(address) : VARCHAR(255)
+    NOT_NULL(latitude) : DECIMAL(10,8)
+    NOT_NULL(longitude) : DECIMAL(11,8)
+    NOT_NULL(created_at) : TIMESTAMP
+    NOT_NULL(updated_at) : TIMESTAMP
+    NOT_NULL(is_active) : BOOLEAN
+    description : TEXT
+    FK(created_by) : INT
+}
+
+TABLE(Geofences, "Geofences") {
+    PK(geofence_id) : INT AUTO_INCREMENT
+    NOT_NULL(name) : VARCHAR(100)
+    NOT_NULL(radius) : INT
+    FK(location_id) : INT
+    NOT_NULL(created_at) : TIMESTAMP
+    NOT_NULL(updated_at) : TIMESTAMP
+    NOT_NULL(is_active) : BOOLEAN
+    description : TEXT
+    FK(created_by) : INT
+}
+
+TABLE(Attendance, "Attendance") {
+    PK(attendance_id) : INT AUTO_INCREMENT
+    FK(user_id) : INT
+    FK(geofence_id) : INT
+    NOT_NULL(check_in_time) : TIMESTAMP
+    check_out_time : TIMESTAMP
+    NOT_NULL(check_in_latitude) : DECIMAL(10,8)
+    NOT_NULL(check_in_longitude) : DECIMAL(11,8)
+    check_out_latitude : DECIMAL(10,8)
+    check_out_longitude : DECIMAL(11,8)
+    NOT_NULL(created_at) : TIMESTAMP
+    NOT_NULL(updated_at) : TIMESTAMP
+    NOT_NULL(is_synced) : BOOLEAN
+    notes : TEXT
+}
+
+TABLE(BeaconDevices, "BeaconDevices") {
+    PK(beacon_id) : INT AUTO_INCREMENT
+    NOT_NULL(uuid) : VARCHAR(100)
+    NOT_NULL(major) : INT
+    NOT_NULL(minor) : INT
+    NOT_NULL(name) : VARCHAR(100)
+    FK(location_id) : INT
+    NOT_NULL(created_at) : TIMESTAMP
+    NOT_NULL(updated_at) : TIMESTAMP
+    NOT_NULL(is_active) : BOOLEAN
+    description : TEXT
+}
+
+TABLE(OfflineData, "OfflineData") {
+    PK(offline_data_id) : INT AUTO_INCREMENT
+    NOT_NULL(data_type) : ENUM('attendance', 'user_update')
+    NOT_NULL(data_json) : TEXT
+    NOT_NULL(created_at) : TIMESTAMP
+    NOT_NULL(is_synced) : BOOLEAN
+    FK(user_id) : INT
+}
+
+TABLE(SystemLogs, "SystemLogs") {
+    PK(log_id) : INT AUTO_INCREMENT
+    NOT_NULL(log_type) : ENUM('info', 'warning', 'error')
+    NOT_NULL(message) : TEXT
+    NOT_NULL(created_at) : TIMESTAMP
+    FK(user_id) : INT
+    ip_address : VARCHAR(45)
+    user_agent : VARCHAR(255)
+}
+
+TABLE(Tasks, "Tasks") {
+    PK(task_id) : INT AUTO_INCREMENT
+    NOT_NULL(title) : VARCHAR(255)
+    description : TEXT
+    due_date : TIMESTAMP
+    NOT_NULL(created_at) : TIMESTAMP
+    NOT_NULL(updated_at) : TIMESTAMP
+    FK(created_by) : INT
+}
+
+TABLE(UserTasks, "UserTasks") {
+    PK(user_task_id) : INT AUTO_INCREMENT
+    FK(user_id) : INT
+    FK(task_id) : INT
+    NOT_NULL(status) : ENUM('pending', 'in_progress', 'completed')
+    NOT_NULL(assigned_at) : TIMESTAMP
+    completed_at : TIMESTAMP
+    notes : TEXT
+}
+
+Users "1" -- "0..*" Attendance : records
+Users "1" -- "0..*" Locations : creates
+Users "1" -- "0..*" Geofences : creates
+Users "1" -- "0..*" OfflineData : generates
+Users "1" -- "0..*" SystemLogs : generates
+Users "1" -- "0..*" Tasks : creates
+Users "1" -- "0..*" UserTasks : assigns
+
+Locations "1" -- "0..*" Geofences : contains
+Locations "1" -- "0..*" BeaconDevices : houses
+
+Geofences "1" -- "0..*" Attendance : validates
+
+Tasks "1" -- "0..*" UserTasks : has
+
+@enduml

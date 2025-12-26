@@ -1,0 +1,446 @@
+================================================================================
+FIELDCHECK - UML DIAGRAMS AND CHARTS (PART 1)
+================================================================================
+
+All diagrams are provided in text/ASCII format that can be converted to images
+or used directly in documentation.
+
+================================================================================
+FIGURE 3.1: AGILE DEVELOPMENT CYCLE DIAGRAM
+================================================================================
+
+```
+                    ┌─────────────────────────┐
+                    │   AGILE DEVELOPMENT     │
+                    │       CYCLE             │
+                    └─────────────────────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │    PLANNING &     │
+                    │  REQUIREMENTS     │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │      DESIGN       │
+                    │   (1-2 weeks)     │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │ IMPLEMENTATION    │
+                    │   (1-2 weeks)     │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │     TESTING       │
+                    │   (1-2 weeks)     │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │   DEPLOYMENT      │
+                    │   & FEEDBACK      │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │  MAINTENANCE &    │
+                    │    FEEDBACK       │
+                    └─────────┬─────────┘
+                              │
+                              └──────────┐
+                                         │
+                    ┌────────────────────▼─────┐
+                    │  REPEAT CYCLE (SPRINT)   │
+                    └──────────────────────────┘
+```
+
+================================================================================
+FIGURE 3.2: SYSTEM ARCHITECTURE DIAGRAM
+================================================================================
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     FIELDCHECK SYSTEM ARCHITECTURE               │
+└──────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    PRESENTATION LAYER                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────────┐         ┌──────────────────────┐    │
+│  │  EMPLOYEE INTERFACE  │         │   ADMIN INTERFACE    │    │
+│  │  (Flutter Mobile)    │         │  (Flutter Mobile)    │    │
+│  │                      │         │                      │    │
+│  │ • Check-in/out       │         │ • Geofence Mgmt      │    │
+│  │ • View Tasks         │         │ • Employee Mgmt      │    │
+│  │ • View Reports       │         │ • Task Assignment    │    │
+│  │ • Offline Sync       │         │ • Reports & Export   │    │
+│  └──────────────────────┘         │ • Real-time Monitor  │    │
+│                                   └──────────────────────┘    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │  Socket.io (Real-time)    │
+                    │  HTTPS/TLS (Encrypted)    │
+                    └─────────────┬─────────────┘
+                                  │
+┌─────────────────────────────────────────────────────────────────┐
+│                    APPLICATION LAYER                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │           Node.js / Express Backend Server              │  │
+│  │                                                          │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
+│  │  │ Auth Service │  │Geofence Svc  │  │Attendance Svc│  │  │
+│  │  │              │  │              │  │              │  │  │
+│  │  │ • JWT Tokens │  │ • Validation │  │ • Recording  │  │  │
+│  │  │ • RBAC       │  │ • Creation   │  │ • Filtering  │  │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  │  │
+│  │                                                          │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
+│  │  │  Task Svc    │  │ Report Svc   │  │ Realtime Svc │  │  │
+│  │  │              │  │              │  │              │  │  │
+│  │  │ • Assignment │  │ • Generation │  │ • Socket.io  │  │  │
+│  │  │ • Tracking   │  │ • Export     │  │ • Broadcasting│  │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  │  │
+│  │                                                          │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │   MongoDB Driver          │
+                    │   (Mongoose ORM)          │
+                    └─────────────┬─────────────┘
+                                  │
+┌─────────────────────────────────────────────────────────────────┐
+│                    DATA LAYER                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              MongoDB Database                           │  │
+│  │                                                          │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
+│  │  │ Users Coll.  │  │Geofences Coll│  │Attendance Coll│  │  │
+│  │  │              │  │              │  │              │  │  │
+│  │  │ • Profiles   │  │ • Boundaries │  │ • Records    │  │  │
+│  │  │ • Credentials│  │ • Employees  │  │ • Timestamps │  │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  │  │
+│  │                                                          │  │
+│  │  ┌──────────────┐  ┌──────────────┐                    │  │
+│  │  │ Tasks Coll.  │  │ Reports Coll.│                    │  │
+│  │  │              │  │              │                    │  │
+│  │  │ • Assignments│  │ • Generated  │                    │  │
+│  │  │ • Status     │  │ • Exported   │                    │  │
+│  │  └──────────────┘  └──────────────┘                    │  │
+│  │                                                          │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+================================================================================
+FIGURE 3.3: PROJECT GANTT CHART
+================================================================================
+
+```
+PROJECT TIMELINE - FieldCheck Development
+
+Phase               Start    End      Duration    Progress
+─────────────────────────────────────────────────────────────
+Requirements        Week 1   Week 2   2 weeks     ████████░░ 100%
+Design              Week 3   Week 4   2 weeks     ████████░░ 100%
+Development         Week 5   Week 12  8 weeks     ████████░░ 100%
+  - Mobile App      Week 5   Week 10  6 weeks     ████████░░ 100%
+  - Backend API     Week 5   Week 10  6 weeks     ████████░░ 100%
+  - Database        Week 5   Week 8   4 weeks     ████████░░ 100%
+Testing             Week 13  Week 14  2 weeks     ████████░░ 100%
+  - Unit Testing    Week 13  Week 13  1 week      ████████░░ 100%
+  - Integration     Week 13  Week 14  2 weeks     ████████░░ 100%
+  - UAT             Week 14  Week 14  1 week      ████████░░ 100%
+Deployment          Week 15  Week 16  2 weeks     ████████░░ 100%
+  - Server Setup    Week 15  Week 15  1 week      ████████░░ 100%
+  - Production      Week 16  Week 16  1 week      ████████░░ 100%
+─────────────────────────────────────────────────────────────
+TOTAL PROJECT       Week 1   Week 16  16 weeks    ████████░░ 100%
+```
+
+================================================================================
+FIGURE 3.4: EMPLOYEE CHECK-IN FLOWCHART
+================================================================================
+
+```
+                          START
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │  Open App     │
+                    └───────┬───────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │ Authenticated?│
+                    └───┬───────┬───┘
+                        │       │
+                       NO      YES
+                        │       │
+                        ▼       ▼
+                    ┌──────┐ ┌──────────────┐
+                    │Login │ │ Get GPS Loc  │
+                    └──┬───┘ └──────┬───────┘
+                       │           │
+                       └─────┬─────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │ Read GPS Location│
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │ Fetch Geofences  │
+                    │ from Local Cache  │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │ Compare Location │
+                    │ with Geofence    │
+                    └────┬──────────┬──┘
+                         │          │
+                    INSIDE      OUTSIDE
+                         │          │
+                         ▼          ▼
+                    ┌────────┐  ┌──────────┐
+                    │ Record │  │ Show     │
+                    │Attendance│ │Error Msg │
+                    └────┬───┘  └────┬─────┘
+                         │          │
+                         ▼          ▼
+                    ┌────────┐  ┌──────────┐
+                    │ Save   │  │ Cannot   │
+                    │Locally │  │Check In  │
+                    └────┬───┘  └────┬─────┘
+                         │          │
+                         ▼          ▼
+                    ┌────────────────────┐
+                    │ Online?            │
+                    └────┬───────────┬───┘
+                         │           │
+                        YES         NO
+                         │           │
+                         ▼           ▼
+                    ┌────────┐  ┌──────────┐
+                    │ Sync   │  │ Wait for │
+                    │to Srvr │  │Connection│
+                    └────┬───┘  └────┬─────┘
+                         │           │
+                         └─────┬─────┘
+                               │
+                               ▼
+                        ┌──────────────┐
+                        │ Confirmation │
+                        │ Displayed    │
+                        └──────┬───────┘
+                               │
+                               ▼
+                            END
+```
+
+================================================================================
+FIGURE 3.5: ADMIN GEOFENCE MANAGEMENT FLOWCHART
+================================================================================
+
+```
+                          START
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │  Open App     │
+                    └───────┬───────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │ Admin Login   │
+                    └───────┬───────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │ Authenticate  │
+                    │ Credentials   │
+                    └───┬───────┬───┘
+                        │       │
+                    VALID   INVALID
+                        │       │
+                        ▼       ▼
+                    ┌────────┐ ┌──────────┐
+                    │ Admin  │ │ Error:   │
+                    │Dashboard│ │Invalid   │
+                    └────┬───┘ │Credentials│
+                         │     └────┬─────┘
+                         │          │
+                         ▼          ▼
+                    ┌────────────────────┐
+                    │ Select Geofence    │
+                    │ Management         │
+                    └────────┬───────────┘
+                             │
+                             ▼
+                    ┌────────────────────┐
+                    │ Choose Action      │
+                    └────┬───┬───┬───┬───┘
+                         │   │   │   │
+                    CREATE EDIT VIEW DELETE
+                         │   │   │   │
+         ┌───────────────┼───┼───┼───┴──────────────┐
+         │               │   │   │                  │
+         ▼               ▼   ▼   ▼                  ▼
+    ┌────────┐      ┌────────┐ ┌────────┐     ┌────────┐
+    │ Draw   │      │ Modify │ │ View   │     │Confirm │
+    │on Map  │      │Details │ │Details │     │Delete  │
+    └────┬───┘      └────┬───┘ └────┬───┘     └────┬───┘
+         │               │          │              │
+         ▼               ▼          ▼              ▼
+    ┌────────────────────────────────────────────────┐
+    │ Update Database                                │
+    └────────┬───────────────────────────────────────┘
+             │
+             ▼
+    ┌────────────────────────────────────────────────┐
+    │ Broadcast Update via Socket.io                 │
+    │ (Real-time to all connected clients)           │
+    └────────┬───────────────────────────────────────┘
+             │
+             ▼
+    ┌────────────────────────────────────────────────┐
+    │ Confirmation Message                           │
+    │ "Geofence Updated Successfully"                │
+    └────────┬───────────────────────────────────────┘
+             │
+             ▼
+    ┌────────────────────────────────────────────────┐
+    │ Return to Dashboard                            │
+    └────────┬───────────────────────────────────────┘
+             │
+             ▼
+          END
+```
+
+================================================================================
+FIGURE 3.6: INPUT-PROCESS-OUTPUT (IPO) MODEL
+================================================================================
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    INPUT-PROCESS-OUTPUT MODEL                    │
+└──────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│                          INPUT                                 │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │ 1. GPS Location Data                                     │ │
+│  │    - Latitude, Longitude, Accuracy, Timestamp            │ │
+│  │                                                          │ │
+│  │ 2. Geofence Boundaries                                   │ │
+│  │    - Center point & radius (circular)                    │ │
+│  │    - Polygon coordinates                                 │ │
+│  │                                                          │ │
+│  │ 3. User Credentials                                      │ │
+│  │    - Username, Password, JWT Token                       │ │
+│  │                                                          │ │
+│  │ 4. Task Data                                             │ │
+│  │    - Task ID, Description, Assigned Employee, Due Date  │ │
+│  │                                                          │ │
+│  │ 5. Report Filters                                        │ │
+│  │    - Date Range, Employee ID, Geofence ID               │ │
+│  │                                                          │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌────────────────────────────────────────────────────────────────┐
+│                       PROCESS                                  │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │ 1. Validate User Authentication                          │ │
+│  │    - Verify JWT token                                    │ │
+│  │    - Check user role (admin/employee)                    │ │
+│  │                                                          │ │
+│  │ 2. Validate Location Against Geofence                    │ │
+│  │    - Use Haversine formula (circular)                    │ │
+│  │    - Use Ray Casting algorithm (polygon)                 │ │
+│  │    - Determine if inside/outside boundary                │ │
+│  │                                                          │ │
+│  │ 3. Process Attendance Record                             │ │
+│  │    - Create attendance entry                             │ │
+│  │    - Store timestamp and location                        │ │
+│  │    - Mark as synced/unsynced                             │ │
+│  │                                                          │ │
+│  │ 4. Manage Tasks                                          │ │
+│  │    - Assign tasks to employees                           │ │
+│  │    - Update task status                                  │ │
+│  │    - Track completion                                    │ │
+│  │                                                          │ │
+│  │ 5. Generate Reports                                      │ │
+│  │    - Filter attendance data                              │ │
+│  │    - Calculate statistics                                │ │
+│  │    - Format for export (PDF/Excel)                       │ │
+│  │                                                          │ │
+│  │ 6. Broadcast Real-Time Updates                           │ │
+│  │    - Send Socket.io events                               │ │
+│  │    - Update connected clients                            │ │
+│  │                                                          │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌────────────────────────────────────────────────────────────────┐
+│                       OUTPUT                                   │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │ 1. Attendance Record                                     │ │
+│  │    - Success/Failure message                             │ │
+│  │    - Check-in/out timestamp                              │ │
+│  │    - Location coordinates                                │ │
+│  │                                                          │ │
+│  │ 2. Real-Time Notification                                │ │
+│  │    - Socket.io event to admin dashboard                  │ │
+│  │    - Updated employee location                           │ │
+│  │    - Attendance status change                            │ │
+│  │                                                          │ │
+│  │ 3. Task Update                                           │ │
+│  │    - Task assignment confirmation                        │ │
+│  │    - Task status update                                  │ │
+│  │    - Completion notification                             │ │
+│  │                                                          │ │
+│  │ 4. Report Export                                         │ │
+│  │    - PDF file generated                                  │ │
+│  │    - Excel file generated                                │ │
+│  │    - File saved to device/server                         │ │
+│  │                                                          │ │
+│  │ 5. Error Messages                                        │ │
+│  │    - "Outside geofence boundary"                         │ │
+│  │    - "Invalid credentials"                               │ │
+│  │    - "Offline - data will sync later"                    │ │
+│  │                                                          │ │
+│  │ 6. Database Update                                       │ │
+│  │    - Attendance record stored                            │ │
+│  │    - Task status updated                                 │ │
+│  │    - Report generated                                    │ │
+│  │                                                          │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+================================================================================
+END OF PART 1
+================================================================================
+
+See FIELDCHECK_UML_DIAGRAMS_PART2.txt for ERD, DFD, and Use Case diagrams.

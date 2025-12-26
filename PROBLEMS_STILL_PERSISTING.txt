@@ -1,0 +1,105 @@
+FIELDCHECK APP - PROBLEMS STILL PERSISTING
+============================================
+
+Last Updated: November 30, 2025, 6:15 PM
+
+CRITICAL ISSUES NOT RESOLVED:
+=============================
+
+1. GEOFENCE EXCEPTION ERROR
+   - Error: "Failed to add geofence: exception: failed to add geofence"
+   - Status: NOT FIXED
+   - Root Cause: Backend validation or type field mismatch
+   - Attempted Fix: Removed type field from backend enum, but APK not rebuilt
+   - Required Action: Rebuild APK with latest code changes
+
+2. TASK ASSIGNMENT EXCEPTION ERROR
+   - Error: "Failed to assign task: exception: failed to assign task to multiple employees"
+   - Status: NOT FIXED
+   - Root Cause: URL path was duplicating /tasks or employee IDs not found
+   - Attempted Fix: Fixed URL in task_service.dart, added ID validation, but APK not rebuilt
+   - Required Action: Rebuild APK with latest code changes
+
+3. GEOFENCE UPDATE ERROR
+   - Error: "Failed to update geofence status"
+   - Status: NOT FIXED
+   - Root Cause: Type field validation on update causing failure
+   - Attempted Fix: Removed type from update handler, but APK not rebuilt
+   - Required Action: Rebuild APK with latest code changes
+
+4. GEOFENCE PAGE NOT SCROLLABLE
+   - Issue: Cannot scroll up/down on geofence list
+   - Status: NOT FIXED
+   - Attempted Fix: Added SingleChildScrollView, but APK not rebuilt
+   - Required Action: Rebuild APK with latest code changes
+
+5. LOCATION SEARCH NOT WORKING
+   - Issue: Geocoding search feature missing or not functional
+   - Status: PARTIALLY FIXED (code added but APK not rebuilt)
+   - Expected Behavior: Should show bottom sheet with location list like Google Maps
+   - Current Status: Feature code exists but not in compiled APK
+   - Required Action: Rebuild APK with latest code changes
+
+6. LOGIN PAGE STILL HAS UNWANTED BUTTONS
+   - Issue: "Don't have an account? Register" and "Continue with Google" buttons still visible
+   - Status: NOT FIXED IN APK
+   - Attempted Fix: Code was removed from login_screen.dart, but APK not rebuilt
+   - Required Action: Rebuild APK with latest code changes
+
+7. FLOATING ACTION BUTTON ON EMPLOYEE PAGE
+   - Issue: Duplicate "Add Employee" button at bottom of screen
+   - Status: NOT FIXED IN APK
+   - Attempted Fix: Removed FloatingActionButton from code, but APK not rebuilt
+   - Required Action: Rebuild APK with latest code changes
+
+8. REPORTS PAGE ISSUES
+   - Issue: Attendance reports showing 0 results
+   - Status: ROOT CAUSE FOUND
+   - Root Cause: Frontend not passing ?type=attendance query parameter when fetching reports
+   - Backend IS creating attendance reports correctly on check-in/check-out
+   - Required Action: Frontend must pass type=attendance in report query
+
+9. AUTO CHECK-IN ON LOGIN
+   - Issue: Employee automatically checked in when logging in
+   - Status: ROOT CAUSE UNKNOWN
+   - Root Cause: Likely in frontend dashboard screen on init
+   - Backend does NOT auto check-in on login
+   - Required Action: Check dashboard_screen.dart initState() for auto check-in logic
+
+9. EXCEPTION ERRORS PERSIST
+   - Multiple exception errors still appearing in app
+   - Status: NOT FIXED
+   - Root Cause: Code fixes made but APK not rebuilt with changes
+   - Required Action: Rebuild APK with latest code changes
+
+SUMMARY OF ATTEMPTED FIXES:
+===========================
+
+Code Changes Made (But Not Compiled Into APK):
+- Removed type field validation from geofence update handler
+- Fixed task assignment URL path (removed duplicate /tasks)
+- Added employee ID validation before task assignment
+- Added geocoding search with bottom sheet location list
+- Removed FloatingActionButton from employee screen
+- Added SingleChildScrollView to geofence list for scrolling
+- Removed registration and Google sign-in buttons from login screen
+- Added geofence update error handling
+
+CRITICAL ACTION REQUIRED:
+=========================
+
+The APK MUST be rebuilt with the latest code changes for any fixes to take effect.
+
+Command to rebuild:
+cd "c:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\field_check"
+flutter build apk --release
+
+Current APK Location (OUTDATED):
+c:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\field_check\build\app\outputs\flutter-apk\app-release.apk
+
+NEXT STEPS:
+===========
+1. Rebuild the APK with the command above
+2. Test all features again
+3. If issues persist after rebuild, investigate further
+4. Consider debugging with logcat for more detailed error messages

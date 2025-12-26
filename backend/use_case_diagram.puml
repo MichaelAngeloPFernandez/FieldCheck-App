@@ -1,0 +1,67 @@
+@startuml FieldCheck Use Case Diagram
+
+skinparam backgroundColor white
+skinparam usecase {
+    BackgroundColor white
+    BorderColor #2688d4
+}
+skinparam actor {
+    BorderColor #2688d4
+}
+
+title FieldCheck: Use Case Diagram
+
+left to right direction
+
+actor "Employee" as employee
+actor "Administrator" as admin
+
+rectangle "FieldCheck System" {
+    usecase "Login" as UC1
+    usecase "Check In" as UC2
+    usecase "Check Out" as UC3
+    usecase "View Attendance History" as UC4
+    usecase "Work in Offline Mode" as UC5
+    usecase "Sync Offline Data" as UC6
+    
+    usecase "Manage Employees" as UC7
+    usecase "Create Geofence" as UC8
+    usecase "Edit Geofence" as UC9
+    usecase "View Attendance Reports" as UC10
+    usecase "Track Employee Location" as UC11
+    usecase "Configure System Settings" as UC12
+    usecase "Manage Bluetooth Beacons" as UC13
+}
+
+employee --> UC1
+employee --> UC2
+employee --> UC3
+employee --> UC4
+employee --> UC5
+employee --> UC6
+
+admin --> UC1
+admin --> UC7
+admin --> UC8
+admin --> UC9
+admin --> UC10
+admin --> UC11
+admin --> UC12
+admin --> UC13
+
+UC2 ..> UC1 : <<include>>
+UC3 ..> UC1 : <<include>>
+UC4 ..> UC1 : <<include>>
+UC5 ..> UC2 : <<extend>>
+UC5 ..> UC3 : <<extend>>
+UC6 ..> UC5 : <<include>>
+
+UC7 ..> UC1 : <<include>>
+UC8 ..> UC1 : <<include>>
+UC9 ..> UC1 : <<include>>
+UC10 ..> UC1 : <<include>>
+UC11 ..> UC1 : <<include>>
+UC12 ..> UC1 : <<include>>
+UC13 ..> UC1 : <<include>>
+
+@enduml

@@ -1,0 +1,121 @@
+ISSUES AND FIXES - FIELDCHECK APP
+==================================
+Date: Nov 30, 2025, 10:44 PM
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 1: TASK CHECKBOX & NAVBAR CLICKABILITY
+═══════════════════════════════════════════════════════════════════════
+
+Status: FIXED ✅
+
+Changes Made:
+- Removed checkbox from task list items
+- Made entire task card clickable using GestureDetector
+- Clicking anywhere on the card now opens the task report screen
+- Completed tasks are disabled (can't click)
+
+File Modified:
+- field_check/lib/screens/employee_task_list_screen.dart
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 2: TASK STATUS STUCK ON "PENDING" AFTER REPORT SUBMISSION
+═══════════════════════════════════════════════════════════════════════
+
+Status: INVESTIGATING 🔍
+
+Current Behavior:
+- Employee submits report
+- Backend receives report and updates task status to "completed"
+- Frontend shows success message
+- But task list still shows "pending"
+
+Root Cause Analysis:
+The issue is likely in the real-time event flow:
+
+1. Frontend calls: TaskService().updateUserTaskStatus(userTaskId, 'completed')
+2. Backend receives and updates database
+3. Backend emits: io.emit('updatedUserTaskStatus', {...})
+4. Frontend listens to: _realtimeService.taskStream
+5. BUT: taskStream might not be receiving the 'updatedUserTaskStatus' event
+
+Solution Needed:
+- Verify backend emits 'updatedUserTaskStatus' correctly
+- Verify RealtimeService properly routes this event to taskStream
+- Add console logging to debug the event flow
+
+Code References:
+- Frontend: field_check/lib/screens/task_report_screen.dart (line 181-184)
+- Backend: backend/controllers/taskController.js (line 287-294)
+- Frontend listener: field_check/lib/screens/employee_task_list_screen.dart (line 40-49)
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 3: CHECKOUT "GEOFENCE NOT FOUND" EXCEPTION (PERSISTENT)
+═══════════════════════════════════════════════════════════════════════
+
+Status: MIGRATION SCRIPT CREATED ✅
+
+Root Cause:
+- Attendance records have NULL geofence references
+- When checking out, backend tries to find geofence from attendance record
+- If NULL, it throws "geofence not found" exception
+
+Solution Implemented:
+Created MongoDB migration script: backend/scripts/fixNullGeofences.js
+
+What it does:
+1. Finds all attendance records with null/missing geofence
+2. For each record, finds the employee's assigned geofences
+3. Assigns the first geofence to the attendance record
+4. Reports summary of fixed/unfixed records
+
+How to Run:
+```bash
+cd backend
+node scripts/fixNullGeofences.js
+```
+
+Prerequisites:
+- MongoDB connection string in .env file
+- Node.js installed
+- Models loaded (Attendance, Geofence, User)
+
+Expected Output:
+```
+✓ Connected to MongoDB
+📋 Found X attendance records with null geofence
+✓ Fixed record ID: Assigned geofence Name
+...
+📊 Migration Summary:
+   ✓ Fixed: X
+   ✗ Unfixed: Y
+   Total: Z
+✓ Verification: 0 records still have null geofence
+✓ Migration complete!
+```
+
+═══════════════════════════════════════════════════════════════════════
+AUTO CHECK-IN DECISION
+═══════════════════════════════════════════════════════════════════════
+
+Decision: DO NOT IMPLEMENT AUTO CHECK-IN ❌
+
+Reasons:
+1. Employee might be in geofence but not working
+2. Creates false/inaccurate attendance records
+3. Violates attendance integrity
+4. Better to require manual check-in for accountability
+
+Recommendation: Keep manual check-in only
+
+═══════════════════════════════════════════════════════════════════════
+NEXT STEPS
+═══════════════════════════════════════════════════════════════════════
+
+1. ✅ Remove checkbox from task list (DONE)
+2. ✅ Create MongoDB migration script (DONE)
+3. ⏳ Run migration script on MongoDB Atlas
+4. ⏳ Test checkout functionality after migration
+5. ⏳ Debug task status update if still not working
+6. ⏳ Rebuild and deploy APK
+
+═══════════════════════════════════════════════════════════════════════

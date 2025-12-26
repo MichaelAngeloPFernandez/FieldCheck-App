@@ -1,0 +1,136 @@
+@startuml FieldCheck_ERD
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam entityBackgroundColor #AED6F1
+skinparam entityBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.7: Entity Relationship Diagram\nFieldCheck Database Schema - MongoDB Collections
+
+entity "User" as User {
+  *id : String <<PK>>
+  --
+  email : String <<UNIQUE>>
+  password : String (hashed)
+  firstName : String
+  lastName : String
+  role : Enum [ADMIN, EMPLOYEE]
+  phone : String
+  profileImage : String
+  isActive : Boolean
+  createdAt : DateTime
+  updatedAt : DateTime
+}
+
+entity "Geofence" as Geofence {
+  *id : String <<PK>>
+  --
+  name : String
+  latitude : Double
+  longitude : Double
+  radius : Double
+  description : String
+  isActive : Boolean
+  createdAt : DateTime
+  updatedAt : DateTime
+}
+
+entity "Attendance" as Attendance {
+  *id : String <<PK>>
+  --
+  userId : String <<FK>>
+  geofenceId : String <<FK>>
+  checkInTime : DateTime
+  checkOutTime : DateTime
+  checkInLat : Double
+  checkInLon : Double
+  checkOutLat : Double
+  checkOutLon : Double
+  checkInAccuracy : Double
+  checkOutAccuracy : Double
+  status : Enum [CHECKED_IN, CHECKED_OUT]
+  isOfflineSync : Boolean
+  createdAt : DateTime
+  updatedAt : DateTime
+}
+
+entity "Task" as Task {
+  *id : String <<PK>>
+  --
+  title : String
+  description : String
+  geofenceId : String <<FK>>
+  assignedTo : String <<FK>>
+  status : Enum [PENDING, IN_PROGRESS, COMPLETED]
+  priority : Enum [LOW, MEDIUM, HIGH]
+  dueDate : DateTime
+  completedAt : DateTime
+  isArchived : Boolean
+  createdAt : DateTime
+  updatedAt : DateTime
+}
+
+entity "Report" as Report {
+  *id : String <<PK>>
+  --
+  title : String
+  type : Enum [ATTENDANCE, TASK]
+  generatedBy : String <<FK>>
+  startDate : DateTime
+  endDate : DateTime
+  data : JSON
+  isArchived : Boolean
+  createdAt : DateTime
+  updatedAt : DateTime
+}
+
+entity "Location" as Location {
+  *id : String <<PK>>
+  --
+  userId : String <<FK>>
+  latitude : Double
+  longitude : Double
+  accuracy : Double
+  timestamp : DateTime
+}
+
+entity "UserTask" as UserTask {
+  *id : String <<PK>>
+  --
+  userId : String <<FK>>
+  taskId : String <<FK>>
+  assignedAt : DateTime
+  completedAt : DateTime
+  status : Enum [ASSIGNED, IN_PROGRESS, COMPLETED]
+}
+
+entity "AuditLog" as AuditLog {
+  *id : String <<PK>>
+  --
+  userId : String <<FK>>
+  action : String
+  entityType : String
+  entityId : String
+  changes : JSON
+  timestamp : DateTime
+}
+
+' Relationships
+User ||--o{ Attendance : "makes"
+User ||--o{ Task : "creates"
+User ||--o{ Report : "generates"
+User ||--o{ Location : "has"
+User ||--o{ UserTask : "assigned"
+User ||--o{ AuditLog : "performs"
+
+Geofence ||--o{ Attendance : "contains"
+Geofence ||--o{ Task : "has"
+
+Task ||--o{ UserTask : "assigned_in"
+Task ||--o{ Report : "included_in"
+
+Attendance ||--o{ Report : "included_in"
+
+Location }o--|| User : "belongs_to"
+
+@enduml

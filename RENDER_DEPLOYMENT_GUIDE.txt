@@ -1,0 +1,530 @@
+================================================================================
+FIELDCHECK - RENDER.COM DEPLOYMENT GUIDE
+================================================================================
+
+Project: FieldCheck v2.1.0
+Deployment Platform: Render.com
+Date: November 29, 2025
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+Render.com is a modern cloud platform that provides:
+- Automatic deployments from Git repositories
+- Built-in SSL/TLS certificates
+- Environment variable management
+- Database hosting options
+- Automatic scaling
+- Free tier available for testing
+
+Benefits for FieldCheck:
+✓ No credit card required for free tier
+✓ Automatic HTTPS
+✓ Easy environment configuration
+✓ Git integration for CI/CD
+✓ MongoDB Atlas integration
+✓ Reliable uptime
+
+================================================================================
+2. BACKEND DEPLOYMENT ON RENDER.COM
+================================================================================
+
+2.1 PREREQUISITES
+
+Before deploying to Render.com:
+1. Create a Render.com account (https://render.com)
+2. Connect your GitHub repository
+3. Set up MongoDB Atlas database
+4. Prepare environment variables
+
+2.2 DEPLOYMENT STEPS
+
+Step 1: Create a New Web Service
+1. Log in to Render.com dashboard
+2. Click "New +" button
+3. Select "Web Service"
+4. Connect your GitHub repository
+5. Select the repository containing FieldCheck backend
+
+Step 2: Configure Service Settings
+1. Name: fieldcheck-backend (or your preferred name)
+2. Environment: Node
+3. Build Command: npm install
+4. Start Command: npm start
+5. Plan: Free (or paid for production)
+
+Step 3: Set Environment Variables
+Add the following environment variables in Render.com dashboard:
+
+Required Variables:
+- NODE_ENV: production
+- PORT: 3000
+- MONGODB_URI: mongodb+srv://username:password@cluster.mongodb.net/fieldcheck
+- JWT_SECRET: your-secret-key-here
+- JWT_EXPIRE: 1h
+- REFRESH_TOKEN_EXPIRE: 7d
+- CORS_ORIGIN: https://your-frontend-domain.com
+
+Optional Variables:
+- RATE_LIMIT_WINDOW_MS: 900000
+- RATE_LIMIT_MAX: 1000
+- SENDGRID_API_KEY: your-sendgrid-key (for email)
+
+Step 4: Deploy
+1. Click "Create Web Service"
+2. Render.com will automatically deploy from your Git repository
+3. Monitor deployment progress in the dashboard
+4. Once deployed, you'll get a URL like: https://fieldcheck-backend.onrender.com
+
+2.3 VERIFY DEPLOYMENT
+
+Test the backend:
+```bash
+curl https://fieldcheck-backend.onrender.com/api/health
+# Should return: {"status":"ok"}
+```
+
+Test export endpoints:
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  https://fieldcheck-backend.onrender.com/api/export/attendance/pdf
+```
+
+2.4 RENDER.COM SPECIFIC CONFIGURATIONS
+
+Database Connection:
+- Use MongoDB Atlas (free tier available)
+- Connection string format:
+  mongodb+srv://username:password@cluster.mongodb.net/fieldcheck
+
+Environment Variables:
+- Store all sensitive data as environment variables
+- Never commit .env files to Git
+- Use Render.com's environment variable management
+
+Auto-Deploy:
+- Render.com automatically deploys on Git push
+- Deployments are triggered on changes to main branch
+- Monitor deployment logs in dashboard
+
+SSL/TLS:
+- Render.com provides free SSL certificates
+- Automatic HTTPS on all domains
+- No additional configuration needed
+
+================================================================================
+3. DATABASE SETUP FOR RENDER.COM
+================================================================================
+
+3.1 MONGODB ATLAS SETUP
+
+1. Create MongoDB Atlas Account
+   - Go to https://www.mongodb.com/cloud/atlas
+   - Sign up for free account
+   - Create a new project
+
+2. Create a Cluster
+   - Select "Build a Database"
+   - Choose "Free" tier
+   - Select your preferred region
+   - Create cluster
+
+3. Create Database User
+   - Go to "Database Access"
+   - Create new user with username and password
+   - Save credentials securely
+
+4. Get Connection String
+   - Go to "Clusters" → "Connect"
+   - Select "Connect your application"
+   - Copy connection string
+   - Replace <username> and <password> with your credentials
+   - Replace <cluster-name> with your cluster name
+
+5. Add IP Whitelist
+   - Go to "Network Access"
+   - Add IP address 0.0.0.0/0 (allows all IPs)
+   - Or add Render.com's IP range
+
+Connection String Format:
+mongodb+srv://username:password@cluster.mongodb.net/fieldcheck
+
+3.2 ENVIRONMENT VARIABLE IN RENDER.COM
+
+Set MONGODB_URI in Render.com dashboard:
+1. Go to your Web Service
+2. Click "Environment"
+3. Add new variable:
+   - Key: MONGODB_URI
+   - Value: mongodb+srv://username:password@cluster.mongodb.net/fieldcheck
+4. Save and redeploy
+
+================================================================================
+4. RENDER.COM SPECIFIC FEATURES
+================================================================================
+
+4.1 AUTO-DEPLOY FROM GIT
+
+Setup:
+1. Connect GitHub repository
+2. Select branch to deploy (main)
+3. Enable auto-deploy
+4. Every Git push triggers deployment
+
+Benefits:
+✓ Continuous deployment
+✓ No manual deployment needed
+✓ Automatic rollback on errors
+✓ Deployment history tracking
+
+4.2 ENVIRONMENT VARIABLES
+
+Secure Storage:
+- All sensitive data stored securely
+- Not visible in logs
+- Encrypted in transit and at rest
+
+Usage in Code:
+```javascript
+const mongoUri = process.env.MONGODB_URI;
+const jwtSecret = process.env.JWT_SECRET;
+const port = process.env.PORT || 3000;
+```
+
+4.3 MONITORING AND LOGS
+
+View Logs:
+1. Go to Web Service dashboard
+2. Click "Logs" tab
+3. View real-time logs
+4. Search and filter logs
+
+Monitor Performance:
+1. Go to "Metrics" tab
+2. View CPU, memory, and bandwidth usage
+3. Set up alerts for high usage
+
+4.4 CUSTOM DOMAIN
+
+Add Custom Domain:
+1. Go to Web Service settings
+2. Click "Custom Domains"
+3. Add your domain
+4. Update DNS records with Render.com's nameservers
+5. SSL certificate auto-generated
+
+Example:
+- Render.com URL: https://fieldcheck-backend.onrender.com
+- Custom Domain: https://api.fieldcheck.com
+
+================================================================================
+5. RENDER.COM PRICING AND LIMITS
+================================================================================
+
+Free Tier:
+- 0.5 GB RAM
+- Shared CPU
+- 100 GB bandwidth/month
+- Auto-sleep after 15 minutes of inactivity
+- Perfect for development and testing
+
+Paid Tiers:
+- Starter: $7/month (1 GB RAM, dedicated CPU)
+- Standard: $12/month (2 GB RAM, dedicated CPU)
+- Pro: $29/month (4 GB RAM, dedicated CPU)
+
+Recommendations:
+- Development: Use Free tier
+- Staging: Use Starter tier
+- Production: Use Standard or Pro tier
+
+================================================================================
+6. DEPLOYMENT CHECKLIST
+================================================================================
+
+Before Deployment:
+[ ] Install all dependencies (npm install)
+[ ] Test locally (npm run dev)
+[ ] Verify environment variables
+[ ] Check database connection
+[ ] Test export functionality
+[ ] Verify PDF export is admin-only
+[ ] Test Excel export
+[ ] Run security checks
+
+Render.com Setup:
+[ ] Create Render.com account
+[ ] Connect GitHub repository
+[ ] Create MongoDB Atlas cluster
+[ ] Create database user
+[ ] Get connection string
+[ ] Set environment variables
+[ ] Configure auto-deploy
+
+Post-Deployment:
+[ ] Test health endpoint
+[ ] Test API endpoints
+[ ] Verify database connection
+[ ] Check logs for errors
+[ ] Test export functionality
+[ ] Verify admin-only PDF access
+[ ] Monitor performance
+[ ] Set up alerts
+
+================================================================================
+7. TROUBLESHOOTING
+================================================================================
+
+Issue: Service keeps crashing
+Solution:
+- Check logs for errors
+- Verify environment variables are set
+- Check database connection string
+- Ensure MongoDB Atlas IP whitelist includes Render.com
+
+Issue: Slow performance
+Solution:
+- Upgrade to paid tier
+- Optimize database queries
+- Enable caching
+- Check for memory leaks
+
+Issue: Database connection fails
+Solution:
+- Verify MONGODB_URI is correct
+- Check MongoDB Atlas IP whitelist
+- Verify database user credentials
+- Test connection locally first
+
+Issue: Export endpoints return 403
+Solution:
+- Verify user is admin
+- Check JWT token validity
+- Verify authentication middleware
+- Check role-based access control
+
+Issue: PDF export not working
+Solution:
+- Verify pdfkit is installed
+- Check file permissions
+- Verify disk space available
+- Check error logs
+
+Issue: Auto-deploy not working
+Solution:
+- Verify GitHub repository is connected
+- Check branch configuration
+- Verify webhook is set up
+- Check deployment logs
+
+================================================================================
+8. SECURITY BEST PRACTICES
+================================================================================
+
+Environment Variables:
+✓ Never commit .env files
+✓ Use Render.com's environment variable management
+✓ Rotate secrets regularly
+✓ Use strong JWT secrets
+✓ Use strong database passwords
+
+Database Security:
+✓ Use MongoDB Atlas with authentication
+✓ Enable IP whitelist
+✓ Use SSL/TLS for connections
+✓ Regular backups
+✓ Monitor access logs
+
+API Security:
+✓ Use HTTPS (automatic on Render.com)
+✓ Implement rate limiting
+✓ Validate all inputs
+✓ Use CORS properly
+✓ Implement authentication/authorization
+
+Deployment Security:
+✓ Use private GitHub repositories
+✓ Enable branch protection
+✓ Require code reviews
+✓ Monitor deployment logs
+✓ Set up alerts for errors
+
+================================================================================
+9. MONITORING AND MAINTENANCE
+================================================================================
+
+Daily Monitoring:
+- Check application logs
+- Monitor error rates
+- Verify export functionality
+- Check database performance
+
+Weekly Maintenance:
+- Review security logs
+- Update dependencies
+- Backup database
+- Check performance metrics
+
+Monthly Tasks:
+- Review and optimize queries
+- Update documentation
+- Plan capacity upgrades
+- Review security settings
+
+Alerts to Set Up:
+- High CPU usage (>80%)
+- High memory usage (>80%)
+- Database connection errors
+- API errors (5xx responses)
+- Deployment failures
+
+================================================================================
+10. SCALING ON RENDER.COM
+================================================================================
+
+Vertical Scaling (Upgrade Plan):
+1. Go to Web Service settings
+2. Click "Plan"
+3. Select higher tier
+4. Service restarts with new resources
+5. No downtime during upgrade
+
+Horizontal Scaling:
+- Render.com handles load balancing
+- Multiple instances can be deployed
+- Automatic failover
+- No manual configuration needed
+
+Database Scaling:
+- MongoDB Atlas auto-scaling
+- Upgrade cluster tier as needed
+- Sharding for very large datasets
+- Replication for high availability
+
+================================================================================
+11. BACKUP AND DISASTER RECOVERY
+================================================================================
+
+Database Backups:
+- MongoDB Atlas provides automatic backups
+- Backups retained for 7 days (free tier)
+- Point-in-time recovery available
+- Manual backups can be created
+
+Code Backups:
+- GitHub repository is your backup
+- Multiple branches for safety
+- Release tags for versions
+- Git history preserved
+
+Disaster Recovery Plan:
+1. Database failure: Restore from MongoDB Atlas backup
+2. Code failure: Rollback to previous Git commit
+3. Service failure: Render.com auto-restarts service
+4. Region failure: Migrate to different region
+
+================================================================================
+12. COST OPTIMIZATION
+================================================================================
+
+Free Tier Usage:
+- Development and testing
+- Low-traffic applications
+- Learning and experimentation
+- Proof of concepts
+
+Cost Reduction:
+- Use free tier for development
+- Upgrade only when needed
+- Monitor resource usage
+- Optimize database queries
+- Use caching strategies
+
+Estimated Costs:
+- Development: $0/month (free tier)
+- Staging: $7-12/month (Starter tier)
+- Production: $12-29/month (Standard/Pro tier)
+- Database: $0-57/month (MongoDB Atlas)
+
+================================================================================
+13. MIGRATION FROM LOCAL TO RENDER.COM
+================================================================================
+
+Step 1: Prepare Code
+1. Ensure all code is in Git repository
+2. Remove local environment variables from code
+3. Use environment variables for all configuration
+4. Test locally with production-like settings
+
+Step 2: Set Up Render.com
+1. Create Render.com account
+2. Connect GitHub repository
+3. Set up MongoDB Atlas database
+4. Configure environment variables
+
+Step 3: Deploy
+1. Create Web Service on Render.com
+2. Configure settings
+3. Deploy from Git
+4. Monitor logs
+
+Step 4: Verify
+1. Test all endpoints
+2. Test export functionality
+3. Verify database connection
+4. Check performance
+
+Step 5: Update Frontend
+1. Update API base URL to Render.com URL
+2. Update CORS settings
+3. Test frontend-backend integration
+4. Deploy frontend
+
+================================================================================
+14. USEFUL RENDER.COM RESOURCES
+================================================================================
+
+Documentation:
+- https://render.com/docs
+- https://render.com/docs/deploy-node-express-app
+- https://render.com/docs/databases
+
+Support:
+- https://render.com/support
+- Community Discord: https://discord.gg/render
+- Email support available
+
+Tutorials:
+- Render.com Blog: https://render.com/blog
+- YouTube tutorials available
+- Community guides
+
+================================================================================
+15. NEXT STEPS
+================================================================================
+
+Immediate:
+1. Create Render.com account
+2. Connect GitHub repository
+3. Set up MongoDB Atlas
+4. Deploy backend
+
+Short-term:
+1. Test all functionality
+2. Set up monitoring
+3. Configure custom domain
+4. Deploy frontend
+
+Long-term:
+1. Monitor performance
+2. Optimize as needed
+3. Plan scaling strategy
+4. Implement backup strategy
+
+================================================================================
+END OF RENDER.COM DEPLOYMENT GUIDE
+================================================================================
+
+For more information, visit: https://render.com/docs
+For support, visit: https://render.com/support
