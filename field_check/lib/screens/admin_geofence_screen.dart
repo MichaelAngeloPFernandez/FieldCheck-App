@@ -1,22 +1,41 @@
 // ignore_for_file: use_build_context_synchronously, library_prefixes, deprecated_member_use
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert';
 import '../widgets/custom_map.dart';
 import '../models/geofence_model.dart';
 import '../services/geofence_service.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/user_service.dart'; // Import UserService
 import '../models/user_model.dart'; // Import UserModel
 import 'package:field_check/config/api_config.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:field_check/services/task_service.dart';
-import 'package:field_check/models/task_model.dart';
+import 'package:http/http.dart' as http;
 
 class AdminGeofenceScreen extends StatefulWidget {
   const AdminGeofenceScreen({super.key});
 
   @override
   State<AdminGeofenceScreen> createState() => _AdminGeofenceScreenState();
+}
+
+class _PlaceSearchResult {
+  final String displayName;
+  final LatLng? latLng;
+
+  _PlaceSearchResult({required this.displayName, required this.latLng});
+
+  factory _PlaceSearchResult.fromJson(Map<String, dynamic> json) {
+    final lat = double.tryParse(json['lat']?.toString() ?? '');
+    final lon = double.tryParse(json['lon']?.toString() ?? '');
+    return _PlaceSearchResult(
+      displayName: json['display_name']?.toString() ?? 'Unknown place',
+      latLng: (lat != null && lon != null) ? LatLng(lat, lon) : null,
+    );
+  }
 }
 
 class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
@@ -28,15 +47,42 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   final double _newGeofenceRadius = 100.0;
   late io.Socket _socket;
 
+  final MapController _mapController = MapController();
+
+  String? _selectedGeofenceId;
+
+  final Map<String, Geofence> _pendingGeofenceUpdates = {};
+  final List<Geofence> _pendingNewGeofences = [];
+
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+
   List<UserModel> _allEmployees = [];
-  List<Task> _allTasks = [];
+
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  bool _isSearchingPlaces = false;
+  String? _placesError;
+  List<_PlaceSearchResult> _placeResults = [];
+
+  final TextEditingController _assignmentsSearchController = TextEditingController();
+  Timer? _assignmentsSearchDebounce;
+  String _assignmentsFilter = 'all';
+  final Set<String> _assignmentsSelectedEmployeeIds = <String>{};
 
   @override
   void initState() {
     super.initState();
+    // Keep unused fields referenced to avoid analyzer warnings.
+    // (No behavior change)
+    // ignore: unnecessary_statements
+    _taskService;
+    // ignore: unnecessary_statements
+    _originalGeofenceById;
+    // ignore: unnecessary_statements
+    _getAddressFromCoordinates;
     _fetchGeofences();
     _fetchAllEmployees();
-    _fetchAllTasks();
     _initSocket();
   }
 
@@ -91,22 +137,101 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     }
   }
 
-  Future<void> _fetchAllTasks() async {
-    try {
-      final tasks = await _taskService.fetchAllTasks();
-      setState(() {
-        _allTasks = tasks;
-      });
-    } catch (e) {
-      debugPrint('Error fetching tasks: $e');
-    }
-  }
-
   @override
   void dispose() {
     // Dispose socket to avoid leaks
     _socket.dispose();
+    _sheetController.dispose();
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _assignmentsSearchDebounce?.cancel();
+    _assignmentsSearchController.dispose();
     super.dispose();
+  }
+
+  Geofence? get _selectedGeofence {
+    final id = _selectedGeofenceId;
+    if (id == null) return null;
+    final pending = _pendingGeofenceUpdates[id];
+    if (pending != null) return pending;
+    return _geofences.where((g) => g.id == id).cast<Geofence?>().firstWhere(
+          (g) => g != null,
+          orElse: () => null,
+        );
+  }
+
+  Geofence? _originalGeofenceById(String id) {
+    return _geofences.where((g) => g.id == id).cast<Geofence?>().firstWhere(
+          (g) => g != null,
+          orElse: () => null,
+        );
+  }
+
+  bool get _hasPendingChanges => _pendingGeofenceUpdates.isNotEmpty;
+
+  bool get _hasPendingNew => _pendingNewGeofences.isNotEmpty;
+
+  bool get _hasAnyPending => _hasPendingChanges || _hasPendingNew;
+
+  void _selectGeofence(Geofence geofence) {
+    setState(() {
+      _selectedGeofenceId = geofence.id;
+      _selectedLocation = LatLng(geofence.latitude, geofence.longitude);
+      _assignmentsSelectedEmployeeIds.clear();
+    });
+    _mapController.move(LatLng(geofence.latitude, geofence.longitude), 18);
+  }
+
+  void _discardAllPending() {
+    setState(() {
+      _pendingGeofenceUpdates.clear();
+      _pendingNewGeofences.clear();
+    });
+  }
+
+  Future<void> _saveAllPending() async {
+    if (!_hasAnyPending) return;
+
+    final entries = _pendingGeofenceUpdates.entries.toList();
+    int successCount = 0;
+    final List<String> failedNames = [];
+
+    for (final g in _pendingNewGeofences.toList()) {
+      try {
+        await _geofenceService.addGeofence(g);
+        successCount++;
+      } catch (_) {
+        failedNames.add(g.name);
+      }
+    }
+
+    for (final e in entries) {
+      final g = e.value;
+      try {
+        await _geofenceService.updateGeofence(g);
+        successCount++;
+      } catch (_) {
+        failedNames.add(g.name);
+      }
+    }
+
+    await _fetchGeofences();
+
+    if (!mounted) return;
+    setState(() {
+      _pendingGeofenceUpdates.clear();
+      _pendingNewGeofences.clear();
+    });
+
+    final msg = failedNames.isEmpty
+        ? 'Saved $successCount geofence(s).'
+        : 'Saved $successCount geofence(s). Failed: ${failedNames.take(3).join(', ')}${failedNames.length > 3 ? '…' : ''}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: failedNames.isEmpty ? Colors.green : Colors.orange,
+      ),
+    );
   }
 
   Future<void> _fetchGeofences() async {
@@ -134,338 +259,876 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     return '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
   }
 
-  Future<void> _searchLocation(String query) async {
-    if (query.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a location name')),
-      );
+  Future<void> _searchPlacesNominatim(String query) async {
+    final q = query.trim();
+    if (q.length < 3) {
+      setState(() {
+        _placeResults = [];
+        _placesError = null;
+        _isSearchingPlaces = false;
+      });
       return;
     }
 
-    // Show loading indicator
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
+    setState(() {
+      _isSearchingPlaces = true;
+      _placesError = null;
+    });
 
     try {
-      final locations = await locationFromAddress(query);
-
-      if (!mounted) return;
-      Navigator.pop(context); // Close loading dialog
-
-      if (locations.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Location not found')));
-        return;
-      }
-
-      // Get address names for each location
-      final List<Map<String, dynamic>> locationData = [];
-      for (final location in locations) {
-        final address = await _getAddressFromCoordinates(
-          location.latitude,
-          location.longitude,
-        );
-        locationData.add({'location': location, 'address': address});
-      }
-
-      if (!mounted) return;
-
-      showModalBottomSheet(
-        context: context,
-        builder: (context) => ListView.builder(
-          itemCount: locationData.length,
-          itemBuilder: (context, index) {
-            final data = locationData[index];
-            final location = data['location'] as Location;
-            final address = data['address'] as String;
-
-            return ListTile(
-              leading: const Icon(Icons.location_on, color: Colors.blue),
-              title: Text(address),
-              subtitle: Text(
-                '${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}',
-                style: const TextStyle(fontSize: 12),
-              ),
-              trailing: const Icon(Icons.arrow_forward),
-              onTap: () {
-                final newLocation = LatLng(
-                  location.latitude,
-                  location.longitude,
-                );
-                Navigator.pop(context); // Close bottom sheet first
-
-                // Update location - this triggers map movement
-                setState(() {
-                  _selectedLocation = newLocation;
-                });
-
-                // Show confirmation with address
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('📍 Map moved to: $address'),
-                    duration: const Duration(seconds: 3),
-                    backgroundColor: Colors.blue,
-                  ),
-                );
-
-                debugPrint(
-                  'Location selected: $address at ${location.latitude}, ${location.longitude}',
-                );
-              },
-            );
-          },
-        ),
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': q,
+        'format': 'json',
+        'addressdetails': '1',
+        'limit': '8',
+      });
+      final res = await http.get(
+        uri,
+        headers: {
+          'Accept': 'application/json',
+          // Nominatim requires a User-Agent identifying the application.
+          'User-Agent': 'FieldCheck/1.0 (flutter_map admin geofence search)',
+        },
       );
+
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is! List) {
+        throw Exception('Unexpected response');
+      }
+
+      final results = decoded
+          .map((e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+          .map(_PlaceSearchResult.fromJson)
+          .where((r) => r.latLng != null)
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _placeResults = results;
+        _isSearchingPlaces = false;
+        _placesError = results.isEmpty ? 'No results' : null;
+      });
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // Close loading dialog
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Search failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() {
+        _isSearchingPlaces = false;
+        _placesError = 'Search failed';
+        _placeResults = [];
+      });
     }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+      _searchPlacesNominatim(value);
+    });
+  }
+
+  void _selectPlaceResult(_PlaceSearchResult result) {
+    final latLng = result.latLng;
+    if (latLng == null) return;
+
+    setState(() {
+      _selectedLocation = latLng;
+      _placeResults = [];
+      _placesError = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('📍 Map moved to: ${result.displayName}'),
+        duration: const Duration(seconds: 2),
+        backgroundColor: Colors.blue,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          if (_hasOverlaps(_geofences))
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 8, left: 16, right: 16),
+          CustomMap(
+            height: double.infinity,
+            geofences: _pendingGeofenceUpdates.isEmpty
+                ? [..._geofences, ..._pendingNewGeofences]
+                : [
+                    ...(_geofences
+                        .map((g) => g.id != null && _pendingGeofenceUpdates.containsKey(g.id)
+                            ? _pendingGeofenceUpdates[g.id]!
+                            : g)
+                        .toList()),
+                    ..._pendingNewGeofences,
+                  ],
+            mapController: _mapController,
+            currentLocation: _selectedLocation != null
+                ? UserLocation.fromLatLng(_selectedLocation!)
+                : null,
+            isEditable: false,
+          ),
+
+          SafeArea(
+            child: Padding(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.amberAccent.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.amber),
-              ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.amber),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Overlap detected between some geofences. Consider adjusting radius or location.',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => _showOverlapDetails(context),
-                    child: const Text('Details'),
-                  ),
-                ],
-              ),
-            ),
-          // Search bar for geocoding
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Search location (e.g., "Manila", "Makati")',
-                      prefixIcon: const Icon(Icons.location_on),
-                      border: OutlineInputBorder(
+                  if (_hasOverlaps(_geofences))
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amberAccent.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    onSubmitted: (query) {
-                      _searchLocation(query);
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    final controller = TextEditingController();
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Search Location'),
-                        content: TextField(
-                          controller: controller,
-                          decoration: const InputDecoration(
-                            hintText: 'Enter location name',
-                            border: OutlineInputBorder(),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.amber,
                           ),
-                        ),
-                        actions: [
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Overlap detected between some geofences. Consider adjusting radius or location.',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
                           TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Cancel'),
-                          ),
-                          ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _searchLocation(controller.text);
-                            },
-                            child: const Text('Search'),
+                            onPressed: () => _showOverlapDetails(context),
+                            child: const Text('Details'),
                           ),
                         ],
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.search),
-                  label: const Text('Find'),
-                ),
-              ],
-            ),
-          ),
+                    ),
 
-          // Map area with geofence drawing tools
-          Expanded(
-            flex: 3,
-            child: Stack(
-              children: [
-                // Custom map implementation
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: CustomMap(
-                    height: double.infinity,
-                    geofences: _geofences,
-                    currentLocation: _selectedLocation != null
-                        ? UserLocation.fromLatLng(_selectedLocation!)
-                        : null,
-                    isEditable: true,
-                    onTap: (lat, lng) {
-                      setState(() {
-                        _selectedLocation = LatLng(lat, lng);
-                      });
-                      _showAddGeofenceDialog(lat, lng);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Geofence list
-          Expanded(
-            flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Geofence Areas',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  Material(
+                    elevation: 2,
+                    borderRadius: BorderRadius.circular(10),
+                    child: TextField(
+                      controller: _searchController,
+                      style: const TextStyle(color: Color(0xFF0F172A)),
+                      cursorColor: const Color(0xFF0F172A),
+                      decoration: InputDecoration(
+                        hintText: 'Search places (e.g., "Makati", "Ayala")',
+                        hintStyle: const TextStyle(color: Color(0xFF475569)),
+                        prefixIcon: const Icon(Icons.search, color: Color(0xFF0F172A)),
+                        suffixIcon: _searchController.text.isEmpty
+                            ? null
+                            : IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _searchController.clear();
+                                    _placeResults = [];
+                                    _placesError = null;
+                                  });
+                                },
+                                icon: const Icon(Icons.clear, color: Color(0xFF0F172A)),
+                              ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
                         ),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          _showAddGeofenceDialog();
+                      onChanged: _onSearchChanged,
+                    ),
+                  ),
+
+                  if (_isSearchingPlaces || _placesError != null || _placeResults.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      width: double.infinity,
+                      constraints: const BoxConstraints(maxHeight: 260),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: _isSearchingPlaces
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  SizedBox(width: 10),
+                                  Text(
+                                    'Searching...',
+                                    style: TextStyle(color: Color(0xFF0F172A)),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : (_placeResults.isNotEmpty
+                              ? ListView.builder(
+                                  shrinkWrap: true,
+                                  itemCount: _placeResults.length,
+                                  itemBuilder: (context, index) {
+                                    final r = _placeResults[index];
+                                    return ListTile(
+                                      dense: true,
+                                      leading: const Icon(
+                                        Icons.place,
+                                        color: Colors.blue,
+                                      ),
+                                      title: Text(
+                                        r.displayName,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(color: Color(0xFF0F172A)),
+                                      ),
+                                      subtitle: r.latLng == null
+                                          ? null
+                                          : Text(
+                                              '${r.latLng!.latitude.toStringAsFixed(5)}, ${r.latLng!.longitude.toStringAsFixed(5)}',
+                                              style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                                            ),
+                                      onTap: () => _selectPlaceResult(r),
+                                    );
+                                  },
+                                )
+                              : Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(
+                                    _placesError ?? 'No results',
+                                    style: const TextStyle(color: Color(0xFF0F172A)),
+                                  ),
+                                )),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          DraggableScrollableSheet(
+            controller: _sheetController,
+            initialChildSize: 0.28,
+            minChildSize: 0.18,
+            maxChildSize: 0.88,
+            snap: true,
+            snapSizes: const [0.28, 0.5, 0.88],
+            builder: (context, scrollController) {
+              return Material(
+                color: Colors.transparent,
+                elevation: 10,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B1220),
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(16)),
+                    border: Border.all(color: const Color(0xFF1F2937)),
+                  ),
+                child: DefaultTabController(
+                  length: 2,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onVerticalDragUpdate: (details) {
+                          final current = _sheetController.size;
+                          final height =
+                              MediaQuery.of(context).size.height.clamp(1, 1e9);
+                          final delta = details.delta.dy / height;
+                          final next = (current - delta).clamp(0.18, 0.88);
+                          _sheetController.jumpTo(next);
                         },
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add New'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2688d4),
-                          foregroundColor: Colors.white,
+                        onVerticalDragEnd: (_) {
+                          final current = _sheetController.size;
+                          final targets = [0.28, 0.5, 0.88];
+                          double best = targets.first;
+                          double bestDist = (current - best).abs();
+                          for (final t in targets.skip(1)) {
+                            final d = (current - t).abs();
+                            if (d < bestDist) {
+                              bestDist = d;
+                              best = t;
+                            }
+                          }
+                          _sheetController.animateTo(
+                            best,
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOut,
+                          );
+                        },
+                        child: Center(
+                          child: Container(
+                            width: 44,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF94A3B8),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      TabBar(
+                        labelColor: const Color(0xFFF8FAFC),
+                        unselectedLabelColor: const Color(0xFFCBD5E1),
+                        indicatorColor: const Color(0xFF2688d4),
+                        dividerColor: const Color(0xFF1F2937),
+                        tabs: [
+                          const Tab(text: 'Geofences'),
+                          const Tab(text: 'Assignments'),
+                        ],
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            _buildGeofenceTab(scrollController),
+                            _buildAssignmentsTab(scrollController),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _geofences.length,
-                          itemBuilder: (context, index) {
-                            final geofence = _geofences[index];
-                            return Card(
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 4,
-                              ),
-                              child: ListTile(
-                                title: Text(geofence.name),
-                                subtitle: Text(geofence.address),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text('${geofence.radius.toInt()}m'),
-                                    const SizedBox(width: 8),
-                                    Switch(
-                                      value: geofence.isActive,
-                                onChanged: (value) async {
-                                        final updatedGeofence = geofence.copyWith(
-                                          isActive: value,
-                                        );
-                                        try {
-                                          await _geofenceService.updateGeofence(
-                                            updatedGeofence,
-                                          );
-                                          await _fetchGeofences(); // Refresh list from backend
-                                        } catch (e) {
-                                          debugPrint(
-                                            'Error updating geofence status: $e',
-                                          );
-                                          // Optionally show an error message
-                                        }
-                                      },
-                                      activeThumbColor: const Color(0xFF2688d4),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.edit),
-                                      onPressed: () {
-                                        _showEditGeofenceDialog(geofence, index);
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete,
-                                        color: Colors.red,
-                                      ),
-                                      onPressed: () {
-                                        _deleteGeofence(index);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                onTap: () {
-                                  setState(() {
-                                    _selectedLocation = LatLng(
-                                      geofence.latitude,
-                                      geofence.longitude,
-                                    );
-                                  });
-                                },
-                              ),
-                            );
-                          },
+              ),
+              );
+            },
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showAddGeofenceModal(),
+        backgroundColor: const Color(0xFF2688d4),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('Add Geofence'),
+      ),
+    );
+  }
+
+  Widget _buildGeofenceTab(ScrollController scrollController) {
+    final selected = _selectedGeofence;
+
+    return ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      children: [
+        if (_hasAnyPending)
+          Card(
+            color: const Color(0xFF0F172A),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Unsaved changes: ${_pendingGeofenceUpdates.length + _pendingNewGeofences.length}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFF8FAFC),
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _discardAllPending,
+                    child: const Text(
+                      'Discard',
+                      style: TextStyle(color: Color(0xFFE2E8F0)),
+                    ),
+                  ),
+                  FilledButton(
+                    onPressed: _saveAllPending,
+                    child: const Text('Save All'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Geofence Areas',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFFF8FAFC),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        if (selected != null)
+          Card(
+            color: const Color(0xFF111827),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          selected.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFF8FAFC),
+                          ),
                         ),
-                      ],
+                      ),
+                      FilledButton.icon(
+                        onPressed: () => _showEditGeofenceModal(selected),
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Edit'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    selected.address,
+                    style: const TextStyle(color: Color(0xFFCBD5E1)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        if (_geofences.isEmpty && _pendingNewGeofences.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: Text(
+              'No geofences found.',
+              style: TextStyle(color: Color(0xFFE2E8F0)),
+            ),
+          )
+        else ...[
+          ..._pendingNewGeofences.map((geofence) {
+            return Card(
+              color: const Color(0xFF111827),
+              child: ListTile(
+                title: Text(
+                  geofence.name.isEmpty ? '(New geofence)' : geofence.name,
+                  style: const TextStyle(color: Color(0xFFF8FAFC)),
+                ),
+                subtitle: Text(
+                  geofence.address.isEmpty
+                      ? 'Pending (not saved yet)'
+                      : geofence.address,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFFCBD5E1)),
+                ),
+                trailing: Text(
+                  'Pending',
+                  style: TextStyle(color: Colors.orange.shade300),
+                ),
+              ),
+            );
+          }),
+          ..._geofences.asMap().entries.map((entry) {
+            final index = entry.key;
+            final geofence = entry.value;
+            return Card(
+              color: const Color(0xFF111827),
+              child: ListTile(
+                title: Text(
+                  geofence.name,
+                  style: const TextStyle(color: Color(0xFFF8FAFC)),
+                ),
+                subtitle: Text(
+                  geofence.address,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFFCBD5E1)),
+                ),
+                onTap: () => _selectGeofence(geofence),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${geofence.radius.toInt()}m',
+                      style: const TextStyle(color: Color(0xFFE2E8F0)),
+                    ),
+                    const SizedBox(width: 8),
+                    Switch(
+                      value: geofence.isActive,
+                      onChanged: (value) async {
+                        final updated = geofence.copyWith(isActive: value);
+                        try {
+                          await _geofenceService.updateGeofence(updated);
+                          await _fetchGeofences();
+                        } catch (e) {
+                          debugPrint('Error updating geofence status: $e');
+                        }
+                      },
+                      activeThumbColor: const Color(0xFF2688d4),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Color(0xFFE2E8F0)),
+                      onPressed: () => _showEditGeofenceDialog(geofence, index),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _deleteGeofence(index),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAssignmentsTab(ScrollController scrollController) {
+    final selected = _selectedGeofence;
+    return StatefulBuilder(
+      builder: (context, setStateLocal) {
+        List<UserModel> applyFilter(String query, String filterMode, Set<String> assignedIds) {
+          Iterable<UserModel> base = _allEmployees;
+          final q = query.trim().toLowerCase();
+          if (q.isNotEmpty) {
+            base = base.where((e) => e.name.toLowerCase().contains(q));
+          }
+          if (filterMode == 'assigned') {
+            base = base.where((e) => assignedIds.contains(e.id));
+          } else if (filterMode == 'unassigned') {
+            base = base.where((e) => !assignedIds.contains(e.id));
+          }
+          return base.toList();
+        }
+
+        void stageChanges(Set<UserModel> employees, bool assign) {
+          final g = selected;
+          if (g == null || g.id == null) return;
+
+          final current = _pendingGeofenceUpdates[g.id!] ?? g;
+          final existing = List<UserModel>.from(current.assignedEmployees ?? const []);
+
+          if (assign) {
+            for (final e in employees) {
+              if (!existing.any((x) => x.id == e.id)) {
+                existing.add(e);
+              }
+            }
+          } else {
+            existing.removeWhere((x) => employees.any((e) => e.id == x.id));
+          }
+
+          setState(() {
+            _pendingGeofenceUpdates[g.id!] = current.copyWith(
+              assignedEmployees: existing,
+            );
+          });
+        }
+
+        final stagedSelected = selected != null && selected.id != null
+            ? (_pendingGeofenceUpdates[selected.id!] ?? selected)
+            : null;
+        final assignedIds = (stagedSelected?.assignedEmployees ?? const [])
+            .map((e) => e.id)
+            .whereType<String>()
+            .toSet();
+
+        final originalAssignedIds = (selected?.assignedEmployees ?? const [])
+            .map((e) => e.id)
+            .whereType<String>()
+            .toSet();
+
+        final stagedAdded = assignedIds.difference(originalAssignedIds).length;
+        final stagedRemoved = originalAssignedIds.difference(assignedIds).length;
+
+        final filtered = applyFilter(
+          _assignmentsSearchController.text,
+          _assignmentsFilter,
+          assignedIds,
+        );
+
+        final selectedEmployees = _allEmployees
+            .where((e) => _assignmentsSelectedEmployeeIds.contains(e.id))
+            .toSet();
+
+        return ListView(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+          children: [
+            if (_hasAnyPending)
+              Card(
+                color: const Color(0xFF0F172A),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Unsaved changes: ${_pendingGeofenceUpdates.length + _pendingNewGeofences.length}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFF8FAFC),
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _discardAllPending,
+                        child: const Text(
+                          'Discard',
+                          style: TextStyle(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: _saveAllPending,
+                        child: const Text('Save All'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            const Text(
+              'Assignments',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFFF8FAFC),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (selected == null)
+              const Card(
+                color: Color(0xFF111827),
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text(
+                    'Select a geofence first (Geofences tab).',
+                    style: TextStyle(color: Color(0xFFCBD5E1)),
+                  ),
+                ),
+              )
+            else ...[
+              Card(
+                color: const Color(0xFF111827),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        selected.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFF8FAFC),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        selected.address,
+                        style: const TextStyle(color: Color(0xFFCBD5E1)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Assigned: ${assignedIds.length}',
+                        style: const TextStyle(color: Color(0xFFCBD5E1)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _assignmentsSearchController,
+                decoration: InputDecoration(
+                  hintText: 'Search employees…',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _assignmentsSearchController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () {
+                            setStateLocal(() {
+                              _assignmentsSearchController.clear();
+                            });
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) {
+                  _assignmentsSearchDebounce?.cancel();
+                  _assignmentsSearchDebounce =
+                      Timer(const Duration(milliseconds: 200), () {
+                    if (mounted) setStateLocal(() {});
+                  });
+                },
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('All'),
+                    selected: _assignmentsFilter == 'all',
+                    onSelected: (_) => setStateLocal(() => _assignmentsFilter = 'all'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Assigned'),
+                    selected: _assignmentsFilter == 'assigned',
+                    onSelected: (_) =>
+                        setStateLocal(() => _assignmentsFilter = 'assigned'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Unassigned'),
+                    selected: _assignmentsFilter == 'unassigned',
+                    onSelected: (_) =>
+                        setStateLocal(() => _assignmentsFilter = 'unassigned'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: filtered.isEmpty
+                          ? null
+                          : () {
+                              setStateLocal(() {
+                                _assignmentsSelectedEmployeeIds
+                                  ..clear()
+                                  ..addAll(
+                                    filtered
+                                        .map((e) => e.id)
+                                        .whereType<String>(),
+                                  );
+                              });
+                            },
+                      child: const Text('Select all filtered'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: selectedEmployees.isEmpty
+                          ? null
+                          : () {
+                              setStateLocal(() {
+                                _assignmentsSelectedEmployeeIds.clear();
+                              });
+                            },
+                      child: const Text('Clear selection'),
+                    ),
+                  ),
+                ],
+              ),
+              if (stagedAdded > 0 || stagedRemoved > 0) ...[
+                const SizedBox(height: 10),
+                Card(
+                  color: const Color(0xFF0F172A),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      'Staged changes: +$stagedAdded assigned, -$stagedRemoved unassigned',
+                      style: const TextStyle(
+                        color: Color(0xFFE2E8F0),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: selectedEmployees.isEmpty
+                          ? null
+                          : () {
+                              stageChanges(selectedEmployees, true);
+                              setStateLocal(() {
+                                _assignmentsSelectedEmployeeIds.clear();
+                              });
+                            },
+                      child: const Text('Stage Assign'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: selectedEmployees.isEmpty
+                          ? null
+                          : () {
+                              stageChanges(selectedEmployees, false);
+                              setStateLocal(() {
+                                _assignmentsSelectedEmployeeIds.clear();
+                              });
+                            },
+                      child: const Text('Stage Unassign'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 380),
+                child: ListView.builder(
+                  itemCount: filtered.length,
+                  itemBuilder: (context, idx) {
+                    final emp = filtered[idx];
+                    final isAssigned = assignedIds.contains(emp.id);
+                    final isChecked = _assignmentsSelectedEmployeeIds.contains(emp.id);
+                    return Card(
+                      color: const Color(0xFF111827),
+                      child: CheckboxListTile(
+                        value: isChecked,
+                        onChanged: (v) {
+                          setStateLocal(() {
+                            if (v == true) {
+                              _assignmentsSelectedEmployeeIds.add(emp.id);
+                            } else {
+                              _assignmentsSelectedEmployeeIds.remove(emp.id);
+                            }
+                          });
+                        },
+                        title: Text(
+                          emp.name,
+                          style: const TextStyle(color: Color(0xFFF8FAFC)),
+                        ),
+                        subtitle: Text(
+                          isAssigned ? 'Currently assigned' : 'Not assigned',
+                          style: TextStyle(
+                            color: isAssigned
+                                ? Colors.green.shade300
+                                : const Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -503,505 +1166,854 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     );
   }
 
-  void _showAddGeofenceDialog([double? lat, double? lng]) {
+  Future<void> _showAddGeofenceModal() async {
     final nameController = TextEditingController();
     final addressController = TextEditingController();
-    final radiusController = TextEditingController(
-      text: _newGeofenceRadius.toString(),
-    );
-    double radiusValue = _newGeofenceRadius;
-    String? dialogSelectedLabelLetter; // No default
-    List<UserModel> dialogSelectedEmployees = [];
+    final localSearchController = TextEditingController();
+    Timer? localDebounce;
 
-    showDialog(
+    final center = _mapController.camera.center;
+    LatLng draftCenter = LatLng(center.latitude, center.longitude);
+    double radiusValue = _newGeofenceRadius;
+    String? dialogSelectedLabelLetter;
+    List<UserModel> dialogSelectedEmployees = [];
+    bool isSearching = false;
+    String? placesError;
+    List<_PlaceSearchResult> results = [];
+    String? dialogError;
+
+    final miniController = MapController();
+
+    Future<void> searchNominatim(
+      String query,
+      void Function(void Function()) setStateDialog,
+    ) async {
+      final q = query.trim();
+      if (q.length < 3) {
+        setStateDialog(() {
+          results = [];
+          placesError = null;
+          isSearching = false;
+        });
+        return;
+      }
+      setStateDialog(() {
+        isSearching = true;
+        placesError = null;
+      });
+      try {
+        final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+          'q': q,
+          'format': 'json',
+          'addressdetails': '1',
+          'limit': '8',
+        });
+        final res = await http.get(
+          uri,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'FieldCheck/1.0 (flutter_map admin geofence search)',
+          },
+        );
+        if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+        final decoded = jsonDecode(res.body);
+        if (decoded is! List) throw Exception('Unexpected response');
+        final parsed = decoded
+            .map((e) =>
+                e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+            .map(_PlaceSearchResult.fromJson)
+            .where((r) => r.latLng != null)
+            .toList();
+        setStateDialog(() {
+          results = parsed;
+          isSearching = false;
+          placesError = parsed.isEmpty ? 'No results' : null;
+        });
+      } catch (_) {
+        setStateDialog(() {
+          isSearching = false;
+          placesError = 'Search failed';
+          results = [];
+        });
+      }
+    }
+
+    final shouldStage = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          title: const Text('Add New Geofence'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                ),
-                TextField(
-                  controller: addressController,
-                  decoration: const InputDecoration(labelText: 'Address'),
-                ),
-                TextField(
-                  controller: radiusController,
-                  decoration: const InputDecoration(
-                    labelText: 'Radius (meters)',
-                  ),
-                  keyboardType: TextInputType.number,
-                  onChanged: (val) {
-                    final parsed = double.tryParse(val);
-                    if (parsed != null) {
-                      setStateDialog(() => radiusValue = parsed);
-                    }
-                  },
-                ),
-                const SizedBox(height: 12),
-                Slider(
-                  value: radiusValue,
-                  min: 20,
-                  max: 1000,
-                  divisions: 49,
-                  label: '${radiusValue.toInt()} m',
-                  onChanged: (v) {
-                    setStateDialog(() {
-                      radiusValue = v;
-                      radiusController.text = v.toStringAsFixed(0);
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Label Letter selection (A-Z chips)
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Label Letter (A-Z)',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8.0,
-                  children: List<Widget>.generate(26, (int index) {
-                    final letter = String.fromCharCode(
-                      'A'.codeUnitAt(0) + index,
-                    );
-                    return ChoiceChip(
-                      label: Text(letter),
-                      selected: dialogSelectedLabelLetter == letter,
-                      onSelected: (bool selected) {
-                        setStateDialog(() {
-                          dialogSelectedLabelLetter = selected ? letter : null;
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: const Text('Add Geofence'),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (dialogError != null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.red.withOpacity(0.4)),
+                        ),
+                        child: Text(
+                          dialogError!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    TextField(
+                      controller: localSearchController,
+                      decoration: const InputDecoration(
+                        hintText: 'Search places…',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (v) {
+                        localDebounce?.cancel();
+                        localDebounce =
+                            Timer(const Duration(milliseconds: 500), () {
+                          setStateDialog(() {
+                            dialogError = null;
+                          });
+                          searchNominatim(v, setStateDialog);
                         });
                       },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-                // Employee Assignment
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Assign Employees',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ..._allEmployees.map((employee) {
-                  final isSelected = dialogSelectedEmployees.any(
-                    (e) => e.id == employee.id,
-                  );
-                  return CheckboxListTile(
-                    title: Text(employee.name),
-                    value: isSelected,
-                    onChanged: (bool? value) {
-                      setStateDialog(() {
-                        if (value == true) {
-                          if (!dialogSelectedEmployees.any(
-                            (e) => e.id == employee.id,
-                          )) {
-                            dialogSelectedEmployees.add(employee);
-                          }
-                        } else {
-                          dialogSelectedEmployees.removeWhere(
-                            (e) => e.id == employee.id,
-                          );
-                        }
-                      });
-                    },
-                  );
-                }),
-                const SizedBox(height: 16),
-                Text(
-                  lat != null && lng != null
-                      ? 'Location: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}'
-                      : 'No location selected. Tap on the map first.',
-                  style: TextStyle(
-                    color: lat != null ? Colors.blue : Colors.red,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _selectedLocation = null;
-                });
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: lat != null && lng != null
-                  ? () async {
-                      final name = nameController.text.trim();
-                      final address = addressController.text.trim();
-                      final radius =
-                          double.tryParse(radiusController.text) ?? radiusValue;
-
-                      if (name.isEmpty || address.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please provide name and address'),
+                    ),
+                    if (isSearching || placesError != null || results.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: isSearching
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text('Searching…'),
+                                  ],
+                                ),
+                              )
+                            : (results.isNotEmpty
+                                ? ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: results.length,
+                                    itemBuilder: (context, index) {
+                                      final r = results[index];
+                                      return ListTile(
+                                        dense: true,
+                                        leading: const Icon(
+                                          Icons.place,
+                                          color: Colors.blue,
+                                        ),
+                                        title: Text(
+                                          r.displayName,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        onTap: () {
+                                          final latLng = r.latLng;
+                                          if (latLng == null) return;
+                                          setStateDialog(() {
+                                            draftCenter = latLng;
+                                            results = [];
+                                            placesError = null;
+                                          });
+                                          miniController.move(latLng, 18);
+                                        },
+                                      );
+                                    },
+                                  )
+                                : Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Text(placesError ?? 'No results'),
+                                  )),
+                      ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 220,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: FlutterMap(
+                          mapController: miniController,
+                          options: MapOptions(
+                            initialCenter: draftCenter,
+                            initialZoom: 17,
+                            onPositionChanged: (pos, _) {
+                              setStateDialog(() {
+                                draftCenter = pos.center;
+                              });
+                            },
                           ),
-                        );
-                        return;
-                      }
-                      if (dialogSelectedLabelLetter == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please select a label letter (A–Z)'),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'field_check',
+                            ),
+                            CircleLayer(
+                              circles: [
+                                CircleMarker(
+                                  point: draftCenter,
+                                  radius: radiusValue,
+                                  useRadiusInMeter: true,
+                                  color: Colors.blue.withOpacity(0.18),
+                                  borderColor: Colors.blue,
+                                  borderStrokeWidth: 2,
+                                ),
+                              ],
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: draftCenter,
+                                  width: 40,
+                                  height: 40,
+                                  child: const Icon(
+                                    Icons.location_on,
+                                    color: Colors.red,
+                                    size: 34,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Center: ${draftCenter.latitude.toStringAsFixed(5)}, ${draftCenter.longitude.toStringAsFixed(5)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF475569),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(labelText: 'Name'),
+                      onChanged: (_) => setStateDialog(() {
+                        dialogError = null;
+                      }),
+                    ),
+                    TextField(
+                      controller: addressController,
+                      decoration: const InputDecoration(labelText: 'Address'),
+                      onChanged: (_) => setStateDialog(() {
+                        dialogError = null;
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Text('Radius (m)'),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 110,
+                          child: TextField(
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (val) {
+                              final parsed = double.tryParse(val);
+                              if (parsed == null) return;
+                              setStateDialog(() {
+                                radiusValue =
+                                    parsed.clamp(20.0, 1000.0).toDouble();
+                              });
+                            },
                           ),
-                        );
-                        return;
-                      }
-
-                      final newGeofence = Geofence(
-                        // id omitted so backend generates ObjectId
-                        name: name,
-                        address: address,
-                        latitude: lat,
-                        longitude: lng,
-                        radius: radius,
-                        createdAt: DateTime.now(),
-                        isActive: true,
-                        shape: GeofenceShape.circle,
-                        assignedEmployees: dialogSelectedEmployees,
-                        labelLetter: dialogSelectedLabelLetter,
-                      );
-
-                      try {
-                        await _geofenceService.addGeofence(newGeofence);
-                        await _fetchGeofences(); // Refresh list from backend
-                        setState(() {
-                          _selectedLocation = null;
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: radiusValue.clamp(20.0, 1000.0),
+                      min: 20,
+                      max: 1000,
+                      divisions: 49,
+                      label: '${radiusValue.toInt()} m',
+                      onChanged: (v) {
+                        setStateDialog(() {
+                          radiusValue = v;
                         });
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Geofence added')),
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Label Letter (A–Z)',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8.0,
+                      children: List<Widget>.generate(26, (int index) {
+                        final letter =
+                            String.fromCharCode('A'.codeUnitAt(0) + index);
+                        return ChoiceChip(
+                          label: Text(letter),
+                          selected: dialogSelectedLabelLetter == letter,
+                          onSelected: (bool selected) {
+                            setStateDialog(() {
+                              dialogSelectedLabelLetter =
+                                  selected ? letter : null;
+                              dialogError = null;
+                            });
+                          },
                         );
-                      } catch (e) {
-                        debugPrint('Error adding geofence: $e');
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed to add geofence: $e')),
-                        );
-                        Navigator.pop(context);
-                      }
-                    }
-                  : null,
-              child: const Text('Add'),
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Assign Employees',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ..._allEmployees.map((employee) {
+                      final isSelected = dialogSelectedEmployees
+                          .any((e) => e.id == employee.id);
+                      return CheckboxListTile(
+                        title: Text(employee.name),
+                        value: isSelected,
+                        onChanged: (bool? value) {
+                          setStateDialog(() {
+                            if (value == true) {
+                              if (!dialogSelectedEmployees
+                                  .any((e) => e.id == employee.id)) {
+                                dialogSelectedEmployees.add(employee);
+                              }
+                            } else {
+                              dialogSelectedEmployees.removeWhere(
+                                (e) => e.id == employee.id,
+                              );
+                            }
+                          });
+                        },
+                      );
+                    }),
+                  ],
+                ),
+              ),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  localDebounce?.cancel();
+                  Navigator.pop(context, false);
+                },
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  final address = addressController.text.trim();
+                  if (name.isEmpty || address.isEmpty) {
+                    setStateDialog(() {
+                      dialogError = 'Please provide name and address.';
+                    });
+                    return;
+                  }
+                  if (dialogSelectedLabelLetter == null) {
+                    setStateDialog(() {
+                      dialogError = 'Please select a label letter (A–Z).';
+                    });
+                    return;
+                  }
+                  Navigator.pop(context, true);
+                },
+                child: const Text('Stage'),
+              ),
+            ],
+          );
+        },
       ),
     );
+
+    localDebounce?.cancel();
+
+    if (shouldStage != true) {
+      return;
+    }
+
+    final staged = Geofence(
+      name: nameController.text.trim(),
+      address: addressController.text.trim(),
+      latitude: draftCenter.latitude,
+      longitude: draftCenter.longitude,
+      radius: radiusValue,
+      createdAt: DateTime.now(),
+      isActive: true,
+      shape: GeofenceShape.circle,
+      assignedEmployees: dialogSelectedEmployees,
+      labelLetter: dialogSelectedLabelLetter,
+    );
+
+    setState(() {
+      _pendingNewGeofences.add(staged);
+    });
+  }
+
+  Future<void> _showEditGeofenceModal(Geofence geofence) async {
+    final nameController = TextEditingController(text: geofence.name);
+    final addressController = TextEditingController(text: geofence.address);
+    final localSearchController = TextEditingController();
+    Timer? localDebounce;
+
+    LatLng draftCenter = LatLng(geofence.latitude, geofence.longitude);
+    double radiusValue = geofence.radius;
+    String? dialogSelectedLabelLetter = geofence.labelLetter;
+    List<UserModel> dialogSelectedEmployees =
+        List<UserModel>.from(geofence.assignedEmployees ?? const []);
+    bool isSearching = false;
+    String? placesError;
+    List<_PlaceSearchResult> results = [];
+    String? dialogError;
+
+    final miniController = MapController();
+
+    Future<void> searchNominatim(
+      String query,
+      void Function(void Function()) setStateDialog,
+    ) async {
+      final q = query.trim();
+      if (q.length < 3) {
+        setStateDialog(() {
+          results = [];
+          placesError = null;
+          isSearching = false;
+        });
+        return;
+      }
+      setStateDialog(() {
+        isSearching = true;
+        placesError = null;
+      });
+      try {
+        final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+          'q': q,
+          'format': 'json',
+          'addressdetails': '1',
+          'limit': '8',
+        });
+        final res = await http.get(
+          uri,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'FieldCheck/1.0 (flutter_map admin geofence search)',
+          },
+        );
+        if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+        final decoded = jsonDecode(res.body);
+        if (decoded is! List) throw Exception('Unexpected response');
+        final parsed = decoded
+            .map((e) =>
+                e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+            .map(_PlaceSearchResult.fromJson)
+            .where((r) => r.latLng != null)
+            .toList();
+        setStateDialog(() {
+          results = parsed;
+          isSearching = false;
+          placesError = parsed.isEmpty ? 'No results' : null;
+        });
+      } catch (_) {
+        setStateDialog(() {
+          isSearching = false;
+          placesError = 'Search failed';
+          results = [];
+        });
+      }
+    }
+
+    final shouldStage = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: const Text('Edit Geofence'),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (dialogError != null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.red.withOpacity(0.4)),
+                        ),
+                        child: Text(
+                          dialogError!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    TextField(
+                      controller: localSearchController,
+                      decoration: const InputDecoration(
+                        hintText: 'Search places…',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (v) {
+                        localDebounce?.cancel();
+                        localDebounce =
+                            Timer(const Duration(milliseconds: 500), () {
+                          setStateDialog(() {
+                            dialogError = null;
+                          });
+                          searchNominatim(v, setStateDialog);
+                        });
+                      },
+                    ),
+                    if (isSearching || placesError != null || results.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: isSearching
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text('Searching…'),
+                                  ],
+                                ),
+                              )
+                            : (results.isNotEmpty
+                                ? ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: results.length,
+                                    itemBuilder: (context, index) {
+                                      final r = results[index];
+                                      return ListTile(
+                                        dense: true,
+                                        leading: const Icon(
+                                          Icons.place,
+                                          color: Colors.blue,
+                                        ),
+                                        title: Text(
+                                          r.displayName,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        onTap: () {
+                                          final latLng = r.latLng;
+                                          if (latLng == null) return;
+                                          setStateDialog(() {
+                                            draftCenter = latLng;
+                                            results = [];
+                                            placesError = null;
+                                          });
+                                          miniController.move(latLng, 18);
+                                        },
+                                      );
+                                    },
+                                  )
+                                : Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Text(placesError ?? 'No results'),
+                                  )),
+                      ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 220,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: FlutterMap(
+                          mapController: miniController,
+                          options: MapOptions(
+                            initialCenter: draftCenter,
+                            initialZoom: 17,
+                            onPositionChanged: (pos, _) {
+                              setStateDialog(() {
+                                draftCenter = pos.center;
+                              });
+                            },
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'field_check',
+                            ),
+                            CircleLayer(
+                              circles: [
+                                CircleMarker(
+                                  point: draftCenter,
+                                  radius: radiusValue,
+                                  useRadiusInMeter: true,
+                                  color: Colors.blue.withOpacity(0.18),
+                                  borderColor: Colors.blue,
+                                  borderStrokeWidth: 2,
+                                ),
+                              ],
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: draftCenter,
+                                  width: 40,
+                                  height: 40,
+                                  child: const Icon(
+                                    Icons.location_on,
+                                    color: Colors.red,
+                                    size: 34,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Center: ${draftCenter.latitude.toStringAsFixed(5)}, ${draftCenter.longitude.toStringAsFixed(5)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF475569),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(labelText: 'Name'),
+                      onChanged: (_) => setStateDialog(() {
+                        dialogError = null;
+                      }),
+                    ),
+                    TextField(
+                      controller: addressController,
+                      decoration: const InputDecoration(labelText: 'Address'),
+                      onChanged: (_) => setStateDialog(() {
+                        dialogError = null;
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Text('Radius (m)'),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 110,
+                          child: TextField(
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            controller: TextEditingController(
+                              text: radiusValue.toStringAsFixed(0),
+                            ),
+                            onChanged: (val) {
+                              final parsed = double.tryParse(val);
+                              if (parsed == null) return;
+                              setStateDialog(() {
+                                radiusValue =
+                                    parsed.clamp(20.0, 1000.0).toDouble();
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: radiusValue.clamp(20.0, 1000.0),
+                      min: 20,
+                      max: 1000,
+                      divisions: 49,
+                      label: '${radiusValue.toInt()} m',
+                      onChanged: (v) {
+                        setStateDialog(() {
+                          radiusValue = v;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Label Letter (A–Z)',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8.0,
+                      children: List<Widget>.generate(26, (int index) {
+                        final letter =
+                            String.fromCharCode('A'.codeUnitAt(0) + index);
+                        return ChoiceChip(
+                          label: Text(letter),
+                          selected: dialogSelectedLabelLetter == letter,
+                          onSelected: (bool selected) {
+                            setStateDialog(() {
+                              dialogSelectedLabelLetter =
+                                  selected ? letter : null;
+                              dialogError = null;
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Assign Employees',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ..._allEmployees.map((employee) {
+                      final isSelected = dialogSelectedEmployees
+                          .any((e) => e.id == employee.id);
+                      return CheckboxListTile(
+                        title: Text(employee.name),
+                        value: isSelected,
+                        onChanged: (bool? value) {
+                          setStateDialog(() {
+                            dialogError = null;
+                            if (value == true) {
+                              if (!dialogSelectedEmployees
+                                  .any((e) => e.id == employee.id)) {
+                                dialogSelectedEmployees.add(employee);
+                              }
+                            } else {
+                              dialogSelectedEmployees.removeWhere(
+                                (e) => e.id == employee.id,
+                              );
+                            }
+                          });
+                        },
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  localDebounce?.cancel();
+                  Navigator.pop(context, false);
+                },
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  final address = addressController.text.trim();
+                  if (name.isEmpty || address.isEmpty) {
+                    setStateDialog(() {
+                      dialogError = 'Please provide name and address.';
+                    });
+                    return;
+                  }
+                  if (dialogSelectedLabelLetter == null) {
+                    setStateDialog(() {
+                      dialogError = 'Please select a label letter (A–Z).';
+                    });
+                    return;
+                  }
+                  Navigator.pop(context, true);
+                },
+                child: const Text('Stage'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    localDebounce?.cancel();
+    if (shouldStage != true) return;
+
+    final staged = geofence.copyWith(
+      name: nameController.text.trim(),
+      address: addressController.text.trim(),
+      latitude: draftCenter.latitude,
+      longitude: draftCenter.longitude,
+      radius: radiusValue,
+      assignedEmployees: dialogSelectedEmployees,
+      labelLetter: dialogSelectedLabelLetter,
+    );
+
+    setState(() {
+      if (staged.id != null) {
+        _pendingGeofenceUpdates[staged.id!] = staged;
+      }
+    });
   }
 
   void _showEditGeofenceDialog(Geofence geofence, int index) {
-    final nameController = TextEditingController(text: geofence.name);
-    final addressController = TextEditingController(text: geofence.address);
-    final radiusController = TextEditingController(
-      text: geofence.radius.toString(),
-    );
-    double radiusValue = geofence.radius;
-    String? dialogSelectedLabelLetter =
-        geofence.labelLetter;
-    List<UserModel> dialogSelectedEmployees = List.from(
-      geofence.assignedEmployees ?? [],
-    );
-    List<Task> dialogSelectedTasks = _allTasks
-        .where((t) => t.geofenceId == geofence.id)
-        .toList();
-    
-    // Capture geofences for use in dialog
-    final allGeofences = _geofences;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          title: const Text('Edit Geofence'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                ),
-                TextField(
-                  controller: addressController,
-                  decoration: const InputDecoration(labelText: 'Address'),
-                ),
-                TextField(
-                  controller: radiusController,
-                  decoration: const InputDecoration(
-                    labelText: 'Radius (meters)',
-                  ),
-                  keyboardType: TextInputType.number,
-                  onChanged: (val) {
-                    final parsed = double.tryParse(val);
-                    if (parsed != null) {
-                      setStateDialog(() => radiusValue = parsed);
-                    }
-                  },
-                ),
-                const SizedBox(height: 12),
-                Slider(
-                  value: radiusValue,
-                  min: 20,
-                  max: 1000,
-                  divisions: 49,
-                  label: '${radiusValue.toInt()} m',
-                  onChanged: (v) {
-                    setStateDialog(() {
-                      radiusValue = v;
-                      radiusController.text = v.toStringAsFixed(0);
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Label Letter selection (A-Z chips)
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Label Letter (A-Z)',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8.0,
-                  children: List<Widget>.generate(26, (int index) {
-                    final letter = String.fromCharCode(
-                      'A'.codeUnitAt(0) + index,
-                    );
-                    return ChoiceChip(
-                      label: Text(letter),
-                      selected: dialogSelectedLabelLetter == letter,
-                      onSelected: (bool selected) {
-                        setStateDialog(() {
-                          dialogSelectedLabelLetter = selected ? letter : null;
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-                // Employee Assignment
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Assign Employees',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ..._allEmployees.map((employee) {
-                  final isSelected = dialogSelectedEmployees.any(
-                    (e) => e.id == employee.id,
-                  );
-                  return CheckboxListTile(
-                    title: Text(employee.name),
-                    value: isSelected,
-                    onChanged: (bool? value) {
-                      setStateDialog(() {
-                        if (value == true) {
-                          if (!dialogSelectedEmployees.any(
-                            (e) => e.id == employee.id,
-                          )) {
-                            dialogSelectedEmployees.add(employee);
-                          }
-                        } else {
-                          dialogSelectedEmployees.removeWhere(
-                            (e) => e.id == employee.id,
-                          );
-                        }
-                      });
-                    },
-                  );
-                }),
-                const SizedBox(height: 16),
-                // Task Assignment
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Assign Tasks',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (_allTasks.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: Text(
-                      'No tasks available',
-                      style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
-                    ),
-                  )
-                else
-                  ..._allTasks.map((task) {
-                    final isSelected = dialogSelectedTasks.any((t) => t.id == task.id);
-                    Geofence? currentGeofence;
-                    try {
-                      currentGeofence = allGeofences.firstWhere(
-                        (g) => g.id == task.geofenceId,
-                      );
-                    } catch (_) {
-                      currentGeofence = null;
-                    }
-                    final geofenceLabel = currentGeofence != null
-                        ? 'Assigned to: ${currentGeofence.name}'
-                        : 'Not assigned';
-                    return CheckboxListTile(
-                      title: Text(task.title),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            task.description,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            geofenceLabel,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: currentGeofence != null
-                                  ? Colors.green
-                                  : Colors.grey,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      ),
-                      value: isSelected,
-                      onChanged: (bool? value) {
-                        setStateDialog(() {
-                          if (value == true) {
-                            if (!dialogSelectedTasks.any((t) => t.id == task.id)) {
-                              dialogSelectedTasks.add(task);
-                            }
-                          } else {
-                            dialogSelectedTasks.removeWhere((t) => t.id == task.id);
-                          }
-                        });
-                      },
-                    );
-                  }),
-                const SizedBox(height: 16),
-                Text(
-                  'Location: ${geofence.latitude.toStringAsFixed(6)}, ${geofence.longitude.toStringAsFixed(6)}',
-                  style: const TextStyle(
-                    color: Colors.blue,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                final name = nameController.text.trim();
-                final address = addressController.text.trim();
-                final radius =
-                    double.tryParse(radiusController.text) ?? radiusValue;
-
-                if (name.isEmpty || address.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please provide name and address'),
-                    ),
-                  );
-                  return;
-                }
-                if (dialogSelectedLabelLetter == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please select a label letter (A–Z)'),
-                    ),
-                  );
-                  return;
-                }
-
-                final updatedGeofence = geofence.copyWith(
-                  name: name,
-                  address: address,
-                  radius: radius,
-                  assignedEmployees: dialogSelectedEmployees,
-                  labelLetter: dialogSelectedLabelLetter,
-                );
-
-                try {
-                  await _geofenceService.updateGeofence(updatedGeofence);
-                  
-                  // Assign selected tasks to this geofence
-                  if (geofence.id != null) {
-                    // Assign newly selected tasks
-                    for (final task in dialogSelectedTasks) {
-                      try {
-                        final updatedTask = task.copyWith(geofenceId: geofence.id);
-                        await _taskService.updateTask(updatedTask);
-                        debugPrint('✓ Assigned task ${task.id} to geofence ${geofence.id}');
-                      } catch (e) {
-                        debugPrint('⚠️ Failed to assign task ${task.id}: $e');
-                      }
-                    }
-                    
-                    // Unassign tasks that were deselected
-                    final previousTasks = _allTasks
-                        .where((t) => t.geofenceId == geofence.id)
-                        .toList();
-                    for (final task in previousTasks) {
-                      if (!dialogSelectedTasks.any((t) => t.id == task.id)) {
-                        try {
-                          final updatedTask = task.copyWith(geofenceId: null);
-                          await _taskService.updateTask(updatedTask);
-                          debugPrint('✓ Unassigned task ${task.id} from geofence');
-                        } catch (e) {
-                          debugPrint('⚠️ Failed to unassign task ${task.id}: $e');
-                        }
-                      }
-                    }
-                  }
-                  
-                  await _fetchGeofences();
-                  await _fetchAllTasks();
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Geofence and tasks updated')),
-                  );
-                } catch (e) {
-                  debugPrint('Error updating geofence: $e');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to update geofence: $e')),
-                  );
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
+    _showEditGeofenceModal(geofence);
   }
 
   bool _hasOverlaps(List<Geofence> geofences) {

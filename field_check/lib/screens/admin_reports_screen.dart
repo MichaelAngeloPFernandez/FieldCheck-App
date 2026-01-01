@@ -3,14 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/services/geofence_service.dart';
-import 'package:field_check/models/geofence_model.dart';
 import 'package:field_check/services/report_service.dart';
 import 'package:field_check/models/report_model.dart';
+import 'package:field_check/services/attendance_service.dart';
 import 'package:intl/intl.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AdminReportsScreen extends StatefulWidget {
   final String? employeeId;
@@ -23,8 +25,7 @@ class AdminReportsScreen extends StatefulWidget {
 
 class _AdminReportsScreenState extends State<AdminReportsScreen> {
   List<ReportModel> _attendanceRecords = [];
-  final List<ReportModel> _archivedAttendanceRecords = [];
-  List<Geofence> _geofences = [];
+  List<ReportModel> _archivedAttendanceRecords = [];
   late io.Socket _socket;
   List<ReportModel> _taskReports = [];
   List<ReportModel> _archivedTaskReports = [];
@@ -48,6 +49,531 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   String? _filterEmployeeName;
   Timer? _debounce;
 
+  final AttendanceService _attendanceService = AttendanceService();
+  Set<String> _locallyArchivedAttendanceIds = <String>{};
+
+  static const String _prefsArchivedAttendanceIdsKey =
+      'adminReports.archivedAttendanceIds.v1';
+
+  Future<void> _loadLocallyArchivedAttendanceIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_prefsArchivedAttendanceIdsKey) ?? <String>[];
+    setState(() {
+      _locallyArchivedAttendanceIds = list.toSet();
+    });
+  }
+
+  String _normalizeAttachmentUrl(String rawPath) {
+    final p = rawPath.trim();
+    if (p.isEmpty) return p;
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
+    return '${ApiConfig.baseUrl}/$p';
+  }
+
+  bool _isImagePath(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.png') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.webp') ||
+        lower.endsWith('.gif');
+  }
+
+  String _filenameFromUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final segs = uri.pathSegments;
+      if (segs.isEmpty) return url;
+      return segs.last;
+    } catch (_) {
+      return url;
+    }
+  }
+
+  Future<void> _openUrlExternal(String url) async {
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+      if (uri.host.isEmpty) {
+        throw const FormatException('Invalid URL');
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid attachment URL'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    uri = uri.replace(
+      pathSegments: uri.pathSegments.map(Uri.decodeComponent).toList(),
+    );
+
+    final can = await canLaunchUrl(uri);
+    if (!can) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No app found to open attachment'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to open attachment'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showImagePreview(String title, String url) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Open',
+                    onPressed: () => _openUrlExternal(url),
+                    icon: const Icon(Icons.open_in_new),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5,
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stack) {
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text('Failed to load image: $error'),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _setAttendanceArchivedLocal(String attendanceId, bool archived) async {
+    final prefs = await SharedPreferences.getInstance();
+    final next = _locallyArchivedAttendanceIds.toSet();
+    if (archived) {
+      next.add(attendanceId);
+    } else {
+      next.remove(attendanceId);
+    }
+    await prefs.setStringList(_prefsArchivedAttendanceIdsKey, next.toList());
+    setState(() {
+      _locallyArchivedAttendanceIds = next;
+    });
+    await _fetchAttendanceRecords();
+  }
+
+  ReportModel _attendanceToReportModel(AttendanceRecord r) {
+    final DateTime submittedAt = r.isCheckIn ? r.checkInTime : (r.checkOutTime ?? r.checkInTime);
+
+    final String content;
+    if (r.isVoid && r.autoCheckout) {
+      content = 'Auto Checkout (Void)';
+    } else if (r.isVoid) {
+      content = 'Void';
+    } else {
+      content = r.isCheckIn ? 'Check In' : 'Check Out';
+    }
+
+    return ReportModel(
+      id: r.id,
+      type: 'attendance',
+      attendanceId: r.id,
+      employeeId: r.userId,
+      geofenceId: r.geofenceId,
+      content: content,
+      status: 'submitted',
+      submittedAt: submittedAt,
+      employeeName: r.employeeName,
+      employeeEmail: r.employeeEmail,
+      geofenceName: r.geofenceName,
+      isArchived: _locallyArchivedAttendanceIds.contains(r.id),
+    );
+  }
+
+  Future<void> _openFiltersSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setStateSheet) {
+            Widget buildAttendanceFilters() {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Current'),
+                        selected: !_showArchivedAttendance,
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setStateSheet(() {
+                            _showArchivedAttendance = false;
+                          });
+                          _fetchAttendanceRecords();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Archived'),
+                        selected: _showArchivedAttendance,
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setStateSheet(() {
+                            _showArchivedAttendance = true;
+                          });
+                          _fetchAttendanceRecords();
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ChoiceChip(
+                          label: const Text('All time'),
+                          selected: _attendanceDateFilter == 'all',
+                          onSelected: (sel) {
+                            if (!sel) return;
+                            _setAttendanceQuickDateFilter('all');
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Today'),
+                          selected: _attendanceDateFilter == 'today',
+                          onSelected: (sel) {
+                            if (!sel) return;
+                            _setAttendanceQuickDateFilter('today');
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('This week'),
+                          selected: _attendanceDateFilter == 'week',
+                          onSelected: (sel) {
+                            if (!sel) return;
+                            _setAttendanceQuickDateFilter('week');
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('This month'),
+                          selected: _attendanceDateFilter == 'month',
+                          onSelected: (sel) {
+                            if (!sel) return;
+                            _setAttendanceQuickDateFilter('month');
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Custom'),
+                          selected: _attendanceDateFilter == 'custom',
+                          onSelected: (sel) async {
+                            if (!sel) return;
+                            await _pickAttendanceCustomDateRange();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('All'),
+                        selected: _attendanceStatusFilter == 'All',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _attendanceStatusFilter = 'All';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Normal'),
+                        selected: _attendanceStatusFilter == 'Normal',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _attendanceStatusFilter = 'Normal';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Void'),
+                        selected: _attendanceStatusFilter == 'Void',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _attendanceStatusFilter = 'Void';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Auto Checkout'),
+                        selected: _attendanceStatusFilter == 'Auto',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _attendanceStatusFilter = 'Auto';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            }
+
+            Widget buildTaskFilters() {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Current'),
+                        selected: !_showArchivedReports,
+                        onSelected: (sel) async {
+                          if (!sel) return;
+                          setStateSheet(() {
+                            _showArchivedReports = false;
+                          });
+                          await _fetchTaskReports();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Archived'),
+                        selected: _showArchivedReports,
+                        onSelected: (sel) async {
+                          if (!sel) return;
+                          setStateSheet(() {
+                            _showArchivedReports = true;
+                          });
+                          await _fetchTaskReports();
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('All difficulties'),
+                        selected: _taskDifficultyFilter == 'All',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _taskDifficultyFilter = 'All';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Easy'),
+                        selected: _taskDifficultyFilter == 'easy',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _taskDifficultyFilter = 'easy';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Medium'),
+                        selected: _taskDifficultyFilter == 'medium',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _taskDifficultyFilter = 'medium';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Hard'),
+                        selected: _taskDifficultyFilter == 'hard',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _taskDifficultyFilter = 'hard';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('All'),
+                        selected: _reportStatusFilter == 'All',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _reportStatusFilter = 'All';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Submitted'),
+                        selected: _reportStatusFilter == 'submitted',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _reportStatusFilter = 'submitted';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Reviewed'),
+                        selected: _reportStatusFilter == 'reviewed',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _reportStatusFilter = 'reviewed';
+                          });
+                          setStateSheet(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 8,
+                  bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Filters',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _attendanceDateFilter = 'all';
+                              _attendanceStartDate = null;
+                              _attendanceEndDate = null;
+                              _filterDate = 'All Dates';
+                              _attendanceStatusFilter = 'All';
+                              _reportStatusFilter = 'All';
+                              _taskDifficultyFilter = 'All';
+                            });
+                            setStateSheet(() {});
+                            _fetchAttendanceRecords();
+                            _fetchTaskReports();
+                          },
+                          child: const Text('Reset'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (_viewMode == 'attendance') buildAttendanceFilters() else buildTaskFilters(),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Done'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +581,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     if (widget.employeeId != null) {
       _filterEmployeeId = widget.employeeId;
     }
+    _loadLocallyArchivedAttendanceIds();
     _fetchGeofences();
     _fetchAttendanceRecords();
     _fetchTaskReports();
@@ -145,9 +672,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Future<void> _fetchGeofences() async {
     try {
       final geofences = await GeofenceService().fetchGeofences();
-      setState(() {
-        _geofences = geofences;
-      });
+      // ignore: unused_local_variable
+      final _ = geofences;
     } catch (e) {
       debugPrint('Error fetching geofences: $e');
     }
@@ -158,15 +684,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       debugPrint(
         'Fetching attendance records with filters: date=$_filterDate, location=$_filterLocation, status=$_filterStatus',
       );
-      final records = await ReportService().getCurrentReports(type: 'attendance');
-      debugPrint('✓ Fetched ${records.length} attendance records');
+      final records = await _attendanceService.getAttendanceRecords(
+        employeeId: _filterEmployeeId,
+      );
+      final adapted = records.map(_attendanceToReportModel).toList();
+      final current = adapted.where((r) => !_locallyArchivedAttendanceIds.contains(r.id)).toList();
+      final archived = adapted.where((r) => _locallyArchivedAttendanceIds.contains(r.id)).toList();
+
+      debugPrint('✓ Fetched ${adapted.length} attendance records (current=${current.length}, archived=${archived.length})');
       setState(() {
-        _attendanceRecords = records;
+        _attendanceRecords = current;
+        _archivedAttendanceRecords = archived;
       });
     } catch (e) {
       debugPrint('✗ Error fetching attendance records: $e');
       setState(() {
         _attendanceRecords = [];
+        _archivedAttendanceRecords = [];
       });
     }
   }
@@ -498,6 +1032,152 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
                     const SizedBox(height: 12),
 
+                    Row(
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _openFiltersSheet,
+                          icon: const Icon(Icons.tune),
+                          label: const Text('Filters'),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _viewMode == 'attendance'
+                                ? 'Showing: ${_showArchivedAttendance ? 'Archived' : 'Current'} • $_filterDate • $_attendanceStatusFilter'
+                                : 'Showing: ${_showArchivedReports ? 'Archived' : 'Current'} • $_taskDifficultyFilter • $_reportStatusFilter',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: Colors.grey.shade700),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Quick filters',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      childrenPadding: const EdgeInsets.only(bottom: 8),
+                      children: [
+                        if (_viewMode == 'attendance')
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('Current'),
+                                selected: !_showArchivedAttendance,
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  setState(() {
+                                    _showArchivedAttendance = false;
+                                  });
+                                  _fetchAttendanceRecords();
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('Archived'),
+                                selected: _showArchivedAttendance,
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  setState(() {
+                                    _showArchivedAttendance = true;
+                                  });
+                                  _fetchAttendanceRecords();
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('All time'),
+                                selected: _attendanceDateFilter == 'all',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  _setAttendanceQuickDateFilter('all');
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('Today'),
+                                selected: _attendanceDateFilter == 'today',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  _setAttendanceQuickDateFilter('today');
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('This week'),
+                                selected: _attendanceDateFilter == 'week',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  _setAttendanceQuickDateFilter('week');
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('This month'),
+                                selected: _attendanceDateFilter == 'month',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  _setAttendanceQuickDateFilter('month');
+                                },
+                              ),
+                            ],
+                          )
+                        else
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('Current'),
+                                selected: !_showArchivedReports,
+                                onSelected: (sel) async {
+                                  if (!sel) return;
+                                  setState(() {
+                                    _showArchivedReports = false;
+                                  });
+                                  await _fetchTaskReports();
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('Archived'),
+                                selected: _showArchivedReports,
+                                onSelected: (sel) async {
+                                  if (!sel) return;
+                                  setState(() {
+                                    _showArchivedReports = true;
+                                  });
+                                  await _fetchTaskReports();
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('Submitted'),
+                                selected: _reportStatusFilter == 'submitted',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  setState(() {
+                                    _reportStatusFilter = 'submitted';
+                                  });
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('Reviewed'),
+                                selected: _reportStatusFilter == 'reviewed',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  setState(() {
+                                    _reportStatusFilter = 'reviewed';
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
                     if (_viewMode == 'attendance')
                       Row(
                         children: [
@@ -524,146 +1204,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     if (_viewMode == 'attendance') const SizedBox(height: 12),
 
                     if (_viewMode == 'attendance')
-                      Row(
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Current'),
-                            selected: !_showArchivedAttendance,
-                            onSelected: (sel) {
-                              if (!sel) return;
-                              setState(() {
-                                _showArchivedAttendance = false;
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: const Text('Archived'),
-                            selected: _showArchivedAttendance,
-                            onSelected: (sel) {
-                              if (!sel) return;
-                              setState(() {
-                                _showArchivedAttendance = true;
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-
-                    if (_viewMode == 'attendance') const SizedBox(height: 8),
-
-                    if (_viewMode == 'attendance')
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            ChoiceChip(
-                              label: const Text('All time'),
-                              selected: _attendanceDateFilter == 'all',
-                              onSelected: (sel) {
-                                if (!sel) return;
-                                _setAttendanceQuickDateFilter('all');
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            ChoiceChip(
-                              label: const Text('Today'),
-                              selected: _attendanceDateFilter == 'today',
-                              onSelected: (sel) {
-                                if (!sel) return;
-                                _setAttendanceQuickDateFilter('today');
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            ChoiceChip(
-                              label: const Text('This week'),
-                              selected: _attendanceDateFilter == 'week',
-                              onSelected: (sel) {
-                                if (!sel) return;
-                                _setAttendanceQuickDateFilter('week');
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            ChoiceChip(
-                              label: const Text('This month'),
-                              selected: _attendanceDateFilter == 'month',
-                              onSelected: (sel) {
-                                if (!sel) return;
-                                _setAttendanceQuickDateFilter('month');
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            ChoiceChip(
-                              label: const Text('Custom'),
-                              selected: _attendanceDateFilter == 'custom',
-                              onSelected: (sel) async {
-                                if (!sel) return;
-                                await _pickAttendanceCustomDateRange();
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    if (_viewMode == 'attendance') const SizedBox(height: 8),
-
-                    if (_viewMode == 'attendance')
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('All'),
-                            selected: _attendanceStatusFilter == 'All',
-                            onSelected: (sel) {
-                              if (!sel) return;
-                              setState(() {
-                                _attendanceStatusFilter = 'All';
-                              });
-                            },
-                          ),
-                          ChoiceChip(
-                            label: const Text('Normal'),
-                            selected: _attendanceStatusFilter == 'Normal',
-                            onSelected: (sel) {
-                              if (!sel) return;
-                              setState(() {
-                                _attendanceStatusFilter = 'Normal';
-                              });
-                            },
-                          ),
-                          ChoiceChip(
-                            label: const Text('Void'),
-                            selected: _attendanceStatusFilter == 'Void',
-                            onSelected: (sel) {
-                              if (!sel) return;
-                              setState(() {
-                                _attendanceStatusFilter = 'Void';
-                              });
-                            },
-                          ),
-                          ChoiceChip(
-                            label: const Text('Auto Checkout'),
-                            selected: _attendanceStatusFilter == 'Auto',
-                            onSelected: (sel) {
-                              if (!sel) return;
-                              setState(() {
-                                _attendanceStatusFilter = 'Auto';
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-
-                    if (_viewMode == 'attendance') const SizedBox(height: 12),
-
-                    if (_viewMode == 'attendance')
-                      _attendanceRecords.isEmpty && !_showArchivedAttendance
+                      (!_showArchivedAttendance
+                                  ? _attendanceRecords.isEmpty
+                                  : _archivedAttendanceRecords.isEmpty)
                           ? const Center(child: Text('No attendance records'))
-                          : _archivedAttendanceRecords.isEmpty &&
-                                _showArchivedAttendance
-                          ? const Center(
-                              child: Text('No archived attendance records'),
-                            )
                           : Card(
                               elevation: 2,
                               child: Padding(
@@ -739,31 +1283,44 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 ),
                                               ),
                                               DataCell(
-                                                IconButton(
-                                                  icon: const Icon(
-                                                    Icons.history,
-                                                  ),
-                                                  tooltip:
-                                                      'View history for this employee',
-                                                  onPressed: () {
-                                                    final employeeId =
-                                                        record.employeeId;
-
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (context) =>
-                                                            AdminEmployeeHistoryScreen(
-                                                              employeeId:
-                                                                  employeeId,
-                                                              employeeName:
-                                                                  record
-                                                                      .employeeName ??
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    IconButton(
+                                                      icon: const Icon(Icons.history),
+                                                      tooltip: 'View history for this employee',
+                                                      onPressed: () {
+                                                        final employeeId = record.employeeId;
+                                                        Navigator.push(
+                                                          context,
+                                                          MaterialPageRoute(
+                                                            builder: (context) =>
+                                                                AdminEmployeeHistoryScreen(
+                                                              employeeId: employeeId,
+                                                              employeeName: record.employeeName ??
                                                                   'Unknown',
                                                             ),
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                    IconButton(
+                                                      icon: Icon(
+                                                        _showArchivedAttendance
+                                                            ? Icons.unarchive
+                                                            : Icons.archive,
                                                       ),
-                                                    );
-                                                  },
+                                                      tooltip: _showArchivedAttendance
+                                                          ? 'Restore (remove from archive)'
+                                                          : 'Archive (hide from current)',
+                                                      onPressed: () async {
+                                                        await _setAttendanceArchivedLocal(
+                                                          record.id,
+                                                          !_showArchivedAttendance,
+                                                        );
+                                                      },
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ],
@@ -837,7 +1394,27 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 'Submitted:',
                 DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal()),
               ),
-              if (r.content.isNotEmpty) _buildDetailRow('Content:', r.content),
+              if (r.content.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Content',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: SelectableText(
+                    r.content,
+                    style: const TextStyle(fontSize: 13, height: 1.35),
+                  ),
+                ),
+              ],
               if (r.attachments.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 const Text(
@@ -847,20 +1424,71 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 const SizedBox(height: 4),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: r.attachments
-                      .map(
-                        (path) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: SelectableText(
-                            path,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.blueGrey,
-                            ),
+                  children: r.attachments.map((rawPath) {
+                    final url = _normalizeAttachmentUrl(rawPath);
+                    final filename = _filenameFromUrl(url);
+                    final isImage = _isImagePath(url);
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: InkWell(
+                        onTap: () {
+                          if (isImage) {
+                            _showImagePreview(filename, url);
+                          } else {
+                            _openUrlExternal(url);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isImage ? Icons.image : Icons.insert_drive_file,
+                                color: isImage ? Colors.blue : Colors.blueGrey,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      filename,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      rawPath,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.blueGrey,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                tooltip: 'Open',
+                                onPressed: () => _openUrlExternal(url),
+                                icon: const Icon(Icons.open_in_new),
+                              ),
+                            ],
                           ),
                         ),
-                      )
-                      .toList(),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ],
             ],
@@ -891,6 +1519,253 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           ),
           Expanded(child: Text(value)),
         ],
+      ),
+    );
+  }
+
+  Color _reportStatusBg(String status) {
+    final s = status.toLowerCase();
+    if (s == 'reviewed') return Colors.green.shade100;
+    if (s == 'submitted') return Colors.orange.shade100;
+    return Colors.grey.shade200;
+  }
+
+  Color _reportStatusFg(String status) {
+    final s = status.toLowerCase();
+    if (s == 'reviewed') return Colors.green.shade900;
+    if (s == 'submitted') return Colors.orange.shade900;
+    return Colors.grey.shade900;
+  }
+
+  Widget _buildReportStatusChip(String status) {
+    return Chip(
+      label: Text(status),
+      backgroundColor: _reportStatusBg(status),
+      labelStyle: TextStyle(color: _reportStatusFg(status)),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  String _contentPreview(String content, {int maxChars = 140}) {
+    final c = content.trim();
+    if (c.isEmpty) return '-';
+    if (c.length <= maxChars) return c;
+    return '${c.substring(0, maxChars)}…';
+  }
+
+  Future<void> _confirmAndDeleteReport(ReportModel r) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Report'),
+        content: const Text('Are you sure you want to delete this report?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      await ReportService().deleteReport(r.id);
+      await _fetchTaskReports();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Report deleted')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _markReportReviewed(ReportModel r) async {
+    try {
+      await ReportService().updateReportStatus(r.id, 'reviewed');
+      await _fetchTaskReports();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Marked as reviewed')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleArchiveReport(ReportModel r) async {
+    try {
+      if (_showArchivedReports) {
+        await ReportService().restoreReport(r.id);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Report restored')),
+          );
+        }
+      } else {
+        await ReportService().archiveReport(r.id);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Report archived')),
+          );
+        }
+      }
+      await _fetchTaskReports();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildTaskReportCard(ReportModel r) {
+    final submitted = DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal());
+    final attachmentCount = r.attachments.length;
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showReportDetails(r),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          r.taskTitle ?? (r.taskId ?? 'Task'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          r.employeeName ?? r.employeeId,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  PopupMenuButton<String>(
+                    tooltip: 'Actions',
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'view':
+                          _showReportDetails(r);
+                          return;
+                        case 'review':
+                          _markReportReviewed(r);
+                          return;
+                        case 'archive':
+                          _toggleArchiveReport(r);
+                          return;
+                        case 'delete':
+                          _confirmAndDeleteReport(r);
+                          return;
+                      }
+                    },
+                    itemBuilder: (ctx) => <PopupMenuEntry<String>>[
+                      const PopupMenuItem(
+                        value: 'view',
+                        child: Text('View details'),
+                      ),
+                      if (r.status.toLowerCase() != 'reviewed')
+                        const PopupMenuItem(
+                          value: 'review',
+                          child: Text('Mark as reviewed'),
+                        ),
+                      PopupMenuItem(
+                        value: 'archive',
+                        child: Text(_showArchivedReports ? 'Restore' : 'Archive'),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _buildReportStatusChip(r.status),
+                  if ((r.taskDifficulty ?? '').isNotEmpty)
+                    Chip(
+                      label: Text(r.taskDifficulty!),
+                      backgroundColor: Colors.blueGrey.shade50,
+                      labelStyle: TextStyle(color: Colors.blueGrey.shade800),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  Chip(
+                    label: Text(submitted),
+                    backgroundColor: Colors.grey.shade100,
+                    labelStyle: TextStyle(color: Colors.grey.shade800),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  Chip(
+                    label: Text('Attachments: $attachmentCount'),
+                    backgroundColor: Colors.grey.shade100,
+                    labelStyle: TextStyle(color: Colors.grey.shade800),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _contentPreview(r.content),
+                style: const TextStyle(fontSize: 13, height: 1.35),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1050,179 +1925,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text('Employee')),
-                  DataColumn(label: Text('Task')),
-                  DataColumn(label: Text('Difficulty')),
-                  DataColumn(label: Text('Submitted')),
-                  DataColumn(label: Text('Status')),
-                  DataColumn(label: Text('Content')),
-                  DataColumn(label: Text('Actions')),
-                ],
-                rows: _filteredTaskReports().map((r) {
-                  final submitted = DateFormat(
-                    'yyyy-MM-dd HH:mm',
-                  ).format(r.submittedAt.toLocal());
-                  return DataRow(
-                    cells: [
-                      DataCell(Text(r.employeeName ?? r.employeeId)),
-                      DataCell(Text(r.taskTitle ?? (r.taskId ?? '-'))),
-                      DataCell(Text(r.taskDifficulty ?? '-')),
-                      DataCell(Text(submitted)),
-                      DataCell(Text(r.status)),
-                      DataCell(Text(r.content)),
-                      DataCell(
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'View',
-                              icon: const Icon(Icons.info_outline),
-                              onPressed: () => _showReportDetails(r),
-                            ),
-                            if (r.status != 'reviewed')
-                              TextButton(
-                                onPressed: () async {
-                                  try {
-                                    await ReportService().updateReportStatus(
-                                      r.id,
-                                      'reviewed',
-                                    );
-                                    await _fetchTaskReports();
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Marked as reviewed'),
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(content: Text('Failed: $e')),
-                                      );
-                                    }
-                                  }
-                                },
-                                child: const Text('Review'),
-                              ),
-                            TextButton(
-                              onPressed: () async {
-                                final ok = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Delete Report'),
-                                    content: const Text(
-                                      'Are you sure you want to delete this report?',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, false),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      FilledButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, true),
-                                        child: const Text('Delete'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (ok == true) {
-                                  try {
-                                    await ReportService().deleteReport(r.id);
-                                    await _fetchTaskReports();
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Report deleted'),
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(content: Text('Failed: $e')),
-                                      );
-                                    }
-                                  }
-                                }
-                              },
-                              child: const Text('Delete'),
-                            ),
-                            if (!_showArchivedReports)
-                              TextButton(
-                                onPressed: () async {
-                                  try {
-                                    await ReportService().archiveReport(r.id);
-                                    await _fetchTaskReports();
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Report archived'),
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(content: Text('Failed: $e')),
-                                      );
-                                    }
-                                  }
-                                },
-                                child: const Text('Archive'),
-                              )
-                            else
-                              TextButton(
-                                onPressed: () async {
-                                  try {
-                                    await ReportService().restoreReport(r.id);
-                                    await _fetchTaskReports();
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Report restored'),
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(content: Text('Failed: $e')),
-                                      );
-                                    }
-                                  }
-                                },
-                                child: const Text('Restore'),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                }).toList(),
-              ),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _filteredTaskReports().length,
+              itemBuilder: (context, index) {
+                final r = _filteredTaskReports()[index];
+                return _buildTaskReportCard(r);
+              },
             ),
           ],
         ),

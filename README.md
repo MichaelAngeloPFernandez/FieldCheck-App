@@ -376,4 +376,5 @@ Everything you need is:
 *Ready for team testing and production deployment*
 #   c a p s t o n e _ f i e l d c h e c k _ 2 . 0  
  #   F I E L D C H E C K _ 2 . 0  
+ #   F i e l d C h e c k - A p p _ a p p 8 0 p e r c e n t  
  

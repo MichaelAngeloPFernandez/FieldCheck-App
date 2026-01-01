@@ -13,6 +13,7 @@ const {
   deleteUser,
   getUsers,
   updateUserByAdmin,
+  resetUserPasswordByAdmin,
   importUsers,
 } = require('../controllers/userController');
 const { protect, admin } = require('../middleware/authMiddleware');
@@ -35,6 +36,7 @@ router.put('/profile', protect, updateUserProfile);
 // Admin routes
 router.get('/', protect, admin, getUsers); // GET /api/users?role=employee|admin
 router.put('/:id', protect, admin, updateUserByAdmin); // Update fields including role and isActive
+router.put('/:id/reset-password-admin', protect, admin, resetUserPasswordByAdmin);
 router.put('/:id/deactivate', protect, admin, deactivateUser);
 router.put('/:id/reactivate', protect, admin, reactivateUser);
 router.delete('/:id', protect, admin, deleteUser);

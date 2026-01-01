@@ -58,33 +58,50 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reports & Analytics'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: "Today's Report", icon: Icon(Icons.calendar_today)),
-            Tab(text: 'Weekly Report', icon: Icon(Icons.calendar_view_week)),
-            Tab(text: 'Monthly Report', icon: Icon(Icons.calendar_view_month)),
-          ],
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
+    return Column(
+      children: [
+        Material(
+          color: Theme.of(context).colorScheme.surface,
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
               children: [
-                _buildTodayReportTab(),
-                _buildWeeklyReportTab(),
-                _buildMonthlyReportTab(),
+                Expanded(
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    tabs: const [
+                      Tab(text: "Today's Report", icon: Icon(Icons.calendar_today)),
+                      Tab(text: 'Weekly Report', icon: Icon(Icons.calendar_view_week)),
+                      Tab(text: 'Monthly Report', icon: Icon(Icons.calendar_view_month)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _loadReports,
+                  tooltip: 'Refresh',
+                  icon: const Icon(Icons.refresh),
+                ),
               ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _loadReports,
-        tooltip: 'Refresh Reports',
-        child: const Icon(Icons.refresh),
-      ),
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildTodayReportTab(),
+                    _buildWeeklyReportTab(),
+                    _buildMonthlyReportTab(),
+                  ],
+                ),
+        ),
+      ],
     );
   }
 

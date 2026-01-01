@@ -141,7 +141,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         setState(() {
           _fallbackLat = flLat;
           _fallbackLng = flLng;
-          _nearestGeofence = geofences.isNotEmpty
+          _nearestGeofence = (geofences.isNotEmpty && flLat != null && flLng != null)
               ? _geofenceService.findNearestGeofence(flLat, flLng, geofences)
               : null;
         });
@@ -195,14 +195,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _locationErrorMessage = null;
         _lastLocationUpdate = DateTime.now();
       });
-  
+
       // Persist last known lat/lng for web fallback
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setDouble('lastKnown.lat', position.latitude);
         await prefs.setDouble('lastKnown.lng', position.longitude);
       } catch (_) {}
-  
+
       final geofences = await _geofenceService.fetchGeofences();
       setState(() {
         _nearestGeofence = _geofenceService.findNearestGeofence(
@@ -230,7 +230,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         setState(() {
           _fallbackLat = flLat;
           _fallbackLng = flLng;
-          _nearestGeofence = geofences.isNotEmpty
+          _nearestGeofence = (geofences.isNotEmpty && flLat != null && flLng != null)
               ? _geofenceService.findNearestGeofence(flLat, flLng, geofences)
               : null;
         });

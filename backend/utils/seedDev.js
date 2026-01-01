@@ -9,12 +9,43 @@ async function seedDevData() {
         name: 'Admin',
         username: 'admin',
         email: adminEmail,
-        password: 'Admin@123',
+        password: 'admin123',
         role: 'admin',
         isVerified: true,
         isActive: true,
       });
-      console.log('Seeded dev admin: admin / Admin@123');
+      console.log('Seeded dev admin: admin / admin123');
+    } else {
+      let changed = false;
+      if (adminExists.username !== 'admin') {
+        adminExists.username = 'admin';
+        changed = true;
+      }
+      if (adminExists.email !== adminEmail) {
+        adminExists.email = adminEmail;
+        changed = true;
+      }
+      if (adminExists.role !== 'admin') {
+        adminExists.role = 'admin';
+        changed = true;
+      }
+      if (adminExists.isVerified !== true) {
+        adminExists.isVerified = true;
+        changed = true;
+      }
+      if (adminExists.isActive !== true) {
+        adminExists.isActive = true;
+        changed = true;
+      }
+
+      // Refresh admin password for local testing
+      adminExists.password = 'admin123';
+      changed = true;
+
+      if (changed) {
+        await adminExists.save();
+        console.log('Updated dev admin: admin / admin123');
+      }
     }
 
     // Employees: employee1..employee5 username-only with incrementing password pattern

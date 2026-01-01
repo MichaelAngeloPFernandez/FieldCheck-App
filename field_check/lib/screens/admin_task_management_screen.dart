@@ -33,6 +33,8 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   final Map<String, double> _employeeDifficultyWeight = {};
   final Map<String, int> _employeeOverdueCount = {};
 
+  static const int _taskLimitPerEmployee = 5;
+
   @override
   void initState() {
     super.initState();
@@ -588,6 +590,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     }
 
     final Set<String> selectedEmployeeIds = <String>{};
+    final Set<String> overrideEmployeeIds = <String>{};
     if (task.assignedToMultiple.isNotEmpty) {
       selectedEmployeeIds.addAll(task.assignedToMultiple.map((u) => u.id));
     } else if (task.assignedTo != null) {
@@ -613,6 +616,13 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       employee.id,
                     );
                     final info = availability[employee.id];
+
+                    final activeCount = info?.activeTasksCount ??
+                        (_employeeActiveTaskCount[employee.id] ?? 0);
+                    final atLimit = activeCount >= _taskLimitPerEmployee;
+                    final isOverridden = overrideEmployeeIds.contains(
+                      employee.id,
+                    );
 
                     Color? nameColor;
                     if (info != null) {
@@ -652,6 +662,11 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       subtitle = '${employee.email} · ${parts.join(' · ')}';
                     }
 
+                    if (atLimit) {
+                      subtitle =
+                          '$subtitle · limit reached ($_taskLimitPerEmployee)';
+                    }
+
                     return CheckboxListTile(
                       title: Text(
                         employee.name,
@@ -660,11 +675,44 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       subtitle: Text(subtitle),
                       value: isSelected,
                       onChanged: (bool? selected) {
+                        if (selected == true && atLimit && !isOverridden) {
+                          showDialog<bool>(
+                            context: context,
+                            builder: (dCtx) => AlertDialog(
+                              title: const Text('Employee at task limit'),
+                              content: Text(
+                                '${employee.name} already has $activeCount active task(s), which is at/above the limit ($_taskLimitPerEmployee).\n\nOverride and assign anyway?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(dCtx).pop(false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(dCtx).pop(true),
+                                  child: const Text('Override'),
+                                ),
+                              ],
+                            ),
+                          ).then((allow) {
+                            if (allow != true) return;
+                            if (!mounted) return;
+                            setState(() {
+                              overrideEmployeeIds.add(employee.id);
+                              selectedEmployeeIds.add(employee.id);
+                            });
+                          });
+                          return;
+                        }
+
                         setState(() {
                           if (selected == true) {
                             selectedEmployeeIds.add(employee.id);
                           } else {
                             selectedEmployeeIds.remove(employee.id);
+                            overrideEmployeeIds.remove(employee.id);
                           }
                         });
                       },
@@ -688,6 +736,26 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Selected employees have invalid IDs'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  final blocked = validIds
+                      .where((id) {
+                        final info = availability[id];
+                        final activeCount = info?.activeTasksCount ??
+                            (_employeeActiveTaskCount[id] ?? 0);
+                        return activeCount >= _taskLimitPerEmployee &&
+                            !overrideEmployeeIds.contains(id);
+                      })
+                      .toList();
+                  if (blocked.isNotEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Some selected employees are at the task limit ($_taskLimitPerEmployee). Use Override to assign anyway.',
+                        ),
                       ),
                     );
                     return;

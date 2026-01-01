@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geolocator/geolocator.dart' as geolocator;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/location_service.dart';
 import '../services/geofence_service.dart';
@@ -49,6 +50,10 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   Timer? _locationUpdateTimer;
   StreamSubscription? _attendanceSub;
 
+  String? _locationIssueMessage;
+  bool _locationPermissionDeniedForever = false;
+  bool _locationServiceDisabled = false;
+
   @override
   void initState() {
     super.initState();
@@ -70,7 +75,6 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     // Listen for attendance updates relevant to this user and refresh status
     _attendanceSub = _realtimeService.attendanceStream.listen((event) {
       try {
-        final type = event['type'] as String? ?? '';
         final data = event['data'];
         if (data == null) return;
 
@@ -202,30 +206,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     });
 
     try {
-      _userPosition = await _locationService.getCurrentLocation();
-      _lastLocationUpdate = DateTime.now();
-      await _updateGeofenceStatus();
-    } catch (e) {
-      debugPrint('Error getting location: $e');
+      await _refreshLocationAndStatus(showSnackOnError: false);
     } finally {
       setState(() {
         _isLoading = false;
       });
-    }
-  }
-
-  void _updateLocationBackground() async {
-    try {
-      final position = await _locationService.getCurrentLocation();
-      if (mounted) {
-        setState(() {
-          _userPosition = position;
-          _lastLocationUpdate = DateTime.now();
-        });
-        await _updateGeofenceStatus();
-      }
-    } catch (e) {
-      debugPrint('Error updating location: $e');
     }
   }
 
@@ -235,30 +220,119 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         _isLoading = true;
       });
 
-      final position = await _locationService.getCurrentLocation();
+      await _refreshLocationAndStatus(showSnackOnError: true);
+    } finally {
       if (mounted) {
         setState(() {
-          _userPosition = position;
-          _lastLocationUpdate = DateTime.now();
           _isLoading = false;
         });
-        await _updateGeofenceStatus();
       }
+    }
+  }
+
+  Future<void> _refreshLocationAndStatus({required bool showSnackOnError}) async {
+    try {
+      final position = await _locationService.getCurrentLocation();
+      if (!mounted) return;
+      setState(() {
+        _userPosition = position;
+        _lastLocationUpdate = DateTime.now();
+        _locationIssueMessage = null;
+        _locationPermissionDeniedForever = false;
+        _locationServiceDisabled = false;
+      });
+      await _updateGeofenceStatus();
     } catch (e) {
-      debugPrint('Error updating location: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+      if (!mounted) return;
+      final msg = e.toString();
+      final lower = msg.toLowerCase();
+
+      setState(() {
+        _locationIssueMessage = 'Unable to get your location.';
+        _locationPermissionDeniedForever = false;
+        _locationServiceDisabled = false;
+
+        if (lower.contains('disabled')) {
+          _locationIssueMessage = 'GPS is off. Turn on Location Services.';
+          _locationServiceDisabled = true;
+        } else if (lower.contains('permanently denied') ||
+            lower.contains('denied forever')) {
+          _locationIssueMessage =
+              'Location permission is blocked. Allow it in Settings.';
+          _locationPermissionDeniedForever = true;
+        } else if (lower.contains('permissions are denied') ||
+            lower.contains('permission denied')) {
+          _locationIssueMessage = 'Location permission is denied.';
+        }
+      });
+
+      if (showSnackOnError) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to update location: $e'),
+            content: Text(_locationIssueMessage ?? 'Failed to update location'),
             duration: const Duration(seconds: 3),
             backgroundColor: Colors.red,
           ),
         );
       }
     }
+  }
+
+  Future<void> _openSystemLocationSettings() async {
+    try {
+      await geolocator.Geolocator.openLocationSettings();
+    } catch (_) {}
+  }
+
+  Future<void> _openSystemAppSettings() async {
+    try {
+      await geolocator.Geolocator.openAppSettings();
+    } catch (_) {}
+  }
+
+  Widget _buildLocationStatusBanner() {
+    if (_locationIssueMessage == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.gps_off, color: Colors.red.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _locationIssueMessage!,
+              style: TextStyle(
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (_locationServiceDisabled)
+            TextButton(
+              onPressed: _openSystemLocationSettings,
+              child: const Text('Open Settings'),
+            )
+          else if (_locationPermissionDeniedForever)
+            TextButton(
+              onPressed: _openSystemAppSettings,
+              child: const Text('Open Settings'),
+            )
+          else
+            TextButton(
+              onPressed: _isLoading ? null : _updateLocation,
+              child: const Text('Retry'),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _updateGeofenceStatus() async {
@@ -412,10 +486,22 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
           }
           return;
         }
+
+        final confirmed = await _confirmCheckIn();
+        if (!confirmed) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+          return;
+        }
       }
 
       // Get time now
       final now = DateTime.now();
+
+      final bool wasCheckedInBeforeSubmit = _isCheckedIn;
 
       // For checkout, use current geofence or find the one from the open attendance record
       String? geofenceIdForSubmission = _currentGeofence?.id;
@@ -494,6 +580,16 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
           ),
         );
 
+        // Update local state immediately so the timer starts at 00:00 and the
+        // UI does not jump due to backend timestamp delay/timezone drift.
+        if (mounted) {
+          setState(() {
+            _isCheckedIn = !wasCheckedInBeforeSubmit;
+            _lastCheckTimestamp = now;
+            _lastCheckTime = TimeOfDay.fromDateTime(now).format(context);
+          });
+        }
+
         // Clear autosave copy for successfully synced records
         await _autosaveService.clearData(storageKey);
       } catch (e) {
@@ -570,6 +666,44 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 child: const Text('Check Out'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<bool> _confirmCheckIn() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Confirm Check-In'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Do you want to check in now?'),
+                const SizedBox(height: 8),
+                if (_currentGeofence != null)
+                  Text('Location: ${_currentGeofence!.name}'),
+                if (_currentDistanceMeters != null)
+                  Text(
+                    'Distance: ${_currentDistanceMeters!.toStringAsFixed(1)}m',
+                  ),
+                if (_userPosition != null)
+                  Text(
+                    'GPS accuracy: ${_userPosition!.accuracy.toStringAsFixed(0)}m',
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Check In'),
               ),
             ],
           ),
@@ -728,6 +862,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                       ],
                     ),
                   ),
+
+                const SizedBox(height: 16),
+                _buildLocationStatusBanner(),
 
                 // Location status
                 _buildLocationCard(),

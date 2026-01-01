@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/report_model.dart';
@@ -7,6 +8,8 @@ import 'user_service.dart';
 
 class ReportService {
   final String _basePath = '/api/reports';
+
+  static const int maxUploadBytes = 10 * 1024 * 1024;
 
   Future<Map<String, String>> _headers({bool jsonContent = true}) async {
     final headers = <String, String>{};
@@ -148,6 +151,43 @@ class ReportService {
 
     request.files.add(
       await http.MultipartFile.fromPath('file', filePath, filename: fileName),
+    );
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic> && decoded['path'] is String) {
+        return decoded['path'] as String;
+      }
+      throw Exception('Upload succeeded but response invalid');
+    } else {
+      throw Exception('Failed to upload attachment');
+    }
+  }
+
+  Future<String> uploadAttachmentBytes({
+    required Uint8List bytes,
+    required String fileName,
+    required String taskId,
+    required String employeeId,
+  }) async {
+    if (bytes.lengthInBytes > maxUploadBytes) {
+      throw Exception('File too large (max 10MB)');
+    }
+
+    final uri = Uri.parse('${ApiConfig.baseUrl}$_basePath/upload');
+
+    final headers = await _headers(jsonContent: false);
+    final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(headers);
+
+    request.fields['taskId'] = taskId;
+    request.fields['employeeId'] = employeeId;
+
+    request.files.add(
+      http.MultipartFile.fromBytes('file', bytes, filename: fileName),
     );
 
     final streamed = await request.send();

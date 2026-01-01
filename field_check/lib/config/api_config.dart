@@ -1,6 +1,7 @@
 class ApiConfig {
-  // Cloud backend URL (Render deployment)
-  // Note: Render free tier spins down after 15 min of inactivity
-  // First request may take 30-60 seconds to warm up
-  static const String baseUrl = 'https://fieldcheck-backend.onrender.com';
+  // Local backend URL for development
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://127.0.0.1:3002',
+  );
 }

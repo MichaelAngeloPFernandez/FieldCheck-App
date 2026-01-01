@@ -1,0 +1,4 @@
+backend/.env* 
+backend/coverage/ 
+backend/uploads/ 
+backend/test-results/

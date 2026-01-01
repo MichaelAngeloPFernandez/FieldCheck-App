@@ -48,7 +48,7 @@ class RealtimeService {
     try {
       final token = await UserService().getToken();
       final options = io.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .setExtraHeaders({
             if (token != null) 'Authorization': 'Bearer $token',
           })

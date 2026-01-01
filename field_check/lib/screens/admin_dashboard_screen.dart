@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:field_check/screens/admin_geofence_screen.dart';
-import 'package:field_check/screens/admin_reports_screen.dart';
+import 'package:field_check/screens/admin_reports_hub_screen.dart';
 import 'package:field_check/screens/admin_settings_screen.dart';
 import 'package:field_check/screens/admin_task_management_screen.dart';
 import 'package:field_check/screens/manage_employees_screen.dart';
@@ -14,9 +14,13 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/dashboard_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/employee_location_service.dart';
+import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
+import 'package:field_check/models/geofence_model.dart';
+import 'package:field_check/widgets/admin_info_modal.dart';
 import 'package:intl/intl.dart';
+import 'package:field_check/theme/app_theme.dart';
 
 // Notification model for dashboard alerts
 class DashboardNotification {
@@ -25,6 +29,7 @@ class DashboardNotification {
   final String message;
   final String type; // 'employee', 'task', 'attendance', 'geofence'
   final DateTime timestamp;
+  final Map<String, dynamic>? payload;
   bool isRead;
 
   DashboardNotification({
@@ -33,8 +38,26 @@ class DashboardNotification {
     required this.message,
     required this.type,
     required this.timestamp,
+    this.payload,
     this.isRead = false,
   });
+}
+
+Color _notificationTypeColor(String type) {
+  switch (type) {
+    case 'attendance':
+      return Colors.blue;
+    case 'report':
+      return Colors.purple;
+    case 'task':
+      return Colors.orange;
+    case 'employee':
+      return Colors.teal;
+    case 'geofence':
+      return Colors.green;
+    default:
+      return Colors.grey;
+  }
 }
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -50,6 +73,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final DashboardService _dashboardService = DashboardService();
   final RealtimeService _realtimeService = RealtimeService();
   final EmployeeLocationService _locationService = EmployeeLocationService();
+  final GeofenceService _geofenceService = GeofenceService();
+
+  static const int _taskLimitPerEmployee = 5;
+
+  static const int _navDashboard = 0;
+  static const int _navEmployees = 1;
+  static const int _navReports = 2;
+  static const int _navMore = 3;
 
   DashboardStats? _dashboardStats;
   RealtimeUpdates? _realtimeUpdates;
@@ -61,19 +92,64 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Map<String, UserModel> _employees = {};
   final Map<String, LatLng> _liveLocations = {};
   final Map<String, List<LatLng>> _trails = {};
+
+  StreamSubscription<List<EmployeeLocation>>? _employeeLocationsSub;
+  StreamSubscription<List<EmployeeLocation>>? _employeeLocationsSnapshotSub;
+  StreamSubscription<Map<String, dynamic>>? _liveLocationFallbackSub;
   final Map<String, EmployeeLocation> _employeeLocations = {};
   static const LatLng _defaultCenter = LatLng(14.5995, 120.9842); // Manila
   bool _showNoEmployeesPopup = true;
 
+  String? _selectedEmployeeId;
+
+  final MapController _mapController = MapController();
+  final TextEditingController _employeeSearchController = TextEditingController();
+  String _employeeStatusFilter = 'all';
+  Timer? _employeeSearchDebounce;
+
+  static final Color _panelBorderBlue = Colors.blue.shade200;
+  static const Color _panelTextPrimary = Colors.black87;
+  static const Color _panelTextSecondary = Colors.black54;
+  static const double _controlFontSize = 13;
+
+  void _subscribeToLiveLocationFallback() {
+    _liveLocationFallbackSub?.cancel();
+    _liveLocationFallbackSub = _realtimeService.locationStream.listen((data) {
+      try {
+        final String userId =
+            (data['employeeId'] ?? data['userId'] ?? '') as String;
+        final num? latN = data['latitude'] as num?;
+        final num? lngN = data['longitude'] as num?;
+        if (userId.isEmpty || latN == null || lngN == null) {
+          return;
+        }
+
+        final pos = LatLng(latN.toDouble(), lngN.toDouble());
+        if (!mounted) return;
+        setState(() {
+          _liveLocations[userId] = pos;
+        });
+      } catch (_) {}
+    });
+  }
+
+  String _nearbyMode = 'off'; // off | admin | geofence
+  double _nearbyRadiusMeters = 2000;
+  List<Geofence> _geofences = [];
+  Geofence? _selectedNearbyGeofence;
+
   // Notification system
   final List<DashboardNotification> _notifications = [];
+  final Set<String> _snackDedupKeys = {};
+
+  StreamSubscription<Map<String, dynamic>>? _adminNotifSub;
 
   List<Widget> get _screens => [
     _buildDashboardOverview(),
     const ManageEmployeesScreen(),
     const ManageAdminsScreen(),
     const AdminGeofenceScreen(),
-    const AdminReportsScreen(),
+    const AdminReportsHubScreen(),
     const AdminSettingsScreen(),
     const AdminTaskManagementScreen(),
   ];
@@ -88,17 +164,689 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _startRefreshTimer();
   }
 
+  Widget _buildNotificationItem(DashboardNotification notif) {
+    final color = _notificationTypeColor(notif.type);
+    final ts = DateFormat('MMM d, HH:mm').format(notif.timestamp);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        onTap: () {
+          setState(() {
+            notif.isRead = true;
+          });
+          _showNotificationDetails(notif);
+        },
+        leading: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Icon(
+            notif.type == 'attendance'
+                ? Icons.access_time
+                : (notif.type == 'report'
+                    ? Icons.description
+                    : Icons.notifications),
+            color: color,
+            size: 18,
+          ),
+        ),
+        title: Text(
+          notif.title,
+          style: TextStyle(
+            fontWeight: notif.isRead ? FontWeight.w500 : FontWeight.w700,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(notif.message),
+            const SizedBox(height: 4),
+            Text(
+              ts,
+              style: const TextStyle(
+                fontSize: AppTheme.fontSizeSm,
+                color: AppTheme.textSecondaryColor,
+              ),
+            ),
+          ],
+        ),
+        trailing: notif.isRead
+            ? null
+            : Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              ),
+      ),
+    );
+  }
+
+  void _showNotificationDetails(DashboardNotification notif) {
+    final payload = notif.payload ?? const <String, dynamic>{};
+    final ts = DateFormat('yyyy-MM-dd HH:mm:ss').format(notif.timestamp);
+
+    String? employeeName;
+    String? employeeId;
+    String? action;
+
+    try {
+      employeeName = (payload['name'] ?? payload['employeeName']) as String?;
+    } catch (_) {
+      employeeName = null;
+    }
+    try {
+      employeeId = (payload['employeeId'] ?? payload['userId']) as String?;
+    } catch (_) {
+      employeeId = null;
+    }
+    try {
+      action = payload['action'] as String?;
+    } catch (_) {
+      action = null;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(notif.title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                notif.message,
+                style: const TextStyle(
+                  fontSize: AppTheme.fontSizeMd,
+                  height: 1.35,
+                  color: AppTheme.textPrimaryColor,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildDetailRow('Type:', notif.type),
+              _buildDetailRow('Action:', action ?? '-'),
+              _buildDetailRow('Employee:', employeeName ?? '-'),
+              _buildDetailRow('Employee ID:', employeeId ?? '-'),
+              _buildDetailRow('Time:', ts),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          if (notif.type == 'report')
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  _selectedIndex = 4;
+                });
+              },
+              icon: const Icon(Icons.description),
+              label: const Text('Go to reports'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationsPanel() {
+    final items = _notifications.take(5).toList();
+    final unread = _notifications.where((n) => !n.isRead).length;
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Notifications',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (unread > 0) ...[
+                      const SizedBox(width: 8),
+                      _buildNotificationBadge(unread),
+                    ],
+                  ],
+                ),
+                TextButton(
+                  onPressed: _showNotificationsInbox,
+                  child: const Text('Open'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (items.isEmpty)
+              Text(
+                'No notifications yet',
+                style: TextStyle(color: Colors.grey.shade600),
+              )
+            else
+              ...items.map(_buildNotificationItem),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadGeofencesForNearby() async {
+    try {
+      final fences = await _geofenceService.fetchGeofences();
+      if (!mounted) return;
+      setState(() {
+        _geofences = fences;
+        if (_selectedNearbyGeofence != null) {
+          final stillExists = _geofences.any(
+            (g) => g.id != null && g.id == _selectedNearbyGeofence!.id,
+          );
+          if (!stillExists) {
+            _selectedNearbyGeofence = null;
+          }
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _geofences = [];
+      });
+    }
+  }
+
+  LatLng? _nearbyCenter() {
+    if (_nearbyMode == 'geofence') {
+      final g = _selectedNearbyGeofence;
+      if (g == null) return null;
+      return LatLng(g.latitude, g.longitude);
+    }
+
+    if (_nearbyMode == 'admin') {
+      final adminId = _userService.currentUser?.id;
+      if (adminId == null) return null;
+      return _liveLocations[adminId];
+    }
+
+    return null;
+  }
+
+  bool _passesEmployeeFilters(String userId) {
+    final user = _employees[userId];
+    final loc = _employeeLocations[userId];
+    final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
+    final isBusy = activeTaskCount >= _taskLimitPerEmployee;
+    final isOnline = _liveLocations.containsKey(userId);
+
+    if (!isOnline) return false;
+
+    if (_employeeStatusFilter == 'busy' && !isBusy) return false;
+    if (_employeeStatusFilter == 'available' && isBusy) return false;
+
+    final q = _employeeSearchController.text.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      final name = (user?.name ?? '').toLowerCase();
+      final email = (user?.email ?? '').toLowerCase();
+      if (!name.contains(q) && !email.contains(q)) {
+        return false;
+      }
+    }
+
+    final center = _nearbyCenter();
+    if (center != null) {
+      final pos = _liveLocations[userId];
+      if (pos == null) return false;
+      final d = const Distance().as(LengthUnit.Meter, center, pos);
+      if (d > _nearbyRadiusMeters) return false;
+    }
+
+    return true;
+  }
+
+  void _panTo(LatLng center, {double zoom = 14}) {
+    try {
+      _mapController.move(center, zoom);
+    } catch (_) {}
+  }
+
+  void _onEmployeeSearchChanged() {
+    _employeeSearchDebounce?.cancel();
+    _employeeSearchDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  Widget _buildMapControls() {
+    final hasNearbyCenter = _nearbyCenter() != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _employeeSearchController,
+          decoration: InputDecoration(
+            hintText: 'Search employee…',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _employeeSearchController.text.isEmpty
+                ? null
+                : IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _employeeSearchController.clear();
+                      });
+                    },
+                    icon: const Icon(Icons.clear),
+                  ),
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          style: const TextStyle(
+            color: _panelTextPrimary,
+            fontSize: _controlFontSize,
+          ),
+          onChanged: (_) => _onEmployeeSearchChanged(),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ChoiceChip(
+              label: const Text(
+                'All',
+                style: TextStyle(
+                  color: _panelTextPrimary,
+                  fontSize: _controlFontSize,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              selected: _employeeStatusFilter == 'all',
+              onSelected: (_) => setState(() => _employeeStatusFilter = 'all'),
+              selectedColor: Colors.blue.shade50,
+              shape: StadiumBorder(side: BorderSide(color: _panelBorderBlue)),
+            ),
+            ChoiceChip(
+              label: const Text(
+                'Available',
+                style: TextStyle(
+                  color: _panelTextPrimary,
+                  fontSize: _controlFontSize,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              selected: _employeeStatusFilter == 'available',
+              onSelected: (_) =>
+                  setState(() => _employeeStatusFilter = 'available'),
+              selectedColor: Colors.blue.shade50,
+              shape: StadiumBorder(side: BorderSide(color: _panelBorderBlue)),
+            ),
+            ChoiceChip(
+              label: const Text(
+                'Busy',
+                style: TextStyle(
+                  color: _panelTextPrimary,
+                  fontSize: _controlFontSize,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              selected: _employeeStatusFilter == 'busy',
+              onSelected: (_) => setState(() => _employeeStatusFilter = 'busy'),
+              selectedColor: Colors.blue.shade50,
+              shape: StadiumBorder(side: BorderSide(color: _panelBorderBlue)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'off', label: Text('Nearby: Off')),
+                  ButtonSegment(value: 'admin', label: Text('Admin')),
+                  ButtonSegment(value: 'geofence', label: Text('Geofence')),
+                ],
+                selected: <String>{_nearbyMode},
+                onSelectionChanged: (v) {
+                  final next = v.isEmpty ? 'off' : v.first;
+                  setState(() {
+                    _nearbyMode = next;
+                  });
+                  final center = _nearbyCenter();
+                  if (center != null) {
+                    _panTo(center, zoom: 14);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _employeeSearchController.clear();
+                  _employeeStatusFilter = 'all';
+                  _nearbyMode = 'off';
+                  _nearbyRadiusMeters = 2000;
+                  _selectedNearbyGeofence = null;
+                });
+              },
+              icon: const Icon(Icons.clear_all),
+              label: const Text('Reset'),
+            ),
+          ],
+        ),
+        if (_nearbyMode == 'geofence') ...[
+          const SizedBox(height: 10),
+          DropdownButtonFormField<Geofence>(
+            value: _selectedNearbyGeofence,
+            decoration: const InputDecoration(
+              labelText: 'Geofence center',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            items: _geofences
+                .map(
+                  (g) => DropdownMenuItem<Geofence>(
+                    value: g,
+                    child: Text(
+                      g.labelLetter == null
+                          ? g.name
+                          : '${g.name} • ${g.labelLetter}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (g) {
+              setState(() {
+                _selectedNearbyGeofence = g;
+              });
+              final center = _nearbyCenter();
+              if (center != null) {
+                _panTo(center, zoom: 14);
+              }
+            },
+          ),
+          if (_nearbyMode == 'geofence' && _geofences.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'No geofences available',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _panelTextSecondary,
+                ),
+              ),
+            ),
+        ],
+        if (_nearbyMode != 'off') ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  min: 250,
+                  max: 10000,
+                  divisions: 39,
+                  label: _nearbyRadiusMeters >= 1000
+                      ? '${(_nearbyRadiusMeters / 1000).toStringAsFixed(1)} km'
+                      : '${_nearbyRadiusMeters.toStringAsFixed(0)} m',
+                  value: _nearbyRadiusMeters,
+                  onChanged: (v) {
+                    setState(() {
+                      _nearbyRadiusMeters = v;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                _nearbyRadiusMeters >= 1000
+                    ? '${(_nearbyRadiusMeters / 1000).toStringAsFixed(1)} km'
+                    : '${_nearbyRadiusMeters.toStringAsFixed(0)} m',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: _panelTextPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          if (!hasNearbyCenter)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _nearbyMode == 'admin'
+                    ? 'Admin location not available for Nearby mode.'
+                    : 'Select a geofence to enable Nearby mode.',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: _panelTextSecondary,
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildNotificationBadge(int count) {
+    final text = count > 99 ? '99+' : '$count';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.red,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white, width: 1),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  void _showNotificationsInbox() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final unreadCount = _notifications.where((n) => !n.isRead).length;
+        return SafeArea(
+          child: FractionallySizedBox(
+            heightFactor: 0.85,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Notifications',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (unreadCount > 0) ...[
+                            const SizedBox(width: 8),
+                            _buildNotificationBadge(unreadCount),
+                          ],
+                        ],
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          if (!mounted) return;
+                          setState(() {
+                            for (final n in _notifications) {
+                              n.isRead = true;
+                            }
+                          });
+                        },
+                        icon: const Icon(Icons.done_all, size: 18),
+                        label: const Text('Mark all read'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _notifications.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No notifications',
+                              style: TextStyle(color: Colors.grey.shade600),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _notifications.length,
+                            itemBuilder: (context, index) {
+                              final notif = _notifications[index];
+                              return _buildNotificationItem(notif);
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEmployeeAvailabilityDialog() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final total = _dashboardStats?.users.totalEmployees ?? 0;
+        final active = _dashboardStats?.users.activeEmployees ?? 0;
+        final inactive = (total - active).clamp(0, total);
+        return AlertDialog(
+          title: const Text('Employee Availability'),
+          content: Text('Total: $total\nActive: $active\nInactive: $inactive'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showGeofenceDetailsDialog() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final total = _dashboardStats?.geofences.total ?? 0;
+        final active = _dashboardStats?.geofences.active ?? 0;
+        final inactive = (total - active).clamp(0, total);
+        return AlertDialog(
+          title: const Text('Geofences'),
+          content: Text('Total: $total\nActive: $active\nInactive: $inactive'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showTasksDialog() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final total = _dashboardStats?.tasks.total ?? 0;
+        final pending = _dashboardStats?.tasks.pending ?? 0;
+        final completed = _dashboardStats?.tasks.completed ?? 0;
+        return AlertDialog(
+          title: const Text('Tasks'),
+          content: Text('Total: $total\nPending: $pending\nCompleted: $completed'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showAttendanceDialog() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final today = _dashboardStats?.attendance.today ?? 0;
+        final checkIns = _dashboardStats?.attendance.todayCheckIns ?? 0;
+        final checkOuts = _dashboardStats?.attendance.todayCheckOuts ?? 0;
+        return AlertDialog(
+          title: const Text("Today's Attendance"),
+          content: Text('Records: $today\nCheck-ins: $checkIns\nCheck-outs: $checkOuts'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
+    _adminNotifSub?.cancel();
+    _liveLocationFallbackSub?.cancel();
     _refreshTimer?.cancel();
-    _locationService.dispose();
+    _employeeLocationsSub?.cancel();
+    _employeeLocationsSnapshotSub?.cancel();
+    _employeeSearchDebounce?.cancel();
+    _employeeSearchController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
   Future<void> _initLocationService() async {
     try {
       await _locationService.initialize();
-      _locationService.employeeLocationsStream.listen((locations) {
+      _employeeLocationsSnapshotSub?.cancel();
+      _employeeLocationsSnapshotSub = _locationService.employeeLocationsStream.listen((locations) {
         if (mounted) {
           setState(() {
             _employeeLocations.clear();
@@ -108,13 +856,58 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           });
         }
       });
-    } catch (e) {
-      debugPrint('Error initializing location service: $e');
-    }
+
+      _subscribeToLocations();
+    } catch (_) {}
+  }
+
+  void _subscribeToAdminNotifications() {
+    _adminNotifSub?.cancel();
+    _adminNotifSub = _realtimeService.notificationStream.listen((data) {
+      try {
+        final action = (data['action'] ?? '') as String;
+        if (action != 'employeeOnline') {
+          return;
+        }
+        final employeeName = (data['name'] ?? 'Employee') as String;
+        final key = 'employeeOnline:$employeeName';
+        if (_snackDedupKeys.contains(key)) return;
+        _snackDedupKeys.add(key);
+
+        setState(() {
+          _notifications.insert(
+            0,
+            DashboardNotification(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              title: 'Employee Online',
+              message: '$employeeName is now online.',
+              type: 'employee',
+              timestamp: DateTime.now(),
+              payload: data,
+            ),
+          );
+
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$employeeName is online'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        });
+
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (_) {}
+    });
   }
 
   Future<void> _initRealtimeService() async {
     await _realtimeService.initialize();
+
+    _subscribeToAdminNotifications();
+    _subscribeToLiveLocationFallback();
 
     // Listen for real-time updates
     _realtimeService.attendanceStream.listen((event) {
@@ -153,13 +946,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       String message;
       String notifType = type;
 
+      String? snackbarKey;
+      bool shouldSnackbar = false;
+
       if (type == 'attendance') {
         if (action == 'new') {
           title = 'Employee check-in';
           message = 'A new check-in was recorded.';
+          shouldSnackbar = true;
+          snackbarKey = 'attendance:new';
         } else if (action == 'updated') {
           title = 'Employee check-out';
           message = 'An attendance record was updated.';
+          shouldSnackbar = true;
+          snackbarKey = 'attendance:updated';
         } else {
           title = 'Attendance activity';
           message = 'Attendance activity detected.';
@@ -168,9 +968,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         if (action == 'new') {
           title = 'New report submitted';
           message = 'A new report was created.';
+          shouldSnackbar = true;
+          snackbarKey = 'report:new';
         } else if (action == 'updated') {
           title = 'Report updated';
           message = 'A report was updated.';
+          shouldSnackbar = true;
+          snackbarKey = 'report:updated';
         } else {
           title = 'Report activity';
           message = 'Report activity detected.';
@@ -186,6 +990,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             message: message,
             type: notifType,
             timestamp: DateTime.now(),
+            payload: event['data'] is Map<String, dynamic>
+                ? event['data'] as Map<String, dynamic>
+                : null,
           ),
         );
         if (_notifications.length > 50) {
@@ -193,12 +1000,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$title - $message'),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      if (shouldSnackbar) {
+        final key = snackbarKey ?? '$notifType:${action.isEmpty ? 'event' : action}';
+        final isDup = _snackDedupKeys.contains(key);
+        if (!isDup) {
+          _snackDedupKeys.add(key);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$title - $message'),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+
+          Future<void>.delayed(const Duration(seconds: 6)).then((_) {
+            if (!mounted) return;
+            _snackDedupKeys.remove(key);
+          });
+        }
+      }
     });
   }
 
@@ -245,9 +1064,305 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _onItemTapped(int index) {
+    if (index == _navMore) {
+      _showMoreSheet();
+      return;
+    }
+
     setState(() {
-      _selectedIndex = index;
+      switch (index) {
+        case _navDashboard:
+          _selectedIndex = 0;
+          break;
+        case _navEmployees:
+          _selectedIndex = 1;
+          break;
+        case _navReports:
+          _selectedIndex = 4;
+          break;
+        default:
+          _selectedIndex = 0;
+      }
     });
+  }
+
+  int _currentNavIndex() {
+    switch (_selectedIndex) {
+      case 0:
+        return _navDashboard;
+      case 1:
+        return _navEmployees;
+      case 4:
+        return _navReports;
+      case 2:
+      case 3:
+      case 5:
+      case 6:
+        return _navMore;
+      default:
+        return _navDashboard;
+    }
+  }
+
+  Future<void> _showMoreSheet() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('Admin Info'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  showModalBottomSheet<void>(
+                    context: context,
+                    showDragHandle: true,
+                    isScrollControlled: true,
+                    builder: (_) {
+                      return const FractionallySizedBox(
+                        heightFactor: 0.9,
+                        child: AdminInfoModal(),
+                      );
+                    },
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.admin_panel_settings),
+                title: const Text('Admins'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  setState(() {
+                    _selectedIndex = 2;
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.map),
+                title: const Text('Geofences'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  setState(() {
+                    _selectedIndex = 3;
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.task),
+                title: const Text('Tasks'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  setState(() {
+                    _selectedIndex = 6;
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings),
+                title: const Text('Settings'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  setState(() {
+                    _selectedIndex = 5;
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEmployeeDetailsBottomSheet(String userId, UserModel? user) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildEmployeeDetailsContent(userId, user),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmployeeSidePanel() {
+    return Card(
+      elevation: 4,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: _selectedEmployeeId == null
+            ? _buildEmployeeEmptyState()
+            : _buildEmployeeDetailsContent(
+                _selectedEmployeeId!,
+                _employees[_selectedEmployeeId!],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildEmployeeEmptyState() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Employee',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Tap an employee marker to view details.',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmployeeDetailsContent(String userId, UserModel? user) {
+    final isOnline = _liveLocations.containsKey(userId);
+    final loc = _employeeLocations[userId];
+    final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
+    final isBusy = activeTaskCount >= _taskLimitPerEmployee;
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            user?.name ?? 'Employee',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            user?.email ?? '',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 12),
+          _buildStatusRow(
+            'Online Status',
+            isOnline ? 'Online' : 'Offline',
+            isOnline ? Colors.green : Colors.grey,
+          ),
+          _buildStatusRow(
+            'Task Load',
+            '$activeTaskCount / $_taskLimitPerEmployee',
+            isBusy ? Colors.red : Colors.blue,
+          ),
+          const SizedBox(height: 12),
+          if (_liveLocations.containsKey(userId))
+            Text(
+              'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            )
+          else
+            Text(
+              'Location not available',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          const SizedBox(height: 8),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(top: 8),
+              title: const Text(
+                'More details',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              children: [
+                SizedBox(
+                  height: 220,
+                  child: DefaultTabController(
+                    length: 2,
+                    child: Column(
+                      children: [
+                        const TabBar(
+                          tabs: [
+                            Tab(text: 'Details'),
+                            Tab(text: 'Status'),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: TabBarView(
+                            children: [
+                              SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildDetailRow(
+                                      'Name',
+                                      user?.name ?? 'N/A',
+                                    ),
+                                    _buildDetailRow(
+                                      'Email',
+                                      user?.email ?? 'N/A',
+                                    ),
+                                    _buildDetailRow(
+                                      'Phone',
+                                      user?.phone ?? 'N/A',
+                                    ),
+                                    _buildDetailRow(
+                                      'Role',
+                                      user?.role ?? 'N/A',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildStatusRow(
+                                      'Online Status',
+                                      isOnline ? 'Online' : 'Offline',
+                                      isOnline ? Colors.green : Colors.grey,
+                                    ),
+                                    _buildStatusRow(
+                                      'Active Tasks',
+                                      '$activeTaskCount',
+                                      isBusy ? Colors.red : Colors.blue,
+                                    ),
+                                    if (loc != null)
+                                      _buildStatusRow(
+                                        'Workload Score',
+                                        loc.workloadScore.toStringAsFixed(2),
+                                        _getWorkloadColor(loc.workloadScore),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -272,6 +1387,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               icon: const Icon(Icons.refresh),
               onPressed: _loadDashboardData,
             ),
+          IconButton(
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.notifications),
+                if (_notifications.any((n) => !n.isRead))
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: _buildNotificationBadge(
+                      _notifications.where((n) => !n.isRead).length,
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: _showNotificationsInbox,
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
@@ -305,23 +1437,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             icon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Employees'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.admin_panel_settings),
-            label: 'Admins',
+            icon: Icon(Icons.people),
+            label: 'Employees',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Geofences'),
           BottomNavigationBarItem(
             icon: Icon(Icons.assessment),
             label: 'Reports',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.task), label: 'Tasks'),
+          BottomNavigationBarItem(icon: Icon(Icons.more_horiz), label: 'More'),
         ],
-        currentIndex: _selectedIndex,
+        currentIndex: _currentNavIndex(),
         onTap: _onItemTapped,
       ),
     );
@@ -366,13 +1492,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadDashboardData,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 900;
+        return RefreshIndicator(
+          onRefresh: _loadDashboardData,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // Real-time status indicator
             if (_realtimeUpdates != null)
               Container(
@@ -400,7 +1529,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(height: 12),
 
             // World Map - Live Employee Tracking
-            _buildWorldMapSection(),
+            if (isWide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _buildWorldMapSection(isWide: true)),
+                  const SizedBox(width: 12),
+                  SizedBox(width: 380, child: _buildEmployeeSidePanel()),
+                ],
+              )
+            else
+              _buildWorldMapSection(isWide: false),
 
             const SizedBox(height: 24),
 
@@ -421,9 +1560,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
             // Real-time Notifications
             _buildNotificationsPanel(),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -761,7 +1902,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildWorldMapSection() {
+  Widget _buildWorldMapSection({required bool isWide}) {
     return Card(
       elevation: 4,
       color: Colors.white,
@@ -774,18 +1915,46 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _panelBorderBlue, width: 1.5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Map Controls',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _panelTextPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildMapControls(),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 const Text(
                   'Live Employee Tracking',
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    fontWeight: FontWeight.w800,
+                    color: _panelTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Online: ${_liveLocations.length} employees',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: _panelTextSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -797,107 +1966,125 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             child: Stack(
               children: [
-                FlutterMap(
-                  options: MapOptions(
-                    initialCenter: _defaultCenter,
-                    initialZoom: 3,
-                    maxZoom: 18,
-                    minZoom: 2,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.all,
-                    ),
+                Container(
+                  margin: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _panelBorderBlue, width: 1.5),
                   ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      subdomains: const ['a', 'b', 'c'],
+                  clipBehavior: Clip.antiAlias,
+                  child: FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: _defaultCenter,
+                      initialZoom: 3,
+                      maxZoom: 18,
+                      minZoom: 2,
+                      interactionOptions: const InteractionOptions(
+                        flags: InteractiveFlag.all,
+                      ),
                     ),
-                    PolylineLayer(
-                      polylines: _trails.entries.map((e) {
-                        return Polyline(
-                          points: e.value,
-                          strokeWidth: 2,
-                          color: Colors.blue.withValues(alpha: 0.5),
-                        );
-                      }).toList(),
-                    ),
-                    MarkerLayer(
-                      markers: _liveLocations.entries
-                          .where(
-                            (entry) => _employees[entry.key]?.isOnline == true,
-                          )
-                          .map((entry) {
-                            final user = _employees[entry.key];
-                            final empLocation = _employeeLocations[entry.key];
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        subdomains: const ['a', 'b', 'c'],
+                      ),
+                      PolylineLayer(
+                        polylines: _trails.entries.map((e) {
+                          return Polyline(
+                            points: e.value,
+                            strokeWidth: 2,
+                            color: Colors.blue.withValues(alpha: 0.5),
+                          );
+                        }).toList(),
+                      ),
+                      MarkerLayer(
+                        markers: _liveLocations.entries
+                            .where((e) => _passesEmployeeFilters(e.key))
+                            .map((entry) {
+                              final user = _employees[entry.key];
+                              final empLocation = _employeeLocations[entry.key];
 
-                            // Determine marker color based on employee status
-                            Color markerColor = Colors.green;
-                            IconData markerIcon = Icons.check_circle;
+                              final activeTaskCount =
+                                  empLocation?.activeTaskCount ??
+                                  user?.activeTaskCount ??
+                                  0;
+                              final isBusy =
+                                  activeTaskCount >= _taskLimitPerEmployee;
 
-                            if (empLocation != null) {
-                              switch (empLocation.status) {
-                                case EmployeeStatus.available:
+                              Color markerColor;
+                              IconData markerIcon;
+
+                              if (isBusy) {
+                                markerColor = Colors.red;
+                                markerIcon = Icons.schedule;
+                              } else {
+                                final status = empLocation?.status;
+                                if (status == EmployeeStatus.available) {
                                   markerColor = Colors.green;
                                   markerIcon = Icons.check_circle;
-                                  break;
-                                case EmployeeStatus.moving:
+                                } else {
                                   markerColor = Colors.blue;
                                   markerIcon = Icons.directions_run;
-                                  break;
-                                case EmployeeStatus.busy:
-                                  markerColor = Colors.red;
-                                  markerIcon = Icons.schedule;
-                                  break;
-                                case EmployeeStatus.offline:
-                                  markerColor = Colors.grey;
-                                  markerIcon = Icons.cloud_off;
-                                  break;
+                                }
                               }
-                            }
 
-                            return Marker(
-                              point: entry.value,
-                              width: 40,
-                              height: 40,
-                              child: GestureDetector(
-                                onTap: () {
-                                  _showEmployeeDetails(entry.key, user);
-                                },
-                                child: Tooltip(
-                                  message: user?.name ?? entry.key,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: markerColor,
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 2,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: markerColor.withValues(
-                                            alpha: 0.5,
-                                          ),
-                                          blurRadius: 8,
-                                          spreadRadius: 2,
+                              return Marker(
+                                point: entry.value,
+                                width: 40,
+                                height: 40,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedEmployeeId = entry.key;
+                                    });
+
+                                    _panTo(entry.value, zoom: 16);
+
+                                    if (!isWide) {
+                                      _showEmployeeDetailsBottomSheet(
+                                        entry.key,
+                                        user,
+                                      );
+                                    }
+                                  },
+                                  child: Tooltip(
+                                    message: user?.name ?? entry.key,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: markerColor,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
                                         ),
-                                      ],
-                                    ),
-                                    padding: const EdgeInsets.all(6),
-                                    child: Icon(
-                                      markerIcon,
-                                      color: Colors.white,
-                                      size: 20,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: markerColor.withValues(
+                                              alpha: 0.5,
+                                            ),
+                                            blurRadius: 8,
+                                            spreadRadius: 2,
+                                          ),
+                                        ],
+                                      ),
+                                      padding: const EdgeInsets.all(6),
+                                      child: Icon(
+                                        markerIcon,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            );
-                          })
-                          .toList(),
-                    ),
-                  ],
+                              );
+                            })
+                            .toList(),
+                      ),
+                    ],
+                  ),
                 ),
                 // Floating employee indicators at map edges
                 _buildFloatingEmployeeIndicators(),
@@ -915,6 +2102,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.98),
                           borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _panelBorderBlue, width: 1.5),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.15),
@@ -981,6 +2169,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
+  }
+
+  void _autoPanToEmployee(String userId, LatLng location) {
+    _showEmployeeDetails(userId, _employees[userId]);
   }
 
   void _showEmployeeDetails(String userId, UserModel? user) {
@@ -1109,6 +2301,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (workload >= 0.8) return Colors.red;
     if (workload >= 0.5) return Colors.orange;
     return Colors.green;
+  }
+
+  Color _getTaskStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return Colors.green;
+      case 'in_progress':
+        return Colors.orange;
+      case 'pending':
+        return Colors.blue;
+      case 'blocked':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildAvailabilityInfo(String userId) {
@@ -1433,451 +2640,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  void _autoPanToEmployee(String userId, LatLng location) {
-    _showEmployeeDetails(userId, _employees[userId]);
-  }
-
-  void _showEmployeeAvailabilityDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Employee Availability'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Online Employees',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 12),
-              if (_employees.isEmpty)
-                Center(
-                  child: Text(
-                    'No employees',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                )
-              else
-                SizedBox(
-                  height: 250,
-                  child: ListView.builder(
-                    itemCount: _employees.length,
-                    itemBuilder: (context, index) {
-                      final entry = _employees.entries.toList()[index];
-                      final employee = entry.value;
-                      final isOnline = _liveLocations.containsKey(entry.key);
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: isOnline ? Colors.green : Colors.grey,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    employee.name,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    employee.email,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Text(
-                              isOnline ? 'Online' : 'Offline',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: isOnline ? Colors.green : Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showGeofenceDetailsDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Geofence Details'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Total: ${_dashboardStats!.geofences.total}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Active: ${_dashboardStats!.geofences.active}',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  setState(() => _selectedIndex = 3);
-                },
-                child: const Text('Manage Geofences'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showTasksDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Task Summary'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Total: ${_dashboardStats!.tasks.total}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Pending: ${_dashboardStats!.tasks.pending}',
-                style: TextStyle(fontSize: 12, color: Colors.orange),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Completed: ${_dashboardStats!.tasks.completed}',
-                style: TextStyle(fontSize: 12, color: Colors.green),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  setState(() => _selectedIndex = 6);
-                },
-                child: const Text('Manage Tasks'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAttendanceDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Today\'s Attendance'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Check-ins: ${_dashboardStats!.attendance.todayCheckIns}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Present: ${_dashboardStats!.attendance.today}',
-                style: TextStyle(fontSize: 12, color: Colors.green),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  setState(() => _selectedIndex = 4);
-                },
-                child: const Text('View Reports'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotificationsPanel() {
-    final unreadCount = _notifications.where((n) => !n.isRead).length;
-
-    if (_notifications.isEmpty) {
-      return Card(
-        elevation: 4,
-        color: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Center(
-            child: Text(
-              'No new notifications',
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Card(
-      elevation: 4,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      'Real-time Alerts',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    if (unreadCount > 0) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '$unreadCount new',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                TextButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      for (final notif in _notifications) {
-                        notif.isRead = true;
-                      }
-                    });
-                  },
-                  icon: const Icon(Icons.done_all, size: 18),
-                  label: const Text('Mark all read'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 150,
-              child: ListView.builder(
-                itemCount: _notifications.length,
-                itemBuilder: (context, index) {
-                  final notif = _notifications[index];
-                  return _buildNotificationItem(notif);
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationItem(DashboardNotification notif) {
-    Color typeColor;
-    IconData typeIcon;
-
-    switch (notif.type) {
-      case 'employee':
-        typeColor = Colors.blue;
-        typeIcon = Icons.people;
-        break;
-      case 'task':
-        typeColor = Colors.orange;
-        typeIcon = Icons.task;
-        break;
-      case 'attendance':
-        typeColor = Colors.purple;
-        typeIcon = Icons.check_circle;
-        break;
-      case 'geofence':
-        typeColor = Colors.green;
-        typeIcon = Icons.location_on;
-        break;
-      default:
-        typeColor = Colors.grey;
-        typeIcon = Icons.notifications;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: notif.isRead ? Colors.grey.shade50 : Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: notif.isRead
-              ? Colors.grey.shade200
-              : typeColor.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          if (!notif.isRead)
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              margin: const EdgeInsets.only(right: 8),
-            ),
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: typeColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(typeIcon, color: typeColor, size: 16),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  notif.title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  notif.message,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _notifications.remove(notif);
-              });
-            },
-            child: Icon(Icons.close, size: 16, color: Colors.grey.shade400),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getTaskStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'completed':
-        return Colors.green;
-      case 'in_progress':
-        return Colors.orange;
-      case 'pending':
-        return Colors.grey;
-      default:
-        return Colors.blue;
-    }
-  }
-
   Future<void> _initMapData() async {
     await _loadEmployeesForMap();
     await _loadOnlineEmployeeLocations();
+    await _loadGeofencesForNearby();
     _subscribeToLocations();
   }
 
@@ -1932,23 +2698,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _subscribeToLocations() {
-    _realtimeService.locationStream.listen((event) {
-      final userId = event['userId']?.toString();
-      final lat = (event['latitude'] as num?)?.toDouble();
-      final lng = (event['longitude'] as num?)?.toDouble();
-      if (userId == null || lat == null || lng == null) return;
-
-      final pos = LatLng(lat, lng);
+    _employeeLocationsSub?.cancel();
+    _employeeLocationsSub = _locationService.employeeLocationsStream.listen((locations) {
       if (!mounted) return;
       setState(() {
         final wasEmpty = _liveLocations.isEmpty;
-        _liveLocations[userId] = pos;
-        final trail = _trails[userId] ?? <LatLng>[];
-        trail.add(pos);
-        if (trail.length > 50) {
-          trail.removeRange(0, trail.length - 50);
+        for (final empLoc in locations) {
+          final pos = LatLng(empLoc.latitude, empLoc.longitude);
+          _liveLocations[empLoc.employeeId] = pos;
+
+          final trail = _trails[empLoc.employeeId] ?? <LatLng>[];
+          if (trail.isEmpty || trail.last != pos) {
+            trail.add(pos);
+            if (trail.length > 50) {
+              trail.removeRange(0, trail.length - 50);
+            }
+            _trails[empLoc.employeeId] = trail;
+          }
         }
-        _trails[userId] = trail;
+
         if (wasEmpty && _liveLocations.isNotEmpty) {
           _showNoEmployeesPopup = false;
         }

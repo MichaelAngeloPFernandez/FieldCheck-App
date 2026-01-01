@@ -12,6 +12,7 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:field_check/services/location_sync_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -25,6 +26,7 @@ class _MapScreenState extends State<MapScreen> {
   final GeofenceService _geofenceService = GeofenceService();
   final UserService _userService = UserService();
   final TaskService _taskService = TaskService();
+  final LocationSyncService _locationSyncService = LocationSyncService();
 
   LatLng? _userLatLng;
   List<Geofence> _geofences = [];
@@ -54,6 +56,63 @@ class _MapScreenState extends State<MapScreen> {
   late StreamSubscription<dynamic>? _locationSubscription;
   bool _gpsConnected = false;
   double? _currentAccuracy;
+
+  Widget _buildDebugOverlay() {
+    if (!kDebugMode) return const SizedBox.shrink();
+
+    final pos = _userLatLng;
+    return Positioned(
+      left: 12,
+      bottom: 12,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.75),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: DefaultTextStyle(
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('GPS: ${_gpsConnected ? 'OK' : 'WAIT'}  acc=${_currentAccuracy?.toStringAsFixed(1) ?? '-'}m'),
+              Text(
+                'pos: ${pos == null ? '-' : '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}'}',
+              ),
+              const SizedBox(height: 6),
+              ValueListenableBuilder<bool>(
+                valueListenable: _locationSyncService.connectedListenable,
+                builder: (context, connected, _) {
+                  return Text('socket: ${connected ? 'CONNECTED' : 'DISCONNECTED'}');
+                },
+              ),
+              Text('socketUrl: ${_locationSyncService.socketUrl}'),
+              ValueListenableBuilder<DateTime?>(
+                valueListenable: _locationSyncService.lastSharedListenable,
+                builder: (context, value, _) {
+                  final text = value == null
+                      ? 'lastShared: never'
+                      : 'lastShared: ${value.toIso8601String()}';
+                  return Text(text);
+                },
+              ),
+              ValueListenableBuilder<String?>(
+                valueListenable: _locationSyncService.lastErrorListenable,
+                builder: (context, value, _) {
+                  if (value == null || value.trim().isEmpty) {
+                    return const Text('error: -');
+                  }
+                  return Text('error: $value');
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -468,13 +527,15 @@ class _MapScreenState extends State<MapScreen> {
                     mapController: _mapController,
                     options: MapOptions(
                       initialCenter: defaultCenter,
-                      initialZoom: 15,
+                      initialZoom: 13.0,
+                      maxZoom: 18.0,
+                      minZoom: 3.0,
                     ),
                     children: [
                       TileLayer(
                         urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'field_check',
+                            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        subdomains: const ['a', 'b', 'c'],
                       ),
                       if (!_showTasks && _geofences.isNotEmpty)
                         CircleLayer(
@@ -568,6 +629,7 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                 ),
+                _buildDebugOverlay(),
                 // Search location bar with autocomplete
                 Positioned(
                   top: 12,

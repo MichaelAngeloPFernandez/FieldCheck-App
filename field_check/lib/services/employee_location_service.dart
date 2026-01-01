@@ -135,7 +135,7 @@ class EmployeeLocationService {
     try {
       final token = await _userService.getToken();
       final options = io.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .setExtraHeaders({
             if (token != null) 'Authorization': 'Bearer $token',
           })

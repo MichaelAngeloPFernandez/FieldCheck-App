@@ -6,6 +6,7 @@ import 'package:field_check/services/report_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/models/task_model.dart';
+import 'package:field_check/utils/app_theme.dart';
 
 class TaskReportScreen extends StatefulWidget {
   final Task task;
@@ -22,6 +23,7 @@ class TaskReportScreen extends StatefulWidget {
 }
 
 class _TaskReportScreenState extends State<TaskReportScreen> {
+  static const int _maxUploadBytes = ReportService.maxUploadBytes;
   final TextEditingController _textController = TextEditingController();
   final List<PlatformFile> _beforeFiles = [];
   final List<PlatformFile> _afterFiles = [];
@@ -195,22 +197,44 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.image,
-        withData: false,
+        withData: true,
       );
 
       if (result != null) {
+        final accepted = <PlatformFile>[];
+        int rejected = 0;
+
+        for (final f in result.files) {
+          final size = f.size;
+          if (size > _maxUploadBytes) {
+            rejected++;
+            continue;
+          }
+          accepted.add(f);
+        }
+
+        if (!mounted) return;
+        if (rejected > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$rejected file(s) were skipped because they exceed 10MB.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
         setState(() {
-          _beforeFiles.addAll(result.files);
+          _beforeFiles.addAll(accepted);
         });
-        _hasUnsavedChanges = true;
         _saveToAutosave();
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error picking before photos: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking before photos: $e')),
+      );
     }
   }
 
@@ -219,22 +243,44 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.image,
-        withData: false,
+        withData: true,
       );
 
       if (result != null) {
+        final accepted = <PlatformFile>[];
+        int rejected = 0;
+
+        for (final f in result.files) {
+          final size = f.size;
+          if (size > _maxUploadBytes) {
+            rejected++;
+            continue;
+          }
+          accepted.add(f);
+        }
+
+        if (!mounted) return;
+        if (rejected > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$rejected file(s) were skipped because they exceed 10MB.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
         setState(() {
-          _afterFiles.addAll(result.files);
+          _afterFiles.addAll(accepted);
         });
-        _hasUnsavedChanges = true;
         _saveToAutosave();
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error picking after photos: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking after photos: $e')),
+      );
     }
   }
 
@@ -243,22 +289,44 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.any,
-        withData: false,
+        withData: true,
       );
 
       if (result != null) {
+        final accepted = <PlatformFile>[];
+        int rejected = 0;
+
+        for (final f in result.files) {
+          final size = f.size;
+          if (size > _maxUploadBytes) {
+            rejected++;
+            continue;
+          }
+          accepted.add(f);
+        }
+
+        if (!mounted) return;
+        if (rejected > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$rejected file(s) were skipped because they exceed 10MB.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
         setState(() {
-          _documentFiles.addAll(result.files);
+          _documentFiles.addAll(accepted);
         });
-        _hasUnsavedChanges = true;
         _saveToAutosave();
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error picking documents: $e')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking documents: $e')),
+      );
     }
   }
 
@@ -496,13 +564,51 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       final List<String> attachmentPaths = [];
       Future<void> uploadGroup(List<PlatformFile> files, String prefix) async {
         for (final file in files) {
-          final filePath = file.path;
-          if (filePath == null || filePath.isEmpty) {
+          if (file.size > _maxUploadBytes) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Skipped ${file.name}: exceeds 10MB limit.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
             continue;
           }
+
+          final fileName = '${prefix}_${file.name}';
+
+          // Web-safe path: prefer bytes if available.
+          if (file.bytes != null) {
+            final uploadedPath = await ReportService().uploadAttachmentBytes(
+              bytes: file.bytes!,
+              fileName: fileName,
+              taskId: _task.id,
+              employeeId: widget.employeeId,
+            );
+            attachmentPaths.add(uploadedPath);
+            continue;
+          }
+
+          // Mobile/desktop path: use file path.
+          final filePath = file.path;
+          if (filePath == null || filePath.isEmpty) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Skipped ${file.name}: could not read file data.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            continue;
+          }
+
           final uploadedPath = await ReportService().uploadAttachment(
             filePath: filePath,
-            fileName: '${prefix}_${file.name}',
+            fileName: fileName,
             taskId: _task.id,
             employeeId: widget.employeeId,
           );
@@ -583,30 +689,32 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            color: Colors.grey.shade100,
+            color: AppTheme.backgroundColor,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   widget.task.title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: AppTheme.headingSm,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   widget.task.description,
-                  style: TextStyle(color: Colors.grey.shade600),
+                  style: AppTheme.bodyMd.copyWith(color: AppTheme.textSecondary),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.schedule, size: 16, color: Colors.grey.shade600),
+                    Icon(
+                      Icons.schedule,
+                      size: 16,
+                      color: AppTheme.textSecondary,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       'Due: ${_task.dueDate.toLocal().toString().split(' ')[0]}',
-                      style: TextStyle(color: Colors.grey.shade600),
+                      style:
+                          AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
                     ),
                   ],
                 ),
@@ -617,19 +725,21 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                       Icon(
                         Icons.check_circle,
                         size: 16,
-                        color: Colors.grey.shade600,
+                        color: AppTheme.textSecondary,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         'Progress: ${_task.progressPercent.clamp(0, 100)}%',
-                        style: TextStyle(color: Colors.grey.shade600),
+                        style: AppTheme.bodySm.copyWith(
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   LinearProgressIndicator(
                     value: _task.progressPercent.clamp(0, 100) / 100.0,
-                    backgroundColor: Colors.grey.shade300,
+                    backgroundColor: AppTheme.dividerColor,
                   ),
                 ],
               ],
@@ -648,16 +758,16 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                       child: Text(
                         'Checklist:',
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: AppTheme.headingSm.fontSize,
                           fontWeight: FontWeight.w500,
-                          color: Colors.grey.shade800,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Container(
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(color: AppTheme.dividerColor),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: ListView.separated(
@@ -665,7 +775,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: _task.checklist.length,
                         separatorBuilder: (context, _) =>
-                            Divider(height: 1, color: Colors.grey.shade300),
+                            const Divider(height: 1, color: AppTheme.dividerColor),
                         itemBuilder: (context, index) {
                           final item = _task.checklist[index];
                           final isDisabled =
@@ -682,7 +792,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                             subtitle: item.completedAt != null
                                 ? Text(
                                     'Completed at: ${item.completedAt!.toLocal().toString().split('.')[0]}',
-                                    style: const TextStyle(fontSize: 12),
+                                    style: AppTheme.bodySm,
                                   )
                                 : null,
                           );
@@ -693,13 +803,13 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                   ],
                   const Text(
                     'Write your report:',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    style: AppTheme.labelLg,
                   ),
                   const SizedBox(height: 8),
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(color: AppTheme.dividerColor),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: TextField(
@@ -707,6 +817,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                         maxLines: null,
                         expands: true,
                         textAlignVertical: TextAlignVertical.top,
+                        style: AppTheme.bodyMd,
                         decoration: const InputDecoration(
                           hintText:
                               'Describe what you did, any issues encountered, or additional notes...',

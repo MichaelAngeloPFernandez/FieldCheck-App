@@ -12,8 +12,10 @@ class CustomMap extends StatefulWidget {
   final List<Geofence> geofences;
   final UserLocation? currentLocation;
   final Function(double, double)? onTap;
+  final Function(double, double)? onLongPress;
   final bool isEditable;
   final String? currentUserId;
+  final MapController? mapController;
 
   const CustomMap({
     super.key,
@@ -22,8 +24,10 @@ class CustomMap extends StatefulWidget {
     this.geofences = const [],
     this.currentLocation,
     this.onTap,
+    this.onLongPress,
     this.isEditable = false,
     this.currentUserId,
+    this.mapController,
   });
 
   @override
@@ -31,7 +35,8 @@ class CustomMap extends StatefulWidget {
 }
 
 class _CustomMapState extends State<CustomMap> {
-  final MapController _mapController = MapController();
+  MapController get _mapController => widget.mapController ?? _internalMapController;
+  final MapController _internalMapController = MapController();
 
   Geofence? _nearestGeofence() {
     if (widget.geofences.isEmpty) return null;
@@ -230,6 +235,11 @@ class _CustomMapState extends State<CustomMap> {
                   if (widget.onTap != null) {
                     widget.onTap!(latlng.latitude, latlng.longitude);
                   }
+                }
+              },
+              onLongPress: (tapPosition, latlng) {
+                if (widget.isEditable && widget.onLongPress != null) {
+                  widget.onLongPress!(latlng.latitude, latlng.longitude);
                 }
               },
             ),

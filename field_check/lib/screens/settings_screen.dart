@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:field_check/screens/login_screen.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/main.dart';
 import 'package:field_check/models/user_model.dart';
-import 'package:image_picker/image_picker.dart'; // Import image_picker
-import 'dart:io'; // Import dart:io for File
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:field_check/screens/map_screen.dart';
+import 'package:field_check/utils/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,13 +25,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final UserService _userService = UserService();
   UserModel? _profile;
   bool _loadingProfile = true;
-  File? _pickedImage; // Add _pickedImage variable
+  Uint8List? _pickedAvatarBytes;
+  String? _pickedAvatarFilename;
 
   @override
   void initState() {
     super.initState();
     _loadUserPreferences();
     _loadProfile();
+  }
+
+  String _formatTime(DateTime time) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final local = time.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute;
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    return '${two(hour)}:${two(minute)} $suffix';
   }
 
   Future<void> _loadUserPreferences() async {
@@ -84,8 +96,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final profile = await _userService.getProfile();
       final nameController = TextEditingController(text: profile.name);
       final emailController = TextEditingController(text: profile.email);
-      File? tempPickedImage =
-          _pickedImage; // Use a temporary variable for the dialog
+      Uint8List? tempPickedAvatarBytes = _pickedAvatarBytes;
+      String? tempPickedAvatarFilename = _pickedAvatarFilename;
 
       final confirmed = await showDialog<bool>(
         context: context,
@@ -98,27 +110,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   GestureDetector(
                     onTap: () async {
-                      final picker = ImagePicker();
-                      final pickedFile = await picker.pickImage(
-                        source: ImageSource.gallery,
+                      final result = await FilePicker.platform.pickFiles(
+                        allowMultiple: false,
+                        type: FileType.any,
+                        withData: true,
                       );
-                      if (pickedFile != null) {
+
+                      final file = result?.files.isNotEmpty == true
+                          ? result!.files.first
+                          : null;
+                      if (file?.bytes != null) {
                         setState(() {
-                          tempPickedImage = File(pickedFile.path);
+                          tempPickedAvatarBytes = file!.bytes;
+                          tempPickedAvatarFilename = file.name;
                         });
                       }
                     },
                     child: CircleAvatar(
                       radius: 40,
                       backgroundColor: const Color(0xFF2688d4),
-                      backgroundImage: tempPickedImage != null
-                          ? FileImage(tempPickedImage!)
+                      backgroundImage: tempPickedAvatarBytes != null
+                          ? MemoryImage(tempPickedAvatarBytes!)
                           : (_profile?.avatarUrl?.isNotEmpty == true
-                                ? NetworkImage(_profile!.avatarUrl!)
-                                      as ImageProvider
-                                : null),
+                              ? NetworkImage(_profile!.avatarUrl!)
+                                  as ImageProvider
+                              : null),
                       child:
-                          tempPickedImage == null &&
+                          tempPickedAvatarBytes == null &&
                               (_profile?.avatarUrl?.isEmpty ?? true)
                           ? const Icon(
                               Icons.person,
@@ -156,9 +174,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       if (confirmed == true) {
         String? newAvatarUrl;
-        if (tempPickedImage != null) {
+        if (tempPickedAvatarBytes != null &&
+            (tempPickedAvatarFilename ?? '').isNotEmpty) {
           try {
-            newAvatarUrl = await _userService.uploadAvatar(tempPickedImage!);
+            newAvatarUrl = await _userService.uploadAvatarBytes(
+              tempPickedAvatarBytes!,
+              tempPickedAvatarFilename!,
+            );
           } catch (e) {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
@@ -183,8 +205,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
           await _loadProfile();
           setState(() {
-            _pickedImage =
-                tempPickedImage; // Update the main _pickedImage after successful save
+            _pickedAvatarBytes = tempPickedAvatarBytes;
+            _pickedAvatarFilename = tempPickedAvatarFilename;
           });
         } catch (e) {
           if (!mounted) return;
@@ -277,14 +299,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     CircleAvatar(
                       radius: 30,
                       backgroundColor: const Color(0xFF2688d4),
-                      backgroundImage: _pickedImage != null
-                          ? FileImage(_pickedImage!)
+                      backgroundImage: _pickedAvatarBytes != null
+                          ? MemoryImage(_pickedAvatarBytes!)
                           : (_profile?.avatarUrl?.isNotEmpty == true
-                                ? NetworkImage(_profile!.avatarUrl!)
-                                      as ImageProvider
-                                : null),
+                              ? NetworkImage(_profile!.avatarUrl!)
+                                  as ImageProvider
+                              : null),
                       child:
-                          _pickedImage == null &&
+                          _pickedAvatarBytes == null &&
                               (_profile?.avatarUrl?.isEmpty ?? true)
                           ? const Icon(
                               Icons.person,
@@ -302,25 +324,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             _loadingProfile
                                 ? 'Loading...'
                                 : (_profile?.name ?? '—'),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: AppTheme.headingSm,
                           ),
                           const SizedBox(height: 4),
                           Text(
                             _loadingProfile ? '' : (_profile?.role ?? ''),
-                            style: const TextStyle(color: Colors.grey),
+                            style:
+                                AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             _loadingProfile ? '' : 'ID: ${_profile?.id ?? '—'}',
-                            style: const TextStyle(color: Colors.grey),
+                            style:
+                                AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             _loadingProfile ? '' : (_profile?.email ?? ''),
-                            style: const TextStyle(color: Colors.grey),
+                            style:
+                                AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
                           ),
                         ],
                       ),
@@ -360,7 +382,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Appearance
             const Text(
               'Appearance',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: AppTheme.labelLg,
             ),
             const SizedBox(height: 8),
             Row(
@@ -396,7 +418,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // App Settings
             const Text(
               'App Settings',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: AppTheme.labelLg,
             ),
             const SizedBox(height: 8),
 
@@ -415,9 +437,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
 
             SwitchListTile(
-              title: const Text('Location Tracking'),
-              subtitle: const Text(
-                'Allow continuous location tracking during work hours',
+              title: const Text('Share live location with admin'),
+              subtitle: ValueListenableBuilder<DateTime?>(
+                valueListenable: LocationSyncService().lastSharedListenable,
+                builder: (context, value, _) {
+                  final last = value == null
+                      ? 'Last shared: Never'
+                      : 'Last shared: ${_formatTime(value)}';
+                  return Text(
+                    'Allow admin to see your live location during work hours\n$last',
+                  );
+                },
               ),
               value: _locationTracking,
               onChanged: (value) async {

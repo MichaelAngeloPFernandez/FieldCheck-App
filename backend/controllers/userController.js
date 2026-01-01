@@ -416,6 +416,41 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Admin reset user password
+// @route   PUT /api/users/:id/reset-password-admin
+// @access  Private/Admin
+const resetUserPasswordByAdmin = asyncHandler(async (req, res) => {
+  const { password } = req.body;
+  if (typeof password !== 'string' || password.trim().length < 6) {
+    res.status(400);
+    throw new Error('Password must be at least 6 characters');
+  }
+
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  user.password = password.trim();
+  user.tokenVersion = (user.tokenVersion || 0) + 1; // revoke refresh tokens
+  await user.save();
+
+  res.json({
+    message: 'Password reset successful',
+    user: {
+      _id: user._id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+    },
+  });
+});
+
 // @desc    Import users from JSON (admin)
 // @route   POST /api/users/import
 // @access  Private/Admin
@@ -477,6 +512,7 @@ module.exports = {
   deleteUser,
   getUsers,
   updateUserByAdmin,
+  resetUserPasswordByAdmin,
   importUsers,
 };
 

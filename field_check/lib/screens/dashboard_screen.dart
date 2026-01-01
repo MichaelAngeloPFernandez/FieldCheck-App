@@ -13,6 +13,7 @@ import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/services/checkout_notification_service.dart';
+import 'package:field_check/services/task_service.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/logger.dart';
 import 'package:field_check/widgets/app_widgets.dart';
@@ -39,9 +40,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   StreamSubscription<CheckoutWarning>? _checkoutWarningSub;
   StreamSubscription<AutoCheckoutEvent>? _autoCheckoutSub;
+  StreamSubscription<Map<String, dynamic>>? _taskEventsSub;
+  Timer? _taskBadgeDebounce;
   String? _userModelId;
   bool _loadingUserId = true;
   bool _isTrackingLocation = true;
+
+  int _tasksBadgeCount = 0;
 
   @override
   void initState() {
@@ -74,6 +79,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     }
 
+    if (enabled) {
+      _locationSyncService.startSharing();
+    }
+
     // Note: Location tracking will start when employee manually checks in
     // Do NOT call startTracking() here - it should only happen on manual check-in
 
@@ -85,6 +94,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _autoCheckoutSub = _checkoutService.checkoutStream.listen(
       _handleAutoCheckoutEvent,
     );
+
+    _subscribeToTaskEvents();
+  }
+
+  void _subscribeToTaskEvents() {
+    _taskEventsSub?.cancel();
+    _taskEventsSub = _realtimeService.taskStream.listen((event) {
+      // Always recompute badge on task events (new/update/delete/status change)
+      _taskBadgeDebounce?.cancel();
+      _taskBadgeDebounce = Timer(const Duration(milliseconds: 350), () {
+        _refreshTasksBadge(showSnackIfNew: true, event: event);
+      });
+    });
+  }
+
+  Future<void> _refreshTasksBadge({
+    bool showSnackIfNew = false,
+    Map<String, dynamic>? event,
+  }) async {
+    final userId = _userModelId;
+    if (userId == null) {
+      return;
+    }
+
+    int oldCount = _tasksBadgeCount;
+
+    try {
+      final tasks = await TaskService().fetchAssignedTasks(userId);
+      final count = tasks
+          .where((t) => !t.isArchived)
+          .where((t) => t.status == 'pending' || t.status == 'in_progress')
+          .length;
+
+      if (!mounted) return;
+      setState(() {
+        _tasksBadgeCount = count;
+      });
+
+      if (!showSnackIfNew) return;
+
+      final isNewTaskEvent = (event?['type'] as String?) == 'new';
+      if (!isNewTaskEvent) return;
+
+      // Only show snackbar if user is not already on Tasks tab
+      if (_selectedIndex == 5) return;
+
+      // Guard: only notify if the badge count increased
+      if (count <= oldCount) return;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('New task assigned. Check your Tasks tab.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (_) {
+      // Ignore badge refresh errors
+    }
   }
 
   Future<void> _toggleLocationTracking() async {
@@ -100,9 +168,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
 
     if (newValue) {
-      _locationSyncService.startTracking();
+      _locationSyncService.startSharing();
     } else {
-      _locationSyncService.stopTracking();
+      _locationSyncService.stopSharing();
     }
 
     if (!mounted) return;
@@ -110,12 +178,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       SnackBar(
         content: Text(
           newValue
-              ? 'Location tracking enabled. Admins can see your live location on the map.'
-              : 'Location tracking disabled. Admins will no longer see your live location.',
+              ? 'Live location sharing enabled. Admin can see your live location.'
+              : 'Live location sharing disabled. Admin will no longer see your live location.',
         ),
         duration: const Duration(seconds: 3),
       ),
     );
+  }
+
+  String _formatTime(DateTime time) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final local = time.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute;
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    return '${two(hour)}:${two(minute)} $suffix';
   }
 
   void _handleCheckoutWarning(CheckoutWarning warning) {
@@ -172,6 +249,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _locationSyncService.dispose();
     _checkoutWarningSub?.cancel();
     _autoCheckoutSub?.cancel();
+    _taskBadgeDebounce?.cancel();
+    _taskEventsSub?.cancel();
     super.dispose();
   }
 
@@ -184,6 +263,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _userModelId = profile.id;
         _loadingUserId = false;
       });
+      _refreshTasksBadge();
       AppLogger.success(AppLogger.tagUI, 'User profile loaded: ${profile.id}');
     } catch (e) {
       AppLogger.error(AppLogger.tagUI, 'Failed to load user profile', e);
@@ -192,6 +272,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _loadingUserId = false;
       });
     }
+  }
+
+  Widget _buildBadge({required Widget child, required int count}) {
+    if (count <= 0) return child;
+    final text = count > 99 ? '99+' : '$count';
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned(
+          right: -8,
+          top: -6,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white, width: 1),
+            ),
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   // Navigation labels for better debugging
@@ -245,14 +356,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           IconButton(
             tooltip: _isTrackingLocation
-                ? 'Location tracking: ON'
-                : 'Location tracking: OFF',
+                ? 'Share live location with admin: ON'
+                : 'Share live location with admin: OFF',
             icon: Icon(
               _isTrackingLocation
                   ? Icons.location_searching
                   : Icons.location_disabled,
             ),
             onPressed: _toggleLocationTracking,
+          ),
+          ValueListenableBuilder<DateTime?>(
+            valueListenable: _locationSyncService.lastSharedListenable,
+            builder: (context, value, _) {
+              final text = value == null
+                  ? 'Last shared: Never'
+                  : 'Last shared: ${_formatTime(value)}';
+              return Padding(
+                padding: const EdgeInsets.only(right: AppTheme.sm),
+                child: Center(
+                  child: Text(
+                    text,
+                    style: AppTheme.labelMd.copyWith(color: Colors.white70),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              );
+            },
           ),
           if (_isOfflineMode)
             Tooltip(
@@ -323,9 +452,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           setState(() {
             _selectedIndex = index;
           });
+
+          if (index == 5) {
+            // When user opens Tasks tab, refresh and clear badge noise.
+            _refreshTasksBadge(showSnackIfNew: false);
+          }
         },
         type: BottomNavigationBarType.fixed,
-        items: const [
+        items: [
           BottomNavigationBarItem(
             icon: Icon(Icons.location_on),
             label: 'Attendance',
@@ -352,7 +486,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             tooltip: 'App settings',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.task),
+            icon: _buildBadge(
+              child: const Icon(Icons.task),
+              count: _tasksBadgeCount,
+            ),
             label: 'Tasks',
             tooltip: 'Task list',
           ),

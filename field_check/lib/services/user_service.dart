@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'dart:io'; // Import for File
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:io' show SocketException;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
@@ -12,7 +13,7 @@ class UserService {
   UserModel? _cachedProfile;
   UserModel? get currentUser => _cachedProfile;
 
-  Future<String> uploadAvatar(File imageFile) async {
+  Future<String> uploadAvatarBytes(Uint8List bytes, String filename) async {
     try {
       final token = await getToken();
       var request = http.MultipartRequest(
@@ -20,7 +21,11 @@ class UserService {
         Uri.parse('$_baseUrl/upload/avatar'),
       );
       request.files.add(
-        await http.MultipartFile.fromPath('avatar', imageFile.path),
+        http.MultipartFile.fromBytes(
+          'avatar',
+          bytes,
+          filename: filename,
+        ),
       );
       if (token != null) {
         request.headers['Authorization'] = 'Bearer $token';
@@ -70,6 +75,25 @@ class UserService {
     } else {
       throw Exception('Failed to load administrators');
     }
+  }
+
+  Future<List<UserModel>> fetchAllUsers({String? role}) async {
+    final token = await getToken();
+    final uri = Uri.parse(
+      role == null ? '$_baseUrl/users' : '$_baseUrl/users?role=$role',
+    );
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((j) => UserModel.fromJson(j)).toList();
+    }
+    throw Exception('Failed to load users');
   }
 
   Future<List<Map<String, dynamic>>?> getOnlineEmployees() async {
@@ -136,13 +160,13 @@ class UserService {
         }
         throw Exception(message);
       }
-    } on http.ClientException catch (_) {
-      throw Exception(
-        'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
-      );
     } on SocketException catch (_) {
       throw Exception(
         'Network error. Please confirm you are online and try again.',
+      );
+    } on http.ClientException catch (_) {
+      throw Exception(
+        'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
       );
     } on TimeoutException catch (_) {
       throw Exception('Request timed out. Server may be busy or unreachable.');
@@ -188,13 +212,13 @@ class UserService {
         }
         throw Exception(message);
       }
-    } on http.ClientException catch (_) {
-      throw Exception(
-        'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
-      );
     } on SocketException catch (_) {
       throw Exception(
         'Network error. Please confirm you are online and try again.',
+      );
+    } on http.ClientException catch (_) {
+      throw Exception(
+        'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
       );
     } on TimeoutException catch (_) {
       throw Exception('Request timed out. Server may be busy or unreachable.');
@@ -424,6 +448,31 @@ class UserService {
   }
 
   // Admin-only operations
+  Future<void> resetUserPasswordByAdmin(String userModelId, String password) async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$_baseUrl/users/$userModelId/reset-password-admin'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: json.encode({'password': password}),
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    }
+
+    String message = 'Failed to reset password';
+    try {
+      final dynamic err = json.decode(response.body);
+      if (err is Map<String, dynamic> && err['message'] != null) {
+        message = err['message'].toString();
+      }
+    } catch (_) {}
+    throw Exception(message);
+  }
+
   Future<void> deleteUser(String id) async {
     final token = await getToken();
     final response = await http.delete(

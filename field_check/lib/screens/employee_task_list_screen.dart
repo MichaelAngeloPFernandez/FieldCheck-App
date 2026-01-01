@@ -1,11 +1,14 @@
 // ignore_for_file: avoid_print
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/screens/task_report_screen.dart';
+import 'package:field_check/screens/employee_task_details_screen.dart';
 import 'package:field_check/screens/map_screen.dart';
+import 'package:field_check/screens/employee_reports_screen.dart';
 
 class EmployeeTaskListScreen extends StatefulWidget {
   final String userModelId;
@@ -21,25 +24,65 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
   final RealtimeService _realtimeService = RealtimeService();
   final AutosaveService _autosaveService = AutosaveService();
 
+  StreamSubscription<Map<String, dynamic>>? _taskSub;
+  Timer? _taskRefreshDebounce;
+
   String _statusFilter = 'all'; // all, pending, in_progress, completed
 
   @override
   void initState() {
     super.initState();
+    // ignore: unnecessary_statements
+    _completeTaskWithReport;
     _assignedTasksFuture = TaskService().fetchAssignedTasks(widget.userModelId);
     _initRealtimeService();
     _autosaveService.initialize();
   }
 
+  Future<void> _openTaskDetails(Task task) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EmployeeTaskDetailsScreen(
+          task: task,
+          employeeId: widget.userModelId,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      setState(() {
+        _assignedTasksFuture = TaskService().fetchAssignedTasks(
+          widget.userModelId,
+        );
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _taskRefreshDebounce?.cancel();
+    _taskSub?.cancel();
     super.dispose();
   }
 
   Future<void> _initRealtimeService() async {
     await _realtimeService.initialize();
-    // Real-time service initialized but NOT auto-refreshing
-    // User must manually refresh using pull-down gesture or refresh button
+
+    _taskSub?.cancel();
+    _taskSub = _realtimeService.taskStream.listen((event) {
+      // Conservative strategy: refresh on any task-related event.
+      // Server payload shapes vary, so avoid brittle filtering.
+      _taskRefreshDebounce?.cancel();
+      _taskRefreshDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        setState(() {
+          _assignedTasksFuture = TaskService().fetchAssignedTasks(
+            widget.userModelId,
+          );
+        });
+      });
+    });
   }
 
   Future<void> _completeTaskWithReport(Task task) async {
@@ -109,6 +152,20 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
         title: const Text('My Tasks'),
         actions: [
           IconButton(
+            tooltip: 'My Reports',
+            icon: const Icon(Icons.description_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EmployeeReportsScreen(
+                    employeeId: widget.userModelId,
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
             tooltip: 'Refresh Tasks',
             icon: const Icon(Icons.refresh),
             onPressed: _refreshTasks,
@@ -145,6 +202,22 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                       _statusFilter == 'all' ? true : t.status == _statusFilter,
                 )
                 .toList();
+
+            tasks.sort((a, b) {
+              // In-progress first
+              final aInProgress = a.status == 'in_progress';
+              final bInProgress = b.status == 'in_progress';
+              if (aInProgress != bInProgress) {
+                return aInProgress ? -1 : 1;
+              }
+
+              // Then due date (soonest first)
+              final byDue = a.dueDate.compareTo(b.dueDate);
+              if (byDue != 0) return byDue;
+
+              // Then title
+              return a.title.compareTo(b.title);
+            });
 
             return Column(
               children: [
@@ -190,7 +263,12 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                 ),
                 if (tasks.isEmpty)
                   const Expanded(
-                    child: Center(child: Text('No tasks match this filter.')),
+                    child: Center(
+                      child: Text(
+                        'No tasks match this filter.\nPull down to refresh.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   )
                 else
                   Expanded(
@@ -200,9 +278,8 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                         final task = tasks[index];
                         final isCompleted = task.status == 'completed';
                         return GestureDetector(
-                          onTap: isCompleted
-                              ? null
-                              : () => _completeTaskWithReport(task),
+                          onTap:
+                              isCompleted ? null : () => _openTaskDetails(task),
                           child: Card(
                             margin: const EdgeInsets.all(8.0),
                             child: Padding(

@@ -5,9 +5,9 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 import 'dart:async';
+
+import 'package:field_check/utils/file_download/file_download.dart';
 
 class ReportExportPreviewScreen extends StatefulWidget {
   final List<ReportModel> records;
@@ -40,6 +40,23 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
   static const platform = MethodChannel('com.fieldcheck.field_check/files');
   bool _isExporting = false;
   String? _exportError;
+
+  Uint8List? _lastExportBytes;
+  String? _lastExportFilename;
+  String? _lastExportMimeType;
+
+  Future<void> _downloadLastExport() async {
+    final bytes = _lastExportBytes;
+    final filename = _lastExportFilename;
+    final mimeType = _lastExportMimeType;
+    if (bytes == null || filename == null || mimeType == null) return;
+
+    await FileDownload.downloadBytes(
+      bytes: bytes,
+      filename: filename,
+      mimeType: mimeType,
+    );
+  }
 
   Future<String?> _saveFileToDownloads(
     String fileName,
@@ -77,32 +94,17 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       debugPrint('  Error: $e');
     }
 
-    // Fallback: Save to app documents directory (visible in file manager)
-    debugPrint('Step 2: Falling back to app documents directory...');
+    debugPrint('Step 2: Falling back to app-managed download...');
     try {
-      final docsDir = await getApplicationDocumentsDirectory();
-      debugPrint('  Documents directory: ${docsDir.path}');
-
-      final file = File('${docsDir.path}/$fileName');
-      debugPrint('  Writing file to: ${file.path}');
-      await file.writeAsBytes(fileBytes);
-
-      final fileExists = await file.exists();
-      final fileSize = fileExists ? await file.length() : 0;
-
-      debugPrint('  File exists after write: $fileExists');
-      debugPrint('  File size: $fileSize bytes');
-
-      if (fileExists && fileSize > 0) {
-        debugPrint('✓ Step 2 SUCCESS: File saved to app documents');
-        debugPrint('  Path: ${file.path}');
-        debugPrint('  Size: $fileSize bytes');
-        return file.path;
-      } else {
-        debugPrint('❌ Step 2 FAILED: File not created or empty');
-      }
+      await FileDownload.downloadBytes(
+        bytes: Uint8List.fromList(fileBytes),
+        filename: fileName,
+        mimeType: 'application/octet-stream',
+      );
+      debugPrint('✓ Step 2 SUCCESS: File download triggered');
+      return fileName;
     } catch (e) {
-      debugPrint('❌ Step 2 FAILED: Documents write error');
+      debugPrint('❌ Step 2 FAILED: Download helper error');
       debugPrint('  Error: $e');
     }
 
@@ -157,6 +159,13 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         try {
           final fileName =
               'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+          setState(() {
+            _lastExportBytes = response.bodyBytes;
+            _lastExportFilename = fileName;
+            _lastExportMimeType = 'application/pdf';
+          });
+
           final filePath = await _saveFileToDownloads(
             fileName,
             response.bodyBytes,
@@ -282,6 +291,13 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         try {
           final fileName =
               'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.csv';
+
+          setState(() {
+            _lastExportBytes = response.bodyBytes;
+            _lastExportFilename = fileName;
+            _lastExportMimeType = 'text/csv';
+          });
+
           final filePath = await _saveFileToDownloads(
             fileName,
             response.bodyBytes,
@@ -379,6 +395,14 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         title: const Text('Export Preview'),
         backgroundColor: const Color(0xFF2688d4),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            onPressed:
+                (_lastExportBytes == null || _isExporting) ? null : _downloadLastExport,
+            icon: const Icon(Icons.download),
+            tooltip: 'Download last export',
+          ),
+        ],
       ),
       body: Column(
         children: [

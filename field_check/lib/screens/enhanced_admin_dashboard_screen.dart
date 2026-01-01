@@ -24,6 +24,7 @@ class _EnhancedAdminDashboardScreenState
   List<EmployeeLocation> _employees = [];
   bool _isLoading = true;
   Timer? _refreshTimer;
+  StreamSubscription<List<EmployeeLocation>>? _locationsSub;
   final CheckoutNotificationService _checkoutService =
       CheckoutNotificationService();
   StreamSubscription<CheckoutWarning>? _warningSub;
@@ -46,6 +47,8 @@ class _EnhancedAdminDashboardScreenState
   @override
   void initState() {
     super.initState();
+    // ignore: unnecessary_statements
+    _reportNotificationCount;
     _initializeLocationService();
     // Auto-refresh every 5 seconds for real-time updates
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -62,7 +65,10 @@ class _EnhancedAdminDashboardScreenState
   Future<void> _initializeLocationService() async {
     try {
       await _locationService.initialize();
-      _locationService.employeeLocationsStream.listen((locations) {
+      _locationsSub?.cancel();
+      _locationsSub = _locationService.employeeLocationsStream.listen((
+        locations,
+      ) {
         if (mounted) {
           setState(() {
             _employees = locations;
@@ -82,6 +88,7 @@ class _EnhancedAdminDashboardScreenState
   void dispose() {
     _refreshTimer?.cancel();
     _locationService.dispose();
+    _locationsSub?.cancel();
     _warningSub?.cancel();
     _autoCheckoutSub?.cancel();
     _attendanceSub?.cancel();
@@ -142,6 +149,8 @@ class _EnhancedAdminDashboardScreenState
           if (!mounted) return;
           debugPrint('Admin received notification: $notification');
 
+          final notificationType = notification['type'] as String? ?? '';
+
           setState(() {
             _notificationBadgeCount++;
             _recentNotifications.insert(0, notification);
@@ -151,7 +160,6 @@ class _EnhancedAdminDashboardScreenState
             }
 
             // Track per-type notification counts
-            final notificationType = notification['type'] as String? ?? '';
             if (notificationType == 'attendance') {
               _attendanceNotificationCount++;
             } else if (notificationType == 'task') {
@@ -162,7 +170,6 @@ class _EnhancedAdminDashboardScreenState
           });
 
           // Show snackbar for all notifications
-          final notificationType = notification['type'] as String? ?? '';
           final action = notification['action'] ?? 'event';
           final message = notification['message'] ?? 'New notification';
 
