@@ -1,6 +1,8 @@
 // ignore_for_file: use_build_context_synchronously, deprecated_member_use
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:field_check/screens/admin_geofence_screen.dart';
@@ -21,6 +23,7 @@ import 'package:field_check/models/geofence_model.dart';
 import 'package:field_check/widgets/admin_info_modal.dart';
 import 'package:intl/intl.dart';
 import 'package:field_check/theme/app_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // Notification model for dashboard alerts
 class DashboardNotification {
@@ -87,20 +90,41 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _isLoading = true;
   Timer? _refreshTimer;
   bool _isFetchingRealtime = false;
+  bool _isFetchingDashboard = false;
+  Timer? _dashboardReloadDebounce;
+  Timer? _liveLocationUiThrottle;
+  bool _liveLocationDirty = false;
 
   // Map data
   final Map<String, UserModel> _employees = {};
+  final Map<String, String> _employeeIdAlias = {};
   final Map<String, LatLng> _liveLocations = {};
   final Map<String, List<LatLng>> _trails = {};
+
+  final Map<String, DateTime> _lastGpsUpdate = {};
+  Timer? _gpsSweepTimer;
+  static const Duration _gpsOnlineWindow = Duration(minutes: 2);
+
+  final Set<String> _resolvingEmployeeIds = <String>{};
 
   StreamSubscription<List<EmployeeLocation>>? _employeeLocationsSub;
   StreamSubscription<List<EmployeeLocation>>? _employeeLocationsSnapshotSub;
   StreamSubscription<Map<String, dynamic>>? _liveLocationFallbackSub;
+  StreamSubscription<Map<String, dynamic>>? _attendanceStreamSub;
+  StreamSubscription<Map<String, dynamic>>? _taskStreamSub;
+  StreamSubscription<Map<String, dynamic>>? _eventStreamSub;
+  StreamSubscription<int>? _onlineCountSub;
   final Map<String, EmployeeLocation> _employeeLocations = {};
   static const LatLng _defaultCenter = LatLng(14.5995, 120.9842); // Manila
   bool _showNoEmployeesPopup = true;
 
+  bool _isInspectorCollapsed = true;
+
   String? _selectedEmployeeId;
+
+  // Employee inspection stack (clicked history)
+  final List<String> _inspectionStack = <String>[];
+  int _inspectionIndex = -1;
 
   final MapController _mapController = MapController();
   final TextEditingController _employeeSearchController = TextEditingController();
@@ -112,24 +136,410 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   static const Color _panelTextSecondary = Colors.black54;
   static const double _controlFontSize = 13;
 
+  Widget _maybeTooltip({
+    required String message,
+    required Widget child,
+  }) {
+    if (kIsWeb) return child;
+    return Tooltip(message: message, child: child);
+  }
+
+  String _canonicalUserId(String rawId) {
+    final id = rawId.trim();
+    if (id.isEmpty) return id;
+    if (_employees.containsKey(id)) return id;
+    final mapped = _employeeIdAlias[id];
+    if (mapped != null && mapped.trim().isNotEmpty) {
+      return mapped.trim();
+    }
+    return id;
+  }
+
+  void _rebuildEmployeeIdAlias() {
+    _employeeIdAlias.clear();
+    for (final emp in _employees.values) {
+      final alt = emp.employeeId;
+      if (alt == null) continue;
+      final key = alt.trim();
+      if (key.isEmpty) continue;
+      _employeeIdAlias[key] = emp.id;
+    }
+  }
+
+  void _normalizeMapsToCanonical() {
+    if (_employeeIdAlias.isEmpty) return;
+
+    if (_liveLocations.isNotEmpty) {
+      final entries = _liveLocations.entries.toList();
+      _liveLocations.clear();
+      for (final e in entries) {
+        final id = _canonicalUserId(e.key);
+        if (id.isEmpty) continue;
+        _liveLocations[id] = e.value;
+      }
+    }
+
+    if (_lastGpsUpdate.isNotEmpty) {
+      final entries = _lastGpsUpdate.entries.toList();
+      _lastGpsUpdate.clear();
+      for (final e in entries) {
+        final id = _canonicalUserId(e.key);
+        if (id.isEmpty) continue;
+        final existing = _lastGpsUpdate[id];
+        if (existing == null || e.value.isAfter(existing)) {
+          _lastGpsUpdate[id] = e.value;
+        }
+      }
+    }
+
+    if (_employeeLocations.isNotEmpty) {
+      final entries = _employeeLocations.entries.toList();
+      _employeeLocations.clear();
+      for (final e in entries) {
+        final id = _canonicalUserId(e.key);
+        if (id.isEmpty) continue;
+        _employeeLocations[id] = e.value;
+      }
+    }
+
+    if (_trails.isNotEmpty) {
+      final entries = _trails.entries.toList();
+      _trails.clear();
+      for (final e in entries) {
+        final id = _canonicalUserId(e.key);
+        if (id.isEmpty) continue;
+        final merged = _trails[id] ?? <LatLng>[];
+        merged.addAll(e.value);
+        if (merged.length > 50) {
+          merged.removeRange(0, merged.length - 50);
+        }
+        _trails[id] = merged;
+      }
+    }
+  }
+
+  bool _isGpsOnline(String userId) {
+    final ts = _lastGpsUpdate[userId];
+    if (ts == null) return false;
+    return DateTime.now().difference(ts) <= _gpsOnlineWindow;
+  }
+
+  int get _gpsOnlineCount {
+    final cutoff = DateTime.now().subtract(_gpsOnlineWindow);
+    return _lastGpsUpdate.values.where((ts) => ts.isAfter(cutoff)).length;
+  }
+
+  void _startGpsSweepTimer() {
+    _gpsSweepTimer?.cancel();
+    _gpsSweepTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted) return;
+      if (_selectedIndex != 0) return;
+
+      final cutoff = DateTime.now().subtract(_gpsOnlineWindow);
+      final staleIds = _lastGpsUpdate.entries
+          .where((e) => e.value.isBefore(cutoff))
+          .map((e) => e.key)
+          .toList();
+
+      if (staleIds.isEmpty) return;
+
+      for (final id in staleIds) {
+        _lastGpsUpdate.remove(id);
+        _liveLocations.remove(id);
+      }
+
+      _liveLocationDirty = true;
+      _scheduleLiveLocationUiUpdate();
+    });
+  }
+
+  bool get _isInspecting =>
+      _inspectionIndex >= 0 && _inspectionIndex < _inspectionStack.length;
+
+  String? get _inspectedEmployeeId =>
+      _isInspecting ? _inspectionStack[_inspectionIndex] : null;
+
+  void _clearInspection() {
+    setState(() {
+      _inspectionStack.clear();
+      _inspectionIndex = -1;
+      _selectedEmployeeId = null;
+      _isInspectorCollapsed = true;
+    });
+  }
+
+  void _exitInspection({BuildContext? sheetContext}) {
+    if (sheetContext != null) {
+      Navigator.of(sheetContext).pop();
+    }
+    _clearInspection();
+  }
+
+  void _pushInspection(String userId) {
+    setState(() {
+      _inspectionStack.add(userId);
+      _inspectionIndex = _inspectionStack.length - 1;
+      _selectedEmployeeId = userId;
+      _isInspectorCollapsed = false;
+    });
+
+    _ensureEmployeeLoaded(userId);
+  }
+
+  void _toggleInspectorCollapsed() {
+    setState(() {
+      _isInspectorCollapsed = !_isInspectorCollapsed;
+    });
+  }
+
+  void _inspectPrev() {
+    if (!_isInspecting) return;
+    if (_inspectionIndex <= 0) return;
+    setState(() {
+      _inspectionIndex -= 1;
+      _selectedEmployeeId = _inspectionStack[_inspectionIndex];
+    });
+
+    final id = _selectedEmployeeId;
+    if (id != null && _isGpsOnline(id)) {
+      final pos = _liveLocations[id];
+      if (pos != null) {
+        _panTo(pos, zoom: 16);
+      }
+    }
+
+    if (id != null) {
+      _ensureEmployeeLoaded(id);
+    }
+  }
+
+  void _inspectNext() {
+    if (!_isInspecting) return;
+    if (_inspectionIndex >= _inspectionStack.length - 1) return;
+    setState(() {
+      _inspectionIndex += 1;
+      _selectedEmployeeId = _inspectionStack[_inspectionIndex];
+    });
+
+    final id = _selectedEmployeeId;
+    if (id != null && _isGpsOnline(id)) {
+      final pos = _liveLocations[id];
+      if (pos != null) {
+        _panTo(pos, zoom: 16);
+      }
+    }
+
+    if (id != null) {
+      _ensureEmployeeLoaded(id);
+    }
+  }
+
+  Future<void> _ensureEmployeeLoaded(String rawId) async {
+    final id = _canonicalUserId(rawId);
+    if (id.trim().isEmpty) return;
+    if (_employees.containsKey(id)) return;
+    if (_resolvingEmployeeIds.contains(id)) return;
+    _resolvingEmployeeIds.add(id);
+
+    try {
+      final employees = await _userService.fetchEmployees();
+      if (!mounted) return;
+      setState(() {
+        for (final emp in employees) {
+          _employees[emp.id] = emp;
+        }
+        _rebuildEmployeeIdAlias();
+        _normalizeMapsToCanonical();
+      });
+    } catch (e) {
+      debugPrint('Error resolving employee profile for $id: $e');
+    } finally {
+      _resolvingEmployeeIds.remove(id);
+    }
+  }
+
+  Future<void> _copyToClipboard({
+    required String label,
+    required String value,
+  }) async {
+    final v = value.trim();
+    if (v.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: v));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label copied'),
+        duration: const Duration(milliseconds: 900),
+      ),
+    );
+  }
+
+  Future<void> _launchExternalUri(Uri uri) async {
+    try {
+      final ok = await canLaunchUrl(uri);
+      if (!ok) {
+        debugPrint('Cannot launch uri: $uri');
+        return;
+      }
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('Error launching uri $uri: $e');
+    }
+  }
+
+  void _openInspectionSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.6,
+            minChildSize: 0.35,
+            maxChildSize: 0.92,
+            builder: (context, controller) {
+              return SingleChildScrollView(
+                controller: controller,
+                padding: const EdgeInsets.all(16),
+                child: _buildEmployeeInspectorContent(
+                  onExit: () => _exitInspection(sheetContext: ctx),
+                  onPrev: _inspectPrev,
+                  onNext: _inspectNext,
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmployeeInspectorHeader({
+    required VoidCallback onExit,
+    required VoidCallback onPrev,
+    required VoidCallback onNext,
+  }) {
+    final idx = _inspectionIndex;
+    final total = _inspectionStack.length;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Employee Inspector',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                total > 0 ? '${idx + 1} / $total' : '0 / 0',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          tooltip: 'Previous',
+          onPressed: idx > 0 ? onPrev : null,
+          icon: const Icon(Icons.chevron_left),
+        ),
+        IconButton(
+          tooltip: 'Next',
+          onPressed: idx >= 0 && idx < total - 1 ? onNext : null,
+          icon: const Icon(Icons.chevron_right),
+        ),
+        const SizedBox(width: 8),
+        FilledButton.tonalIcon(
+          onPressed: onExit,
+          icon: const Icon(Icons.close),
+          label: const Text('Exit'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmployeeInspectorContent({
+    required VoidCallback onExit,
+    required VoidCallback onPrev,
+    required VoidCallback onNext,
+  }) {
+    final id = _inspectedEmployeeId;
+
+    if (id == null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildEmployeeInspectorHeader(onExit: onExit, onPrev: onPrev, onNext: onNext),
+          const SizedBox(height: 12),
+          const Text('Tap an employee marker to inspect.'),
+        ],
+      );
+    }
+
+    final user = _employees[id];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildEmployeeInspectorHeader(
+          onExit: onExit,
+          onPrev: onPrev,
+          onNext: onNext,
+        ),
+        const SizedBox(height: 12),
+        _buildEmployeeDetailsContent(id, user),
+      ],
+    );
+  }
+
   void _subscribeToLiveLocationFallback() {
     _liveLocationFallbackSub?.cancel();
     _liveLocationFallbackSub = _realtimeService.locationStream.listen((data) {
       try {
-        final String userId =
-            (data['employeeId'] ?? data['userId'] ?? '') as String;
+        final String rawId = (data['employeeId'] ?? data['userId'] ?? '').toString();
+        final employeeId = _canonicalUserId(rawId);
+        if (employeeId.trim().isEmpty) return;
         final num? latN = data['latitude'] as num?;
         final num? lngN = data['longitude'] as num?;
-        if (userId.isEmpty || latN == null || lngN == null) {
+        if (latN == null || lngN == null) {
           return;
         }
 
         final pos = LatLng(latN.toDouble(), lngN.toDouble());
         if (!mounted) return;
-        setState(() {
-          _liveLocations[userId] = pos;
-        });
+        _liveLocations[employeeId] = pos;
+        final tsRaw = data['timestamp']?.toString();
+        final ts = tsRaw == null ? null : DateTime.tryParse(tsRaw);
+        _lastGpsUpdate[employeeId] = ts ?? DateTime.now();
+        _liveLocationDirty = true;
+        _scheduleLiveLocationUiUpdate();
       } catch (_) {}
+    });
+  }
+
+  void _scheduleLiveLocationUiUpdate() {
+    if (_liveLocationUiThrottle != null) return;
+    _liveLocationUiThrottle = Timer(const Duration(milliseconds: 250), () {
+      _liveLocationUiThrottle = null;
+      if (!mounted) return;
+      if (!_liveLocationDirty) return;
+      _liveLocationDirty = false;
+      setState(() {});
+    });
+  }
+
+  void _scheduleDashboardReload() {
+    _dashboardReloadDebounce?.cancel();
+    _dashboardReloadDebounce = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted) return;
+      if (_selectedIndex != 0) return;
+      _loadRealtimeUpdates();
     });
   }
 
@@ -144,15 +554,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   StreamSubscription<Map<String, dynamic>>? _adminNotifSub;
 
-  List<Widget> get _screens => [
-    _buildDashboardOverview(),
-    const ManageEmployeesScreen(),
-    const ManageAdminsScreen(),
-    const AdminGeofenceScreen(),
-    const AdminReportsHubScreen(),
-    const AdminSettingsScreen(),
-    const AdminTaskManagementScreen(),
-  ];
+  Widget _buildCurrentScreen() {
+    switch (_selectedIndex) {
+      case 0:
+        return _buildDashboardOverview();
+      case 1:
+        return const ManageEmployeesScreen();
+      case 2:
+        return const ManageAdminsScreen();
+      case 3:
+        return const AdminGeofenceScreen();
+      case 4:
+        return const AdminReportsHubScreen();
+      case 5:
+        return const AdminSettingsScreen();
+      case 6:
+        return const AdminTaskManagementScreen();
+      default:
+        return _buildDashboardOverview();
+    }
+  }
 
   @override
   void initState() {
@@ -161,6 +582,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _initRealtimeService();
     _initMapData();
     _initLocationService();
+    _startGpsSweepTimer();
     _startRefreshTimer();
   }
 
@@ -290,11 +712,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               onPressed: () {
                 Navigator.pop(ctx);
                 setState(() {
-                  _selectedIndex = 4;
+                  _selectedIndex = _navReports;
                 });
               },
               icon: const Icon(Icons.description),
               label: const Text('Go to reports'),
+            ),
+          if (notif.type == 'report')
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  _selectedIndex = _navReports;
+                });
+                AdminReportsHubScreen.selectInitialTab(1);
+              },
+              icon: const Icon(Icons.insights),
+              label: const Text('Analytics'),
             ),
         ],
       ),
@@ -340,7 +774,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             if (items.isEmpty)
               Text(
                 'No notifications yet',
-                style: TextStyle(color: Colors.grey.shade600),
+                style: TextStyle(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.7),
+                ),
               )
             else
               ...items.map(_buildNotificationItem),
@@ -394,7 +833,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final loc = _employeeLocations[userId];
     final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
     final isBusy = activeTaskCount >= _taskLimitPerEmployee;
-    final isOnline = _liveLocations.containsKey(userId);
+    final isOnline = _isGpsOnline(userId);
 
     if (!isOnline) return false;
 
@@ -721,7 +1160,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ? Center(
                             child: Text(
                               'No notifications',
-                              style: TextStyle(color: Colors.grey.shade600),
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.7),
+                              ),
                             ),
                           )
                         : ListView.builder(
@@ -829,32 +1273,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _adminNotifSub?.cancel();
-    _liveLocationFallbackSub?.cancel();
-    _refreshTimer?.cancel();
-    _employeeLocationsSub?.cancel();
-    _employeeLocationsSnapshotSub?.cancel();
-    _employeeSearchDebounce?.cancel();
-    _employeeSearchController.dispose();
-    _mapController.dispose();
-    super.dispose();
-  }
-
   Future<void> _initLocationService() async {
     try {
       await _locationService.initialize();
       _employeeLocationsSnapshotSub?.cancel();
       _employeeLocationsSnapshotSub = _locationService.employeeLocationsStream.listen((locations) {
-        if (mounted) {
-          setState(() {
-            _employeeLocations.clear();
-            for (final loc in locations) {
-              _employeeLocations[loc.employeeId] = loc;
-            }
-          });
-        }
+        if (!mounted) return;
+        _employeeLocations
+          ..clear()
+          ..addEntries(
+            locations.map(
+              (loc) => MapEntry(_canonicalUserId(loc.employeeId), loc),
+            ),
+          );
+        _liveLocationDirty = true;
+        _scheduleLiveLocationUiUpdate();
       });
 
       _subscribeToLocations();
@@ -909,20 +1342,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _subscribeToAdminNotifications();
     _subscribeToLiveLocationFallback();
 
-    // Listen for real-time updates
-    _realtimeService.attendanceStream.listen((event) {
-      if (mounted) {
-        _loadDashboardData();
-      }
+    // Listen for real-time updates (debounced to avoid hammering backend/UI)
+    _attendanceStreamSub?.cancel();
+    _attendanceStreamSub = _realtimeService.attendanceStream.listen((event) {
+      if (!mounted) return;
+      _scheduleDashboardReload();
     });
 
-    _realtimeService.taskStream.listen((event) {
-      if (mounted) {
-        _loadDashboardData();
-      }
+    _taskStreamSub?.cancel();
+    _taskStreamSub = _realtimeService.taskStream.listen((event) {
+      if (!mounted) return;
+      _scheduleDashboardReload();
     });
 
-    _realtimeService.onlineCountStream.listen((count) {
+    _onlineCountSub?.cancel();
+    _onlineCountSub = _realtimeService.onlineCountStream.listen((count) {
       // Socket-level online count is currently unused; HTTP realtime
       // endpoint provides authoritative employee online counts.
       if (!mounted) {
@@ -930,7 +1364,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       }
     });
 
-    _realtimeService.eventStream.listen((event) {
+    _eventStreamSub?.cancel();
+    _eventStreamSub = _realtimeService.eventStream.listen((event) {
       if (!mounted) {
         return;
       }
@@ -1029,20 +1464,48 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _gpsSweepTimer?.cancel();
+    _dashboardReloadDebounce?.cancel();
+    _liveLocationUiThrottle?.cancel();
+    _employeeSearchDebounce?.cancel();
+    _adminNotifSub?.cancel();
+    _attendanceStreamSub?.cancel();
+    _taskStreamSub?.cancel();
+    _eventStreamSub?.cancel();
+    _onlineCountSub?.cancel();
+    _employeeLocationsSub?.cancel();
+    _employeeLocationsSnapshotSub?.cancel();
+    _liveLocationFallbackSub?.cancel();
+    _employeeSearchController.dispose();
+    _mapController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadDashboardData() async {
+    if (_isFetchingDashboard) return;
+    _isFetchingDashboard = true;
     try {
       final stats = await _dashboardService.getDashboardStats();
       final realtime = await _dashboardService.getRealtimeUpdates();
-      setState(() {
-        _dashboardStats = stats;
-        _realtimeUpdates = realtime;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _dashboardStats = stats;
+          _realtimeUpdates = realtime;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint('Error loading dashboard data: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } finally {
+      _isFetchingDashboard = false;
     }
   }
 
@@ -1185,34 +1648,106 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  void _showEmployeeDetailsBottomSheet(String userId, UserModel? user) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildEmployeeDetailsContent(userId, user),
-          ),
-        );
-      },
+  Widget _buildEmployeeInspectorDrawer() {
+    const double expandedWidth = 380;
+    const double collapsedWidth = 44;
+
+    final bool collapsed = _isInspectorCollapsed;
+    final bool hasSelection = _inspectedEmployeeId != null;
+
+    return SizedBox(
+      height: 400,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        width: collapsed ? collapsedWidth : expandedWidth,
+        child: Row(
+          children: [
+            SizedBox(
+              width: collapsedWidth,
+              height: double.infinity,
+              child: Material(
+                color: Colors.transparent,
+                child: InkResponse(
+                  onTap: _toggleInspectorCollapsed,
+                  containedInkWell: true,
+                  child: Center(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(
+                          collapsed ? Icons.chevron_left : Icons.chevron_right,
+                          color: hasSelection
+                              ? Colors.blueGrey.shade700
+                              : Colors.grey.shade600,
+                          size: 26,
+                        ),
+                        if (collapsed && hasSelection)
+                          Positioned(
+                            right: -2,
+                            top: -2,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade600,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 1),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (!collapsed)
+              Expanded(
+                child: _buildEmployeeSidePanel(),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildEmployeeSidePanel() {
-    return Card(
-      elevation: 4,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _selectedEmployeeId == null
-            ? _buildEmployeeEmptyState()
-            : _buildEmployeeDetailsContent(
-                _selectedEmployeeId!,
-                _employees[_selectedEmployeeId!],
+    return SizedBox(
+      height: 400,
+      child: Card(
+        elevation: 4,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildEmployeeInspectorHeader(
+                onExit: _exitInspection,
+                onPrev: _inspectPrev,
+                onNext: _inspectNext,
               ),
+              const SizedBox(height: 8),
+              Text(
+                'Selected: ${_inspectedEmployeeId ?? "(none)"}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: _inspectedEmployeeId == null
+                      ? _buildEmployeeEmptyState()
+                      : _buildEmployeeDetailsContent(
+                          _inspectedEmployeeId!,
+                          _employees[_inspectedEmployeeId!],
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1236,132 +1771,165 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildEmployeeDetailsContent(String userId, UserModel? user) {
-    final isOnline = _liveLocations.containsKey(userId);
+    final isOnline = _isGpsOnline(userId);
     final loc = _employeeLocations[userId];
     final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
     final isBusy = activeTaskCount >= _taskLimitPerEmployee;
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            user?.name ?? 'Employee',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            user?.email ?? '',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-          ),
-          const SizedBox(height: 12),
-          _buildStatusRow(
-            'Online Status',
-            isOnline ? 'Online' : 'Offline',
-            isOnline ? Colors.green : Colors.grey,
-          ),
-          _buildStatusRow(
-            'Task Load',
-            '$activeTaskCount / $_taskLimitPerEmployee',
-            isBusy ? Colors.red : Colors.blue,
-          ),
-          const SizedBox(height: 12),
-          if (_liveLocations.containsKey(userId))
-            Text(
-              'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-            )
-          else
-            Text(
-              'Location not available',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+    final email = (user?.email ?? '').trim();
+    final phone = (user?.phone ?? '').trim();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          user?.name ?? 'Employee',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          user?.email ?? '',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.tonalIcon(
+              onPressed: email.isEmpty
+                  ? null
+                  : () => _copyToClipboard(label: 'Email', value: email),
+              icon: const Icon(Icons.copy),
+              label: const Text('Copy Email'),
             ),
-          const SizedBox(height: 8),
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              childrenPadding: const EdgeInsets.only(top: 8),
-              title: const Text(
-                'More details',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              children: [
-                SizedBox(
-                  height: 220,
-                  child: DefaultTabController(
-                    length: 2,
-                    child: Column(
-                      children: [
-                        const TabBar(
-                          tabs: [
-                            Tab(text: 'Details'),
-                            Tab(text: 'Status'),
+            FilledButton.tonalIcon(
+              onPressed: email.isEmpty
+                  ? null
+                  : () => _launchExternalUri(Uri(scheme: 'mailto', path: email)),
+              icon: const Icon(Icons.email_outlined),
+              label: const Text('Email'),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: phone.isEmpty
+                  ? null
+                  : () => _copyToClipboard(label: 'Phone', value: phone),
+              icon: const Icon(Icons.copy),
+              label: const Text('Copy Phone'),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: phone.isEmpty
+                  ? null
+                  : () => _launchExternalUri(Uri(scheme: 'tel', path: phone)),
+              icon: const Icon(Icons.call_outlined),
+              label: const Text('Call'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildStatusRow(
+          'Online Status',
+          isOnline ? 'Online' : 'Offline',
+          isOnline ? Colors.green : Colors.grey,
+        ),
+        _buildStatusRow(
+          'Task Load',
+          '$activeTaskCount / $_taskLimitPerEmployee',
+          isBusy ? Colors.red : Colors.blue,
+        ),
+        const SizedBox(height: 12),
+        if (isOnline && _liveLocations.containsKey(userId))
+          Text(
+            'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          )
+        else
+          Text(
+            'Location not available',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        const SizedBox(height: 8),
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(top: 8),
+            title: const Text(
+              'More details',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            children: [
+              SizedBox(
+                height: 220,
+                child: DefaultTabController(
+                  length: 2,
+                  child: Column(
+                    children: [
+                      const TabBar(
+                        tabs: [
+                          Tab(text: 'Details'),
+                          Tab(text: 'Status'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: TabBarView(
+                          children: [
+                            ListView(
+                              padding: EdgeInsets.zero,
+                              children: [
+                                _buildDetailRow(
+                                  'Name',
+                                  user?.name ?? 'N/A',
+                                ),
+                                _buildDetailRow(
+                                  'Email',
+                                  user?.email ?? 'N/A',
+                                ),
+                                _buildDetailRow(
+                                  'Phone',
+                                  user?.phone ?? 'N/A',
+                                ),
+                                _buildDetailRow(
+                                  'Role',
+                                  user?.role ?? 'N/A',
+                                ),
+                              ],
+                            ),
+                            ListView(
+                              padding: EdgeInsets.zero,
+                              children: [
+                                _buildStatusRow(
+                                  'Online Status',
+                                  isOnline ? 'Online' : 'Offline',
+                                  isOnline ? Colors.green : Colors.grey,
+                                ),
+                                _buildStatusRow(
+                                  'Active Tasks',
+                                  '$activeTaskCount',
+                                  isBusy ? Colors.red : Colors.blue,
+                                ),
+                                if (loc != null)
+                                  _buildStatusRow(
+                                    'Workload Score',
+                                    loc.workloadScore.toStringAsFixed(2),
+                                    _getWorkloadColor(loc.workloadScore),
+                                  ),
+                              ],
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: TabBarView(
-                            children: [
-                              SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildDetailRow(
-                                      'Name',
-                                      user?.name ?? 'N/A',
-                                    ),
-                                    _buildDetailRow(
-                                      'Email',
-                                      user?.email ?? 'N/A',
-                                    ),
-                                    _buildDetailRow(
-                                      'Phone',
-                                      user?.phone ?? 'N/A',
-                                    ),
-                                    _buildDetailRow(
-                                      'Role',
-                                      user?.role ?? 'N/A',
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildStatusRow(
-                                      'Online Status',
-                                      isOnline ? 'Online' : 'Offline',
-                                      isOnline ? Colors.green : Colors.grey,
-                                    ),
-                                    _buildStatusRow(
-                                      'Active Tasks',
-                                      '$activeTaskCount',
-                                      isBusy ? Colors.red : Colors.blue,
-                                    ),
-                                    if (loc != null)
-                                      _buildStatusRow(
-                                        'Workload Score',
-                                        loc.workloadScore.toStringAsFixed(2),
-                                        _getWorkloadColor(loc.workloadScore),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1422,13 +1990,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ],
       ),
-      body: IndexedStack(index: _selectedIndex, children: _screens),
+      body: _buildCurrentScreen(),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        backgroundColor: const Color(0xFFF5F7FA),
+        backgroundColor: Theme.of(context).colorScheme.surface,
         showUnselectedLabels: true,
         selectedItemColor: brandColor,
-        unselectedItemColor: Colors.grey.shade600,
+        unselectedItemColor:
+            Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
         selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
         selectedIconTheme: const IconThemeData(color: brandColor, size: 28),
         unselectedIconTheme: const IconThemeData(size: 24),
@@ -1516,7 +2085,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     Icon(Icons.wifi, color: Colors.green.shade600),
                     const SizedBox(width: 8),
                     Text(
-                      'Live Updates Active • ${_realtimeUpdates!.onlineUsers} Online',
+                      'Live Updates Active • $_gpsOnlineCount Online',
                       style: TextStyle(
                         color: Colors.green.shade700,
                         fontWeight: FontWeight.w500,
@@ -1535,7 +2104,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 children: [
                   Expanded(child: _buildWorldMapSection(isWide: true)),
                   const SizedBox(width: 12),
-                  SizedBox(width: 380, child: _buildEmployeeSidePanel()),
+                  _buildEmployeeInspectorDrawer(),
                 ],
               )
             else
@@ -1949,7 +2518,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Online: ${_liveLocations.length} employees',
+                  'Online: $_gpsOnlineCount employees',
                   style: const TextStyle(
                     fontSize: 12,
                     color: _panelTextSecondary,
@@ -1990,6 +2559,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         urlTemplate:
                             'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                         subdomains: const ['a', 'b', 'c'],
+                        userAgentPackageName: 'field_check',
                       ),
                       PolylineLayer(
                         polylines: _trails.entries.map((e) {
@@ -2006,6 +2576,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             .map((entry) {
                               final user = _employees[entry.key];
                               final empLocation = _employeeLocations[entry.key];
+
+                              final tooltipText = (user != null && user.name.trim().isNotEmpty)
+                                  ? user.name
+                                  : ((user != null && user.email.trim().isNotEmpty)
+                                      ? user.email
+                                      : 'Employee');
 
                               final activeTaskCount =
                                   empLocation?.activeTaskCount ??
@@ -2035,46 +2611,66 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 point: entry.value,
                                 width: 40,
                                 height: 40,
-                                child: GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedEmployeeId = entry.key;
-                                    });
-
-                                    _panTo(entry.value, zoom: 16);
-
-                                    if (!isWide) {
-                                      _showEmployeeDetailsBottomSheet(
-                                        entry.key,
-                                        user,
+                                child: Material(
+                                  type: MaterialType.transparency,
+                                  child: InkResponse(
+                                    containedInkWell: true,
+                                    radius: 24,
+                                    highlightShape: BoxShape.circle,
+                                    onTap: () {
+                                      final id = _canonicalUserId(entry.key);
+                                      debugPrint(
+                                        '🧭 Marker tapped (map): ${entry.key} -> $id',
                                       );
-                                    }
-                                  },
-                                  child: Tooltip(
-                                    message: user?.name ?? entry.key,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: markerColor,
-                                        border: Border.all(
-                                          color: Colors.white,
-                                          width: 2,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: markerColor.withValues(
-                                              alpha: 0.5,
+                                      _pushInspection(id);
+                                      _panTo(entry.value, zoom: 16);
+
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .hideCurrentSnackBar();
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Selected ${entry.key}',
                                             ),
-                                            blurRadius: 8,
-                                            spreadRadius: 2,
+                                            duration: const Duration(
+                                              milliseconds: 900,
+                                            ),
                                           ),
-                                        ],
-                                      ),
-                                      padding: const EdgeInsets.all(6),
-                                      child: Icon(
-                                        markerIcon,
-                                        color: Colors.white,
-                                        size: 20,
+                                        );
+                                      }
+
+                                      if (!isWide) {
+                                        _openInspectionSheet();
+                                      }
+                                    },
+                                    child: _maybeTooltip(
+                                      message: tooltipText,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: markerColor,
+                                          border: Border.all(
+                                            color: Colors.white,
+                                            width: 2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: markerColor.withValues(
+                                                alpha: 0.5,
+                                              ),
+                                              blurRadius: 8,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
+                                        ),
+                                        padding: const EdgeInsets.all(6),
+                                        child: Icon(
+                                          markerIcon,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -2087,7 +2683,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
                 // Floating employee indicators at map edges
-                _buildFloatingEmployeeIndicators(),
+                if (_liveLocations.isNotEmpty)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: true,
+                      child: _buildFloatingEmployeeIndicators(),
+                    ),
+                  ),
                 if (_liveLocations.isEmpty && _showNoEmployeesPopup)
                   Align(
                     alignment: Alignment.center,
@@ -2172,7 +2774,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _autoPanToEmployee(String userId, LatLng location) {
-    _showEmployeeDetails(userId, _employees[userId]);
+    final id = _canonicalUserId(userId);
+    _showEmployeeDetails(id, _employees[id]);
   }
 
   void _showEmployeeDetails(String userId, UserModel? user) {
@@ -2204,7 +2807,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Expanded(
+                  SizedBox(
+                    height: 360,
                     child: TabBarView(
                       children: [
                         // Details Tab
@@ -2222,7 +2826,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 style: TextStyle(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 8),
-                              if (_liveLocations.containsKey(userId))
+                              if (_isGpsOnline(userId) && _liveLocations.containsKey(userId))
                                 Text(
                                   'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
                                   style: TextStyle(
@@ -2248,10 +2852,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             children: [
                               _buildStatusRow(
                                 'Online Status',
-                                user?.isOnline == true ? 'Online' : 'Offline',
-                                user?.isOnline == true
-                                    ? Colors.green
-                                    : Colors.grey,
+                                _isGpsOnline(userId) ? 'Online' : 'Offline',
+                                _isGpsOnline(userId) ? Colors.green : Colors.grey,
                               ),
                               _buildStatusRow(
                                 'Active Tasks',
@@ -2320,7 +2922,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildAvailabilityInfo(String userId) {
     // Check if employee is in live locations (online)
-    final isOnline = _liveLocations.containsKey(userId);
+    final isOnline = _isGpsOnline(userId);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2397,7 +2999,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildFloatingEmployeeIndicators() {
     // Get online employees only
     final onlineEmployees = _liveLocations.entries
-        .where((entry) => _employees[entry.key]?.isOnline == true)
+        .where((entry) => _isGpsOnline(entry.key))
         .toList();
 
     if (onlineEmployees.isEmpty) return const SizedBox.shrink();
@@ -2420,7 +3022,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     if (outOfBoundsEmployees.isEmpty) return const SizedBox.shrink();
 
-    return Positioned.fill(
+    return SizedBox.expand(
       child: Stack(
         children: [
           // Top edge indicators
@@ -2447,7 +3049,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       child: GestureDetector(
                         onTap: () => _autoPanToEmployee(entry.key, entry.value),
-                        child: Tooltip(
+                        child: _maybeTooltip(
                           message: '${user?.name ?? "Employee"}\nClick to pan',
                           child: Container(
                             padding: const EdgeInsets.all(6),
@@ -2500,7 +3102,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       child: GestureDetector(
                         onTap: () => _autoPanToEmployee(entry.key, entry.value),
-                        child: Tooltip(
+                        child: _maybeTooltip(
                           message: '${user?.name ?? "Employee"}\nClick to pan',
                           child: Container(
                             padding: const EdgeInsets.all(6),
@@ -2553,7 +3155,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       child: GestureDetector(
                         onTap: () => _autoPanToEmployee(entry.key, entry.value),
-                        child: Tooltip(
+                        child: _maybeTooltip(
                           message: '${user?.name ?? "Employee"}\nClick to pan',
                           child: Container(
                             padding: const EdgeInsets.all(6),
@@ -2606,7 +3208,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       child: GestureDetector(
                         onTap: () => _autoPanToEmployee(entry.key, entry.value),
-                        child: Tooltip(
+                        child: _maybeTooltip(
                           message: '${user?.name ?? "Employee"}\nClick to pan',
                           child: Container(
                             padding: const EdgeInsets.all(6),
@@ -2655,6 +3257,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           for (final emp in employees) {
             _employees[emp.id] = emp;
           }
+
+          _rebuildEmployeeIdAlias();
+          _normalizeMapsToCanonical();
         });
       }
     } catch (e) {
@@ -2672,14 +3277,63 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         );
         setState(() {
           for (final emp in response) {
-            final userId = emp['userId'] ?? emp['employeeId'] ?? '';
+            final rawId =
+                (emp['userId'] ?? emp['employeeId'] ?? emp['id'] ?? '').toString();
+            final userId = _canonicalUserId(rawId);
             final lat = (emp['latitude'] as num?)?.toDouble();
             final lng = (emp['longitude'] as num?)?.toDouble();
             final name = emp['name'] ?? 'Unknown';
 
+            // Ensure we have a UserModel entry for tooltip/inspector.
+            // Sometimes fetchEmployees() may return different ids than the live location feed.
+            if (userId.isNotEmpty) {
+              final existing = _employees[userId];
+              final nextName = (emp['name'] ?? '').toString();
+              final nextEmail = (emp['email'] ?? '').toString();
+              final nextPhone = (emp['phone'] ?? '').toString();
+              final nextRole = (emp['role'] ?? existing?.role ?? 'employee').toString();
+              final nextEmployeeId = (emp['employeeId'] ?? '').toString();
+              final nextActiveTaskCount =
+                  (emp['activeTaskCount'] as num?)?.toInt() ?? existing?.activeTaskCount;
+
+              if (existing == null) {
+                _employees[userId] = UserModel(
+                  id: userId,
+                  name: nextName,
+                  email: nextEmail,
+                  phone: nextPhone.trim().isNotEmpty ? nextPhone : null,
+                  role: nextRole,
+                  employeeId: nextEmployeeId.trim().isNotEmpty ? nextEmployeeId : null,
+                  isOnline: true,
+                  activeTaskCount: nextActiveTaskCount,
+                );
+              } else {
+                _employees[userId] = UserModel(
+                  id: existing.id,
+                  name: nextName.trim().isNotEmpty ? nextName : existing.name,
+                  email: nextEmail.trim().isNotEmpty ? nextEmail : existing.email,
+                  phone: nextPhone.trim().isNotEmpty ? nextPhone : existing.phone,
+                  role: nextRole,
+                  employeeId: existing.employeeId ??
+                      (nextEmployeeId.trim().isNotEmpty ? nextEmployeeId : null),
+                  avatarUrl: existing.avatarUrl,
+                  username: existing.username,
+                  isActive: existing.isActive,
+                  isVerified: existing.isVerified,
+                  lastLatitude: existing.lastLatitude,
+                  lastLongitude: existing.lastLongitude,
+                  lastLocationUpdate: existing.lastLocationUpdate,
+                  isOnline: true,
+                  activeTaskCount: nextActiveTaskCount,
+                  workloadWeight: existing.workloadWeight,
+                );
+              }
+            }
+
             // Only add if we have valid userId and coordinates
             if (userId.isNotEmpty && lat != null && lng != null) {
               _liveLocations[userId] = LatLng(lat, lng);
+              _lastGpsUpdate[userId] = DateTime.now();
               debugPrint('✅ Added employee $name ($userId) at ($lat, $lng)');
             } else {
               debugPrint(
@@ -2687,6 +3341,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               );
             }
           }
+
+          _rebuildEmployeeIdAlias();
+          _normalizeMapsToCanonical();
           debugPrint('📊 Total locations on map: ${_liveLocations.length}');
         });
       } else {
@@ -2705,15 +3362,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         final wasEmpty = _liveLocations.isEmpty;
         for (final empLoc in locations) {
           final pos = LatLng(empLoc.latitude, empLoc.longitude);
-          _liveLocations[empLoc.employeeId] = pos;
+          final id = _canonicalUserId(empLoc.employeeId);
+          _liveLocations[id] = pos;
+          _lastGpsUpdate[id] = empLoc.timestamp;
 
-          final trail = _trails[empLoc.employeeId] ?? <LatLng>[];
+          final trail = _trails[id] ?? <LatLng>[];
           if (trail.isEmpty || trail.last != pos) {
             trail.add(pos);
             if (trail.length > 50) {
               trail.removeRange(0, trail.length - 50);
             }
-            _trails[empLoc.employeeId] = trail;
+            _trails[id] = trail;
           }
         }
 

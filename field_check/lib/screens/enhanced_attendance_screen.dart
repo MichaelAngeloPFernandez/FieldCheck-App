@@ -37,6 +37,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   String _lastCheckTime = "--:--";
   int _pendingSyncCount = 0;
   DateTime? _lastCheckTimestamp;
+  DateTime? _localCheckInAnchorTimestamp;
 
   Position? _userPosition;
   List<Geofence> _assignedGeofences = [];
@@ -192,7 +193,28 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         setState(() {
           _isCheckedIn = status.isCheckedIn;
           _lastCheckTime = status.lastCheckTime ?? "--:--";
-          _lastCheckTimestamp = status.lastCheckTimestamp;
+          final serverTs = status.lastCheckTimestamp;
+
+          if (!_isCheckedIn) {
+            _localCheckInAnchorTimestamp = null;
+            _lastCheckTimestamp = serverTs;
+            return;
+          }
+
+          // If we just checked in locally, the backend may briefly return a stale
+          // timestamp (previous attendance record / timezone drift). That causes
+          // the timer to jump to an old value. Prefer the local anchor until the
+          // server returns a timestamp that is not older than it.
+          if (_localCheckInAnchorTimestamp != null && serverTs != null) {
+            if (serverTs.isBefore(_localCheckInAnchorTimestamp!)) {
+              _lastCheckTimestamp = _localCheckInAnchorTimestamp;
+              return;
+            }
+          }
+
+          // Use local anchor if present (for consistent 00:00 start), otherwise
+          // fall back to server timestamp.
+          _lastCheckTimestamp = _localCheckInAnchorTimestamp ?? serverTs;
         });
       }
     } catch (e) {
@@ -585,6 +607,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         if (mounted) {
           setState(() {
             _isCheckedIn = !wasCheckedInBeforeSubmit;
+            if (_isCheckedIn) {
+              _localCheckInAnchorTimestamp = now;
+            } else {
+              _localCheckInAnchorTimestamp = null;
+            }
             _lastCheckTimestamp = now;
             _lastCheckTime = TimeOfDay.fromDateTime(now).format(context);
           });

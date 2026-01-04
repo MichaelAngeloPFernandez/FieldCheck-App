@@ -3,7 +3,15 @@ import 'package:field_check/screens/admin_reports_screen.dart';
 import 'package:field_check/screens/enhanced_reports_screen.dart';
 
 class AdminReportsHubScreen extends StatefulWidget {
-  const AdminReportsHubScreen({super.key});
+  static final ValueNotifier<int> requestedInitialTab = ValueNotifier<int>(0);
+
+  static void selectInitialTab(int index) {
+    requestedInitialTab.value = index.clamp(0, 1);
+  }
+
+  final int initialTab;
+
+  const AdminReportsHubScreen({super.key, this.initialTab = 0});
 
   @override
   State<AdminReportsHubScreen> createState() => _AdminReportsHubScreenState();
@@ -12,15 +20,31 @@ class AdminReportsHubScreen extends StatefulWidget {
 class _AdminReportsHubScreenState extends State<AdminReportsHubScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  late final VoidCallback _tabRequestListener;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final fromWidget = widget.initialTab.clamp(0, 1);
+    final initial = AdminReportsHubScreen.requestedInitialTab.value.clamp(0, 1);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: initial != 0 ? initial : fromWidget,
+    );
+
+    _tabRequestListener = () {
+      final idx = AdminReportsHubScreen.requestedInitialTab.value.clamp(0, 1);
+      if (!mounted) return;
+      if (_tabController.index == idx) return;
+      _tabController.animateTo(idx);
+    };
+    AdminReportsHubScreen.requestedInitialTab.addListener(_tabRequestListener);
   }
 
   @override
   void dispose() {
+    AdminReportsHubScreen.requestedInitialTab.removeListener(_tabRequestListener);
     _tabController.dispose();
     super.dispose();
   }

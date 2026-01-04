@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
@@ -16,6 +17,8 @@ class EmployeeReportsScreen extends StatefulWidget {
 }
 
 class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
+  late final AppLifecycleListener _lifecycleListener;
+  Timer? _autoRefreshTimer;
   bool _isLoading = false;
   String? _error;
 
@@ -27,6 +30,27 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
   void initState() {
     super.initState();
     _loadReports();
+
+    _lifecycleListener = AppLifecycleListener(
+      onResume: () {
+        if (mounted) {
+          _loadReports();
+        }
+      },
+    );
+
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted) return;
+      if (_isLoading) return;
+      _loadReports();
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    _lifecycleListener.dispose();
+    super.dispose();
   }
 
   String _normalizeAttachmentUrl(String rawPath) {
@@ -256,9 +280,9 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey.shade200),
+                            border: Border.all(color: Theme.of(context).colorScheme.outline),
                           ),
                           child: Row(
                             children: [

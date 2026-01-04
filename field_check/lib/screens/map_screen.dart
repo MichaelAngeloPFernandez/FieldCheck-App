@@ -68,11 +68,14 @@ class _MapScreenState extends State<MapScreen> {
         constraints: const BoxConstraints(maxWidth: 360),
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.75),
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(10),
         ),
         child: DefaultTextStyle(
-          style: const TextStyle(color: Colors.white, fontSize: 12),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontSize: 12,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -461,11 +464,14 @@ class _MapScreenState extends State<MapScreen> {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Color(0xFF2688d4)),
+            DrawerHeader(
+              decoration: const BoxDecoration(color: Color(0xFF2688d4)),
               child: Text(
                 'FieldCheck',
-                style: TextStyle(color: Colors.white, fontSize: 20),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                  fontSize: 20,
+                ),
               ),
             ),
             ListTile(
@@ -639,11 +645,14 @@ class _MapScreenState extends State<MapScreen> {
                     children: [
                       Container(
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(8),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.12),
                               blurRadius: 4,
                               offset: const Offset(0, 2),
                             ),
@@ -691,11 +700,14 @@ class _MapScreenState extends State<MapScreen> {
                           margin: const EdgeInsets.only(top: 8),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(8),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.12),
                                 blurRadius: 4,
                               ),
                             ],
@@ -710,11 +722,14 @@ class _MapScreenState extends State<MapScreen> {
                           margin: const EdgeInsets.only(top: 8),
                           constraints: const BoxConstraints(maxHeight: 300),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(8),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.16),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
@@ -740,10 +755,12 @@ class _MapScreenState extends State<MapScreen> {
                                     ),
                                     child: Row(
                                       children: [
-                                        const Icon(
+                                        Icon(
                                           Icons.location_on,
                                           size: 20,
-                                          color: Colors.blue,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
                                         ),
                                         const SizedBox(width: 12),
                                         Expanded(
@@ -763,7 +780,10 @@ class _MapScreenState extends State<MapScreen> {
                                                 'Tap to navigate',
                                                 style: TextStyle(
                                                   fontSize: 11,
-                                                  color: Colors.grey[600],
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurface
+                                                      .withValues(alpha: 0.7),
                                                 ),
                                               ),
                                             ],
@@ -852,18 +872,28 @@ class _MapScreenState extends State<MapScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.red[50],
+                        color: Theme.of(context)
+                            .colorScheme
+                            .error
+                            .withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                       ),
                       child: Row(
-                        children: const [
-                          Icon(Icons.error, color: Colors.red),
-                          SizedBox(width: 8),
+                        children: [
+                          Icon(
+                            Icons.error,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'You are outside the geofence area',
-                              style: TextStyle(color: Colors.red),
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
                             ),
                           ),
                         ],
@@ -882,18 +912,28 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                     decoration: BoxDecoration(
                       color: _gpsConnected
-                          ? Colors.blue[50]
-                          : Colors.orange[50],
+                          ? Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.12)
+                          : Theme.of(context)
+                              .colorScheme
+                              .tertiary
+                              .withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: _gpsConnected ? Colors.blue : Colors.orange,
+                        color: _gpsConnected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.tertiary,
                       ),
                     ),
                     child: Row(
                       children: [
                         Icon(
                           _gpsConnected ? Icons.gps_fixed : Icons.gps_not_fixed,
-                          color: _gpsConnected ? Colors.blue : Colors.orange,
+                          color: _gpsConnected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.tertiary,
                           size: 18,
                         ),
                         const SizedBox(width: 8),
@@ -904,8 +944,8 @@ class _MapScreenState extends State<MapScreen> {
                                 : 'GPS Connecting...',
                             style: TextStyle(
                               color: _gpsConnected
-                                  ? Colors.blue
-                                  : Colors.orange,
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).colorScheme.tertiary,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
@@ -967,13 +1007,16 @@ class _MapScreenState extends State<MapScreen> {
                   maxChildSize: 0.75,
                   builder: (context, controller) => Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1A3A52), // Dark blue background
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(16),
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.2),
                           blurRadius: 12,
                         ),
                       ],
@@ -985,21 +1028,30 @@ class _MapScreenState extends State<MapScreen> {
                         // Search Bar
                         TextField(
                           controller: _searchController,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                           decoration: InputDecoration(
                             hintText: _showTasks
                                 ? 'Search tasks...'
                                 : 'Search geofences...',
-                            hintStyle: TextStyle(color: Colors.grey[400]),
-                            prefixIcon: const Icon(
+                            hintStyle: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.6),
+                            ),
+                            prefixIcon: Icon(
                               Icons.search,
-                              color: Colors.white70,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.7),
                             ),
                             suffixIcon: _searchQuery.isNotEmpty
                                 ? IconButton(
                                     icon: const Icon(
                                       Icons.clear,
-                                      color: Colors.white70,
                                     ),
                                     onPressed: () {
                                       _searchController.clear();
@@ -1011,25 +1063,32 @@ class _MapScreenState extends State<MapScreen> {
                                 : null,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(
-                                color: Colors.white24,
+                              borderSide: BorderSide(
+                                color: Theme.of(context)
+                                    .dividerColor
+                                    .withValues(alpha: 0.35),
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(
-                                color: Colors.white24,
+                              borderSide: BorderSide(
+                                color: Theme.of(context)
+                                    .dividerColor
+                                    .withValues(alpha: 0.35),
                               ),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(
-                                color: Color(0xFF2688d4),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
                                 width: 2,
                               ),
                             ),
                             filled: true,
-                            fillColor: Colors.white.withOpacity(0.1),
+                            fillColor: Theme.of(context)
+                                .colorScheme
+                                .surface
+                                .withValues(alpha: 0.6),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 12,
                             ),

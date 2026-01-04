@@ -6,7 +6,6 @@ import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/screens/task_report_screen.dart';
-import 'package:field_check/screens/employee_task_details_screen.dart';
 import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
 
@@ -39,15 +38,183 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     _autosaveService.initialize();
   }
 
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'completed':
+        return Colors.green;
+      case 'in_progress':
+        return Colors.orange;
+      case 'pending':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
   Future<void> _openTaskDetails(Task task) async {
-    final result = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => EmployeeTaskDetailsScreen(
-          task: task,
-          employeeId: widget.userModelId,
-        ),
+    final isCompleted = task.status == 'completed';
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.72,
+          minChildSize: 0.45,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) {
+            return ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        task.title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _statusColor(task.status).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: _statusColor(task.status).withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        task.status,
+                        style: TextStyle(
+                          color: _statusColor(task.status),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(task.description),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      label: Text(
+                        'Due: ${task.dueDate.toLocal().toString().split(' ')[0]}',
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    if (task.type != null && task.type!.isNotEmpty)
+                      Chip(
+                        label: Text(task.type!),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    if (task.difficulty != null && task.difficulty!.isNotEmpty)
+                      Chip(
+                        label: Text(task.difficulty!),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    if (task.rawStatus == 'blocked')
+                      Chip(
+                        label: const Text('Blocked'),
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: Colors.red.withValues(alpha: 0.12),
+                        labelStyle: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Progress: ${_taskProgressLabel(task)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: _taskProgressValue(task),
+                  backgroundColor: Colors.grey[200],
+                ),
+                if (task.checklist.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Checklist (${task.progressPercent.clamp(0, 100)}%)',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  ...task.checklist.map(
+                    (c) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        c.isCompleted ? Icons.check_circle : Icons.circle_outlined,
+                        color: c.isCompleted ? Colors.green : Colors.grey,
+                      ),
+                      title: Text(c.label),
+                      subtitle: c.completedAt != null
+                          ? Text(
+                              'Completed at: ${c.completedAt!.toLocal().toString().split('.')[0]}',
+                              style: const TextStyle(fontSize: 12),
+                            )
+                          : null,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: isCompleted
+                        ? null
+                        : () async {
+                            final ok = await Navigator.push<bool>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => TaskReportScreen(
+                                  task: task,
+                                  employeeId: widget.userModelId,
+                                ),
+                              ),
+                            );
+                            if (ok == true && ctx.mounted) {
+                              Navigator.pop(ctx, true);
+                            }
+                          },
+                    child: Text(isCompleted ? 'Completed' : 'Complete Task'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
     if (result == true && mounted) {
@@ -278,8 +445,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                         final task = tasks[index];
                         final isCompleted = task.status == 'completed';
                         return GestureDetector(
-                          onTap:
-                              isCompleted ? null : () => _openTaskDetails(task),
+                          onTap: () => _openTaskDetails(task),
                           child: Card(
                             margin: const EdgeInsets.all(8.0),
                             child: Padding(

@@ -18,7 +18,7 @@ class UserService {
       final token = await getToken();
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('$_baseUrl/upload/avatar'),
+        Uri.parse('$_baseUrl/users/upload/avatar'),
       );
       request.files.add(
         http.MultipartFile.fromBytes(

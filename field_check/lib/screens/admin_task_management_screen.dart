@@ -601,21 +601,22 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Assign Task: ${task.title}'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: employees.isEmpty
-              ? const Center(child: Text('No employees available'))
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: employees.length,
-                  itemBuilder: (context, index) {
-                    final employee = employees[index];
-                    final isSelected = selectedEmployeeIds.contains(
-                      employee.id,
-                    );
-                    final info = availability[employee.id];
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, dialogSetState) => AlertDialog(
+          title: Text('Assign Task: ${task.title}'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: employees.isEmpty
+                ? const Center(child: Text('No employees available'))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: employees.length,
+                    itemBuilder: (context, index) {
+                      final employee = employees[index];
+                      final isSelected = selectedEmployeeIds.contains(
+                        employee.id,
+                      );
+                      final info = availability[employee.id];
 
                     final activeCount = info?.activeTasksCount ??
                         (_employeeActiveTaskCount[employee.id] ?? 0);
@@ -667,156 +668,158 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           '$subtitle · limit reached ($_taskLimitPerEmployee)';
                     }
 
-                    return CheckboxListTile(
-                      title: Text(
-                        employee.name,
-                        style: TextStyle(color: nameColor),
-                      ),
-                      subtitle: Text(subtitle),
-                      value: isSelected,
-                      onChanged: (bool? selected) {
-                        if (selected == true && atLimit && !isOverridden) {
-                          showDialog<bool>(
-                            context: context,
-                            builder: (dCtx) => AlertDialog(
-                              title: const Text('Employee at task limit'),
-                              content: Text(
-                                '${employee.name} already has $activeCount active task(s), which is at/above the limit ($_taskLimitPerEmployee).\n\nOverride and assign anyway?',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(dCtx).pop(false),
-                                  child: const Text('Cancel'),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(dCtx).pop(true),
-                                  child: const Text('Override'),
-                                ),
-                              ],
-                            ),
-                          ).then((allow) {
-                            if (allow != true) return;
-                            if (!mounted) return;
-                            setState(() {
-                              overrideEmployeeIds.add(employee.id);
-                              selectedEmployeeIds.add(employee.id);
-                            });
-                          });
-                          return;
-                        }
-
-                        setState(() {
-                          if (selected == true) {
-                            selectedEmployeeIds.add(employee.id);
-                          } else {
-                            selectedEmployeeIds.remove(employee.id);
-                            overrideEmployeeIds.remove(employee.id);
-                          }
-                        });
-                      },
-                    );
-                  },
-                ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (selectedEmployeeIds.isNotEmpty) {
-                try {
-                  final validIds = selectedEmployeeIds
-                      .where((id) => id.isNotEmpty)
-                      .toList();
-                  if (validIds.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Selected employees have invalid IDs'),
-                      ),
-                    );
-                    return;
-                  }
-
-                  final blocked = validIds
-                      .where((id) {
-                        final info = availability[id];
-                        final activeCount = info?.activeTasksCount ??
-                            (_employeeActiveTaskCount[id] ?? 0);
-                        return activeCount >= _taskLimitPerEmployee &&
-                            !overrideEmployeeIds.contains(id);
-                      })
-                      .toList();
-                  if (blocked.isNotEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Some selected employees are at the task limit ($_taskLimitPerEmployee). Use Override to assign anyway.',
+                      return CheckboxListTile(
+                        key: ValueKey('assign:${employee.id}'),
+                        title: Text(
+                          employee.name,
+                          style: TextStyle(color: nameColor),
                         ),
-                      ),
-                    );
-                    return;
-                  }
+                        subtitle: Text(subtitle),
+                        value: isSelected,
+                        onChanged: (bool? selected) {
+                          if (selected == true && atLimit && !isOverridden) {
+                            showDialog<bool>(
+                              context: context,
+                              builder: (dCtx) => AlertDialog(
+                                title: const Text('Employee at task limit'),
+                                content: Text(
+                                  '${employee.name} already has $activeCount active task(s), which is at/above the limit ($_taskLimitPerEmployee).\n\nOverride and assign anyway?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dCtx).pop(false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dCtx).pop(true),
+                                    child: const Text('Override'),
+                                  ),
+                                ],
+                              ),
+                            ).then((allow) {
+                              if (allow != true) return;
+                              if (!mounted) return;
+                              dialogSetState(() {
+                                overrideEmployeeIds.add(employee.id);
+                                selectedEmployeeIds.add(employee.id);
+                              });
+                            });
+                            return;
+                          }
 
-                  final result = await _taskService.assignTaskToMultiple(
-                    task.id,
-                    validIds,
-                  );
-                  _fetchTasks();
-
-                  if (!mounted) return;
-
-                  final summary = result['summary'] as Map<String, dynamic>?;
-                  final total = summary?['total'] as int?;
-                  final successful = summary?['successful'] as int?;
-                  final failed = summary?['failed'] as int?;
-
-                  String message;
-                  if (summary != null &&
-                      total != null &&
-                      successful != null &&
-                      failed != null) {
-                    if (failed == 0) {
-                      message =
-                          'Task assigned to $successful of $total employees.';
-                    } else if (successful == 0) {
-                      message =
-                          'Failed to assign task to all $total employees (check workload limits).';
-                    } else {
-                      message =
-                          'Task assigned to $successful of $total employees. $failed failed (see workload limits).';
-                    }
-                  } else {
-                    message = 'Task assignment request completed.';
-                  }
-
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(message)));
-
-                  Navigator.of(ctx).pop();
-                } catch (e) {
-                  debugPrint('Error assigning task: $e');
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to assign task: $e')),
-                    );
-                  }
-                }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please select at least one employee'),
+                          dialogSetState(() {
+                            if (selected == true) {
+                              selectedEmployeeIds.add(employee.id);
+                            } else {
+                              selectedEmployeeIds.remove(employee.id);
+                              overrideEmployeeIds.remove(employee.id);
+                            }
+                          });
+                        },
+                      );
+                    },
                   ),
-                );
-              }
-            },
-            child: const Text('Assign'),
           ),
-        ],
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (selectedEmployeeIds.isNotEmpty) {
+                  try {
+                    final validIds = selectedEmployeeIds
+                        .where((id) => id.isNotEmpty)
+                        .toList();
+                    if (validIds.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Selected employees have invalid IDs'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    final blocked = validIds
+                        .where((id) {
+                          final info = availability[id];
+                          final activeCount = info?.activeTasksCount ??
+                              (_employeeActiveTaskCount[id] ?? 0);
+                          return activeCount >= _taskLimitPerEmployee &&
+                              !overrideEmployeeIds.contains(id);
+                        })
+                        .toList();
+                    if (blocked.isNotEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Some selected employees are at the task limit ($_taskLimitPerEmployee). Use Override to assign anyway.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+
+                    final result = await _taskService.assignTaskToMultiple(
+                      task.id,
+                      validIds,
+                    );
+                    _fetchTasks();
+
+                    if (!mounted) return;
+
+                    final summary = result['summary'] as Map<String, dynamic>?;
+                    final total = summary?['total'] as int?;
+                    final successful = summary?['successful'] as int?;
+                    final failed = summary?['failed'] as int?;
+
+                    String message;
+                    if (summary != null &&
+                        total != null &&
+                        successful != null &&
+                        failed != null) {
+                      if (failed == 0) {
+                        message =
+                            'Task assigned to $successful of $total employees.';
+                      } else if (successful == 0) {
+                        message =
+                            'Failed to assign task to all $total employees (check workload limits).';
+                      } else {
+                        message =
+                            'Task assigned to $successful of $total employees. $failed failed (see workload limits).';
+                      }
+                    } else {
+                      message = 'Task assignment request completed.';
+                    }
+
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(message)));
+
+                    Navigator.of(ctx).pop();
+                  } catch (e) {
+                    debugPrint('Error assigning task: $e');
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to assign task: $e')),
+                      );
+                    }
+                  }
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please select at least one employee'),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Assign'),
+            ),
+          ],
+        ),
       ),
     );
   }

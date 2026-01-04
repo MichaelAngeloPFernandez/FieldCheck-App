@@ -64,13 +64,20 @@ const createReport = asyncHandler(async (req, res) => {
 
 // @desc List reports
 // @route GET /api/reports
-// @access Private/Admin
+// @access Private
 // Optional query: archived=true|false (default false)
 const listReports = asyncHandler(async (req, res) => {
   const { type, employeeId, taskId, geofenceId, startDate, endDate, archived } = req.query;
   const filter = {};
   if (type) filter.type = type;
-  if (employeeId) filter.employee = employeeId;
+  // Role-based scoping:
+  // - Admin: may list all reports and can filter by employeeId
+  // - Employee: can only list their own reports; ignore/deny employeeId overrides
+  if (req.user && req.user.role !== 'admin') {
+    filter.employee = req.user._id;
+  } else if (employeeId) {
+    filter.employee = employeeId;
+  }
   if (taskId) filter.task = taskId;
   if (geofenceId) filter.geofence = geofenceId;
   if (startDate || endDate) {

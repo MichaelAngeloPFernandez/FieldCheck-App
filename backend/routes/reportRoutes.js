@@ -60,10 +60,12 @@ router.post(
   }
 );
 
-// Admin-only report management
-router.get('/', protect, admin, listReports);
+// Report management
+// NOTE: listing reports is allowed for any authenticated user.
+// The controller should enforce role-based filtering (employees should only see their own).
+router.get('/', protect, listReports);
 
-// Specific routes (must be BEFORE /:id to avoid conflicts)
+// Admin-only report management
 router.get('/current', protect, admin, getCurrentReports);
 router.get('/archived', protect, admin, getArchivedReports);
 router.put('/:id/archive', protect, admin, archiveReport);

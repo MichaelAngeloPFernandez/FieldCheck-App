@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/services/task_service.dart';
@@ -36,6 +37,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   bool _hasUnsavedChanges = false;
   bool _statusMarkedInProgress = false;
   Timer? _autosaveTimer;
+  String? _submitPhase;
+  int _submitTotal = 0;
+  int _submitDone = 0;
+  String? _submitCurrentFile;
 
   @override
   void initState() {
@@ -543,6 +548,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   }
 
   Future<void> _submitReport() async {
+    if (_isSubmitting) return;
     if (_textController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -554,6 +560,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
     setState(() {
       _isSubmitting = true;
+      _submitPhase = 'Preparing submission...';
+      _submitTotal = _beforeFiles.length + _afterFiles.length + _documentFiles.length;
+      _submitDone = 0;
+      _submitCurrentFile = null;
     });
 
     try {
@@ -563,6 +573,12 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       // Upload attachments (if any) and collect their URLs
       final List<String> attachmentPaths = [];
       Future<void> uploadGroup(List<PlatformFile> files, String prefix) async {
+        if (files.isEmpty) return;
+        if (mounted) {
+          setState(() {
+            _submitPhase = 'Uploading $prefix attachments...';
+          });
+        }
         for (final file in files) {
           if (file.size > _maxUploadBytes) {
             if (!mounted) return;
@@ -574,10 +590,21 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                 backgroundColor: Colors.orange,
               ),
             );
+            if (mounted) {
+              setState(() {
+                _submitDone = min(_submitDone + 1, _submitTotal);
+              });
+            }
             continue;
           }
 
           final fileName = '${prefix}_${file.name}';
+
+          if (mounted) {
+            setState(() {
+              _submitCurrentFile = file.name;
+            });
+          }
 
           // Web-safe path: prefer bytes if available.
           if (file.bytes != null) {
@@ -588,6 +615,12 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
               employeeId: widget.employeeId,
             );
             attachmentPaths.add(uploadedPath);
+
+            if (mounted) {
+              setState(() {
+                _submitDone = min(_submitDone + 1, _submitTotal);
+              });
+            }
             continue;
           }
 
@@ -603,6 +636,11 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                 backgroundColor: Colors.orange,
               ),
             );
+            if (mounted) {
+              setState(() {
+                _submitDone = min(_submitDone + 1, _submitTotal);
+              });
+            }
             continue;
           }
 
@@ -613,12 +651,25 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
             employeeId: widget.employeeId,
           );
           attachmentPaths.add(uploadedPath);
+
+          if (mounted) {
+            setState(() {
+              _submitDone = min(_submitDone + 1, _submitTotal);
+            });
+          }
         }
       }
 
       await uploadGroup(_beforeFiles, 'before');
       await uploadGroup(_afterFiles, 'after');
       await uploadGroup(_documentFiles, 'doc');
+
+      if (mounted) {
+        setState(() {
+          _submitPhase = 'Submitting report...';
+          _submitCurrentFile = null;
+        });
+      }
 
       // Create the report
       await ReportService().createTaskReport(
@@ -652,17 +703,87 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final phase = _submitPhase;
+        final f = _submitCurrentFile;
+        final contextLabel = [
+          if (phase != null && phase.isNotEmpty) phase,
+          if (f != null && f.isNotEmpty) 'File: $f',
+        ].join(' • ');
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error submitting report: $e')));
+
+        if (contextLabel.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(contextLabel),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) {
         setState(() {
           _isSubmitting = false;
+          _submitPhase = null;
+          _submitCurrentFile = null;
         });
       }
     }
+  }
+
+  bool _isLikelyImage(String name) {
+    final lower = name.toLowerCase();
+    return lower.endsWith('.png') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.gif') ||
+        lower.endsWith('.webp');
+  }
+
+  Future<void> _previewSelectedFile(PlatformFile file) async {
+    if (file.bytes == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Preview not available for ${file.name}')),
+      );
+      return;
+    }
+
+    if (!_isLikelyImage(file.name)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No preview for ${file.name}.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          child: InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 4,
+            child: Image.memory(file.bytes!, fit: BoxFit.contain),
+          ),
+        );
+      },
+    );
+  }
+
+  String _humanBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    var size = bytes.toDouble();
+    var i = 0;
+    while (size >= 1024 && i < units.length - 1) {
+      size /= 1024;
+      i++;
+    }
+    return '${size.toStringAsFixed(i == 0 ? 0 : 1)} ${units[i]}';
   }
 
   @override
@@ -678,13 +799,42 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.attach_file),
-            onPressed: _showAttachmentTypePicker,
+            onPressed: _isSubmitting ? null : _showAttachmentTypePicker,
             tooltip: 'Attach Files',
           ),
         ],
       ),
       body: Column(
         children: [
+          if (_isSubmitting)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              color: AppTheme.backgroundColor,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _submitPhase ?? 'Submitting...',
+                    style: AppTheme.bodyMd.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  if (_submitTotal > 0)
+                    LinearProgressIndicator(
+                      value: (_submitDone / _submitTotal).clamp(0.0, 1.0),
+                      backgroundColor: AppTheme.dividerColor,
+                    ),
+                  const SizedBox(height: 6),
+                  if (_submitTotal > 0)
+                    Text(
+                      '$_submitDone / $_submitTotal uploaded'
+                      '${_submitCurrentFile != null ? ' • ${_submitCurrentFile!}' : ''}',
+                      style:
+                          AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
+                    ),
+                ],
+              ),
+            ),
           // Task info header
           Container(
             width: double.infinity,
@@ -848,21 +998,45 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                       style: TextStyle(fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: List.generate(_beforeFiles.length, (index) {
-                        final file = _beforeFiles[index];
-                        return Chip(
-                          label: Text(
-                            file.name,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          deleteIcon: const Icon(Icons.close, size: 16),
-                          onDeleted: () => _removeBeforeFile(index),
-                        );
-                      }),
-                    ),
+                    ...List.generate(_beforeFiles.length, (index) {
+                      final file = _beforeFiles[index];
+                      final tooBig = file.size > _maxUploadBytes;
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          _isLikelyImage(file.name)
+                              ? Icons.image_outlined
+                              : Icons.insert_drive_file_outlined,
+                          color: tooBig ? Colors.red : null,
+                        ),
+                        title: Text(
+                          file.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${_humanBytes(file.size)}'
+                          '${tooBig ? ' • exceeds 10MB' : ''}',
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.visibility),
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () => _previewSelectedFile(file),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed:
+                                  _isSubmitting ? null : () => _removeBeforeFile(index),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
                     const SizedBox(height: 8),
                   ],
                   if (_afterFiles.isNotEmpty) ...[
@@ -871,21 +1045,45 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                       style: TextStyle(fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: List.generate(_afterFiles.length, (index) {
-                        final file = _afterFiles[index];
-                        return Chip(
-                          label: Text(
-                            file.name,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          deleteIcon: const Icon(Icons.close, size: 16),
-                          onDeleted: () => _removeAfterFile(index),
-                        );
-                      }),
-                    ),
+                    ...List.generate(_afterFiles.length, (index) {
+                      final file = _afterFiles[index];
+                      final tooBig = file.size > _maxUploadBytes;
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          _isLikelyImage(file.name)
+                              ? Icons.image_outlined
+                              : Icons.insert_drive_file_outlined,
+                          color: tooBig ? Colors.red : null,
+                        ),
+                        title: Text(
+                          file.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${_humanBytes(file.size)}'
+                          '${tooBig ? ' • exceeds 10MB' : ''}',
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.visibility),
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () => _previewSelectedFile(file),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed:
+                                  _isSubmitting ? null : () => _removeAfterFile(index),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
                     const SizedBox(height: 8),
                   ],
                   if (_documentFiles.isNotEmpty) ...[
@@ -894,21 +1092,46 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                       style: TextStyle(fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: List.generate(_documentFiles.length, (index) {
-                        final file = _documentFiles[index];
-                        return Chip(
-                          label: Text(
-                            file.name,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          deleteIcon: const Icon(Icons.close, size: 16),
-                          onDeleted: () => _removeDocumentFile(index),
-                        );
-                      }),
-                    ),
+                    ...List.generate(_documentFiles.length, (index) {
+                      final file = _documentFiles[index];
+                      final tooBig = file.size > _maxUploadBytes;
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          _isLikelyImage(file.name)
+                              ? Icons.image_outlined
+                              : Icons.insert_drive_file_outlined,
+                          color: tooBig ? Colors.red : null,
+                        ),
+                        title: Text(
+                          file.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${_humanBytes(file.size)}'
+                          '${tooBig ? ' • exceeds 10MB' : ''}',
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.visibility),
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () => _previewSelectedFile(file),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () => _removeDocumentFile(index),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
                   ],
                 ],
               ),

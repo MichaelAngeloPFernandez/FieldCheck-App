@@ -414,12 +414,25 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     borderRadius: BorderRadius.circular(10),
                     child: TextField(
                       controller: _searchController,
-                      style: const TextStyle(color: Color(0xFF0F172A)),
-                      cursorColor: const Color(0xFF0F172A),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      cursorColor: Theme.of(context).colorScheme.onSurface,
                       decoration: InputDecoration(
                         hintText: 'Search places (e.g., "Makati", "Ayala")',
-                        hintStyle: const TextStyle(color: Color(0xFF475569)),
-                        prefixIcon: const Icon(Icons.search, color: Color(0xFF0F172A)),
+                        hintStyle: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.75),
+                        ),
                         suffixIcon: _searchController.text.isEmpty
                             ? null
                             : IconButton(
@@ -430,18 +443,32 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                     _placesError = null;
                                   });
                                 },
-                                icon: const Icon(Icons.clear, color: Color(0xFF0F172A)),
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.75),
+                                ),
                               ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide: BorderSide(
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: 0.35),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide: BorderSide(
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: 0.35),
+                          ),
                         ),
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: Theme.of(context).colorScheme.surface,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 10,
@@ -457,24 +484,30 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       width: double.infinity,
                       constraints: const BoxConstraints(maxHeight: 260),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .dividerColor
+                              .withValues(alpha: 0.35),
+                        ),
                       ),
                       child: _isSearchingPlaces
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
+                          ? Padding(
+                              padding: const EdgeInsets.all(12),
                               child: Row(
                                 children: [
-                                  SizedBox(
+                                  const SizedBox(
                                     width: 18,
                                     height: 18,
                                     child: CircularProgressIndicator(strokeWidth: 2),
                                   ),
-                                  SizedBox(width: 10),
+                                  const SizedBox(width: 10),
                                   Text(
                                     'Searching...',
-                                    style: TextStyle(color: Color(0xFF0F172A)),
+                                    style: TextStyle(
+                                      color: Theme.of(context).colorScheme.onSurface,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -495,13 +528,21 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                         r.displayName,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(color: Color(0xFF0F172A)),
+                                        style: TextStyle(
+                                          color: Theme.of(context).colorScheme.onSurface,
+                                        ),
                                       ),
                                       subtitle: r.latLng == null
                                           ? null
                                           : Text(
                                               '${r.latLng!.latitude.toStringAsFixed(5)}, ${r.latLng!.longitude.toStringAsFixed(5)}',
-                                              style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurface
+                                                    .withValues(alpha: 0.7),
+                                              ),
                                             ),
                                       onTap: () => _selectPlaceResult(r),
                                     );
@@ -511,7 +552,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                   padding: const EdgeInsets.all(12),
                                   child: Text(
                                     _placesError ?? 'No results',
-                                    style: const TextStyle(color: Color(0xFF0F172A)),
+                                    style: TextStyle(
+                                      color: Theme.of(context).colorScheme.onSurface,
+                                    ),
                                   ),
                                 )),
                     ),
@@ -535,10 +578,12 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     const BorderRadius.vertical(top: Radius.circular(16)),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0B1220),
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius:
                         const BorderRadius.vertical(top: Radius.circular(16)),
-                    border: Border.all(color: const Color(0xFF1F2937)),
+                    border: Border.all(
+                      color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                    ),
                   ),
                 child: DefaultTabController(
                   length: 2,
@@ -578,17 +623,24 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                             width: 44,
                             height: 5,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF94A3B8),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.35),
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                         ),
                       ),
                       TabBar(
-                        labelColor: const Color(0xFFF8FAFC),
-                        unselectedLabelColor: const Color(0xFFCBD5E1),
+                        labelColor: Theme.of(context).colorScheme.onSurface,
+                        unselectedLabelColor: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.7),
                         indicatorColor: const Color(0xFF2688d4),
-                        dividerColor: const Color(0xFF1F2937),
+                        dividerColor:
+                            Theme.of(context).dividerColor.withValues(alpha: 0.35),
                         tabs: [
                           const Tab(text: 'Geofences'),
                           const Tab(text: 'Assignments'),
@@ -630,7 +682,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
       children: [
         if (_hasAnyPending)
           Card(
-            color: const Color(0xFF0F172A),
+            color: Theme.of(context).colorScheme.surface,
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Row(
@@ -638,17 +690,22 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   Expanded(
                     child: Text(
                       'Unsaved changes: ${_pendingGeofenceUpdates.length + _pendingNewGeofences.length}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFFF8FAFC),
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                   ),
                   TextButton(
                     onPressed: _discardAllPending,
-                    child: const Text(
+                    child: Text(
                       'Discard',
-                      style: TextStyle(color: Color(0xFFE2E8F0)),
+                      style: TextStyle(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.85),
+                      ),
                     ),
                   ),
                   FilledButton(
@@ -663,12 +720,12 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'Geofence Areas',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFFF8FAFC),
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
           ],
@@ -677,7 +734,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
 
         if (selected != null)
           Card(
-            color: const Color(0xFF111827),
+            color: Theme.of(context).colorScheme.surface,
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -688,9 +745,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       Expanded(
                         child: Text(
                           selected.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFFF8FAFC),
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                       ),
@@ -704,7 +761,12 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   const SizedBox(height: 6),
                   Text(
                     selected.address,
-                    style: const TextStyle(color: Color(0xFFCBD5E1)),
+                    style: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.7),
+                    ),
                   ),
                 ],
               ),
@@ -712,21 +774,26 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
           ),
 
         if (_geofences.isEmpty && _pendingNewGeofences.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(12),
+          Padding(
+            padding: const EdgeInsets.all(12),
             child: Text(
               'No geofences found.',
-              style: TextStyle(color: Color(0xFFE2E8F0)),
+              style: TextStyle(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.7),
+              ),
             ),
           )
         else ...[
           ..._pendingNewGeofences.map((geofence) {
             return Card(
-              color: const Color(0xFF111827),
+              color: Theme.of(context).colorScheme.surface,
               child: ListTile(
                 title: Text(
                   geofence.name.isEmpty ? '(New geofence)' : geofence.name,
-                  style: const TextStyle(color: Color(0xFFF8FAFC)),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                 ),
                 subtitle: Text(
                   geofence.address.isEmpty
@@ -734,7 +801,12 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       : geofence.address,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFFCBD5E1)),
+                  style: TextStyle(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.7),
+                  ),
                 ),
                 trailing: Text(
                   'Pending',
@@ -747,17 +819,22 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
             final index = entry.key;
             final geofence = entry.value;
             return Card(
-              color: const Color(0xFF111827),
+              color: Theme.of(context).colorScheme.surface,
               child: ListTile(
                 title: Text(
                   geofence.name,
-                  style: const TextStyle(color: Color(0xFFF8FAFC)),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                 ),
                 subtitle: Text(
                   geofence.address,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFFCBD5E1)),
+                  style: TextStyle(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.7),
+                  ),
                 ),
                 onTap: () => _selectGeofence(geofence),
                 trailing: Row(
@@ -765,7 +842,12 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   children: [
                     Text(
                       '${geofence.radius.toInt()}m',
-                      style: const TextStyle(color: Color(0xFFE2E8F0)),
+                      style: TextStyle(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.85),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Switch(
@@ -782,7 +864,13 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       activeThumbColor: const Color(0xFF2688d4),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.edit, color: Color(0xFFE2E8F0)),
+                      icon: Icon(
+                        Icons.edit,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.85),
+                      ),
                       onPressed: () => _showEditGeofenceDialog(geofence, index),
                     ),
                     IconButton(
@@ -873,7 +961,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
           children: [
             if (_hasAnyPending)
               Card(
-                color: const Color(0xFF0F172A),
+                color: Theme.of(context).colorScheme.surface,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Row(
@@ -881,17 +969,22 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       Expanded(
                         child: Text(
                           'Unsaved changes: ${_pendingGeofenceUpdates.length + _pendingNewGeofences.length}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFFF8FAFC),
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                       ),
                       TextButton(
                         onPressed: _discardAllPending,
-                        child: const Text(
+                        child: Text(
                           'Discard',
-                          style: TextStyle(color: Color(0xFFE2E8F0)),
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.85),
+                          ),
                         ),
                       ),
                       FilledButton(
@@ -903,29 +996,34 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 ),
               ),
 
-            const Text(
+            Text(
               'Assignments',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFFF8FAFC),
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 8),
             if (selected == null)
-              const Card(
-                color: Color(0xFF111827),
+              Card(
+                color: Theme.of(context).colorScheme.surface,
                 child: Padding(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   child: Text(
                     'Select a geofence first (Geofences tab).',
-                    style: TextStyle(color: Color(0xFFCBD5E1)),
+                    style: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.7),
+                    ),
                   ),
                 ),
               )
             else ...[
               Card(
-                color: const Color(0xFF111827),
+                color: Theme.of(context).colorScheme.surface,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
@@ -933,20 +1031,30 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     children: [
                       Text(
                         selected.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFFF8FAFC),
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         selected.address,
-                        style: const TextStyle(color: Color(0xFFCBD5E1)),
+                        style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.7),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'Assigned: ${assignedIds.length}',
-                        style: const TextStyle(color: Color(0xFFCBD5E1)),
+                        style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.7),
+                        ),
                       ),
                     ],
                   ),
@@ -1041,13 +1149,16 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
               if (stagedAdded > 0 || stagedRemoved > 0) ...[
                 const SizedBox(height: 10),
                 Card(
-                  color: const Color(0xFF0F172A),
+                  color: Theme.of(context).colorScheme.surface,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Text(
                       'Staged changes: +$stagedAdded assigned, -$stagedRemoved unassigned',
-                      style: const TextStyle(
-                        color: Color(0xFFE2E8F0),
+                      style: TextStyle(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.85),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1095,7 +1206,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     final isAssigned = assignedIds.contains(emp.id);
                     final isChecked = _assignmentsSelectedEmployeeIds.contains(emp.id);
                     return Card(
-                      color: const Color(0xFF111827),
+                      color: Theme.of(context).colorScheme.surface,
                       child: CheckboxListTile(
                         value: isChecked,
                         onChanged: (v) {
@@ -1109,14 +1220,19 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                         },
                         title: Text(
                           emp.name,
-                          style: const TextStyle(color: Color(0xFFF8FAFC)),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                         ),
                         subtitle: Text(
                           isAssigned ? 'Currently assigned' : 'Not assigned',
                           style: TextStyle(
                             color: isAssigned
                                 ? Colors.green.shade300
-                                : const Color(0xFFCBD5E1),
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.7),
                           ),
                         ),
                         controlAffinity: ListTileControlAffinity.leading,
@@ -1292,24 +1408,36 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                         margin: const EdgeInsets.only(top: 8),
                         constraints: const BoxConstraints(maxHeight: 200),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: Colors.grey.shade300),
+                          color: Theme.of(context).colorScheme.surface,
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: 0.35),
+                          ),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: isSearching
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
+                            ? Padding(
+                                padding: const EdgeInsets.all(12),
                                 child: Row(
                                   children: [
-                                    SizedBox(
+                                    const SizedBox(
                                       width: 18,
                                       height: 18,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                       ),
                                     ),
-                                    SizedBox(width: 10),
-                                    Text('Searching…'),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      'Searching…',
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.85),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               )
@@ -1329,6 +1457,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                           r.displayName,
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Theme.of(context).colorScheme.onSurface,
+                                          ),
                                         ),
                                         onTap: () {
                                           final latLng = r.latLng;
@@ -1345,7 +1476,15 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                   )
                                 : Padding(
                                     padding: const EdgeInsets.all(12),
-                                    child: Text(placesError ?? 'No results'),
+                                    child: Text(
+                                      placesError ?? 'No results',
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.85),
+                                      ),
+                                    ),
                                   )),
                       ),
                     const SizedBox(height: 12),
@@ -1715,24 +1854,36 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                         margin: const EdgeInsets.only(top: 8),
                         constraints: const BoxConstraints(maxHeight: 200),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: Colors.grey.shade300),
+                          color: Theme.of(context).colorScheme.surface,
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: 0.35),
+                          ),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: isSearching
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
+                            ? Padding(
+                                padding: const EdgeInsets.all(12),
                                 child: Row(
                                   children: [
-                                    SizedBox(
+                                    const SizedBox(
                                       width: 18,
                                       height: 18,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                       ),
                                     ),
-                                    SizedBox(width: 10),
-                                    Text('Searching…'),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      'Searching…',
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.85),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               )
@@ -1752,6 +1903,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                           r.displayName,
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Theme.of(context).colorScheme.onSurface,
+                                          ),
                                         ),
                                         onTap: () {
                                           final latLng = r.latLng;
@@ -1768,7 +1922,15 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                   )
                                 : Padding(
                                     padding: const EdgeInsets.all(12),
-                                    child: Text(placesError ?? 'No results'),
+                                    child: Text(
+                                      placesError ?? 'No results',
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.85),
+                                      ),
+                                    ),
                                   )),
                       ),
                     const SizedBox(height: 12),

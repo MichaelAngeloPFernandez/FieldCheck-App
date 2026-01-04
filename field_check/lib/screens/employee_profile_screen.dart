@@ -295,9 +295,12 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                                     _userProfile!.isVerified
                                         ? 'Your account is active'
                                         : 'Please verify your email to activate',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.grey,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.7),
                                     ),
                                   ),
                                 ],
@@ -334,9 +337,12 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                             if (!_isEditing)
                               Text(
                                 'ID: ${_userProfile!.id.substring(0, 8)}...',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10,
-                                  color: Colors.grey,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.65),
                                 ),
                               ),
                           ],
@@ -412,11 +418,16 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         ),
                         const SizedBox(height: 12),
                         if (_attendanceHistory.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                             child: Text(
                               'No attendance records yet',
-                              style: TextStyle(color: Colors.grey),
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.7),
+                              ),
                               textAlign: TextAlign.center,
                             ),
                           )
@@ -455,9 +466,12 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
-            color: Colors.grey,
+            color: Theme.of(context)
+                .colorScheme
+                .onSurface
+                .withValues(alpha: 0.7),
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -481,16 +495,31 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context)
+                    .dividerColor
+                    .withValues(alpha: 0.35),
+              ),
             ),
             child: Row(
               children: [
-                Icon(icon, size: 18, color: Colors.grey),
+                Icon(
+                  icon,
+                  size: 18,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.75),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     controller.text.isNotEmpty ? controller.text : 'Not set',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
                 ),
               ],
@@ -506,9 +535,11 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          ),
         ),
         child: Row(
           children: [
@@ -531,7 +562,13 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   ),
                   Text(
                     record.timestamp.toLocal().toString().split('.')[0],
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.7),
+                    ),
                   ),
                   if (record.geofenceName != null)
                     Text(

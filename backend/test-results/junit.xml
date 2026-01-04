@@ -1,109 +1,109 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="21" failures="11" errors="0" time="1.609">
-  <testsuite name="{suite}" errors="0" failures="11" skipped="0" timestamp="2025-11-30T07:16:22" time="1.529" tests="21">
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should allow valid check-in" time="0.066">
+<testsuites name="jest tests" tests="21" failures="11" errors="0" time="8.119">
+  <testsuite name="{suite}" errors="0" failures="11" skipped="0" timestamp="2026-01-02T12:36:07" time="7.308" tests="21">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should allow valid check-in" time="0.34">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should include rate limit headers" time="0.006">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should include rate limit headers" time="0.015">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should enforce rate limit (10 per 60 seconds)" time="0.064">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should enforce rate limit (10 per 60 seconds)" time="0.229">
       <failure>Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: 200
 Received: 429
-    at Object.toBe (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:96:33)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBe (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:96:33)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should include response time header" time="0.005">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should include response time header" time="0.042">
       <failure>Error: expect(received).toBeDefined()
 
 Received: undefined
-    at Object.toBeDefined (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:114:51)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBeDefined (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:114:51)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should allow valid check-out" time="0.003">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should allow valid check-out" time="0.032">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should enforce rate limit separately from check-in" time="0.045">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should enforce rate limit separately from check-in" time="0.136">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should allow 10 check-outs per 60 seconds" time="0.028">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should allow 10 check-outs per 60 seconds" time="0.124">
       <failure>Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: 200
 Received: 429
-    at Object.toBe (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:163:33)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBe (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:163:33)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Caching - GET Attendance" name="should cache GET responses" time="0.007">
+    <testcase classname="Attendance Endpoints - Integration Tests › Caching - GET Attendance" name="should cache GET responses" time="0.022">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Caching - GET Attendance" name="should serve cached data faster" time="0.007">
+    <testcase classname="Attendance Endpoints - Integration Tests › Caching - GET Attendance" name="should serve cached data faster" time="0.05">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Cache Invalidation - Write Operations" name="should invalidate cache on sync" time="0.006">
+    <testcase classname="Attendance Endpoints - Integration Tests › Cache Invalidation - Write Operations" name="should invalidate cache on sync" time="0.013">
       <failure>Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: &quot;MISS&quot;
 Received: &quot;HIT&quot;
-    at Object.toBe (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:198:43)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBe (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:198:43)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Performance Metrics" name="should track response times" time="0.012">
+    <testcase classname="Attendance Endpoints - Integration Tests › Performance Metrics" name="should track response times" time="0.081">
       <failure>Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: 200
 Received: 404
-    at Object.toBe (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:227:31)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBe (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:227:31)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Performance Metrics" name="should calculate percentiles" time="0.021">
+    <testcase classname="Attendance Endpoints - Integration Tests › Performance Metrics" name="should calculate percentiles" time="0.199">
       <failure>TypeError: Cannot read properties of undefined (reading &apos;find&apos;)
-    at Object.find (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:237:47)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.find (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:237:47)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent check-ins" time="0.016">
+    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent check-ins" time="0.052">
       <failure>Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: true
 Received: false
-    at Object.toBe (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:265:52)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBe (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:265:52)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent reads with cache" time="0.027">
+    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent reads with cache" time="0.125">
     </testcase>
-    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent check-in and check-out" time="0.031">
+    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent check-in and check-out" time="0.072">
       <failure>Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: true
 Received: false
-    at Object.toBe (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:298:52)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBe (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:298:52)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Error Handling" name="should handle missing user" time="0.008">
+    <testcase classname="Error Handling" name="should handle missing user" time="0.01">
     </testcase>
-    <testcase classname="Error Handling" name="should handle invalid JSON" time="0.006">
+    <testcase classname="Error Handling" name="should handle invalid JSON" time="0.011">
     </testcase>
-    <testcase classname="Error Handling" name="should handle missing request body" time="0.008">
+    <testcase classname="Error Handling" name="should handle missing request body" time="0.014">
       <failure>Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: 200
 Received: 429
-    at Object.toBe (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:339:29)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBe (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:339:29)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Edge Cases" name="should handle very fast consecutive requests" time="0.066">
+    <testcase classname="Edge Cases" name="should handle very fast consecutive requests" time="0.18">
       <failure>Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: 10
 Received: 0
-    at Object.toBe (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:364:31)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toBe (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:364:31)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Edge Cases" name="should handle requests with large payloads" time="0.006">
+    <testcase classname="Edge Cases" name="should handle requests with large payloads" time="0.014">
       <failure>Error: expect(received).toContain(expected) // indexOf
 
 Expected value: 429
 Received array: [200, 413]
-    at Object.toContain (C:\Users\micha\OneDrive\Desktop\BSIT\BSIT4\Capstone 2\capstone_fieldcheck_4.0\capstone_fieldcheck_2.0\backend\__tests__\integration\attendance.integration.test.js:379:24)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    at Object.toContain (C:\FLUTTER\ WORKS\FieldCheck-App\backend\__tests__\integration\attendance.integration.test.js:379:24)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
     </testcase>
-    <testcase classname="Edge Cases" name="should handle cache with different query parameters" time="0.015">
+    <testcase classname="Edge Cases" name="should handle cache with different query parameters" time="0.032">
     </testcase>
   </testsuite>
 </testsuites>

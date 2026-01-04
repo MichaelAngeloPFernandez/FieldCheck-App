@@ -11,6 +11,45 @@ class ReportService {
 
   static const int maxUploadBytes = 10 * 1024 * 1024;
 
+  String _extractErrorMessage(http.Response response) {
+    try {
+      final decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+        return decoded['message'].toString();
+      }
+      return decoded.toString();
+    } catch (_) {
+      return response.body;
+    }
+  }
+
+  Future<http.Response> _sendMultipartWithAuthRetry(
+    http.MultipartRequest request,
+  ) async {
+    var streamed = await request.send();
+    var response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode != 401) {
+      return response;
+    }
+
+    final refreshed = await UserService().refreshAccessToken();
+    if (!refreshed) {
+      return response;
+    }
+
+    final token = await UserService().getToken();
+    if (token != null) {
+      request.headers['Authorization'] = 'Bearer $token';
+    } else {
+      request.headers.remove('Authorization');
+    }
+
+    streamed = await request.send();
+    response = await http.Response.fromStream(streamed);
+    return response;
+  }
+
   Future<Map<String, String>> _headers({bool jsonContent = true}) async {
     final headers = <String, String>{};
     if (jsonContent) headers['Content-Type'] = 'application/json';
@@ -153,8 +192,7 @@ class ReportService {
       await http.MultipartFile.fromPath('file', filePath, filename: fileName),
     );
 
-    final streamed = await request.send();
-    final response = await http.Response.fromStream(streamed);
+    final response = await _sendMultipartWithAuthRetry(request);
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       final decoded = json.decode(response.body);
@@ -163,7 +201,8 @@ class ReportService {
       }
       throw Exception('Upload succeeded but response invalid');
     } else {
-      throw Exception('Failed to upload attachment');
+      final msg = _extractErrorMessage(response);
+      throw Exception('Failed to upload attachment (${response.statusCode}): $msg');
     }
   }
 
@@ -190,8 +229,7 @@ class ReportService {
       http.MultipartFile.fromBytes('file', bytes, filename: fileName),
     );
 
-    final streamed = await request.send();
-    final response = await http.Response.fromStream(streamed);
+    final response = await _sendMultipartWithAuthRetry(request);
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       final decoded = json.decode(response.body);
@@ -200,7 +238,8 @@ class ReportService {
       }
       throw Exception('Upload succeeded but response invalid');
     } else {
-      throw Exception('Failed to upload attachment');
+      final msg = _extractErrorMessage(response);
+      throw Exception('Failed to upload attachment (${response.statusCode}): $msg');
     }
   }
 }

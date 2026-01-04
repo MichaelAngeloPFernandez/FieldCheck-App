@@ -345,9 +345,13 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
           Container(
             height: 220,
             padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF5F7FA),
-              border: Border(top: BorderSide(color: Colors.black12)),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border(
+                top: BorderSide(
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                ),
+              ),
             ),
             child: _buildBottomPanel(),
           ),
@@ -409,7 +413,11 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
             _availability.isEmpty
                 ? 'Workload data not available for online employees.'
                 : _buildWorkloadSummary(),
-            style: const TextStyle(fontSize: 12, color: Colors.black54),
+            style: TextStyle(
+              fontSize: 12,
+              color:
+                  Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
           ),
         const SizedBox(height: 8),
         Expanded(
@@ -550,13 +558,20 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
         const SizedBox(height: 4),
         Text(
           user.email,
-          style: const TextStyle(fontSize: 12, color: Colors.grey),
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
         ),
         if (info != null) ...[
           const SizedBox(height: 4),
           Text(
             'Workload: ${info.workloadStatus} · Active: ${info.activeTasksCount}, Overdue: ${info.overdueTasksCount}',
-            style: const TextStyle(fontSize: 12, color: Colors.black87),
+            style: TextStyle(
+              fontSize: 12,
+              color:
+                  Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85),
+            ),
           ),
         ],
         const SizedBox(height: 8),

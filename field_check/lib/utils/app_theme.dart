@@ -393,5 +393,67 @@ class AppTheme {
       color: primaryLight,
       size: 24,
     ),
+
+    textTheme: const TextTheme(
+      displayLarge: TextStyle(color: Colors.white),
+      displayMedium: TextStyle(color: Colors.white),
+      displaySmall: TextStyle(color: Colors.white),
+      headlineLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+      headlineMedium: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+      headlineSmall: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      titleLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      titleMedium: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      titleSmall: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+      bodyLarge: TextStyle(color: Colors.white, height: 1.5),
+      bodyMedium: TextStyle(color: Colors.white, height: 1.5),
+      bodySmall: TextStyle(color: Colors.white70, height: 1.4),
+      labelLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      labelMedium: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+      labelSmall: TextStyle(color: Colors.white60, fontWeight: FontWeight.w600),
+    ),
+
+    dialogTheme: const DialogThemeData(
+      backgroundColor: surfaceDark,
+      titleTextStyle: TextStyle(
+        color: Colors.white,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+      ),
+      contentTextStyle: TextStyle(
+        color: Colors.white,
+        fontSize: 14,
+        height: 1.4,
+      ),
+    ),
+
+    snackBarTheme: const SnackBarThemeData(
+      backgroundColor: Color(0xFF2A2A2A),
+      contentTextStyle: TextStyle(color: Colors.white),
+    ),
+
+    listTileTheme: const ListTileThemeData(
+      textColor: Colors.white,
+      iconColor: Colors.white70,
+    ),
+
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        foregroundColor: Colors.white,
+      ),
+    ),
+
+    chipTheme: ChipThemeData(
+      backgroundColor: const Color(0xFF2A2A2A),
+      selectedColor: primaryDark,
+      secondarySelectedColor: primaryDark,
+      disabledColor: const Color(0xFF2A2A2A),
+      labelStyle: const TextStyle(color: Colors.white),
+      secondaryLabelStyle: const TextStyle(color: Colors.white),
+      iconTheme: const IconThemeData(color: Colors.white70),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(radiusMd),
+        side: const BorderSide(color: Color(0xFF424242)),
+      ),
+    ),
   );
 }

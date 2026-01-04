@@ -202,6 +202,8 @@ io.on('connection', (socket) => {
 
           // Existing lightweight event used by RealtimeService/AdminWorldMap
           io.emit('liveEmployeeLocation', {
+            employeeId: String(userId),
+            socketId: socket.id,
             userId,
             latitude,
             longitude,

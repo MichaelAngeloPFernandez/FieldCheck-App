@@ -13,6 +13,7 @@ import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 
 class AdminReportsScreen extends StatefulWidget {
   final String? employeeId;
@@ -71,6 +72,20 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     return '${ApiConfig.baseUrl}/$p';
   }
 
+  String _ensureUrlEncoded(String url) {
+    try {
+      var uri = Uri.parse(url);
+      if (uri.host.isEmpty) return url;
+      // Encode each path segment (handles spaces and special chars in filenames)
+      uri = uri.replace(
+        pathSegments: uri.pathSegments.map(Uri.encodeComponent).toList(),
+      );
+      return uri.toString();
+    } catch (_) {
+      return url;
+    }
+  }
+
   bool _isImagePath(String url) {
     final lower = url.toLowerCase();
     return lower.endsWith('.png') ||
@@ -85,42 +100,41 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       final uri = Uri.parse(url);
       final segs = uri.pathSegments;
       if (segs.isEmpty) return url;
-      return segs.last;
+      return Uri.decodeComponent(segs.last);
     } catch (_) {
       return url;
     }
   }
 
   Future<void> _openUrlExternal(String url) async {
+    final safeUrl = _ensureUrlEncoded(url);
     Uri uri;
     try {
-      uri = Uri.parse(url);
+      uri = Uri.parse(safeUrl);
       if (uri.host.isEmpty) {
         throw const FormatException('Invalid URL');
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invalid attachment URL'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: const Text('Invalid attachment URL'),
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
       return;
     }
 
-    uri = uri.replace(
-      pathSegments: uri.pathSegments.map(Uri.decodeComponent).toList(),
-    );
+    // Keep URL encoded; decoding path segments can break URLs with spaces.
 
     final can = await canLaunchUrl(uri);
     if (!can) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No app found to open attachment'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: const Text('No app found to open attachment'),
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -130,9 +144,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to open attachment'),
-          backgroundColor: Colors.red,
+        SnackBar(
+          content: const Text('Unable to open attachment'),
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -149,8 +163,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                  ),
+                ),
               ),
               child: Row(
                 children: [
@@ -953,8 +971,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 icon: const Icon(Icons.clear),
                 label: const Text('Clear Filter'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.red,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  foregroundColor: Theme.of(context).colorScheme.error,
                 ),
               ),
             ),
@@ -965,7 +983,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               icon: const Icon(Icons.download),
               label: const Text('Export'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.surface,
                 foregroundColor: brandColor,
               ),
             ),
@@ -1002,14 +1020,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             children: [
                               const Text('Task Reports'),
                               if (_hasNewTaskReports)
-                                const Padding(
+                                Padding(
                                   padding: EdgeInsets.only(left: 6.0),
                                   child: SizedBox(
                                     width: 8,
                                     height: 8,
                                     child: DecoratedBox(
                                       decoration: BoxDecoration(
-                                        color: Colors.red,
+                                        color: Theme.of(context).colorScheme.error,
                                         shape: BoxShape.circle,
                                       ),
                                     ),
@@ -1047,7 +1065,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                 : 'Showing: ${_showArchivedReports ? 'Archived' : 'Current'} • $_taskDifficultyFilter • $_reportStatusFilter',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.grey.shade700),
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.7),
+                            ),
                           ),
                         ),
                       ],
@@ -1195,7 +1218,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               title: 'No Check-in/out',
                               value: _getNoCheckInOutCount().toString(),
                               icon: Icons.warning_amber,
-                              color: Colors.orange,
+                              color: Theme.of(context).colorScheme.tertiary,
                             ),
                           ),
                         ],
@@ -1238,20 +1261,35 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                           if (record.content.toLowerCase().contains('void') &&
                                               record.content.toLowerCase().contains('auto')) {
                                             status = 'Auto Checkout (Void)';
-                                            chipBg = Colors.red[100];
-                                            chipFg = Colors.red[900];
+                                            chipBg = Theme.of(context)
+                                                .colorScheme
+                                                .error
+                                                .withValues(alpha: 0.12);
+                                            chipFg = Theme.of(context).colorScheme.error;
                                           } else if (record.content.toLowerCase().contains('void')) {
                                             status = 'Void';
-                                            chipBg = Colors.grey[300];
-                                            chipFg = Colors.grey[900];
+                                            chipBg = Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.12);
+                                            chipFg = Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.85);
                                           } else if (record.content.toLowerCase().contains('check in')) {
                                             status = 'Checked In';
-                                            chipBg = Colors.green[100];
-                                            chipFg = Colors.green[900];
+                                            chipBg = Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                                .withValues(alpha: 0.12);
+                                            chipFg = Theme.of(context).colorScheme.primary;
                                           } else {
                                             status = 'Checked Out';
-                                            chipBg = Colors.blue[100];
-                                            chipFg = Colors.blue[900];
+                                            chipBg = Theme.of(context)
+                                                .colorScheme
+                                                .secondary
+                                                .withValues(alpha: 0.12);
+                                            chipFg = Theme.of(context).colorScheme.secondary;
                                           }
                                           final date = record.submittedAt
                                               .toLocal()
@@ -1369,7 +1407,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             const SizedBox(height: 4),
             Text(
               title,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.7),
+              ),
             ),
           ],
         ),
@@ -1405,9 +1449,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(
+                      color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                    ),
                   ),
                   child: SelectableText(
                     r.content,
@@ -1425,7 +1471,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: r.attachments.map((rawPath) {
-                    final url = _normalizeAttachmentUrl(rawPath);
+                    final normalized = _normalizeAttachmentUrl(rawPath);
+                    final url = _ensureUrlEncoded(normalized);
                     final filename = _filenameFromUrl(url);
                     final isImage = _isImagePath(url);
 
@@ -1442,15 +1489,22 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey.shade200),
+                            border: Border.all(
+                              color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                            ),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 isImage ? Icons.image : Icons.insert_drive_file,
-                                color: isImage ? Colors.blue : Colors.blueGrey,
+                                color: isImage
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.8),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
@@ -1466,10 +1520,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      rawPath,
-                                      style: const TextStyle(
+                                      url,
+                                      style: TextStyle(
                                         fontSize: 11,
-                                        color: Colors.blueGrey,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.7),
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
@@ -1478,6 +1535,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                 ),
                               ),
                               const SizedBox(width: 8),
+                              if (isImage)
+                                IconButton(
+                                  tooltip: 'Preview',
+                                  onPressed: () => _showImagePreview(filename, url),
+                                  icon: const Icon(Icons.visibility),
+                                ),
+                              IconButton(
+                                tooltip: 'Copy link',
+                                onPressed: () async {
+                                  await Clipboard.setData(ClipboardData(text: url));
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Link copied')),
+                                  );
+                                },
+                                icon: const Icon(Icons.copy),
+                              ),
                               IconButton(
                                 tooltip: 'Open',
                                 onPressed: () => _openUrlExternal(url),
@@ -1525,16 +1599,20 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   Color _reportStatusBg(String status) {
     final s = status.toLowerCase();
-    if (s == 'reviewed') return Colors.green.shade100;
-    if (s == 'submitted') return Colors.orange.shade100;
-    return Colors.grey.shade200;
+    if (s == 'reviewed') {
+      return Theme.of(context).colorScheme.primary.withValues(alpha: 0.12);
+    }
+    if (s == 'submitted') {
+      return Theme.of(context).colorScheme.tertiary.withValues(alpha: 0.14);
+    }
+    return Theme.of(context).colorScheme.surface;
   }
 
   Color _reportStatusFg(String status) {
     final s = status.toLowerCase();
-    if (s == 'reviewed') return Colors.green.shade900;
-    if (s == 'submitted') return Colors.orange.shade900;
-    return Colors.grey.shade900;
+    if (s == 'reviewed') return Theme.of(context).colorScheme.primary;
+    if (s == 'submitted') return Theme.of(context).colorScheme.tertiary;
+    return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85);
   }
 
   Widget _buildReportStatusChip(String status) {
@@ -1646,7 +1724,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: BorderSide(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+        ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -1676,7 +1756,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         Text(
                           r.employeeName ?? r.employeeId,
                           style: TextStyle(
-                            color: Colors.grey.shade700,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.7),
                             fontSize: 12,
                           ),
                           maxLines: 1,
@@ -1737,22 +1820,37 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   if ((r.taskDifficulty ?? '').isNotEmpty)
                     Chip(
                       label: Text(r.taskDifficulty!),
-                      backgroundColor: Colors.blueGrey.shade50,
-                      labelStyle: TextStyle(color: Colors.blueGrey.shade800),
+                      backgroundColor: Theme.of(context).colorScheme.surface,
+                      labelStyle: TextStyle(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.85),
+                      ),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                     ),
                   Chip(
                     label: Text(submitted),
-                    backgroundColor: Colors.grey.shade100,
-                    labelStyle: TextStyle(color: Colors.grey.shade800),
+                    backgroundColor: Theme.of(context).colorScheme.surface,
+                    labelStyle: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.85),
+                    ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
                   Chip(
                     label: Text('Attachments: $attachmentCount'),
-                    backgroundColor: Colors.grey.shade100,
-                    labelStyle: TextStyle(color: Colors.grey.shade800),
+                    backgroundColor: Theme.of(context).colorScheme.surface,
+                    labelStyle: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.85),
+                    ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
@@ -1781,12 +1879,16 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(height: 16),
               Text(
                 _taskReportsError!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               const SizedBox(height: 16),
               FilledButton(
