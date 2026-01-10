@@ -8,6 +8,7 @@ import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/screens/task_report_screen.dart';
 import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class EmployeeTaskListScreen extends StatefulWidget {
   final String userModelId;
@@ -18,10 +19,13 @@ class EmployeeTaskListScreen extends StatefulWidget {
   State<EmployeeTaskListScreen> createState() => _EmployeeTaskListScreenState();
 }
 
-class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
+class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
+    with SingleTickerProviderStateMixin {
   late Future<List<Task>> _assignedTasksFuture;
   final RealtimeService _realtimeService = RealtimeService();
   final AutosaveService _autosaveService = AutosaveService();
+
+  late final TabController _tabController;
 
   StreamSubscription<Map<String, dynamic>>? _taskSub;
   Timer? _taskRefreshDebounce;
@@ -33,9 +37,101 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     super.initState();
     // ignore: unnecessary_statements
     _completeTaskWithReport;
-    _assignedTasksFuture = TaskService().fetchAssignedTasks(widget.userModelId);
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (!mounted) return;
+      if (_tabController.indexIsChanging) return;
+      _refreshTasks();
+    });
+    _assignedTasksFuture = TaskService().fetchAssignedTasks(
+      widget.userModelId,
+      archived: _fetchArchived,
+    );
     _initRealtimeService();
     _autosaveService.initialize();
+  }
+
+  bool get _isCurrentTab => _tabController.index == 0;
+  bool get _isOverdueTab => _tabController.index == 1;
+  bool get _isArchivedTab => _tabController.index == 2;
+
+  bool get _fetchArchived => _isArchivedTab;
+
+  Future<void> _deleteOverdue(Task task) async {
+    final userTaskId = task.userTaskId;
+    if (userTaskId == null || userTaskId.trim().isEmpty) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(context, 'Unable to delete task');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Delete overdue task?'),
+          content: const Text('This will remove it from your task list.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await TaskService().archiveUserTask(userTaskId);
+      if (!mounted) return;
+      AppWidgets.showSuccessSnackbar(context, 'Task deleted');
+      await _refreshTasks();
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete task'),
+      );
+    }
+  }
+
+  Future<void> _toggleArchive(Task task) async {
+    final userTaskId = task.userTaskId;
+    if (userTaskId == null || userTaskId.trim().isEmpty) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        'Unable to update task archive state',
+      );
+      return;
+    }
+
+    try {
+      if (_isArchivedTab) {
+        await TaskService().restoreUserTask(userTaskId);
+        if (mounted) {
+          AppWidgets.showSuccessSnackbar(context, 'Task restored');
+        }
+      } else {
+        await TaskService().archiveUserTask(userTaskId);
+        if (mounted) {
+          AppWidgets.showSuccessSnackbar(context, 'Task archived');
+        }
+      }
+      await _refreshTasks();
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to update task'),
+      );
+    }
   }
 
   Color _statusColor(String status) {
@@ -47,7 +143,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
       case 'pending':
         return Colors.blue;
       default:
-        return Colors.grey;
+        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
     }
   }
 
@@ -92,19 +188,23 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: _statusColor(task.status).withValues(alpha: 0.15),
+                        color: _statusColor(
+                          task.status,
+                        ).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
-                          color: _statusColor(task.status).withValues(alpha: 0.35),
+                          color: _statusColor(
+                            task.status,
+                          ).withValues(alpha: 0.35),
                         ),
                       ),
                       child: Text(
                         task.status,
-                        style: TextStyle(
-                          color: _statusColor(task.status),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: _statusColor(task.status),
+                              fontWeight: FontWeight.w800,
+                            ),
                       ),
                     ),
                   ],
@@ -152,7 +252,9 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                 const SizedBox(height: 8),
                 LinearProgressIndicator(
                   value: _taskProgressValue(task),
-                  backgroundColor: Colors.grey[200],
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.12),
                 ),
                 if (task.checklist.isNotEmpty) ...[
                   const SizedBox(height: 14),
@@ -166,14 +268,26 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(
-                        c.isCompleted ? Icons.check_circle : Icons.circle_outlined,
-                        color: c.isCompleted ? Colors.green : Colors.grey,
+                        c.isCompleted
+                            ? Icons.check_circle
+                            : Icons.circle_outlined,
+                        color: c.isCompleted
+                            ? Colors.green
+                            : Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.55),
                       ),
                       title: Text(c.label),
                       subtitle: c.completedAt != null
                           ? Text(
                               'Completed at: ${c.completedAt!.toLocal().toString().split('.')[0]}',
-                              style: const TextStyle(fontSize: 12),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.75),
+                                  ),
                             )
                           : null,
                     ),
@@ -221,6 +335,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
       setState(() {
         _assignedTasksFuture = TaskService().fetchAssignedTasks(
           widget.userModelId,
+          archived: _fetchArchived,
         );
       });
     }
@@ -230,6 +345,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
   void dispose() {
     _taskRefreshDebounce?.cancel();
     _taskSub?.cancel();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -246,6 +362,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
         setState(() {
           _assignedTasksFuture = TaskService().fetchAssignedTasks(
             widget.userModelId,
+            archived: _fetchArchived,
           );
         });
       });
@@ -265,6 +382,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
       setState(() {
         _assignedTasksFuture = TaskService().fetchAssignedTasks(
           widget.userModelId,
+          archived: _fetchArchived,
         );
       });
     }
@@ -274,6 +392,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     setState(() {
       _assignedTasksFuture = TaskService().fetchAssignedTasks(
         widget.userModelId,
+        archived: _fetchArchived,
       );
     });
   }
@@ -317,6 +436,14 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Tasks'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Current'),
+            Tab(text: 'Overdue'),
+            Tab(text: 'Archived'),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: 'My Reports',
@@ -325,9 +452,8 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => EmployeeReportsScreen(
-                    employeeId: widget.userModelId,
-                  ),
+                  builder: (_) =>
+                      EmployeeReportsScreen(employeeId: widget.userModelId),
                 ),
               );
             },
@@ -359,11 +485,24 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
             } else if (snapshot.hasError) {
               return Center(child: Text('Error: ${snapshot.error}'));
             } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return const Center(child: Text('No tasks assigned.'));
+              return Center(
+                child: Text(
+                  _isArchivedTab
+                      ? 'No archived tasks.'
+                      : (_isOverdueTab
+                            ? 'No overdue tasks.'
+                            : 'No tasks assigned.'),
+                ),
+              );
             }
 
             final tasks = snapshot.data!
-                .where((t) => !t.isArchived)
+                .where((t) => _isArchivedTab ? t.isArchived : !t.isArchived)
+                .where((t) {
+                  if (_isOverdueTab) return t.isOverdue;
+                  if (_isCurrentTab) return !t.isOverdue;
+                  return true;
+                })
                 .where(
                   (t) =>
                       _statusFilter == 'all' ? true : t.status == _statusFilter,
@@ -453,15 +592,42 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    task.title,
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      decoration: isCompleted
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          task.title,
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            decoration: isCompleted
+                                                ? TextDecoration.lineThrough
+                                                : null,
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: _isOverdueTab
+                                            ? 'Delete'
+                                            : (_isArchivedTab
+                                                  ? 'Restore'
+                                                  : 'Archive'),
+                                        icon: Icon(
+                                          _isOverdueTab
+                                              ? Icons.delete_outline
+                                              : (_isArchivedTab
+                                                    ? Icons.unarchive_outlined
+                                                    : Icons.archive_outlined),
+                                        ),
+                                        onPressed: () {
+                                          if (_isOverdueTab) {
+                                            _deleteOverdue(task);
+                                            return;
+                                          }
+                                          _toggleArchive(task);
+                                        },
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: 8),
                                   Text(task.description),
@@ -523,6 +689,17 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                                                     : Colors.blue[900]),
                                         ),
                                       ),
+                                      if (task.isOverdue) ...[
+                                        const SizedBox(width: 8),
+                                        Chip(
+                                          label: const Text('Overdue'),
+                                          backgroundColor: Colors.red[100],
+                                          labelStyle: TextStyle(
+                                            color: Colors.red[900],
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                       if (task.rawStatus == 'blocked') ...[
                                         const SizedBox(width: 8),
                                         Chip(
@@ -539,15 +716,21 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                                   const SizedBox(height: 8),
                                   LinearProgressIndicator(
                                     value: _taskProgressValue(task),
-                                    backgroundColor: Colors.grey[200],
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.12),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
                                     'Progress: ${_taskProgressLabel(task)}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.black54,
-                                    ),
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.75),
+                                        ),
                                   ),
                                   if (task.assignedToMultiple.isNotEmpty) ...[
                                     const SizedBox(height: 8),

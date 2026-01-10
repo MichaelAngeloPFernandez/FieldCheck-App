@@ -56,6 +56,8 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Column(
       children: [
         // Filter chips
@@ -85,11 +87,18 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.person_off, size: 48, color: Colors.grey[400]),
+                      Icon(
+                        Icons.person_off,
+                        size: 48,
+                        color: onSurface.withValues(alpha: 0.5),
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         'No employees found',
-                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: onSurface.withValues(alpha: 0.75),
+                        ),
                       ),
                     ],
                   ),
@@ -108,6 +117,8 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
 
   Widget _buildFilterChip(String label, String value) {
     final isSelected = _selectedFilter == value;
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return FilterChip(
       label: Text(label),
       selected: isSelected,
@@ -117,10 +128,10 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
           _applyFilter();
         });
       },
-      backgroundColor: Colors.grey[200],
+      backgroundColor: theme.colorScheme.surface,
       selectedColor: Colors.blue[300],
       labelStyle: TextStyle(
-        color: isSelected ? Colors.white : Colors.black,
+        color: isSelected ? Colors.white : onSurface.withValues(alpha: 0.9),
         fontWeight: FontWeight.w600,
       ),
     );
@@ -167,11 +178,11 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
                           const SizedBox(width: 4),
                           Text(
                             _getStatusLabel(employee.status),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: statusColor,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  color: statusColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
                           ),
                           const SizedBox(width: 12),
                           if (!employee.isOnline)
@@ -184,13 +195,13 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
                                 color: Colors.red[100],
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'Offline',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                               ),
                             ),
                         ],
@@ -218,23 +229,27 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildQuickInfo(
+                  context,
                   'Tasks',
                   employee.activeTaskCount.toString(),
                   Icons.task_alt,
                 ),
                 _buildQuickInfo(
+                  context,
                   'Workload',
                   '${(employee.workloadScore * 100).toStringAsFixed(0)}%',
                   Icons.trending_up,
                 ),
                 if (employee.currentGeofence != null)
                   _buildQuickInfo(
+                    context,
                     'Location',
                     employee.currentGeofence!,
                     Icons.location_on,
                   ),
                 if (employee.distanceToNearestTask != null)
                   _buildQuickInfo(
+                    context,
                     'Distance',
                     '${employee.distanceToNearestTask!.toStringAsFixed(0)}m',
                     Icons.straighten,
@@ -247,21 +262,36 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
     );
   }
 
-  Widget _buildQuickInfo(String label, String value, IconData icon) {
+  Widget _buildQuickInfo(
+    BuildContext context,
+    String label,
+    String value,
+    IconData icon,
+  ) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: Colors.grey),
+        Icon(
+          icon,
+          size: 14,
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+        ),
         const SizedBox(width: 4),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               label,
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
             ),
             Text(
               value,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
             ),
           ],
         ),

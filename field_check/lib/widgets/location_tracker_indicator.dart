@@ -80,6 +80,7 @@ class _LocationTrackerIndicatorState extends State<LocationTrackerIndicator> {
     final lastUpdateText = _lastUpdate != null
         ? 'Updated ${_formatTime(_lastUpdate!)}'
         : 'No updates';
+    final onSurface = Theme.of(context).colorScheme.onSurface;
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -101,7 +102,7 @@ class _LocationTrackerIndicatorState extends State<LocationTrackerIndicator> {
                 Text(
                   'Location Tracker',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: statusColor,
                   ),
@@ -112,7 +113,7 @@ class _LocationTrackerIndicatorState extends State<LocationTrackerIndicator> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Column(
@@ -122,7 +123,11 @@ class _LocationTrackerIndicatorState extends State<LocationTrackerIndicator> {
                   const SizedBox(height: 4),
                   _buildInfoRow('Accuracy', accuracyText, Colors.blue),
                   const SizedBox(height: 4),
-                  _buildInfoRow('Last Update', lastUpdateText, Colors.grey),
+                  _buildInfoRow(
+                    'Last Update',
+                    lastUpdateText,
+                    onSurface.withValues(alpha: 0.75),
+                  ),
                 ],
               ),
             ),
@@ -136,12 +141,18 @@ class _LocationTrackerIndicatorState extends State<LocationTrackerIndicator> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
+        ),
         Text(
           value,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w700,
             color: color,
           ),
         ),

@@ -55,6 +55,10 @@ class RealtimeService {
           .setTimeout(20000)
           .build();
 
+      if (token != null) {
+        options['auth'] = {'token': token};
+      }
+
       _socket = io.io(ApiConfig.baseUrl, options);
 
       _socket!.onConnect((_) {
@@ -149,6 +153,46 @@ class RealtimeService {
       });
     });
 
+    _socket!.on('taskAssignedToMultiple', (data) {
+      print('RealtimeService: Task assigned to multiple: $data');
+      _taskController.add({'type': 'assigned_multiple', 'data': data});
+      _eventController.add({
+        'type': 'task',
+        'action': 'assigned_multiple',
+        'data': data,
+      });
+    });
+
+    _socket!.on('taskUnassigned', (data) {
+      print('RealtimeService: Task unassigned: $data');
+      _taskController.add({'type': 'unassigned', 'data': data});
+      _eventController.add({
+        'type': 'task',
+        'action': 'unassigned',
+        'data': data,
+      });
+    });
+
+    _socket!.on('userTaskArchived', (data) {
+      print('RealtimeService: User task archived: $data');
+      _taskController.add({'type': 'user_task_archived', 'data': data});
+      _eventController.add({
+        'type': 'task',
+        'action': 'user_task_archived',
+        'data': data,
+      });
+    });
+
+    _socket!.on('userTaskRestored', (data) {
+      print('RealtimeService: User task restored: $data');
+      _taskController.add({'type': 'user_task_restored', 'data': data});
+      _eventController.add({
+        'type': 'task',
+        'action': 'user_task_restored',
+        'data': data,
+      });
+    });
+
     // Live employee locations (for admin world map / tracking)
     _socket!.on('liveEmployeeLocation', (data) {
       print('RealtimeService: Live employee location: $data');
@@ -177,6 +221,33 @@ class RealtimeService {
       _eventController.add({
         'type': 'report',
         'action': 'updated',
+        'data': data,
+      });
+    });
+
+    _socket!.on('deletedReport', (data) {
+      print('RealtimeService: Deleted report: $data');
+      _eventController.add({
+        'type': 'report',
+        'action': 'deleted',
+        'data': data,
+      });
+    });
+
+    _socket!.on('reportArchived', (data) {
+      print('RealtimeService: Report archived: $data');
+      _eventController.add({
+        'type': 'report',
+        'action': 'archived',
+        'data': data,
+      });
+    });
+
+    _socket!.on('reportRestored', (data) {
+      print('RealtimeService: Report restored: $data');
+      _eventController.add({
+        'type': 'report',
+        'action': 'restored',
         'data': data,
       });
     });

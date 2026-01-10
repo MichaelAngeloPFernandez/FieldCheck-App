@@ -50,6 +50,8 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -86,12 +88,15 @@ class _SplashScreenState extends State<SplashScreen> {
                   ),
                   const SizedBox(height: 8),
                   // Tagline
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Text(
                       'Mobile Geofenced Attendance Verification',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: onSurface.withValues(alpha: 0.75),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 48),
@@ -110,7 +115,10 @@ class _SplashScreenState extends State<SplashScreen> {
                   // Loading text
                   Text(
                     'Checking your session...',
-                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: onSurface.withValues(alpha: 0.75),
+                    ),
                   ),
                 ],
               ),

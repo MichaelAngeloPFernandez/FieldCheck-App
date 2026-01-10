@@ -8,6 +8,16 @@ class AppWidgets {
   // Prevent instantiation
   AppWidgets._();
 
+  static String friendlyErrorMessage(
+    Object error, {
+    String fallback = 'Error',
+  }) {
+    final raw = error.toString();
+    final cleaned = raw.replaceFirst(RegExp(r'^Exception:\s*'), '').trim();
+    if (cleaned.isEmpty) return fallback;
+    return cleaned;
+  }
+
   // ============================================================================
   // CARDS & CONTAINERS
   // ============================================================================
@@ -325,13 +335,24 @@ class AppWidgets {
           children: [
             const Icon(Icons.error, color: Colors.white),
             const SizedBox(width: AppTheme.md),
-            Expanded(child: Text(message)),
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         backgroundColor: AppTheme.errorColor,
+        showCloseIcon: true,
+        closeIconColor: Colors.white,
         duration: duration,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(AppTheme.lg),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        ),
       ),
     );
   }
@@ -500,9 +521,8 @@ class AppWidgets {
           ],
           Text(
             label,
-            style: TextStyle(
+            style: AppTheme.labelMd.copyWith(
               color: textColor ?? Colors.white,
-              fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
           ),

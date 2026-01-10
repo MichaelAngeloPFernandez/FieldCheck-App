@@ -4,6 +4,8 @@ import '../services/user_service.dart';
 import '../services/realtime_service.dart';
 import '../models/user_model.dart';
 import 'dart:async';
+import '../config/api_config.dart';
+import '../widgets/app_widgets.dart';
 
 class ManageEmployeesScreen extends StatefulWidget {
   const ManageEmployeesScreen({super.key, this.showInactiveOnly = false});
@@ -21,6 +23,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
   final Set<String> _selectedEmployeeIds = {};
   bool _isSelectMode = false;
   late StreamSubscription<Map<String, dynamic>> _userEventSubscription;
+
+  String _normalizeAvatarUrl(String rawPath) {
+    final p = rawPath.trim();
+    if (p.isEmpty) return p;
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
+    return '${ApiConfig.baseUrl}/$p';
+  }
 
   @override
   void initState() {
@@ -124,9 +134,10 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to deactivate'),
+        );
       }
     }
   }
@@ -167,15 +178,17 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete'),
+        );
       }
     }
   }
 
   Future<void> _addEmployee() async {
     final nameController = TextEditingController();
+    final employeeIdController = TextEditingController();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
     final phoneController = TextEditingController();
@@ -194,6 +207,12 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Full Name'),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                TextFormField(
+                  controller: employeeIdController,
+                  decoration: const InputDecoration(labelText: 'Employee ID'),
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
@@ -250,6 +269,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           emailController.text.trim(),
           passwordController.text,
           role: 'employee',
+          employeeId: employeeIdController.text.trim(),
           phone: phoneController.text.trim().isEmpty
               ? null
               : phoneController.text.trim(),
@@ -261,9 +281,13 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to add employee: $e')));
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to add employee',
+          ),
+        );
       }
     }
   }
@@ -296,9 +320,10 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete'),
+        );
       }
     }
   }
@@ -331,15 +356,19 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to deactivate: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to deactivate'),
+        );
       }
     }
   }
 
   Future<void> _edit(UserModel user) async {
     final nameController = TextEditingController(text: user.name);
+    final employeeIdController = TextEditingController(
+      text: (user.employeeId ?? '').toString(),
+    );
     final emailController = TextEditingController(text: user.email);
     final phoneController = TextEditingController(text: user.phone ?? '');
     String role = user.role;
@@ -360,6 +389,10 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                   decoration: const InputDecoration(labelText: 'Full Name'),
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                TextFormField(
+                  controller: employeeIdController,
+                  decoration: const InputDecoration(labelText: 'Employee ID'),
                 ),
                 TextFormField(
                   controller: emailController,
@@ -418,6 +451,9 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           name: nameController.text.trim(),
           email: emailController.text.trim(),
           role: role,
+          employeeId: employeeIdController.text.trim().isEmpty
+              ? null
+              : employeeIdController.text.trim(),
           phone: phoneController.text.trim(),
         );
         if (!mounted) return;
@@ -427,9 +463,10 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Update failed'),
+        );
       }
     }
   }
@@ -462,9 +499,10 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to reactivate: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to reactivate'),
+        );
       }
     }
   }
@@ -484,7 +522,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                 icon: const Icon(Icons.person_add),
                 label: const Text('Add Employee'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
                   foregroundColor: const Color(0xFF2688d4),
                 ),
               ),
@@ -519,7 +557,9 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           // Search and Filter Section
           Container(
             padding: const EdgeInsets.all(12),
-            color: Colors.grey.shade100,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.04),
             child: Column(
               children: [
                 // Search bar
@@ -654,7 +694,20 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                   });
                                 },
                               )
-                            : const CircleAvatar(child: Icon(Icons.person)),
+                            : CircleAvatar(
+                                backgroundImage:
+                                    (user.avatarUrl != null &&
+                                        user.avatarUrl!.trim().isNotEmpty)
+                                    ? NetworkImage(
+                                        _normalizeAvatarUrl(user.avatarUrl!),
+                                      )
+                                    : null,
+                                child:
+                                    (user.avatarUrl == null ||
+                                        user.avatarUrl!.trim().isEmpty)
+                                    ? const Icon(Icons.person)
+                                    : null,
+                              ),
                         title: Text(user.name),
                         subtitle: Text(
                           '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',

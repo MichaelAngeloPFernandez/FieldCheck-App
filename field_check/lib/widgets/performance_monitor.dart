@@ -40,6 +40,7 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
                 (sum, m) => sum + m.averageDuration.inMilliseconds,
               ) ~/
               metrics.length;
+    final theme = Theme.of(context);
 
     return GestureDetector(
       onTap: () => setState(() => _isExpanded = true),
@@ -63,10 +64,9 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
             const SizedBox(height: 4),
             Text(
               '${avgDuration}ms',
-              style: const TextStyle(
+              style: theme.textTheme.labelMedium?.copyWith(
                 color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
@@ -76,11 +76,12 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
   }
 
   Widget _buildExpandedMonitor(Map<String, PerformanceMetric> metrics) {
+    final theme = Theme.of(context);
     return Container(
       width: 350,
       constraints: const BoxConstraints(maxHeight: 500),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -106,11 +107,11 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Performance Monitor',
-                  style: TextStyle(
+                  style: theme.textTheme.titleSmall?.copyWith(
                     color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 GestureDetector(
@@ -142,7 +143,11 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.grey[300]!)),
+              border: Border(
+                top: BorderSide(
+                  color: theme.dividerColor.withValues(alpha: 0.6),
+                ),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -177,6 +182,8 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
 
   Widget _buildTab(String label, String value) {
     final isSelected = _selectedTab == value;
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _selectedTab = value),
@@ -195,7 +202,9 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: isSelected ? Colors.blue : Colors.grey,
+              color: isSelected
+                  ? Colors.blue
+                  : onSurface.withValues(alpha: 0.68),
             ),
           ),
         ),
@@ -221,6 +230,7 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
       return const Center(child: Text('No metrics recorded yet'));
     }
 
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: metrics.entries.map((entry) {
@@ -232,9 +242,8 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
             children: [
               Text(
                 metric.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 4),
@@ -262,6 +271,7 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
   Widget _buildCacheTab() {
     final stats = widget.performanceService.getCacheStats();
     final items = stats['items'] as List? ?? [];
+    final theme = Theme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,9 +280,11 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
         _buildStatRow('Total Size', '${stats['totalSize']} bytes'),
         const SizedBox(height: 12),
         if (items.isNotEmpty) ...[
-          const Text(
+          Text(
             'Cached Items:',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           ...items.map(
@@ -283,14 +295,13 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
                 children: [
                   Text(
                     item['key'],
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  _buildStatRow('Size', '${item['size']} bytes', fontSize: 10),
-                  _buildStatRow('Age', '${item['age']}s', fontSize: 10),
-                  _buildStatRow('TTL', '${item['ttl']}s', fontSize: 10),
+                  _buildStatRow('Size', '${item['size']} bytes'),
+                  _buildStatRow('Age', '${item['age']}s'),
+                  _buildStatRow('TTL', '${item['ttl']}s'),
                 ],
               ),
             ),
@@ -302,12 +313,16 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
   }
 
   Widget _buildMemoryTab() {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Memory monitoring requires platform-specific implementation.',
-          style: TextStyle(fontSize: 12, color: Colors.grey),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: onSurface.withValues(alpha: 0.75),
+          ),
         ),
         const SizedBox(height: 16),
         Container(
@@ -316,9 +331,11 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
             color: Colors.blue[50],
             borderRadius: BorderRadius.circular(8),
           ),
-          child: const Text(
+          child: Text(
             'To enable memory monitoring, implement platform channels for iOS and Android.',
-            style: TextStyle(fontSize: 11),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: onSurface.withValues(alpha: 0.82),
+            ),
           ),
         ),
       ],
@@ -326,22 +343,8 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
   }
 
   Widget _buildMetricRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatRow(String label, String value, {double fontSize = 11}) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -349,11 +352,45 @@ class _PerformanceMonitorState extends State<PerformanceMonitor> {
         children: [
           Text(
             label,
-            style: TextStyle(fontSize: fontSize, color: Colors.grey),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: onSurface.withValues(alpha: 0.7),
+            ),
           ),
           Text(
             value,
-            style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w600),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: onSurface.withValues(alpha: 0.85),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatRow(String label, String value, {double fontSize = 11}) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final effectiveSize = fontSize < 12 ? 12.0 : fontSize;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: effectiveSize,
+              color: onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+          Text(
+            value,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: effectiveSize,
+              fontWeight: FontWeight.w700,
+              color: onSurface.withValues(alpha: 0.85),
+            ),
           ),
         ],
       ),

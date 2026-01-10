@@ -12,7 +12,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final UserService _userService = UserService();
   final TextEditingController _emailController = TextEditingController();
-  
+
   bool _isLoading = false;
   bool _emailSent = false;
   String? _errorMessage;
@@ -46,11 +46,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     try {
       await _userService.forgotPassword(_emailController.text);
-      
+
       setState(() {
         _isLoading = false;
         _emailSent = true;
-        _successMessage = 'Password reset link has been sent to your email. Please check your inbox and spam folder.';
+        _successMessage =
+            'Password reset link has been sent to your email. Please check your inbox and spam folder.';
       });
 
       // Show success dialog
@@ -106,7 +107,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
-              
+
               // Header
               Center(
                 child: Column(
@@ -147,12 +148,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.blue.shade200),
                 ),
-                child: const Text(
+                child: Text(
                   'Enter your email address and we\'ll send you a link to reset your password. '
                   'The link will expire in 1 hour for security reasons.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.black87,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.85),
                     height: 1.5,
                   ),
                   textAlign: TextAlign.center,
@@ -200,7 +203,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.check_circle_outline, color: Colors.green.shade600),
+                      Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.green.shade600,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -218,12 +224,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               if (_successMessage != null) const SizedBox(height: 16),
 
               // Email Input
-              const Text(
+              Text(
                 'Email Address',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.9),
                 ),
               ),
               const SizedBox(height: 8),
@@ -251,7 +258,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton(
-                  onPressed: _isLoading || _emailSent ? null : _requestPasswordReset,
+                  onPressed: _isLoading || _emailSent
+                      ? null
+                      : _requestPasswordReset,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade600,
                     shape: RoundedRectangleBorder(
@@ -288,10 +297,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   onPressed: _isLoading ? null : () => Navigator.pop(context),
                   child: const Text(
                     'Back to Login',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -302,9 +308,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.35),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,7 +323,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       children: [
                         Icon(
                           Icons.info_outline,
-                          color: Colors.grey.shade600,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.75),
                           size: 20,
                         ),
                         const SizedBox(width: 8),
@@ -375,18 +387,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.9),
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 description,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
                 ),
               ),
             ],

@@ -12,6 +12,10 @@ const attendanceSchema = mongoose.Schema(
       ref: 'Geofence',
       required: true,
     },
+    isArchived: {
+      type: Boolean,
+      default: false,
+    },
     checkIn: {
       type: Date,
       required: true,

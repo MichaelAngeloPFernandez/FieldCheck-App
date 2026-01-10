@@ -24,6 +24,13 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+const TERMINAL_TASK_STATUSES = new Set(['completed', 'reviewed', 'closed']);
+
+function isTerminalTaskStatus(status) {
+  if (!status) return false;
+  return TERMINAL_TASK_STATUSES.has(String(status).toLowerCase());
+}
+
 function workloadStatus(activeTasksCount, overdueTasksCount) {
   if (activeTasksCount <= 0 && overdueTasksCount <= 0) return 'available';
   if (overdueTasksCount > 0 || activeTasksCount >= 4) return 'overloaded';
@@ -77,6 +84,7 @@ async function buildAvailabilityForPoint(lat, lng, maxDistanceMeters, roles) {
   const assignments = await UserTask.find({
     userId: { $in: users.map((u) => u._id) },
     status: { $ne: 'completed' },
+    isArchived: { $ne: true },
   });
 
   const taskIds = assignments.map((a) => a.taskId);
@@ -108,10 +116,11 @@ async function buildAvailabilityForPoint(lat, lng, maxDistanceMeters, roles) {
     for (const a of userAssignments) {
       const t = taskMap.get(a.taskId.toString());
       if (!t) continue;
-      activeTasksCount += 1;
-      if (t.dueDate && t.dueDate < now && t.status !== 'completed') {
+      if (t.dueDate && t.dueDate < now && !isTerminalTaskStatus(t.status)) {
         overdueTasksCount += 1;
+        continue;
       }
+      activeTasksCount += 1;
     }
 
     result.push({
@@ -175,6 +184,7 @@ async function buildAvailabilityForOnlineEmployees(roles) {
   const assignments = await UserTask.find({
     userId: { $in: users.map((u) => u._id) },
     status: { $ne: 'completed' },
+    isArchived: { $ne: true },
   });
 
   const taskIds = assignments.map((a) => a.taskId);
@@ -206,10 +216,11 @@ async function buildAvailabilityForOnlineEmployees(roles) {
     for (const a of userAssignments) {
       const t = taskMap.get(a.taskId.toString());
       if (!t) continue;
-      activeTasksCount += 1;
-      if (t.dueDate && t.dueDate < now && t.status !== 'completed') {
+      if (t.dueDate && t.dueDate < now && !isTerminalTaskStatus(t.status)) {
         overdueTasksCount += 1;
+        continue;
       }
+      activeTasksCount += 1;
     }
 
     result.push({
@@ -290,8 +301,17 @@ const getNearbyEmployeesForTask = asyncHandler(async (req, res) => {
   }
 
   if (lat === null || lng === null) {
-    res.status(400);
-    throw new Error('Task has no geolocation or linked geofence');
+    console.warn(
+      `[availability] Task ${taskId} has no geolocation or linked geofence`
+    );
+    return res.json({
+      taskId,
+      center: null,
+      maxDistanceMeters,
+      employees: [],
+      hasLocation: false,
+      message: 'Task has no geolocation or linked geofence',
+    });
   }
 
   const employees = await buildAvailabilityForPoint(lat, lng, maxDistanceMeters, ['employee']);

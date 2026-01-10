@@ -38,6 +38,7 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final employee = widget.employee;
     final statusColor = _getStatusColor(employee.status);
     final statusLabel = _getStatusLabel(employee.status);
@@ -83,9 +84,9 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
                             const SizedBox(height: 4),
                             Text(
                               'ID: ${employee.employeeId}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.white70,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.85),
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -123,10 +124,9 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
                         const SizedBox(width: 8),
                         Text(
                           statusLabel,
-                          style: const TextStyle(
+                          style: theme.textTheme.labelLarge?.copyWith(
                             color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -216,14 +216,19 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
                                       DateFormat(
                                         'HH:mm:ss',
                                       ).format(loc.timestamp),
-                                      style: const TextStyle(fontSize: 12),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                     Text(
                                       '${loc.latitude.toStringAsFixed(4)}, ${loc.longitude.toStringAsFixed(4)}',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey,
-                                      ),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: theme.colorScheme.onSurface
+                                                .withValues(alpha: 0.75),
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -366,10 +371,11 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.75),
           ),
         ),
         const SizedBox(height: 8),
@@ -391,17 +397,31 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
         children: [
           Row(
             children: [
-              Icon(icon, size: 16, color: color ?? Colors.grey),
+              Icon(
+                icon,
+                size: 16,
+                color:
+                    color ??
+                    Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
               const SizedBox(width: 8),
               Text(
                 label,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
+                ),
               ),
             ],
           ),
           Text(
             value,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
           ),
         ],
       ),

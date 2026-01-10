@@ -201,12 +201,16 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                     const SizedBox(height: 4),
                     SelectableText(
                       filePath,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(
+                          ctx,
+                        ).colorScheme.onSurface.withValues(alpha: 0.75),
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
+                    Text(
                       '📁 Check your Downloads folder',
-                      style: TextStyle(fontSize: 12),
+                      style: Theme.of(ctx).textTheme.bodySmall,
                     ),
                   ],
                 ),
@@ -333,12 +337,16 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                     const SizedBox(height: 4),
                     SelectableText(
                       filePath,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(
+                          ctx,
+                        ).colorScheme.onSurface.withValues(alpha: 0.75),
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
+                    Text(
                       '📁 Check your Downloads folder',
-                      style: TextStyle(fontSize: 12),
+                      style: Theme.of(ctx).textTheme.bodySmall,
                     ),
                   ],
                 ),
@@ -397,8 +405,9 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            onPressed:
-                (_lastExportBytes == null || _isExporting) ? null : _downloadLastExport,
+            onPressed: (_lastExportBytes == null || _isExporting)
+                ? null
+                : _downloadLastExport,
             icon: const Icon(Icons.download),
             tooltip: 'Download last export',
           ),
@@ -419,7 +428,12 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey,
+                    disabledBackgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.12),
+                    disabledForegroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
                   ),
                 ),
                 ElevatedButton.icon(
@@ -429,7 +443,12 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey,
+                    disabledBackgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.12),
+                    disabledForegroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
                   ),
                 ),
               ],
@@ -466,8 +485,12 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: Colors.grey),
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.6),
+                  ),
                   borderRadius: BorderRadius.circular(4),
                   boxShadow: [
                     BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 8),
@@ -492,15 +515,16 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                             widget.reportType == 'attendance'
                                 ? 'Attendance Report'
                                 : 'Task Report',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                            ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.75),
+                                ),
                           ),
                           const SizedBox(height: 16),
                           Text(
                             'Generated on ${dateFormat.format(DateTime.now())} at ${timeFormat.format(DateTime.now())}',
-                            style: const TextStyle(fontSize: 12),
+                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
                       ),
@@ -573,7 +597,9 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.grey[200],
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Row(
@@ -647,37 +673,52 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                     flex: 2,
                                     child: Text(
                                       record.employeeName ?? 'Unknown',
-                                      style: const TextStyle(fontSize: 12),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ),
                                   Expanded(
                                     flex: 1,
                                     child: Text(
                                       dateFormat.format(record.submittedAt),
-                                      style: const TextStyle(fontSize: 12),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ),
                                   Expanded(
                                     flex: 1,
                                     child: Text(
                                       timeFormat.format(record.submittedAt),
-                                      style: const TextStyle(fontSize: 12),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ),
                                   Expanded(
                                     flex: 1,
                                     child: Text(
                                       record.geofenceName ?? 'N/A',
-                                      style: const TextStyle(fontSize: 12),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ),
                                   Expanded(
                                     flex: 1,
                                     child: Text(
-                                      record.content.toLowerCase().contains('check in') ? 'In' : 'Out',
+                                      record.content.toLowerCase().contains(
+                                            'check in',
+                                          )
+                                          ? 'In'
+                                          : 'Out',
                                       style: TextStyle(
-                                        fontSize: 12,
-                                        color: record.content.toLowerCase().contains('check in')
+                                        fontSize: 13,
+                                        color:
+                                            record.content
+                                                .toLowerCase()
+                                                .contains('check in')
                                             ? Colors.green
                                             : Colors.red,
                                         fontWeight: FontWeight.bold,
@@ -688,7 +729,9 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                     flex: 1,
                                     child: Text(
                                       'N/A',
-                                      style: const TextStyle(fontSize: 12),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ),
                                 ],
@@ -701,21 +744,29 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
                                 '... and ${widget.records.length - 10} more records',
-                                style: const TextStyle(
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey,
-                                ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      fontStyle: FontStyle.italic,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.75),
+                                    ),
                               ),
                             ),
                         ],
                       )
                     else
-                      const Center(
+                      Center(
                         child: Padding(
-                          padding: EdgeInsets.all(32),
+                          padding: const EdgeInsets.all(32),
                           child: Text(
                             'No attendance records to display',
-                            style: TextStyle(color: Colors.grey),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.75),
+                                ),
                           ),
                         ),
                       ),
@@ -742,7 +793,9 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.grey[200],
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Row(
@@ -796,14 +849,18 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                     flex: 2,
                                     child: Text(
                                       task.employeeName ?? 'Unknown',
-                                      style: const TextStyle(fontSize: 12),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ),
                                   Expanded(
                                     flex: 2,
                                     child: Text(
                                       task.taskTitle ?? 'N/A',
-                                      style: const TextStyle(fontSize: 12),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ),
                                   Expanded(
@@ -811,7 +868,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                     child: Text(
                                       task.status,
                                       style: TextStyle(
-                                        fontSize: 12,
+                                        fontSize: 13,
                                         color: task.status == 'completed'
                                             ? Colors.green
                                             : Colors.orange,
@@ -823,7 +880,9 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                     flex: 1,
                                     child: Text(
                                       dateFormat.format(task.submittedAt),
-                                      style: const TextStyle(fontSize: 12),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ),
                                 ],
@@ -835,10 +894,14 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
                                 '... and ${widget.taskReports!.length - 10} more tasks',
-                                style: const TextStyle(
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey,
-                                ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      fontStyle: FontStyle.italic,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.75),
+                                    ),
                               ),
                             ),
                         ],
@@ -852,9 +915,11 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                     Center(
                       child: Text(
                         'This is a preview of your export. Click "Export PDF" or "Export CSV" to download the complete file.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.75),
                           fontStyle: FontStyle.italic,
                         ),
                       ),

@@ -4,6 +4,14 @@ const Attendance = require('../models/Attendance');
 const Task = require('../models/Task');
 const { io } = require('../server');
 
+async function populateReportById(reportId) {
+  return await Report.findById(reportId)
+    .populate('employee', 'name email employeeId avatarUrl')
+    .populate('task', 'title description difficulty dueDate status isArchived')
+    .populate('attendance')
+    .populate('geofence', 'name');
+}
+
 // @desc Create a new report (task or attendance)
 // @route POST /api/reports
 // @access Private
@@ -58,7 +66,14 @@ const createReport = asyncHandler(async (req, res) => {
   }
 
   const created = await Report.create(reportData);
-  io.emit('newReport', created);
+  setImmediate(async () => {
+    try {
+      const populated = await populateReportById(created._id);
+      io.emit('newReport', populated || created);
+    } catch (_) {
+      io.emit('newReport', created);
+    }
+  });
   res.status(201).json(created);
 });
 
@@ -70,6 +85,7 @@ const listReports = asyncHandler(async (req, res) => {
   const { type, employeeId, taskId, geofenceId, startDate, endDate, archived } = req.query;
   const filter = {};
   if (type) filter.type = type;
+
   // Role-based scoping:
   // - Admin: may list all reports and can filter by employeeId
   // - Employee: can only list their own reports; ignore/deny employeeId overrides
@@ -94,12 +110,36 @@ const listReports = asyncHandler(async (req, res) => {
 
   const reports = await Report.find(filter)
     .populate('employee', 'name email')
-    .populate('task', 'title description difficulty')
+    .populate('task', 'title description difficulty dueDate status isArchived')
     .populate('attendance')
     .populate('geofence', 'name')
     .sort({ submittedAt: -1 });
 
-  res.json(reports);
+  const now = new Date();
+  const payload = reports.map((rep) => {
+    const obj = rep.toObject({ virtuals: true });
+    let taskIsOverdue = false;
+    if (obj.type === 'task' && obj.task && obj.task.dueDate) {
+      try {
+        const due = new Date(obj.task.dueDate);
+        const status = obj.task.status || 'pending';
+        const isCompleted = status === 'completed';
+        const isTaskArchived = !!obj.task.isArchived;
+        taskIsOverdue =
+          due instanceof Date &&
+          !Number.isNaN(due.getTime()) &&
+          due < now &&
+          !isCompleted &&
+          !isTaskArchived;
+      } catch (_) {
+        taskIsOverdue = false;
+      }
+    }
+    obj.taskIsOverdue = taskIsOverdue;
+    return obj;
+  });
+
+  res.json(payload);
 });
 
 // @desc Get report by id
@@ -108,7 +148,7 @@ const listReports = asyncHandler(async (req, res) => {
 const getReportById = asyncHandler(async (req, res) => {
   const rep = await Report.findById(req.params.id)
     .populate('employee', 'name email')
-    .populate('task', 'title description difficulty')
+    .populate('task', 'title description difficulty dueDate status isArchived')
     .populate('attendance')
     .populate('geofence', 'name');
   if (!rep) {
@@ -130,7 +170,14 @@ const updateReportStatus = asyncHandler(async (req, res) => {
   }
   rep.status = status || rep.status;
   const updated = await rep.save();
-  io.emit('updatedReport', updated);
+  setImmediate(async () => {
+    try {
+      const populated = await populateReportById(updated._id);
+      io.emit('updatedReport', populated || updated);
+    } catch (_) {
+      io.emit('updatedReport', updated);
+    }
+  });
   res.json(updated);
 });
 
@@ -154,11 +201,36 @@ const deleteReport = asyncHandler(async (req, res) => {
 const getCurrentReports = asyncHandler(async (req, res) => {
   const reports = await Report.find({ isArchived: { $ne: true } })
     .populate('employee', 'name email')
-    .populate('task', 'title description difficulty')
+    .populate('task', 'title description difficulty dueDate status isArchived')
     .populate('attendance')
     .populate('geofence', 'name')
     .sort({ submittedAt: -1 });
-  res.json(reports);
+
+  const now = new Date();
+  const payload = reports.map((rep) => {
+    const obj = rep.toObject({ virtuals: true });
+    let taskIsOverdue = false;
+    if (obj.type === 'task' && obj.task && obj.task.dueDate) {
+      try {
+        const due = new Date(obj.task.dueDate);
+        const status = obj.task.status || 'pending';
+        const isCompleted = status === 'completed';
+        const isTaskArchived = !!obj.task.isArchived;
+        taskIsOverdue =
+          due instanceof Date &&
+          !Number.isNaN(due.getTime()) &&
+          due < now &&
+          !isCompleted &&
+          !isTaskArchived;
+      } catch (_) {
+        taskIsOverdue = false;
+      }
+    }
+    obj.taskIsOverdue = taskIsOverdue;
+    return obj;
+  });
+
+  res.json(payload);
 });
 
 // @desc Get archived reports
@@ -167,22 +239,49 @@ const getCurrentReports = asyncHandler(async (req, res) => {
 const getArchivedReports = asyncHandler(async (req, res) => {
   const reports = await Report.find({ isArchived: true })
     .populate('employee', 'name email')
-    .populate('task', 'title description difficulty')
+    .populate('task', 'title description difficulty dueDate status isArchived')
     .populate('attendance')
     .populate('geofence', 'name')
     .sort({ submittedAt: -1 });
-  res.json(reports);
+
+  const now = new Date();
+  const payload = reports.map((rep) => {
+    const obj = rep.toObject({ virtuals: true });
+    let taskIsOverdue = false;
+    if (obj.type === 'task' && obj.task && obj.task.dueDate) {
+      try {
+        const due = new Date(obj.task.dueDate);
+        const status = obj.task.status || 'pending';
+        const isCompleted = status === 'completed';
+        const isTaskArchived = !!obj.task.isArchived;
+        taskIsOverdue =
+          due instanceof Date &&
+          !Number.isNaN(due.getTime()) &&
+          due < now &&
+          !isCompleted &&
+          !isTaskArchived;
+      } catch (_) {
+        taskIsOverdue = false;
+      }
+    }
+    obj.taskIsOverdue = taskIsOverdue;
+    return obj;
+  });
+
+  res.json(payload);
 });
 
 // @desc Archive a report
 // @route PUT /api/reports/:id/archive
 // @access Private/Admin
 const archiveReport = asyncHandler(async (req, res) => {
+  console.log('Archiving report', req.params.id);
   const rep = await Report.findById(req.params.id);
   if (!rep) {
     res.status(404);
     throw new Error('Report not found');
   }
+
   rep.isArchived = true;
   const updated = await rep.save();
   io.emit('reportArchived', updated);
@@ -193,11 +292,13 @@ const archiveReport = asyncHandler(async (req, res) => {
 // @route PUT /api/reports/:id/restore
 // @access Private/Admin
 const restoreReport = asyncHandler(async (req, res) => {
+  console.log('Restoring report', req.params.id);
   const rep = await Report.findById(req.params.id);
   if (!rep) {
     res.status(404);
     throw new Error('Report not found');
   }
+
   rep.isArchived = false;
   const updated = await rep.save();
   io.emit('reportRestored', updated);

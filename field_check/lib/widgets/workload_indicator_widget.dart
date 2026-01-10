@@ -71,12 +71,17 @@ class WorkloadIndicatorWidget extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDetailChip('Tasks', activeTaskCount.toString()),
+              _buildDetailChip(context, 'Tasks', activeTaskCount.toString()),
               const SizedBox(width: 8),
-              _buildDetailChip('Weight', difficultyWeight.toStringAsFixed(1)),
+              _buildDetailChip(
+                context,
+                'Weight',
+                difficultyWeight.toStringAsFixed(1),
+              ),
               if (overdueCount > 0) ...[
                 const SizedBox(width: 8),
                 _buildDetailChip(
+                  context,
                   'Overdue',
                   overdueCount.toString(),
                   isAlert: true,
@@ -89,21 +94,26 @@ class WorkloadIndicatorWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildDetailChip(String label, String value, {bool isAlert = false}) {
+  Widget _buildDetailChip(
+    BuildContext context,
+    String label,
+    String value, {
+    bool isAlert = false,
+  }) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: isAlert
             ? Colors.red.withValues(alpha: 0.2)
-            : Colors.grey.withValues(alpha: 0.2),
+            : onSurface.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         '$label: $value',
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          color: isAlert ? Colors.red : Colors.grey[700],
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: isAlert ? Colors.red : onSurface.withValues(alpha: 0.78),
         ),
       ),
     );

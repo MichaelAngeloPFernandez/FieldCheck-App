@@ -8,6 +8,16 @@ import 'package:field_check/services/user_service.dart';
 class AttendanceService {
   final UserService _userService = UserService();
 
+  String _extractErrorMessage(http.Response response, String fallback) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['message'] != null) {
+        return body['message'].toString();
+      }
+    } catch (_) {}
+    return fallback;
+  }
+
   Future<AttendanceStatus> getCurrentAttendanceStatus() async {
     try {
       final token = await _userService.getToken();
@@ -180,6 +190,7 @@ class AttendanceService {
     String? locationId,
     String? status,
     String? employeeId,
+    bool? archived,
   }) async {
     try {
       final token = await _userService.getToken();
@@ -199,6 +210,10 @@ class AttendanceService {
       }
       if (employeeId != null) {
         queryParams['employeeId'] = employeeId;
+      }
+
+      if (archived != null) {
+        queryParams['archived'] = archived ? 'true' : 'false';
       }
 
       final uri = Uri.parse(
@@ -225,6 +240,97 @@ class AttendanceService {
       }
     } catch (e) {
       throw Exception('Error getting attendance records: $e');
+    }
+  }
+
+  Future<void> archiveAttendanceRecord(String id) async {
+    try {
+      final token = await _userService.getToken();
+      final response = await http.put(
+        Uri.parse('${ApiConfig.baseUrl}/api/attendance/$id/archive'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          _extractErrorMessage(response, 'Failed to archive attendance record'),
+        );
+      }
+    } catch (e) {
+      throw Exception('Error archiving attendance record: $e');
+    }
+  }
+
+  Future<void> restoreAttendanceRecord(String id) async {
+    try {
+      final token = await _userService.getToken();
+      final response = await http.put(
+        Uri.parse('${ApiConfig.baseUrl}/api/attendance/$id/restore'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          _extractErrorMessage(response, 'Failed to restore attendance record'),
+        );
+      }
+    } catch (e) {
+      throw Exception('Error restoring attendance record: $e');
+    }
+  }
+
+  Future<AttendanceRecord> getAttendanceById(String id) async {
+    try {
+      final token = await _userService.getToken();
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/attendance/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        return AttendanceRecord.fromJson(data);
+      }
+
+      throw Exception(
+        _extractErrorMessage(response, 'Failed to load attendance record'),
+      );
+    } catch (e) {
+      throw Exception('Error getting attendance record: $e');
+    }
+  }
+
+  Future<void> deleteAttendanceRecord(String id) async {
+    try {
+      final token = await _userService.getToken();
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/api/attendance/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 204) {
+        return;
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          _extractErrorMessage(response, 'Failed to delete attendance record'),
+        );
+      }
+    } catch (e) {
+      throw Exception('Error deleting attendance record: $e');
     }
   }
 }
@@ -289,6 +395,7 @@ class AttendanceRecord {
   final bool isVoid;
   final bool autoCheckout;
   final String? voidReason;
+  final bool isArchived;
 
   AttendanceRecord({
     required this.id,
@@ -307,6 +414,7 @@ class AttendanceRecord {
     this.isVoid = false,
     this.autoCheckout = false,
     this.voidReason,
+    this.isArchived = false,
   });
 
   // Backward compatibility: timestamp is an alias to checkInTime
@@ -382,6 +490,10 @@ class AttendanceRecord {
           false,
       voidReason:
           attendance['voidReason'] as String? ?? json['voidReason'] as String?,
+      isArchived:
+          (attendance['isArchived'] as bool?) ??
+          (json['isArchived'] as bool?) ??
+          false,
     );
   }
 }

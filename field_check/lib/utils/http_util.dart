@@ -17,7 +17,9 @@ class HttpUtil {
     return merged;
   }
 
-  Future<http.Response> _retryIfUnauthorized(Future<http.Response> Function() send) async {
+  Future<http.Response> _retryIfUnauthorized(
+    Future<http.Response> Function() send,
+  ) async {
     var res = await send();
     if (res.statusCode == 401) {
       final refreshed = await UserService().refreshAccessToken();
@@ -28,31 +30,85 @@ class HttpUtil {
     return res;
   }
 
-  Future<http.Response> get(String path, {Map<String, String>? queryParams, Map<String, String>? headers}) async {
-    final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: queryParams);
+  Future<http.Response> get(
+    String path, {
+    Map<String, String>? queryParams,
+    Map<String, String>? headers,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl$path',
+    ).replace(queryParameters: queryParams);
     final mergedHeaders = await _authHeaders(headers);
     return _retryIfUnauthorized(() => http.get(uri, headers: mergedHeaders));
   }
 
-  Future<http.Response> post(String path, {Map<String, dynamic>? body, Map<String, String>? headers}) async {
+  Future<http.Response> post(
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? headers,
+  }) async {
     final uri = Uri.parse('$_baseUrl$path');
-    final mergedHeaders = await _authHeaders({'Content-Type': 'application/json', 'Accept': 'application/json', ...?headers});
-    return _retryIfUnauthorized(() => http.post(uri, headers: mergedHeaders, body: json.encode(body)));
+    final mergedHeaders = await _authHeaders({
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...?headers,
+    });
+    return _retryIfUnauthorized(
+      () => http.post(
+        uri,
+        headers: mergedHeaders,
+        body: body != null ? json.encode(body) : null,
+      ),
+    );
   }
 
-  Future<http.Response> put(String path, {Map<String, dynamic>? body, Map<String, String>? headers}) async {
+  Future<http.Response> put(
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? headers,
+  }) async {
     final uri = Uri.parse('$_baseUrl$path');
-    final mergedHeaders = await _authHeaders({'Content-Type': 'application/json', 'Accept': 'application/json', ...?headers});
-    return _retryIfUnauthorized(() => http.put(uri, headers: mergedHeaders, body: json.encode(body)));
+    final mergedHeaders = await _authHeaders({
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...?headers,
+    });
+    return _retryIfUnauthorized(
+      () => http.put(
+        uri,
+        headers: mergedHeaders,
+        body: body != null ? json.encode(body) : null,
+      ),
+    );
   }
 
-  Future<http.Response> patch(String path, {Map<String, String>? headers, Map<String, dynamic>? body, Map<String, String>? queryParams}) async {
-    final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: queryParams);
-    final mergedHeaders = await _authHeaders({'Content-Type': 'application/json', 'Accept': 'application/json', ...?headers});
-    return _retryIfUnauthorized(() => http.patch(uri, headers: mergedHeaders, body: body != null ? json.encode(body) : null));
+  Future<http.Response> patch(
+    String path, {
+    Map<String, String>? headers,
+    Map<String, dynamic>? body,
+    Map<String, String>? queryParams,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl$path',
+    ).replace(queryParameters: queryParams);
+    final mergedHeaders = await _authHeaders({
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...?headers,
+    });
+    return _retryIfUnauthorized(
+      () => http.patch(
+        uri,
+        headers: mergedHeaders,
+        body: body != null ? json.encode(body) : null,
+      ),
+    );
   }
 
-  Future<http.Response> delete(String path, {Map<String, String>? headers}) async {
+  Future<http.Response> delete(
+    String path, {
+    Map<String, String>? headers,
+  }) async {
     final uri = Uri.parse('$_baseUrl$path');
     final mergedHeaders = await _authHeaders(headers);
     return _retryIfUnauthorized(() => http.delete(uri, headers: mergedHeaders));

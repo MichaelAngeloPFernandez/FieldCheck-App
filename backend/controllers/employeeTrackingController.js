@@ -1,6 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const Task = require('../models/Task');
+const UserTask = require('../models/UserTask');
 const EmployeeLocation = require('../models/EmployeeLocation');
 
 // @desc Get nearby employees within radius
@@ -60,10 +61,25 @@ const getEmployeeWorkload = asyncHandler(async (req, res) => {
   }
 
   // Get tasks
-  const tasks = await Task.find({
-    assignedTo: employeeId,
-    status: { $ne: 'completed' },
-  }).select('title difficulty status dueDate');
+  let tasks = [];
+  try {
+    const userTaskDocs = await UserTask.find({
+      userId: employeeId,
+      status: { $in: ['pending', 'in_progress'] },
+    }).select('taskId');
+    const taskIds = Array.isArray(userTaskDocs)
+      ? userTaskDocs.map((d) => d.taskId).filter(Boolean)
+      : [];
+    if (taskIds.length > 0) {
+      tasks = await Task.find({
+        _id: { $in: taskIds },
+        isArchived: false,
+        status: { $nin: ['completed', 'closed'] },
+      }).select('title difficulty status dueDate');
+    }
+  } catch (_) {
+    tasks = [];
+  }
 
   const now = new Date();
   const overdueTasks = tasks.filter((t) => t.dueDate && t.dueDate < now);
@@ -105,11 +121,9 @@ const getEmployeeAvailability = asyncHandler(async (req, res) => {
   let status = 'available';
   if (!employee.isOnline) {
     status = 'offline';
-  } else if ((employee.workloadWeight || 0) > 10) {
-    status = 'overloaded';
-  } else if ((employee.activeTaskCount || 0) > 5) {
+  } else if ((employee.activeTaskCount || 0) >= 1) {
     status = 'busy';
-  } else if ((employee.activeTaskCount || 0) === 0) {
+  } else {
     status = 'free';
   }
 
@@ -181,7 +195,23 @@ const getEmployeeStats = asyncHandler(async (req, res) => {
   }
 
   // Get task statistics
-  const allTasks = await Task.find({ assignedTo: employeeId });
+  let allTasks = [];
+  try {
+    const userTaskDocs = await UserTask.find({
+      userId: employeeId,
+    }).select('taskId');
+    const taskIds = Array.isArray(userTaskDocs)
+      ? userTaskDocs.map((d) => d.taskId).filter(Boolean)
+      : [];
+    if (taskIds.length > 0) {
+      allTasks = await Task.find({
+        _id: { $in: taskIds },
+        isArchived: false,
+      }).select('status dueDate');
+    }
+  } catch (_) {
+    allTasks = [];
+  }
   const completedTasks = allTasks.filter((t) => t.status === 'completed');
   const activeTasks = allTasks.filter((t) => t.status !== 'completed');
 
@@ -225,11 +255,27 @@ const getOverdueTasksForEmployee = asyncHandler(async (req, res) => {
   }
 
   const now = new Date();
-  const overdueTasks = await Task.find({
-    assignedTo: employeeId,
-    dueDate: { $lt: now },
-    status: { $ne: 'completed' },
-  }).select('title description difficulty dueDate status createdAt');
+  let overdueTasks = [];
+  try {
+    const userTaskDocs = await UserTask.find({
+      userId: employeeId,
+      status: { $in: ['pending', 'in_progress'] },
+    }).select('taskId');
+    const taskIds = Array.isArray(userTaskDocs)
+      ? userTaskDocs.map((d) => d.taskId).filter(Boolean)
+      : [];
+
+    if (taskIds.length > 0) {
+      overdueTasks = await Task.find({
+        _id: { $in: taskIds },
+        isArchived: false,
+        dueDate: { $lt: now },
+        status: { $nin: ['completed', 'closed'] },
+      }).select('title description difficulty dueDate status createdAt');
+    }
+  } catch (_) {
+    overdueTasks = [];
+  }
 
   res.status(200).json({
     employee: {

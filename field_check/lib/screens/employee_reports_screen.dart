@@ -24,7 +24,59 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
 
   String _typeFilter = 'task'; // task | all
 
+  String _tab = 'current'; // current | archived
+
+  DateTimeRange? _dateRange;
+  bool _attachmentsOnly = false;
+  String _statusFilter = 'all'; // all | submitted | reviewed
+
   List<ReportModel> _reports = [];
+
+  String _formatDateRangeLabel(DateTimeRange? range) {
+    if (range == null) return 'Any date';
+    final s = DateFormat('MMM d, yyyy').format(range.start.toLocal());
+    final e = DateFormat('MMM d, yyyy').format(range.end.toLocal());
+    if (s == e) return s;
+    return '$s - $e';
+  }
+
+  bool _matchesDateRange(DateTime dt, DateTimeRange range) {
+    final local = dt.toLocal();
+    final start = DateTime(
+      range.start.year,
+      range.start.month,
+      range.start.day,
+    );
+    final end = DateTime(
+      range.end.year,
+      range.end.month,
+      range.end.day,
+      23,
+      59,
+      59,
+      999,
+    );
+    return !local.isBefore(start) && !local.isAfter(end);
+  }
+
+  List<ReportModel> get _filteredReports {
+    var out = _reports;
+
+    if (_statusFilter != 'all') {
+      out = out.where((r) => r.status.toLowerCase() == _statusFilter).toList();
+    }
+
+    if (_attachmentsOnly) {
+      out = out.where((r) => r.attachments.isNotEmpty).toList();
+    }
+
+    final range = _dateRange;
+    if (range != null) {
+      out = out.where((r) => _matchesDateRange(r.submittedAt, range)).toList();
+    }
+
+    return out;
+  }
 
   @override
   void initState() {
@@ -100,9 +152,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
       return;
     }
 
-    uri = uri.replace(
-      pathSegments: uri.pathSegments.map(Uri.decodeComponent).toList(),
-    );
+    // Keep URL encoded; decoding path segments can break URLs with spaces.
 
     final can = await canLaunchUrl(uri);
     if (!can) {
@@ -117,7 +167,11 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
       return;
     }
 
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.platformDefault,
+      webOnlyWindowName: '_blank',
+    );
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -139,8 +193,14 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.35),
+                  ),
+                ),
               ),
               child: Row(
                 children: [
@@ -194,7 +254,10 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
 
     try {
       final type = _typeFilter == 'all' ? null : _typeFilter;
-      final all = await ReportService().fetchReports(type: type);
+      final service = ReportService();
+      final all = _tab == 'archived'
+          ? await service.getArchivedReports(type: type)
+          : await service.getCurrentReports(type: type);
       final mine = all.where((r) => r.employeeId == widget.employeeId).toList();
       mine.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
 
@@ -209,6 +272,72 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
         _error = 'Failed to load reports: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _toggleArchive(ReportModel r) async {
+    if (_isLoading) return;
+
+    final doArchive = _tab != 'archived';
+    final actionText = doArchive ? 'Archive' : 'Restore';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$actionText Report'),
+        content: Text(
+          doArchive
+              ? 'Move this report to Archived?'
+              : 'Restore this report to Current?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(actionText),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      if (doArchive) {
+        await ReportService().archiveReport(r.id);
+      } else {
+        await ReportService().restoreReport(r.id);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(doArchive ? 'Report archived' : 'Report restored'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      await _loadReports();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update report: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -239,9 +368,13 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(
+                      color: Theme.of(
+                        context,
+                      ).dividerColor.withValues(alpha: 0.35),
+                    ),
                   ),
                   child: SelectableText(
                     r.content,
@@ -282,7 +415,9 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                           decoration: BoxDecoration(
                             color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Theme.of(context).colorScheme.outline),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -363,15 +498,21 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
   }
 
   Widget _buildReportCard(ReportModel r) {
-    final submitted = DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal());
+    final submitted = DateFormat(
+      'yyyy-MM-dd HH:mm',
+    ).format(r.submittedAt.toLocal());
     final attachments = r.attachments.length;
+    final canArchive = r.type == 'task';
+    final isArchivedTab = _tab == 'archived';
 
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: BorderSide(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+        ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -381,15 +522,32 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                r.taskTitle ?? (r.taskId ?? 'Task'),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: AppTheme.fontSizeMd,
-                  color: AppTheme.textPrimaryColor,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      r.taskTitle ?? (r.taskId ?? 'Task'),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: AppTheme.fontSizeMd,
+                        color: AppTheme.textPrimaryColor,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (canArchive)
+                    IconButton(
+                      tooltip: isArchivedTab ? 'Restore' : 'Archive',
+                      onPressed: () => _toggleArchive(r),
+                      icon: Icon(
+                        isArchivedTab
+                            ? Icons.unarchive_outlined
+                            : Icons.archive_outlined,
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 6),
               Wrap(
@@ -398,22 +556,46 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                 children: [
                   Chip(
                     label: Text(submitted),
-                    backgroundColor: Colors.grey.shade100,
-                    labelStyle: TextStyle(color: Colors.grey.shade800),
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.08),
+                    labelStyle: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w700,
+                        ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
                   Chip(
                     label: Text('Status: ${r.status}'),
-                    backgroundColor: Colors.blueGrey.shade50,
-                    labelStyle: TextStyle(color: Colors.blueGrey.shade800),
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.08),
+                    labelStyle: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w700,
+                        ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
                   Chip(
                     label: Text('Attachments: $attachments'),
-                    backgroundColor: Colors.grey.shade100,
-                    labelStyle: TextStyle(color: Colors.grey.shade800),
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.08),
+                    labelStyle: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w700,
+                        ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
@@ -439,6 +621,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final filtered = _filteredReports;
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Reports'),
@@ -455,30 +638,125 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ChoiceChip(
-                    label: const Text('Task'),
-                    selected: _typeFilter == 'task',
-                    onSelected: (sel) {
-                      if (!sel) return;
-                      setState(() {
-                        _typeFilter = 'task';
-                      });
-                      _loadReports();
-                    },
+                  Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Current'),
+                        selected: _tab == 'current',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _tab = 'current';
+                          });
+                          _loadReports();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Archived'),
+                        selected: _tab == 'archived',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _tab = 'archived';
+                          });
+                          _loadReports();
+                        },
+                      ),
+                      const Spacer(),
+                      ChoiceChip(
+                        label: const Text('Task'),
+                        selected: _typeFilter == 'task',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _typeFilter = 'task';
+                          });
+                          _loadReports();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('All'),
+                        selected: _typeFilter == 'all',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setState(() {
+                            _typeFilter = 'all';
+                          });
+                          _loadReports();
+                        },
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('All'),
-                    selected: _typeFilter == 'all',
-                    onSelected: (sel) {
-                      if (!sel) return;
-                      setState(() {
-                        _typeFilter = 'all';
-                      });
-                      _loadReports();
-                    },
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ChoiceChip(
+                          label: Text(_formatDateRangeLabel(_dateRange)),
+                          selected: _dateRange != null,
+                          onSelected: (_) async {
+                            final picked = await showDateRangePicker(
+                              context: context,
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                              initialDateRange: _dateRange,
+                            );
+                            if (picked == null) return;
+                            if (!mounted) return;
+                            setState(() {
+                              _dateRange = picked;
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Attachments'),
+                          selected: _attachmentsOnly,
+                          onSelected: (sel) {
+                            setState(() {
+                              _attachmentsOnly = sel;
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Submitted'),
+                          selected: _statusFilter == 'submitted',
+                          onSelected: (sel) {
+                            setState(() {
+                              _statusFilter = sel ? 'submitted' : 'all';
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Reviewed'),
+                          selected: _statusFilter == 'reviewed',
+                          onSelected: (sel) {
+                            setState(() {
+                              _statusFilter = sel ? 'reviewed' : 'all';
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _dateRange = null;
+                              _attachmentsOnly = false;
+                              _statusFilter = 'all';
+                            });
+                          },
+                          child: const Text('Clear'),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -488,44 +766,47 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : (_error != null)
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.error_outline,
-                                  size: 48,
-                                  color: Colors.red,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _error!,
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 12),
-                                FilledButton(
-                                  onPressed: _loadReports,
-                                  child: const Text('Retry'),
-                                ),
-                              ],
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              size: 48,
+                              color: Colors.red,
                             ),
-                          ),
-                        )
-                      : (_reports.isEmpty)
-                          ? const Center(child: Text('No reports yet.'))
-                          : RefreshIndicator(
-                              onRefresh: _loadReports,
-                              child: ListView.builder(
-                                padding: const EdgeInsets.all(12),
-                                itemCount: _reports.length,
-                                itemBuilder: (context, index) {
-                                  final r = _reports[index];
-                                  return _buildReportCard(r);
-                                },
-                              ),
+                            const SizedBox(height: 12),
+                            Text(_error!, textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: _loadReports,
+                              child: const Text('Retry'),
                             ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : (filtered.isEmpty)
+                  ? Center(
+                      child: Text(
+                        _tab == 'archived'
+                            ? 'No archived reports.'
+                            : 'No current reports yet.',
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadReports,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final r = filtered[index];
+                          return _buildReportCard(r);
+                        },
+                      ),
+                    ),
             ),
           ],
         ),

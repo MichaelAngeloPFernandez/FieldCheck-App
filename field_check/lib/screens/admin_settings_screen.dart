@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously, library_prefixes
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
@@ -30,6 +31,28 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   bool _enableLocationTracking = true;
   int _geofenceRadius = 100;
   String _syncFrequency = 'Every 15 minutes';
+
+  static const int _taskMaxActivePerEmployeeMin = 1;
+  static const int _taskMaxActivePerEmployeeMax = 50;
+
+  int _taskMaxActivePerEmployee = 10;
+  final TextEditingController _taskMaxActivePerEmployeeController =
+      TextEditingController(text: '10');
+
+  int _clampTaskMaxActivePerEmployee(int value) {
+    return value.clamp(
+      _taskMaxActivePerEmployeeMin,
+      _taskMaxActivePerEmployeeMax,
+    );
+  }
+
+  int _normalizeTaskMaxActivePerEmployee(int? parsed) {
+    if (parsed == null) return _taskMaxActivePerEmployee;
+    return _clampTaskMaxActivePerEmployee(parsed);
+  }
+
+  bool _settingsLoadedFromBackend = true;
+  bool _isSavingSettings = false;
 
   final UserService _userService = UserService();
   final SettingsService _settingsService = SettingsService();
@@ -73,30 +96,47 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         // data can be an object of all settings or a single key update
         if (data is Map) {
           final prefs = await SharedPreferences.getInstance();
+          final Map update =
+              (data.containsKey('key') && data.containsKey('value'))
+              ? {data['key']: data['value']}
+              : data;
           setState(() {
-            if (data.containsKey('geofenceRadius')) {
-              _geofenceRadius = (data['geofenceRadius'] as num).toInt();
+            if (update.containsKey('geofenceRadius')) {
+              _geofenceRadius = (update['geofenceRadius'] as num).toInt();
               prefs.setInt('geofenceRadius', _geofenceRadius);
             }
-            if (data.containsKey('allowOfflineMode')) {
-              _allowOfflineMode = data['allowOfflineMode'] == true;
+            if (update.containsKey('allowOfflineMode')) {
+              _allowOfflineMode = update['allowOfflineMode'] == true;
               prefs.setBool('allowOfflineMode', _allowOfflineMode);
             }
-            if (data.containsKey('requireBeaconVerification')) {
+            if (update.containsKey('requireBeaconVerification')) {
               _requireBeaconVerification =
-                  data['requireBeaconVerification'] == true;
+                  update['requireBeaconVerification'] == true;
               prefs.setBool(
                 'requireBeaconVerification',
                 _requireBeaconVerification,
               );
             }
-            if (data.containsKey('enableLocationTracking')) {
-              _enableLocationTracking = data['enableLocationTracking'] == true;
+            if (update.containsKey('enableLocationTracking')) {
+              _enableLocationTracking =
+                  update['enableLocationTracking'] == true;
               prefs.setBool('enableLocationTracking', _enableLocationTracking);
             }
-            if (data.containsKey('syncFrequency')) {
-              _syncFrequency = data['syncFrequency'] as String;
+            if (update.containsKey('syncFrequency')) {
+              _syncFrequency = update['syncFrequency'] as String;
               prefs.setString('syncFrequency', _syncFrequency);
+            }
+
+            if (update.containsKey('task.maxActivePerEmployee')) {
+              final raw = update['task.maxActivePerEmployee'];
+              final parsed = raw is num ? raw.toInt() : int.tryParse('$raw');
+              if (parsed != null) {
+                final normalized = _normalizeTaskMaxActivePerEmployee(parsed);
+                _taskMaxActivePerEmployee = normalized;
+                prefs.setInt('task.maxActivePerEmployee', normalized);
+                _taskMaxActivePerEmployeeController.text = normalized
+                    .toString();
+              }
             }
           });
           ScaffoldMessenger.of(context).showSnackBar(
@@ -128,6 +168,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   void dispose() {
     _socket.dispose();
     _urgentMessageController.dispose();
+    _taskMaxActivePerEmployeeController.dispose();
     super.dispose();
   }
 
@@ -135,6 +176,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     try {
       final settings = await _settingsService.fetchSettings();
       if (settings.isNotEmpty) {
+        final rawTaskMax = settings['task.maxActivePerEmployee'];
+        final parsedTaskMax = rawTaskMax is num
+            ? rawTaskMax.toInt()
+            : int.tryParse(rawTaskMax?.toString() ?? '');
+        final normalizedTaskMax = _normalizeTaskMaxActivePerEmployee(
+          parsedTaskMax,
+        );
         setState(() {
           _allowOfflineMode = settings['allowOfflineMode'] ?? _allowOfflineMode;
           _requireBeaconVerification =
@@ -145,7 +193,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           _geofenceRadius =
               (settings['geofenceRadius'] as num?)?.toInt() ?? _geofenceRadius;
           _syncFrequency = settings['syncFrequency'] ?? _syncFrequency;
+          _taskMaxActivePerEmployee = normalizedTaskMax;
+          _settingsLoadedFromBackend = true;
         });
+        _taskMaxActivePerEmployeeController.text = _taskMaxActivePerEmployee
+            .toString();
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('allowOfflineMode', _allowOfflineMode);
         await prefs.setBool(
@@ -155,6 +207,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         await prefs.setBool('enableLocationTracking', _enableLocationTracking);
         await prefs.setInt('geofenceRadius', _geofenceRadius);
         await prefs.setString('syncFrequency', _syncFrequency);
+        await prefs.setInt(
+          'task.maxActivePerEmployee',
+          _taskMaxActivePerEmployee,
+        );
       } else {
         // Fallback to local if backend not available
         final prefs = await SharedPreferences.getInstance();
@@ -169,7 +225,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               _enableLocationTracking;
           _geofenceRadius = prefs.getInt('geofenceRadius') ?? _geofenceRadius;
           _syncFrequency = prefs.getString('syncFrequency') ?? _syncFrequency;
+          _taskMaxActivePerEmployee = _normalizeTaskMaxActivePerEmployee(
+            prefs.getInt('task.maxActivePerEmployee'),
+          );
+          _settingsLoadedFromBackend = false;
         });
+        _taskMaxActivePerEmployeeController.text = _taskMaxActivePerEmployee
+            .toString();
       }
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
@@ -183,11 +245,42 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             prefs.getBool('enableLocationTracking') ?? _enableLocationTracking;
         _geofenceRadius = prefs.getInt('geofenceRadius') ?? _geofenceRadius;
         _syncFrequency = prefs.getString('syncFrequency') ?? _syncFrequency;
+        _taskMaxActivePerEmployee = _normalizeTaskMaxActivePerEmployee(
+          prefs.getInt('task.maxActivePerEmployee'),
+        );
+        _settingsLoadedFromBackend = false;
       });
+      _taskMaxActivePerEmployeeController.text = _taskMaxActivePerEmployee
+          .toString();
     }
   }
 
   Future<void> _saveSettings() async {
+    if (_isSavingSettings) return;
+
+    final before = _taskMaxActivePerEmployee;
+    final normalized = _normalizeTaskMaxActivePerEmployee(
+      _taskMaxActivePerEmployee,
+    );
+    if (normalized != before) {
+      setState(() {
+        _taskMaxActivePerEmployee = normalized;
+      });
+      _taskMaxActivePerEmployeeController.text = normalized.toString();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Max active tasks per employee was adjusted to $normalized (allowed: $_taskMaxActivePerEmployeeMin-$_taskMaxActivePerEmployeeMax).',
+            ),
+          ),
+        );
+      }
+    }
+
+    setState(() {
+      _isSavingSettings = true;
+    });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('allowOfflineMode', _allowOfflineMode);
     await prefs.setBool(
@@ -197,6 +290,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     await prefs.setBool('enableLocationTracking', _enableLocationTracking);
     await prefs.setInt('geofenceRadius', _geofenceRadius);
     await prefs.setString('syncFrequency', _syncFrequency);
+    await prefs.setInt('task.maxActivePerEmployee', _taskMaxActivePerEmployee);
 
     // Push to backend for real-time sync across accounts
     try {
@@ -206,16 +300,29 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         'enableLocationTracking': _enableLocationTracking,
         'geofenceRadius': _geofenceRadius.toDouble(),
         'syncFrequency': _syncFrequency,
+        'task.maxActivePerEmployee': _taskMaxActivePerEmployee,
       });
       if (!mounted) return;
+      setState(() {
+        _settingsLoadedFromBackend = true;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Settings saved and synced')),
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _settingsLoadedFromBackend = false;
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to save settings: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingSettings = false;
+        });
+      }
     }
   }
 
@@ -235,6 +342,49 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               'System Settings',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
+            if (!_settingsLoadedFromBackend) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.cloud_off, color: Colors.orange),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Backend sync unavailable',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'You are viewing local settings. Try again when the backend is reachable.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _loadSettings,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
 
             // Geofence Settings
@@ -323,6 +473,55 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   _syncFrequency = value!;
                 });
               },
+            ),
+
+            _buildSectionHeader('Task Settings'),
+            ListTile(
+              title: const Text('Max Active Tasks Per Employee'),
+              subtitle: const Text(
+                'Controls assignment limits and warnings in Admin Task Management',
+              ),
+              trailing: SizedBox(
+                width: 84,
+                child: TextField(
+                  controller: _taskMaxActivePerEmployeeController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    final parsed = int.tryParse(value);
+                    if (parsed == null) return;
+                    setState(() {
+                      _taskMaxActivePerEmployee = parsed;
+                    });
+                  },
+                  onSubmitted: (value) {
+                    final parsed = int.tryParse(value);
+                    final normalized = _normalizeTaskMaxActivePerEmployee(
+                      parsed,
+                    );
+                    if (!mounted) return;
+                    setState(() {
+                      _taskMaxActivePerEmployee = normalized;
+                    });
+                    _taskMaxActivePerEmployeeController.text = normalized
+                        .toString();
+                    if (parsed != null && parsed != normalized) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Adjusted to $normalized (allowed: $_taskMaxActivePerEmployeeMin-$_taskMaxActivePerEmployeeMax).',
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
             ),
 
             // User Management
@@ -515,13 +714,22 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _saveSettings,
+              onPressed: _isSavingSettings ? null : _saveSettings,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2688d4),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              child: const Text('Save Settings'),
+              child: _isSavingSettings
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text('Save Settings'),
             ),
           ],
         ),
@@ -621,7 +829,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey),
+                border: Border.all(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.25),
+                ),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: DropdownButton<String>(

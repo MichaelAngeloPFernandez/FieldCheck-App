@@ -117,7 +117,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       case 'suspended':
         return Colors.red;
       default:
-        return Colors.grey;
+        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
     }
   }
 
@@ -132,6 +132,8 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         body: Center(child: Text('Failed to load profile')),
       );
     }
+
+    final employeeCode = (_userProfile!.employeeId ?? '').trim();
 
     return Scaffold(
       appBar: AppBar(
@@ -219,11 +221,11 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                       ),
                       child: Text(
                         _userProfile!.role.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                     ),
                   ],
@@ -295,13 +297,14 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                                     _userProfile!.isVerified
                                         ? 'Your account is active'
                                         : 'Please verify your email to activate',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(alpha: 0.7),
-                                    ),
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.75),
+                                        ),
                                   ),
                                 ],
                               ),
@@ -336,14 +339,17 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                             ),
                             if (!_isEditing)
                               Text(
-                                'ID: ${_userProfile!.id.substring(0, 8)}...',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurface
-                                      .withValues(alpha: 0.65),
-                                ),
+                                employeeCode.isNotEmpty
+                                    ? 'ID: $employeeCode'
+                                    : 'ID: ${_userProfile!.id.substring(0, 8)}...',
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.75),
+                                      fontWeight: FontWeight.w600,
+                                    ),
                               ),
                           ],
                         ),
@@ -423,10 +429,9 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                             child: Text(
                               'No attendance records yet',
                               style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.7),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7),
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -466,13 +471,11 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context)
-                .colorScheme
-                .onSurface
-                .withValues(alpha: 0.7),
-            fontWeight: FontWeight.w500,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.75),
           ),
         ),
         const SizedBox(height: 6),
@@ -498,9 +501,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: Theme.of(context)
-                    .dividerColor
-                    .withValues(alpha: 0.35),
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
               ),
             ),
             child: Row(
@@ -508,10 +509,9 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 Icon(
                   icon,
                   size: 18,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.75),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -562,18 +562,20 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   ),
                   Text(
                     record.timestamp.toLocal().toString().split('.')[0],
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.7),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.75),
                     ),
                   ),
                   if (record.geofenceName != null)
                     Text(
                       'Location: ${record.geofenceName}',
-                      style: const TextStyle(fontSize: 11, color: Colors.blue),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                 ],
               ),

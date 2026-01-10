@@ -3,6 +3,14 @@ const Attendance = require('../models/Attendance');
 const Geofence = require('../models/Geofence');
 const Report = require('../models/Report');
 
+async function populateReportById(reportId) {
+  return await Report.findById(reportId)
+    .populate('employee', 'name email employeeId avatarUrl')
+    .populate('task', 'title description difficulty dueDate status isArchived')
+    .populate('attendance')
+    .populate('geofence', 'name');
+}
+
 /**
  * Offline Employee Void Job
  * Automatically voids attendance records for employees who:
@@ -125,7 +133,12 @@ async function voidOfflineEmployeesOutsideGeofence() {
           });
 
           if (global.io) {
-            global.io.emit('newReport', report);
+            try {
+              const populated = await populateReportById(report._id);
+              global.io.emit('newReport', populated || report);
+            } catch (_) {
+              global.io.emit('newReport', report);
+            }
           }
         } catch (e) {
           console.error('Failed to create void attendance report:', e);

@@ -37,12 +37,12 @@ class UserModel {
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
-      id: json['_id'] ?? json['id'] ?? '',
+      id: json['_id'] ?? json['id'] ?? json['userId'] ?? '',
       name: json['name'] ?? json['username'] ?? '',
       email: json['email'] ?? '',
       phone: json['phone'],
       role: json['role'] ?? 'employee',
-      employeeId: json['employeeId'],
+      employeeId: (json['employeeId'] ?? json['employeeCode'])?.toString(),
       avatarUrl: json['avatarUrl'],
       username: json['username'],
       isActive: json['isActive'] is bool
@@ -61,8 +61,8 @@ class UserModel {
           ? DateTime.tryParse(json['lastLocationUpdate'].toString())
           : null,
       isOnline: json['isOnline'] is bool ? json['isOnline'] as bool : false,
-      activeTaskCount: json['activeTaskCount'] is int
-          ? json['activeTaskCount'] as int
+      activeTaskCount: json['activeTaskCount'] is num
+          ? (json['activeTaskCount'] as num).toInt()
           : 0,
       workloadWeight: json['workloadWeight'] is num
           ? (json['workloadWeight'] as num).toDouble()

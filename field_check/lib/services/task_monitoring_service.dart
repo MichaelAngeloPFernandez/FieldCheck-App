@@ -85,7 +85,10 @@ class TaskMonitoringService {
     String employeeId,
   ) async {
     try {
-      final tasks = await _taskService.fetchAssignedTasks(employeeId);
+      final tasks = await _taskService.fetchAssignedTasks(
+        employeeId,
+        archived: false,
+      );
       final now = DateTime.now();
 
       return tasks.where((task) {

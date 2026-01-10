@@ -283,9 +283,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking after photos: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error picking after photos: $e')));
     }
   }
 
@@ -329,9 +329,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking documents: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error picking documents: $e')));
     }
   }
 
@@ -561,7 +561,8 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     setState(() {
       _isSubmitting = true;
       _submitPhase = 'Preparing submission...';
-      _submitTotal = _beforeFiles.length + _afterFiles.length + _documentFiles.length;
+      _submitTotal =
+          _beforeFiles.length + _afterFiles.length + _documentFiles.length;
       _submitDone = 0;
       _submitCurrentFile = null;
     });
@@ -584,9 +585,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                  'Skipped ${file.name}: exceeds 10MB limit.',
-                ),
+                content: Text('Skipped ${file.name}: exceeds 10MB limit.'),
                 backgroundColor: Colors.orange,
               ),
             );
@@ -753,9 +752,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
     if (!_isLikelyImage(file.name)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No preview for ${file.name}.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No preview for ${file.name}.')));
       return;
     }
 
@@ -816,7 +815,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                 children: [
                   Text(
                     _submitPhase ?? 'Submitting...',
-                    style: AppTheme.bodyMd.copyWith(fontWeight: FontWeight.w600),
+                    style: AppTheme.bodyMd.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   if (_submitTotal > 0)
@@ -829,8 +830,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     Text(
                       '$_submitDone / $_submitTotal uploaded'
                       '${_submitCurrentFile != null ? ' • ${_submitCurrentFile!}' : ''}',
-                      style:
-                          AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
+                      style: AppTheme.bodySm.copyWith(
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                 ],
               ),
@@ -843,14 +845,13 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.task.title,
-                  style: AppTheme.headingSm,
-                ),
+                Text(widget.task.title, style: AppTheme.headingSm),
                 const SizedBox(height: 8),
                 Text(
                   widget.task.description,
-                  style: AppTheme.bodyMd.copyWith(color: AppTheme.textSecondary),
+                  style: AppTheme.bodyMd.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -863,11 +864,50 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     const SizedBox(width: 4),
                     Text(
                       'Due: ${_task.dueDate.toLocal().toString().split(' ')[0]}',
-                      style:
-                          AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
+                      style: AppTheme.bodySm.copyWith(
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   ],
                 ),
+                if (_task.isOverdue && !_task.isArchived) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              size: 14,
+                              color: Colors.red,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Overdue',
+                              style: AppTheme.bodySm.copyWith(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 8),
                 if (_task.checklist.isNotEmpty) ...[
                   Row(
@@ -924,8 +964,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: _task.checklist.length,
-                        separatorBuilder: (context, _) =>
-                            const Divider(height: 1, color: AppTheme.dividerColor),
+                        separatorBuilder: (context, _) => const Divider(
+                          height: 1,
+                          color: AppTheme.dividerColor,
+                        ),
                         itemBuilder: (context, index) {
                           final item = _task.checklist[index];
                           final isDisabled =
@@ -951,10 +993,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  const Text(
-                    'Write your report:',
-                    style: AppTheme.labelLg,
-                  ),
+                  const Text('Write your report:', style: AppTheme.labelLg),
                   const SizedBox(height: 8),
                   Expanded(
                     child: Container(
@@ -1030,8 +1069,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                             ),
                             IconButton(
                               icon: const Icon(Icons.close),
-                              onPressed:
-                                  _isSubmitting ? null : () => _removeBeforeFile(index),
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () => _removeBeforeFile(index),
                             ),
                           ],
                         ),
@@ -1077,8 +1117,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                             ),
                             IconButton(
                               icon: const Icon(Icons.close),
-                              onPressed:
-                                  _isSubmitting ? null : () => _removeAfterFile(index),
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () => _removeAfterFile(index),
                             ),
                           ],
                         ),

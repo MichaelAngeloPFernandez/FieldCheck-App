@@ -289,10 +289,9 @@ class _EnhancedAdminDashboardScreenState
                     ),
                     child: Text(
                       _notificationBadgeCount.toString(),
-                      style: const TextStyle(
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w800,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -413,7 +412,9 @@ class _EnhancedAdminDashboardScreenState
                         _employees
                             .where((e) => e.status == EmployeeStatus.offline)
                             .length,
-                        Colors.grey,
+                        Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.55),
                       ),
                     ],
                   ),
@@ -425,9 +426,15 @@ class _EnhancedAdminDashboardScreenState
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blue[50],
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue[200]!),
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -440,21 +447,22 @@ class _EnhancedAdminDashboardScreenState
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Text(
+                        Text(
                           'Real-time location tracking active',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.blue,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
                         ),
                         const Spacer(),
                         Text(
                           '${_employees.where((e) => e.isOnline).length} online',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.blue,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
                       ],
                     ),
@@ -562,7 +570,12 @@ class _EnhancedAdminDashboardScreenState
                 const SizedBox(height: 4),
                 Text(
                   label,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.75),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -581,10 +594,9 @@ class _EnhancedAdminDashboardScreenState
                 constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 child: Text(
                   notificationCount.toString(),
-                  style: const TextStyle(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w800,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -600,7 +612,12 @@ class _EnhancedAdminDashboardScreenState
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.85),
+          ),
         ),
         const SizedBox(height: 4),
         Container(

@@ -252,7 +252,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     }
   }
 
-  Future<void> _refreshLocationAndStatus({required bool showSnackOnError}) async {
+  Future<void> _refreshLocationAndStatus({
+    required bool showSnackOnError,
+  }) async {
     try {
       final position = await _locationService.getCurrentLocation();
       if (!mounted) return;
@@ -558,14 +560,10 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         );
         debugPrint('CurrentGeofence.name: ${_currentGeofence?.name}');
         debugPrint(
-          'Assigned geofences (${_assignedGeofences.length}): ${_assignedGeofences
-                  .map((g) => '${g.id ?? 'no-id'}:${g.name}')
-                  .join(', ')}',
+          'Assigned geofences (${_assignedGeofences.length}): ${_assignedGeofences.map((g) => '${g.id ?? 'no-id'}:${g.name}').join(', ')}',
         );
         debugPrint(
-          'All geofences (${_allGeofences.length}): ${_allGeofences
-                  .map((g) => '${g.id ?? 'no-id'}:${g.name}')
-                  .join(', ')}',
+          'All geofences (${_allGeofences.length}): ${_allGeofences.map((g) => '${g.id ?? 'no-id'}:${g.name}').join(', ')}',
         );
         debugPrint('Attendance payload: $attendanceData');
       } catch (e) {
@@ -935,15 +933,23 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                     Icon(
                       Icons.place,
                       size: 16,
-                      color: g.isActive ? Colors.blue : Colors.grey,
+                      color: g.isActive
+                          ? Colors.blue
+                          : Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                     const SizedBox(width: 8),
                     Expanded(child: Text(g.name)),
                     Text(
                       g.isActive ? 'Active' : 'Inactive',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: g.isActive ? Colors.blue : Colors.grey,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: g.isActive
+                            ? Colors.blue
+                            : Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.6),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -996,13 +1002,21 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               if (_currentDistanceMeters != null)
                 Text(
                   'Distance: ${_currentDistanceMeters!.toStringAsFixed(1)}m',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.75),
+                  ),
                 ),
             ],
             if (_userPosition != null)
               Text(
                 'Coordinates: ${_userPosition!.latitude.toStringAsFixed(6)}, ${_userPosition!.longitude.toStringAsFixed(6)}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
+                ),
               ),
           ],
         ),
@@ -1234,7 +1248,10 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                       size: 16,
                       color: geofence.id == _currentGeofence?.id
                           ? Colors.green
-                          : Colors.grey,
+                          : Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -1252,7 +1269,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                     ),
                     Text(
                       '${geofence.radius}m',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.75),
+                      ),
                     ),
                   ],
                 ),

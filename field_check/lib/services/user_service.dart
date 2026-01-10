@@ -13,6 +13,22 @@ class UserService {
   UserModel? _cachedProfile;
   UserModel? get currentUser => _cachedProfile;
 
+  String _extractErrorMessage(http.Response response, String fallback) {
+    try {
+      final dynamic decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final msg = decoded['message'];
+        if (msg != null) return msg.toString();
+      }
+      if (decoded != null) return decoded.toString();
+    } catch (_) {
+      // ignore
+    }
+    final body = response.body.trim();
+    if (body.isNotEmpty) return body;
+    return fallback;
+  }
+
   Future<String> uploadAvatarBytes(Uint8List bytes, String filename) async {
     try {
       final token = await getToken();
@@ -21,11 +37,7 @@ class UserService {
         Uri.parse('$_baseUrl/users/upload/avatar'),
       );
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'avatar',
-          bytes,
-          filename: filename,
-        ),
+        http.MultipartFile.fromBytes('avatar', bytes, filename: filename),
       );
       if (token != null) {
         request.headers['Authorization'] = 'Bearer $token';
@@ -230,6 +242,7 @@ class UserService {
     String email,
     String password, {
     String role = 'employee',
+    String? employeeId,
     String? username,
     String? phone,
   }) async {
@@ -242,6 +255,7 @@ class UserService {
         'email': email,
         'password': password,
         'role': role,
+        'employeeId': employeeId,
         'phone': phone,
       }),
     );
@@ -249,7 +263,8 @@ class UserService {
       final data = json.decode(response.body);
       return UserModel.fromJson(data);
     } else {
-      throw Exception('Registration failed: ${response.body}');
+      final message = _extractErrorMessage(response, 'Registration failed');
+      throw Exception(message);
     }
   }
 
@@ -420,6 +435,12 @@ class UserService {
       );
     } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys();
+    for (final k in keys) {
+      if (k.startsWith('taskAssignmentDraft_')) {
+        await prefs.remove(k);
+      }
+    }
     await prefs.remove('auth_token');
     await prefs.remove('refresh_token');
     _cachedProfile = null;
@@ -448,7 +469,10 @@ class UserService {
   }
 
   // Admin-only operations
-  Future<void> resetUserPasswordByAdmin(String userModelId, String password) async {
+  Future<void> resetUserPasswordByAdmin(
+    String userModelId,
+    String password,
+  ) async {
     final token = await getToken();
     final response = await http.put(
       Uri.parse('$_baseUrl/users/$userModelId/reset-password-admin'),
@@ -513,6 +537,7 @@ class UserService {
     String? role,
     bool? isActive,
     String? username,
+    String? employeeId,
     String? phone,
   }) async {
     final token = await getToken();
@@ -522,6 +547,7 @@ class UserService {
     if (role != null) payload['role'] = role;
     if (isActive != null) payload['isActive'] = isActive;
     if (username != null) payload['username'] = username;
+    if (employeeId != null) payload['employeeId'] = employeeId;
     if (phone != null) payload['phone'] = phone;
 
     final response = await http.put(
@@ -536,7 +562,8 @@ class UserService {
       final data = json.decode(response.body);
       return UserModel.fromJson(data);
     } else {
-      throw Exception('Failed to update user: ${response.body}');
+      final message = _extractErrorMessage(response, 'Failed to update user');
+      throw Exception(message);
     }
   }
 

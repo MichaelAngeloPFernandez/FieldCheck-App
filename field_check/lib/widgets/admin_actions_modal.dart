@@ -254,7 +254,12 @@ class _AdminActionsModalState extends State<AdminActionsModal> {
             const SizedBox(height: 8),
             Text(
               'Download URL: $url',
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
             ),
           ],
         ),
@@ -283,6 +288,8 @@ class _AdminActionsModalState extends State<AdminActionsModal> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Dialog(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 500),
@@ -309,7 +316,10 @@ class _AdminActionsModalState extends State<AdminActionsModal> {
                       const SizedBox(height: 4),
                       Text(
                         widget.employeeName,
-                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: onSurface.withValues(alpha: 0.75),
+                        ),
                       ),
                     ],
                   ),
@@ -420,10 +430,11 @@ class _AdminActionsModalState extends State<AdminActionsModal> {
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(
         title,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Colors.grey,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.75),
         ),
       ),
     );

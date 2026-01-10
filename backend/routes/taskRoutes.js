@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const {
   getTask,
+  getTaskAssignees,
   getTasks,
   getCurrentTasks,
   getArchivedTasks,
+  getOverdueTasks,
   createTask,
   updateTask,
   deleteTask,
@@ -12,7 +14,10 @@ const {
   getAssignedTasks,
   assignTaskToUser,
   assignTaskToMultipleUsers,
+  unassignTaskFromUser,
   updateUserTaskStatus,
+  archiveUserTask,
+  restoreUserTask,
   updateTaskChecklistItem,
   blockTask,
   archiveTask,
@@ -31,9 +36,14 @@ router.get('/user/:userId', protect, getUserTasks);
 router.get('/assigned/:userId', protect, getAssignedTasks);
 router.get('/current', protect, admin, getCurrentTasks);
 router.get('/archived', protect, admin, getArchivedTasks);
+router.get('/overdue', protect, admin, getOverdueTasks);
+router.get('/:taskId/assignees', protect, admin, getTaskAssignees);
 router.post('/:taskId/assign/:userId', protect, admin, assignTaskToUser);
 router.post('/:taskId/assign-multiple', protect, admin, assignTaskToMultipleUsers);
+router.delete('/:taskId/unassign/:userId', protect, admin, unassignTaskFromUser);
 router.put('/user-task/:userTaskId/status', protect, updateUserTaskStatus);
+router.put('/user-task/:userTaskId/archive', protect, archiveUserTask);
+router.put('/user-task/:userTaskId/restore', protect, restoreUserTask);
 router.put('/:id/archive', protect, admin, archiveTask);
 router.put('/:id/restore', protect, admin, restoreTask);
 router.post('/:id/escalate', protect, admin, escalateTask);

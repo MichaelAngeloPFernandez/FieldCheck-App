@@ -121,7 +121,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     int oldCount = _tasksBadgeCount;
 
     try {
-      final tasks = await TaskService().fetchAssignedTasks(userId);
+      final tasks = await TaskService().fetchAssignedTasks(
+        userId,
+        archived: false,
+      );
       final count = tasks
           .where((t) => !t.isArchived)
           .where((t) => t.status == 'pending' || t.status == 'in_progress')
@@ -293,10 +296,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             child: Text(
               text,
-              style: const TextStyle(
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -376,7 +378,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Center(
                   child: Text(
                     text,
-                    style: AppTheme.labelMd.copyWith(color: Colors.white70),
+                    style: AppTheme.labelMd.copyWith(
+                      color:
+                          (Theme.of(context).appBarTheme.foregroundColor ??
+                                  Theme.of(context).colorScheme.onPrimary)
+                              .withValues(alpha: 0.75),
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

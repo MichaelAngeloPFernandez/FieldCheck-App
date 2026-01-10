@@ -2,6 +2,7 @@ import '../models/task_model.dart';
 import '../models/user_task_model.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'user_service.dart';
 import '../config/api_config.dart';
 
@@ -14,6 +15,112 @@ class TaskService {
     final token = await UserService().getToken();
     if (token != null) headers['Authorization'] = 'Bearer $token';
     return headers;
+  }
+
+  Future<Task> getTaskById(String taskId) async {
+    final response = await http
+        .get(
+          Uri.parse('$_baseUrl/$taskId'),
+          headers: await _headers(jsonContent: false),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      assert(() {
+        try {
+          if (decoded is Map) {
+            final m = Map<String, dynamic>.from(decoded);
+            debugPrint(
+              'getTaskById debug: taskId=$taskId keys=${m.keys.toList()}',
+            );
+            const probeKeys = <String>[
+              'assignedToMultiple',
+              'assignedTo',
+              'teamMembers',
+              'userIds',
+              'assignees',
+              'assignedEmployees',
+              'assignedUsers',
+              'assignedToMultipleIds',
+              'assignedUserIds',
+              'userTaskIds',
+              'userTasks',
+            ];
+            for (final k in probeKeys) {
+              if (m.containsKey(k)) {
+                debugPrint('getTaskById debug: $k=${m[k]}');
+              }
+            }
+          } else {
+            debugPrint(
+              'getTaskById debug: taskId=$taskId decodedType=${decoded.runtimeType}',
+            );
+          }
+        } catch (e) {
+          debugPrint('getTaskById debug: error printing decoded: $e');
+        }
+        return true;
+      }());
+      if (decoded is Map<String, dynamic>) {
+        return Task.fromJson(decoded);
+      }
+      if (decoded is Map) {
+        return Task.fromJson(Map<String, dynamic>.from(decoded));
+      }
+      throw Exception('Invalid task response');
+    }
+    throw Exception('Failed to load task');
+  }
+
+  Future<List<String>> getAssigneeIdsForTask(String taskId) async {
+    final response = await http
+        .get(
+          Uri.parse('$_baseUrl/$taskId/assignees'),
+          headers: await _headers(jsonContent: false),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 404) {
+      return <String>[];
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load task assignees');
+    }
+
+    if (response.body.isEmpty) return <String>[];
+
+    final decoded = json.decode(response.body);
+    if (decoded is List) {
+      return decoded
+          .map((e) => e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    if (decoded is Map) {
+      final m = Map<String, dynamic>.from(decoded);
+      final dynamic ids =
+          m['userIds'] ?? m['assigneeIds'] ?? m['assignees'] ?? m['employees'];
+      if (ids is List) {
+        return ids
+            .map((e) {
+              if (e is Map) {
+                final mm = Map<String, dynamic>.from(e);
+                return (mm['userId'] ??
+                        mm['_id'] ??
+                        mm['id'] ??
+                        mm['employeeId'] ??
+                        '')
+                    .toString();
+              }
+              return e.toString();
+            })
+            .where((s) => s.isNotEmpty)
+            .toList();
+      }
+    }
+    return <String>[];
   }
 
   /// Fetch non-archived (current) tasks
@@ -33,6 +140,54 @@ class TaskService {
     }
   }
 
+  Future<void> archiveUserTask(String userTaskId) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/archive'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to archive task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          } else {
+            message = response.body;
+          }
+        } catch (_) {
+          message = response.body;
+        }
+      }
+      throw Exception(message);
+    }
+  }
+
+  Future<void> restoreUserTask(String userTaskId) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/restore'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to restore task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          } else {
+            message = response.body;
+          }
+        } catch (_) {
+          message = response.body;
+        }
+      }
+      throw Exception(message);
+    }
+  }
+
   /// Fetch archived tasks
   Future<List<Task>> getArchivedTasks() async {
     final response = await http
@@ -48,6 +203,30 @@ class TaskService {
     } else {
       throw Exception('Failed to load archived tasks');
     }
+  }
+
+  /// Fetch overdue, non-archived tasks (admin only)
+  Future<List<Task>> getOverdueTasks() async {
+    // Prefer dedicated backend endpoint when available
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/overdue'),
+            headers: await _headers(jsonContent: false),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final Iterable l = json.decode(response.body);
+        return List<Task>.from(l.map((model) => Task.fromJson(model)));
+      }
+    } catch (_) {
+      // Ignore and fall back to client-side filtering
+    }
+
+    // Fallback: reuse current tasks and filter by isOverdue flag set by backend
+    final current = await getCurrentTasks();
+    return current.where((t) => t.isOverdue).toList();
   }
 
   Future<List<Task>> fetchAllTasks() async {
@@ -181,6 +360,36 @@ class TaskService {
     }
   }
 
+  Future<void> unassignUserFromTask(String taskId, String userId) async {
+    final response = await http
+        .delete(
+          Uri.parse('$_baseUrl/$taskId/unassign/$userId'),
+          headers: await _headers(jsonContent: false),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200 ||
+        response.statusCode == 204 ||
+        response.statusCode == 404) {
+      return;
+    }
+
+    String message = 'Failed to unassign user from task';
+    if (response.body.isNotEmpty) {
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+          message = decoded['message'] as String;
+        } else {
+          message = response.body;
+        }
+      } catch (_) {
+        message = response.body;
+      }
+    }
+    throw Exception(message);
+  }
+
   Future<void> deleteTask(String taskId) async {
     final response = await http.delete(
       Uri.parse('$_baseUrl/$taskId'),
@@ -206,10 +415,14 @@ class TaskService {
     }
   }
 
-  Future<List<Task>> fetchAssignedTasks(String userModelId) async {
+  Future<List<Task>> fetchAssignedTasks(
+    String userModelId, {
+    bool archived = false,
+  }) async {
+    final query = archived ? 'true' : 'false';
     final response = await http
         .get(
-          Uri.parse('$_baseUrl/assigned/$userModelId'),
+          Uri.parse('$_baseUrl/assigned/$userModelId?archived=$query'),
           headers: await _headers(jsonContent: false),
         )
         .timeout(const Duration(seconds: 10));

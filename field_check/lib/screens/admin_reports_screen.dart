@@ -4,14 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/services/report_service.dart';
+import 'package:field_check/services/task_service.dart';
 import 'package:field_check/models/report_model.dart';
+import 'package:field_check/models/task_model.dart';
 import 'package:field_check/services/attendance_service.dart';
 import 'package:intl/intl.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 
@@ -25,15 +27,18 @@ class AdminReportsScreen extends StatefulWidget {
 }
 
 class _AdminReportsScreenState extends State<AdminReportsScreen> {
-  List<ReportModel> _attendanceRecords = [];
-  List<ReportModel> _archivedAttendanceRecords = [];
+  List<AttendanceRecord> _attendanceRecords = [];
+  List<AttendanceRecord> _archivedAttendanceRecords = [];
   late io.Socket _socket;
   List<ReportModel> _taskReports = [];
   List<ReportModel> _archivedTaskReports = [];
+  List<Task> _overdueTasks = [];
   String _viewMode = 'attendance'; // 'attendance' | 'task'
   bool _hasNewTaskReports = false;
   bool _isLoadingTaskReports = false;
   String? _taskReportsError;
+  bool _isLoadingOverdueTasks = false;
+  String? _overdueTasksError;
   bool _showArchivedReports = false;
   bool _showArchivedAttendance = false;
 
@@ -43,25 +48,182 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   String _reportStatusFilter = 'All';
   String _attendanceStatusFilter = 'All';
   String _taskDifficultyFilter = 'All';
+  bool _taskOverdueOnly = false;
   String _attendanceDateFilter = 'all'; // all, today, week, month, custom
   DateTime? _attendanceStartDate;
   DateTime? _attendanceEndDate;
   String? _filterEmployeeId;
   String? _filterEmployeeName;
   Timer? _debounce;
+  Timer? _realtimeRefreshDebounce;
 
   final AttendanceService _attendanceService = AttendanceService();
-  Set<String> _locallyArchivedAttendanceIds = <String>{};
+  final TaskService _taskService = TaskService();
 
-  static const String _prefsArchivedAttendanceIdsKey =
-      'adminReports.archivedAttendanceIds.v1';
+  void _openEmployeeHistory(String employeeId, String employeeName) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AdminEmployeeHistoryScreen(
+          employeeId: employeeId,
+          employeeName: employeeName,
+        ),
+      ),
+    );
+  }
 
-  Future<void> _loadLocallyArchivedAttendanceIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList(_prefsArchivedAttendanceIdsKey) ?? <String>[];
-    setState(() {
-      _locallyArchivedAttendanceIds = list.toSet();
-    });
+  Widget _buildOverdueTasksSection() {
+    if (_isLoadingOverdueTasks) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_overdueTasksError != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Overdue Tasks',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _overdueTasksError!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_overdueTasks.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 8.0),
+        child: Text('No overdue tasks'),
+      );
+    }
+
+    final reportsBase = _showArchivedReports
+        ? _archivedTaskReports
+        : _taskReports;
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 8.0),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Overdue Tasks',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  '${_overdueTasks.length}',
+                  style: TextStyle(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _overdueTasks.length,
+              itemBuilder: (context, index) {
+                final t = _overdueTasks[index];
+                final due = DateFormat(
+                  'yyyy-MM-dd',
+                ).format(t.dueDate.toLocal());
+                String assignees;
+                if (t.assignedToMultiple.isNotEmpty) {
+                  final names = t.assignedToMultiple
+                      .map((u) => u.name)
+                      .where((n) => n.isNotEmpty)
+                      .toList();
+                  assignees = names.isNotEmpty
+                      ? names.join(', ')
+                      : 'Unassigned';
+                } else if (t.assignedTo != null &&
+                    t.assignedTo!.name.isNotEmpty) {
+                  assignees = t.assignedTo!.name;
+                } else {
+                  assignees = 'Unassigned';
+                }
+
+                final hasReports = reportsBase.any((r) => r.taskId == t.id);
+
+                return ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  title: Text(t.title),
+                  subtitle: Text('Due $due • $assignees'),
+                  onTap: hasReports ? () => _showReportsForTask(t) : null,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      hasReports
+                          ? const Chip(
+                              label: Text('Has reports'),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            )
+                          : const Chip(
+                              label: Text('No reports yet'),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                      const SizedBox(width: 4),
+                      PopupMenuButton<String>(
+                        tooltip: 'Actions',
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'viewReports':
+                              if (hasReports) {
+                                _showReportsForTask(t);
+                              } else {
+                                AppWidgets.showWarningSnackbar(
+                                  context,
+                                  'No reports yet for this task',
+                                );
+                              }
+                              return;
+                            case 'deleteTask':
+                              _confirmAndDeleteTask(t);
+                              return;
+                          }
+                        },
+                        itemBuilder: (ctx) => [
+                          const PopupMenuItem(
+                            value: 'viewReports',
+                            child: Text('View reports'),
+                          ),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(
+                            value: 'deleteTask',
+                            child: Text('Delete task'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _normalizeAttachmentUrl(String rawPath) {
@@ -116,12 +278,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Invalid attachment URL'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
+        AppWidgets.showErrorSnackbar(context, 'Invalid attachment URL');
       }
       return;
     }
@@ -131,24 +288,21 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final can = await canLaunchUrl(uri);
     if (!can) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('No app found to open attachment'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+        AppWidgets.showErrorSnackbar(
+          context,
+          'No app found to open attachment',
         );
       }
       return;
     }
 
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.platformDefault,
+      webOnlyWindowName: '_blank',
+    );
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Unable to open attachment'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      AppWidgets.showErrorSnackbar(context, 'Unable to open attachment');
     }
   }
 
@@ -166,7 +320,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 color: Theme.of(context).colorScheme.surface,
                 border: Border(
                   bottom: BorderSide(
-                    color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.35),
                   ),
                 ),
               ),
@@ -175,9 +331,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   Expanded(
                     child: Text(
                       title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -216,47 +370,180 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
-  Future<void> _setAttendanceArchivedLocal(String attendanceId, bool archived) async {
-    final prefs = await SharedPreferences.getInstance();
-    final next = _locallyArchivedAttendanceIds.toSet();
-    if (archived) {
-      next.add(attendanceId);
-    } else {
-      next.remove(attendanceId);
+  Future<void> _toggleArchiveAttendanceRecord(AttendanceRecord record) async {
+    try {
+      if (_showArchivedAttendance) {
+        await _attendanceService.restoreAttendanceRecord(record.id);
+        if (mounted) {
+          AppWidgets.showSuccessSnackbar(context, 'Attendance record restored');
+        }
+      } else {
+        await _attendanceService.archiveAttendanceRecord(record.id);
+        if (mounted) {
+          AppWidgets.showSuccessSnackbar(context, 'Attendance record archived');
+        }
+      }
+      await _fetchAttendanceRecords();
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to update record'),
+      );
     }
-    await prefs.setStringList(_prefsArchivedAttendanceIdsKey, next.toList());
-    setState(() {
-      _locallyArchivedAttendanceIds = next;
-    });
-    await _fetchAttendanceRecords();
   }
 
-  ReportModel _attendanceToReportModel(AttendanceRecord r) {
-    final DateTime submittedAt = r.isCheckIn ? r.checkInTime : (r.checkOutTime ?? r.checkInTime);
+  Future<void> _confirmAndDeleteAttendanceRecord(
+    AttendanceRecord record,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Attendance Record'),
+        content: const Text(
+          'Are you sure you want to delete this attendance record? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
 
-    final String content;
-    if (r.isVoid && r.autoCheckout) {
-      content = 'Auto Checkout (Void)';
-    } else if (r.isVoid) {
-      content = 'Void';
+    if (ok != true) return;
+
+    try {
+      await _attendanceService.deleteAttendanceRecord(record.id);
+      await _fetchAttendanceRecords();
+      if (mounted) {
+        AppWidgets.showSuccessSnackbar(context, 'Attendance record deleted');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to delete attendance record',
+        ),
+      );
+    }
+  }
+
+  void _showAttendanceDetails(AttendanceRecord record) {
+    final dtIn = record.checkInTime.toLocal();
+    final dateStr = DateFormat('yyyy-MM-dd').format(dtIn);
+    final timeInStr = DateFormat('HH:mm').format(dtIn);
+    final dtOut = record.checkOutTime?.toLocal();
+    final timeOutStr = dtOut == null ? '-' : DateFormat('HH:mm').format(dtOut);
+    final durationStr = record.elapsedHours == null
+        ? '-'
+        : '${record.elapsedHours!.toStringAsFixed(2)} hours';
+
+    final String status;
+    if (record.isVoid && record.autoCheckout) {
+      status = 'Auto Checkout (Void)';
+    } else if (record.isVoid) {
+      status = 'Void';
+    } else if (record.checkOutTime == null) {
+      status = 'Open';
     } else {
-      content = r.isCheckIn ? 'Check In' : 'Check Out';
+      status = 'Completed';
     }
 
-    return ReportModel(
-      id: r.id,
-      type: 'attendance',
-      attendanceId: r.id,
-      employeeId: r.userId,
-      geofenceId: r.geofenceId,
-      content: content,
-      status: 'submitted',
-      submittedAt: submittedAt,
-      employeeName: r.employeeName,
-      employeeEmail: r.employeeEmail,
-      geofenceName: r.geofenceName,
-      isArchived: _locallyArchivedAttendanceIds.contains(r.id),
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Attendance Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildDetailRow(
+                'Employee:',
+                record.employeeName ?? record.userId,
+              ),
+              _buildDetailRow('Location:', record.geofenceName ?? '-'),
+              _buildDetailRow('Date:', dateStr),
+              _buildDetailRow('Check-in:', timeInStr),
+              _buildDetailRow('Check-out:', timeOutStr),
+              _buildDetailRow('Duration:', durationStr),
+              _buildDetailRow('Status:', status),
+              if (record.isArchived) _buildDetailRow('Archived:', 'Yes'),
+              if (record.isVoid && record.voidReason != null)
+                _buildDetailRow('Void reason:', record.voidReason!),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
+  }
+
+  List<ReportModel> _attendanceSessionToReportModels(AttendanceRecord r) {
+    final List<ReportModel> out = [];
+
+    // Always include check-in event for visibility.
+    out.add(
+      ReportModel(
+        id: '${r.id}:in',
+        type: 'attendance',
+        attendanceId: r.id,
+        employeeId: r.userId,
+        geofenceId: r.geofenceId,
+        content: 'Check In',
+        status: 'submitted',
+        submittedAt: r.checkInTime,
+        employeeName: r.employeeName,
+        employeeEmail: r.employeeEmail,
+        geofenceName: r.geofenceName,
+        isArchived: r.isArchived,
+      ),
+    );
+
+    // If there's a checkout/void event, include it too.
+    final DateTime? dtOut = r.checkOutTime;
+    if (dtOut != null) {
+      final String outContent;
+      if (r.isVoid && r.autoCheckout) {
+        outContent = 'Auto Checkout (Void)';
+      } else if (r.isVoid) {
+        outContent = 'Void';
+      } else {
+        outContent = 'Check Out';
+      }
+
+      out.add(
+        ReportModel(
+          id: '${r.id}:out',
+          type: 'attendance',
+          attendanceId: r.id,
+          employeeId: r.userId,
+          geofenceId: r.geofenceId,
+          content: outContent,
+          status: 'submitted',
+          submittedAt: dtOut,
+          employeeName: r.employeeName,
+          employeeEmail: r.employeeEmail,
+          geofenceName: r.geofenceName,
+          isArchived: r.isArchived,
+        ),
+      );
+    }
+
+    return out;
   }
 
   Future<void> _openFiltersSheet() async {
@@ -271,34 +558,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Current'),
-                        selected: !_showArchivedAttendance,
-                        onSelected: (sel) {
-                          if (!sel) return;
-                          setStateSheet(() {
-                            _showArchivedAttendance = false;
-                          });
-                          _fetchAttendanceRecords();
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('Archived'),
-                        selected: _showArchivedAttendance,
-                        onSelected: (sel) {
-                          if (!sel) return;
-                          setStateSheet(() {
-                            _showArchivedAttendance = true;
-                          });
-                          _fetchAttendanceRecords();
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -408,34 +667,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Current'),
-                        selected: !_showArchivedReports,
-                        onSelected: (sel) async {
-                          if (!sel) return;
-                          setStateSheet(() {
-                            _showArchivedReports = false;
-                          });
-                          await _fetchTaskReports();
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('Archived'),
-                        selected: _showArchivedReports,
-                        onSelected: (sel) async {
-                          if (!sel) return;
-                          setStateSheet(() {
-                            _showArchivedReports = true;
-                          });
-                          await _fetchTaskReports();
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -493,36 +724,59 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     children: [
                       ChoiceChip(
                         label: const Text('All'),
-                        selected: _reportStatusFilter == 'All',
+                        selected:
+                            _reportStatusFilter == 'All' && !_taskOverdueOnly,
                         onSelected: (sel) {
                           if (!sel) return;
                           setState(() {
                             _reportStatusFilter = 'All';
+                            _taskOverdueOnly = false;
                           });
                           setStateSheet(() {});
                         },
                       ),
                       ChoiceChip(
                         label: const Text('Submitted'),
-                        selected: _reportStatusFilter == 'submitted',
+                        selected:
+                            _reportStatusFilter == 'submitted' &&
+                            !_taskOverdueOnly,
                         onSelected: (sel) {
                           if (!sel) return;
                           setState(() {
                             _reportStatusFilter = 'submitted';
+                            _taskOverdueOnly = false;
                           });
                           setStateSheet(() {});
                         },
                       ),
                       ChoiceChip(
                         label: const Text('Reviewed'),
-                        selected: _reportStatusFilter == 'reviewed',
+                        selected:
+                            _reportStatusFilter == 'reviewed' &&
+                            !_taskOverdueOnly,
                         onSelected: (sel) {
                           if (!sel) return;
                           setState(() {
                             _reportStatusFilter = 'reviewed';
+                            _taskOverdueOnly = false;
                           });
                           setStateSheet(() {});
                         },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Overdue only'),
+                        selected: _taskOverdueOnly,
+                        onSelected: _showArchivedReports
+                            ? null
+                            : (sel) {
+                                setState(() {
+                                  _taskOverdueOnly = sel;
+                                  if (sel) {
+                                    _reportStatusFilter = 'All';
+                                  }
+                                });
+                                setStateSheet(() {});
+                              },
                       ),
                     ],
                   ),
@@ -547,7 +801,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         const Expanded(
                           child: Text(
                             'Filters',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                         TextButton(
@@ -560,6 +817,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               _attendanceStatusFilter = 'All';
                               _reportStatusFilter = 'All';
                               _taskDifficultyFilter = 'All';
+                              _taskOverdueOnly = false;
                             });
                             setStateSheet(() {});
                             _fetchAttendanceRecords();
@@ -570,7 +828,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    if (_viewMode == 'attendance') buildAttendanceFilters() else buildTaskFilters(),
+                    if (_viewMode == 'attendance')
+                      buildAttendanceFilters()
+                    else
+                      buildTaskFilters(),
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -599,10 +860,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     if (widget.employeeId != null) {
       _filterEmployeeId = widget.employeeId;
     }
-    _loadLocallyArchivedAttendanceIds();
     _fetchGeofences();
     _fetchAttendanceRecords();
     _fetchTaskReports();
+    _fetchOverdueTasks();
     _initSocket();
   }
 
@@ -610,7 +871,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   void dispose() {
     _socket.disconnect();
     _debounce?.cancel();
+    _realtimeRefreshDebounce?.cancel();
     super.dispose();
+  }
+
+  void _scheduleRealtimeRefresh({bool includeOverdue = true}) {
+    _realtimeRefreshDebounce?.cancel();
+    _realtimeRefreshDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      _fetchTaskReports();
+      if (includeOverdue) {
+        _fetchOverdueTasks();
+      }
+    });
   }
 
   Future<void> _initSocket() async {
@@ -678,6 +951,34 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       _fetchTaskReports();
     });
 
+    _socket.on('reportArchived', (_) {
+      _fetchTaskReports();
+    });
+
+    _socket.on('reportRestored', (_) {
+      _fetchTaskReports();
+    });
+
+    _socket.on('taskAssignedToMultiple', (data) {
+      debugPrint('Task assigned to multiple: $data');
+      _scheduleRealtimeRefresh();
+    });
+
+    _socket.on('taskUnassigned', (data) {
+      debugPrint('Task unassigned: $data');
+      _scheduleRealtimeRefresh();
+    });
+
+    _socket.on('userTaskArchived', (data) {
+      debugPrint('User task archived: $data');
+      _scheduleRealtimeRefresh();
+    });
+
+    _socket.on('userTaskRestored', (data) {
+      debugPrint('User task restored: $data');
+      _scheduleRealtimeRefresh();
+    });
+
     _socket.on('taskCompleted', (data) {
       debugPrint('Task completed event: $data');
       _fetchAttendanceRecords();
@@ -705,11 +1006,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       final records = await _attendanceService.getAttendanceRecords(
         employeeId: _filterEmployeeId,
       );
-      final adapted = records.map(_attendanceToReportModel).toList();
-      final current = adapted.where((r) => !_locallyArchivedAttendanceIds.contains(r.id)).toList();
-      final archived = adapted.where((r) => _locallyArchivedAttendanceIds.contains(r.id)).toList();
+      final current = records.where((r) => !r.isArchived).toList()
+        ..sort((a, b) => b.checkInTime.compareTo(a.checkInTime));
+      final archived = records.where((r) => r.isArchived).toList()
+        ..sort((a, b) => b.checkInTime.compareTo(a.checkInTime));
 
-      debugPrint('✓ Fetched ${adapted.length} attendance records (current=${current.length}, archived=${archived.length})');
+      debugPrint(
+        '✓ Fetched ${records.length} attendance records (current=${current.length}, archived=${archived.length})',
+      );
       setState(() {
         _attendanceRecords = current;
         _archivedAttendanceRecords = archived;
@@ -723,6 +1027,27 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     }
   }
 
+  Future<void> _fetchOverdueTasks() async {
+    setState(() {
+      _isLoadingOverdueTasks = true;
+      _overdueTasksError = null;
+    });
+    try {
+      final tasks = await _taskService.getOverdueTasks();
+      setState(() {
+        _overdueTasks = tasks;
+        _isLoadingOverdueTasks = false;
+      });
+    } catch (e) {
+      debugPrint('Error fetching overdue tasks: $e');
+      setState(() {
+        _isLoadingOverdueTasks = false;
+        _overdueTasksError = 'Failed to load overdue tasks: $e';
+        _overdueTasks = [];
+      });
+    }
+  }
+
   Future<void> _fetchTaskReports() async {
     setState(() {
       _isLoadingTaskReports = true;
@@ -731,12 +1056,24 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     try {
       if (_showArchivedReports) {
         final reports = await ReportService().getArchivedReports(type: 'task');
+        final overdueCount = reports
+            .where((r) => r.taskIsOverdue == true)
+            .length;
+        debugPrint(
+          'Task reports (archived): total=${reports.length}, overdue=$overdueCount',
+        );
         setState(() {
           _archivedTaskReports = reports;
           _isLoadingTaskReports = false;
         });
       } else {
         final reports = await ReportService().getCurrentReports(type: 'task');
+        final overdueCount = reports
+            .where((r) => r.taskIsOverdue == true)
+            .length;
+        debugPrint(
+          'Task reports (current): total=${reports.length}, overdue=$overdueCount',
+        );
         setState(() {
           _taskReports = reports;
           _isLoadingTaskReports = false;
@@ -765,8 +1102,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           : null;
     }
 
-    // Filter by report status
-    if (_reportStatusFilter != 'All') {
+    // Filter by report status (only when not in overdue-only mode)
+    if (_reportStatusFilter != 'All' && !_taskOverdueOnly) {
       filtered = filtered
           .where(
             (r) => r.status.toLowerCase() == _reportStatusFilter.toLowerCase(),
@@ -782,46 +1119,47 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           .toList();
     }
 
-    return filtered;
-  }
-
-  /// Get count of employees with no check-in/out records
-  /// This identifies employees who should have checked in but didn't
-  int _getNoCheckInOutCount() {
-    // Group records by employee ID to find those with incomplete check-in/out
-    final Map<String, List<ReportModel>> recordsByEmployee = {};
-
-    for (final record in _attendanceRecords) {
-      final employeeId = record.employeeId;
-      recordsByEmployee.putIfAbsent(employeeId, () => []);
-      recordsByEmployee[employeeId]!.add(record);
+    // Filter by overdue-only, based on underlying task state
+    if (_taskOverdueOnly) {
+      filtered = filtered.where((r) => r.taskIsOverdue == true).toList();
     }
 
-    // Count employees who only have check-in but no check-out (incomplete day)
-    int incompleteCount = 0;
-    for (final records in recordsByEmployee.values) {
-      final hasCheckIn = records.any((r) => r.content.toLowerCase().contains('check in'));
-      final hasCheckOut = records.any((r) => r.content.toLowerCase().contains('check out'));
-
-      // If employee has check-in but no check-out, they didn't complete their day
-      if (hasCheckIn && !hasCheckOut) {
-        incompleteCount++;
-      }
+    final list = filtered.toList();
+    if (_showArchivedReports) {
+      // Archived: keep a predictable sort (newest first)
+      list.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+    } else {
+      // Current: show overdue items first, then newest first
+      list.sort((a, b) {
+        final ao = a.taskIsOverdue == true ? 1 : 0;
+        final bo = b.taskIsOverdue == true ? 1 : 0;
+        if (ao != bo) {
+          return bo.compareTo(ao); // overdue first
+        }
+        return b.submittedAt.compareTo(a.submittedAt); // newest first
+      });
     }
 
-    return incompleteCount;
+    return list;
   }
 
-  List<ReportModel> get _filteredAttendanceRecords {
+  int _getOpenCheckInsCount() {
+    // Open session = no checkout time and not voided.
+    return _attendanceRecords
+        .where((r) => r.checkOutTime == null && !r.isVoid)
+        .length;
+  }
+
+  List<AttendanceRecord> get _filteredAttendanceRecords {
     final base = _showArchivedAttendance
         ? _archivedAttendanceRecords
         : _attendanceRecords;
 
-    Iterable<ReportModel> result = base;
+    Iterable<AttendanceRecord> result = base;
 
     if (_attendanceStartDate != null || _attendanceEndDate != null) {
       result = result.where((record) {
-        final dt = record.submittedAt.toLocal();
+        final dt = record.checkInTime.toLocal();
 
         if (_attendanceStartDate != null &&
             dt.isBefore(_attendanceStartDate!)) {
@@ -837,13 +1175,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     return result.where((record) {
       switch (_attendanceStatusFilter) {
         case 'Normal':
-          return !record.content.toLowerCase().contains('void');
+          return !record.isVoid;
         case 'Void':
-          return record.content.toLowerCase().contains('void') && 
-                 !record.content.toLowerCase().contains('auto');
+          return record.isVoid && !record.autoCheckout;
         case 'Auto':
-          return record.content.toLowerCase().contains('void') && 
-                 record.content.toLowerCase().contains('auto');
+          return record.isVoid && record.autoCheckout;
         default:
           return true;
       }
@@ -949,9 +1285,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             if (_filterEmployeeId != null)
               Text(
                 'Filtered: ${_filterEmployeeName ?? _filterEmployeeId}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.normal,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onPrimary.withValues(alpha: 0.85),
                 ),
               ),
           ],
@@ -1027,7 +1364,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     height: 8,
                                     child: DecoratedBox(
                                       decoration: BoxDecoration(
-                                        color: Theme.of(context).colorScheme.error,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
                                         shape: BoxShape.circle,
                                       ),
                                     ),
@@ -1050,6 +1389,54 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
                     const SizedBox(height: 12),
 
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Current'),
+                          selected: _viewMode == 'attendance'
+                              ? !_showArchivedAttendance
+                              : !_showArchivedReports,
+                          onSelected: (sel) async {
+                            if (!sel) return;
+                            if (_viewMode == 'attendance') {
+                              setState(() {
+                                _showArchivedAttendance = false;
+                              });
+                              await _fetchAttendanceRecords();
+                              return;
+                            }
+                            setState(() {
+                              _showArchivedReports = false;
+                            });
+                            await _fetchTaskReports();
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text('Archived'),
+                          selected: _viewMode == 'attendance'
+                              ? _showArchivedAttendance
+                              : _showArchivedReports,
+                          onSelected: (sel) async {
+                            if (!sel) return;
+                            if (_viewMode == 'attendance') {
+                              setState(() {
+                                _showArchivedAttendance = true;
+                              });
+                              await _fetchAttendanceRecords();
+                              return;
+                            }
+                            setState(() {
+                              _showArchivedReports = true;
+                              _taskOverdueOnly = false;
+                            });
+                            await _fetchTaskReports();
+                          },
+                        ),
+                      ],
+                    ),
+
                     Row(
                       children: [
                         FilledButton.icon(
@@ -1066,10 +1453,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.7),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
                             ),
                           ),
                         ),
@@ -1091,28 +1477,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              ChoiceChip(
-                                label: const Text('Current'),
-                                selected: !_showArchivedAttendance,
-                                onSelected: (sel) {
-                                  if (!sel) return;
-                                  setState(() {
-                                    _showArchivedAttendance = false;
-                                  });
-                                  _fetchAttendanceRecords();
-                                },
-                              ),
-                              ChoiceChip(
-                                label: const Text('Archived'),
-                                selected: _showArchivedAttendance,
-                                onSelected: (sel) {
-                                  if (!sel) return;
-                                  setState(() {
-                                    _showArchivedAttendance = true;
-                                  });
-                                  _fetchAttendanceRecords();
-                                },
-                              ),
                               ChoiceChip(
                                 label: const Text('All time'),
                                 selected: _attendanceDateFilter == 'all',
@@ -1153,28 +1517,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             runSpacing: 8,
                             children: [
                               ChoiceChip(
-                                label: const Text('Current'),
-                                selected: !_showArchivedReports,
-                                onSelected: (sel) async {
-                                  if (!sel) return;
-                                  setState(() {
-                                    _showArchivedReports = false;
-                                  });
-                                  await _fetchTaskReports();
-                                },
-                              ),
-                              ChoiceChip(
-                                label: const Text('Archived'),
-                                selected: _showArchivedReports,
-                                onSelected: (sel) async {
-                                  if (!sel) return;
-                                  setState(() {
-                                    _showArchivedReports = true;
-                                  });
-                                  await _fetchTaskReports();
-                                },
-                              ),
-                              ChoiceChip(
                                 label: const Text('Submitted'),
                                 selected: _reportStatusFilter == 'submitted',
                                 onSelected: (sel) {
@@ -1206,7 +1548,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         children: [
                           Expanded(
                             child: _buildStatCard(
-                              title: 'Total Records',
+                              title: 'Sessions',
                               value: _attendanceRecords.length.toString(),
                               icon: Icons.list_alt,
                               color: brandColor,
@@ -1215,10 +1557,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: _buildStatCard(
-                              title: 'No Check-in/out',
-                              value: _getNoCheckInOutCount().toString(),
-                              icon: Icons.warning_amber,
-                              color: Theme.of(context).colorScheme.tertiary,
+                              title: 'Open check-ins',
+                              value: _getOpenCheckInsCount().toString(),
+                              icon: Icons.login,
+                              color: Colors.teal,
                             ),
                           ),
                         ],
@@ -1228,9 +1570,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
                     if (_viewMode == 'attendance')
                       (!_showArchivedAttendance
-                                  ? _attendanceRecords.isEmpty
-                                  : _archivedAttendanceRecords.isEmpty)
-                          ? const Center(child: Text('No attendance records'))
+                              ? _attendanceRecords.isEmpty
+                              : _archivedAttendanceRecords.isEmpty)
+                          ? Center(
+                              child: Text(
+                                _showArchivedAttendance
+                                    ? 'No archived attendance records'
+                                    : 'No attendance records',
+                              ),
+                            )
                           : Card(
                               elevation: 2,
                               child: Padding(
@@ -1244,29 +1592,29 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                           DataColumn(label: Text('Employee')),
                                           DataColumn(label: Text('Location')),
                                           DataColumn(label: Text('Date')),
-                                          DataColumn(label: Text('Time')),
+                                          DataColumn(label: Text('In')),
+                                          DataColumn(label: Text('Out')),
                                           DataColumn(label: Text('Status')),
                                           DataColumn(label: Text('Actions')),
                                         ],
                                         rows: _filteredAttendanceRecords.map((
                                           record,
                                         ) {
-                                          final time = formatTime(
-                                            record.submittedAt,
-                                          );
                                           String status;
                                           Color? chipBg;
                                           Color? chipFg;
 
-                                          if (record.content.toLowerCase().contains('void') &&
-                                              record.content.toLowerCase().contains('auto')) {
+                                          if (record.isVoid &&
+                                              record.autoCheckout) {
                                             status = 'Auto Checkout (Void)';
                                             chipBg = Theme.of(context)
                                                 .colorScheme
                                                 .error
                                                 .withValues(alpha: 0.12);
-                                            chipFg = Theme.of(context).colorScheme.error;
-                                          } else if (record.content.toLowerCase().contains('void')) {
+                                            chipFg = Theme.of(
+                                              context,
+                                            ).colorScheme.error;
+                                          } else if (record.isVoid) {
                                             status = 'Void';
                                             chipBg = Theme.of(context)
                                                 .colorScheme
@@ -1276,25 +1624,37 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 .colorScheme
                                                 .onSurface
                                                 .withValues(alpha: 0.85);
-                                          } else if (record.content.toLowerCase().contains('check in')) {
-                                            status = 'Checked In';
+                                          } else if (record.checkOutTime ==
+                                              null) {
+                                            status = 'Open';
                                             chipBg = Theme.of(context)
                                                 .colorScheme
                                                 .primary
                                                 .withValues(alpha: 0.12);
-                                            chipFg = Theme.of(context).colorScheme.primary;
+                                            chipFg = Theme.of(
+                                              context,
+                                            ).colorScheme.primary;
                                           } else {
-                                            status = 'Checked Out';
+                                            status = 'Completed';
                                             chipBg = Theme.of(context)
                                                 .colorScheme
                                                 .secondary
                                                 .withValues(alpha: 0.12);
-                                            chipFg = Theme.of(context).colorScheme.secondary;
+                                            chipFg = Theme.of(
+                                              context,
+                                            ).colorScheme.secondary;
                                           }
-                                          final date = record.submittedAt
+                                          final date = record.checkInTime
                                               .toLocal()
                                               .toString()
                                               .split(' ')[0];
+
+                                          final timeIn = formatTime(
+                                            record.checkInTime,
+                                          );
+                                          final timeOut = formatTime(
+                                            record.checkOutTime,
+                                          );
 
                                           return DataRow(
                                             cells: [
@@ -1310,7 +1670,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 ),
                                               ),
                                               DataCell(Text(date)),
-                                              DataCell(Text(time)),
+                                              DataCell(Text(timeIn)),
+                                              DataCell(Text(timeOut)),
                                               DataCell(
                                                 Chip(
                                                   label: Text(status),
@@ -1321,44 +1682,72 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 ),
                                               ),
                                               DataCell(
-                                                Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    IconButton(
-                                                      icon: const Icon(Icons.history),
-                                                      tooltip: 'View history for this employee',
-                                                      onPressed: () {
-                                                        final employeeId = record.employeeId;
+                                                PopupMenuButton<String>(
+                                                  tooltip: 'Actions',
+                                                  onSelected: (value) async {
+                                                    switch (value) {
+                                                      case 'view':
+                                                        _showAttendanceDetails(
+                                                          record,
+                                                        );
+                                                        return;
+                                                      case 'history':
                                                         Navigator.push(
                                                           context,
                                                           MaterialPageRoute(
                                                             builder: (context) =>
                                                                 AdminEmployeeHistoryScreen(
-                                                              employeeId: employeeId,
-                                                              employeeName: record.employeeName ??
-                                                                  'Unknown',
-                                                            ),
+                                                                  employeeId:
+                                                                      record
+                                                                          .userId,
+                                                                  employeeName:
+                                                                      record
+                                                                          .employeeName ??
+                                                                      'Unknown',
+                                                                ),
                                                           ),
                                                         );
-                                                      },
-                                                    ),
-                                                    IconButton(
-                                                      icon: Icon(
-                                                        _showArchivedAttendance
-                                                            ? Icons.unarchive
-                                                            : Icons.archive,
-                                                      ),
-                                                      tooltip: _showArchivedAttendance
-                                                          ? 'Restore (remove from archive)'
-                                                          : 'Archive (hide from current)',
-                                                      onPressed: () async {
-                                                        await _setAttendanceArchivedLocal(
-                                                          record.id,
-                                                          !_showArchivedAttendance,
+                                                        return;
+                                                      case 'archive':
+                                                        await _toggleArchiveAttendanceRecord(
+                                                          record,
                                                         );
-                                                      },
-                                                    ),
-                                                  ],
+                                                        return;
+                                                      case 'delete':
+                                                        await _confirmAndDeleteAttendanceRecord(
+                                                          record,
+                                                        );
+                                                        return;
+                                                    }
+                                                  },
+                                                  itemBuilder: (ctx) =>
+                                                      <PopupMenuEntry<String>>[
+                                                        const PopupMenuItem(
+                                                          value: 'view',
+                                                          child: Text(
+                                                            'View details',
+                                                          ),
+                                                        ),
+                                                        const PopupMenuItem(
+                                                          value: 'history',
+                                                          child: Text(
+                                                            'View history',
+                                                          ),
+                                                        ),
+                                                        PopupMenuItem(
+                                                          value: 'archive',
+                                                          child: Text(
+                                                            _showArchivedAttendance
+                                                                ? 'Restore'
+                                                                : 'Archive',
+                                                          ),
+                                                        ),
+                                                        const PopupMenuDivider(),
+                                                        const PopupMenuItem(
+                                                          value: 'delete',
+                                                          child: Text('Delete'),
+                                                        ),
+                                                      ],
                                                 ),
                                               ),
                                             ],
@@ -1407,12 +1796,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             const SizedBox(height: 4),
             Text(
               title,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.75),
               ),
             ),
           ],
@@ -1452,7 +1839,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                      color: Theme.of(
+                        context,
+                      ).dividerColor.withValues(alpha: 0.35),
                     ),
                   ),
                   child: SelectableText(
@@ -1492,7 +1881,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                              color: Theme.of(
+                                context,
+                              ).dividerColor.withValues(alpha: 0.35),
                             ),
                           ),
                           child: Row(
@@ -1501,10 +1892,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                 isImage ? Icons.image : Icons.insert_drive_file,
                                 color: isImage
                                     ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.8),
+                                    : Theme.of(context).colorScheme.onSurface
+                                          .withValues(alpha: 0.8),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
@@ -1521,13 +1910,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     const SizedBox(height: 2),
                                     Text(
                                       url,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withValues(alpha: 0.7),
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.75),
+                                          ),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
                                     ),
@@ -1538,16 +1929,20 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               if (isImage)
                                 IconButton(
                                   tooltip: 'Preview',
-                                  onPressed: () => _showImagePreview(filename, url),
+                                  onPressed: () =>
+                                      _showImagePreview(filename, url),
                                   icon: const Icon(Icons.visibility),
                                 ),
                               IconButton(
                                 tooltip: 'Copy link',
                                 onPressed: () async {
-                                  await Clipboard.setData(ClipboardData(text: url));
+                                  await Clipboard.setData(
+                                    ClipboardData(text: url),
+                                  );
                                   if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Link copied')),
+                                  AppWidgets.showSuccessSnackbar(
+                                    context,
+                                    'Link copied',
                                   );
                                 },
                                 icon: const Icon(Icons.copy),
@@ -1566,6 +1961,128 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ),
               ],
             ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReportsForTask(Task task) {
+    final reports = _filteredTaskReports()
+        .where((r) => r.taskId == task.id)
+        .toList();
+
+    if (reports.isEmpty) {
+      AppWidgets.showWarningSnackbar(context, 'No reports yet for this task');
+      return;
+    }
+
+    if (reports.length == 1) {
+      _showReportDetails(reports.first);
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Reports for "${task.title}"'),
+        content: SizedBox(
+          width: 520,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: reports.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final r = reports[i];
+              final submitted = DateFormat(
+                'yyyy-MM-dd HH:mm',
+              ).format(r.submittedAt.toLocal());
+              return ListTile(
+                title: Text(
+                  r.employeeName ?? r.employeeId,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  submitted,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showReportDetails(r);
+                },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: _showArchivedReports ? 'Restore' : 'Archive',
+                      icon: Icon(
+                        _showArchivedReports
+                            ? Icons.unarchive_outlined
+                            : Icons.archive_outlined,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _toggleArchiveReport(r);
+                      },
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'Actions',
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'view':
+                            Navigator.pop(ctx);
+                            _showReportDetails(r);
+                            return;
+                          case 'history':
+                            Navigator.pop(ctx);
+                            _openEmployeeHistory(
+                              r.employeeId,
+                              r.employeeName ?? 'Unknown',
+                            );
+                            return;
+                          case 'review':
+                            Navigator.pop(ctx);
+                            _markReportReviewed(r);
+                            return;
+                          case 'delete':
+                            Navigator.pop(ctx);
+                            _confirmAndDeleteReport(r);
+                            return;
+                        }
+                      },
+                      itemBuilder: (ctx) => <PopupMenuEntry<String>>[
+                        const PopupMenuItem(
+                          value: 'view',
+                          child: Text('View details'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'history',
+                          child: Text('View history'),
+                        ),
+                        if (r.status.toLowerCase() != 'reviewed')
+                          const PopupMenuItem(
+                            value: 'review',
+                            child: Text('Mark as reviewed'),
+                          ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
         actions: [
@@ -1657,14 +2174,56 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       await ReportService().deleteReport(r.id);
       await _fetchTaskReports();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Report deleted')),
-        );
+        AppWidgets.showSuccessSnackbar(context, 'Report deleted');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to delete report',
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmAndDeleteTask(Task task) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Task'),
+        content: Text(
+          'Are you sure you want to delete the task "${task.title}"? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      await _taskService.deleteTask(task.id);
+      await _fetchOverdueTasks();
+      await _fetchTaskReports();
+      if (mounted) {
+        AppWidgets.showSuccessSnackbar(context, 'Task deleted');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete task'),
         );
       }
     }
@@ -1675,14 +2234,16 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       await ReportService().updateReportStatus(r.id, 'reviewed');
       await _fetchTaskReports();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Marked as reviewed')),
-        );
+        AppWidgets.showSuccessSnackbar(context, 'Marked as reviewed');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to mark report as reviewed',
+          ),
         );
       }
     }
@@ -1693,30 +2254,33 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       if (_showArchivedReports) {
         await ReportService().restoreReport(r.id);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Report restored')),
-          );
+          AppWidgets.showSuccessSnackbar(context, 'Report restored');
         }
       } else {
         await ReportService().archiveReport(r.id);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Report archived')),
-          );
+          AppWidgets.showSuccessSnackbar(context, 'Report archived');
         }
       }
       await _fetchTaskReports();
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('Error toggling archive for report ${r.id}: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to update report',
+          ),
         );
       }
     }
   }
 
   Widget _buildTaskReportCard(ReportModel r) {
-    final submitted = DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal());
+    final submitted = DateFormat(
+      'yyyy-MM-dd HH:mm',
+    ).format(r.submittedAt.toLocal());
     final attachmentCount = r.attachments.length;
 
     return Card(
@@ -1755,13 +2319,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         const SizedBox(height: 2),
                         Text(
                           r.employeeName ?? r.employeeId,
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.7),
-                            fontSize: 12,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.75),
+                              ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1769,6 +2332,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: _showArchivedReports ? 'Restore' : 'Archive',
+                    icon: Icon(
+                      _showArchivedReports
+                          ? Icons.unarchive_outlined
+                          : Icons.archive_outlined,
+                    ),
+                    onPressed: () => _toggleArchiveReport(r),
+                  ),
                   PopupMenuButton<String>(
                     tooltip: 'Actions',
                     onSelected: (value) {
@@ -1776,11 +2348,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         case 'view':
                           _showReportDetails(r);
                           return;
+                        case 'history':
+                          _openEmployeeHistory(
+                            r.employeeId,
+                            r.employeeName ?? 'Unknown',
+                          );
+                          return;
                         case 'review':
                           _markReportReviewed(r);
-                          return;
-                        case 'archive':
-                          _toggleArchiveReport(r);
                           return;
                         case 'delete':
                           _confirmAndDeleteReport(r);
@@ -1792,15 +2367,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         value: 'view',
                         child: Text('View details'),
                       ),
+                      const PopupMenuItem(
+                        value: 'history',
+                        child: Text('View history'),
+                      ),
                       if (r.status.toLowerCase() != 'reviewed')
                         const PopupMenuItem(
                           value: 'review',
                           child: Text('Mark as reviewed'),
                         ),
-                      PopupMenuItem(
-                        value: 'archive',
-                        child: Text(_showArchivedReports ? 'Restore' : 'Archive'),
-                      ),
                       const PopupMenuDivider(),
                       const PopupMenuItem(
                         value: 'delete',
@@ -1817,15 +2392,27 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _buildReportStatusChip(r.status),
+                  if (r.taskIsOverdue)
+                    Chip(
+                      label: const Text('Overdue'),
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.error.withValues(alpha: 0.12),
+                      labelStyle: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
                   if ((r.taskDifficulty ?? '').isNotEmpty)
                     Chip(
                       label: Text(r.taskDifficulty!),
                       backgroundColor: Theme.of(context).colorScheme.surface,
                       labelStyle: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.85),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.85),
                       ),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
@@ -1834,10 +2421,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     label: Text(submitted),
                     backgroundColor: Theme.of(context).colorScheme.surface,
                     labelStyle: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.85),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.85),
                     ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
@@ -1846,10 +2432,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     label: Text('Attachments: $attachmentCount'),
                     backgroundColor: Theme.of(context).colorScheme.surface,
                     labelStyle: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.85),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.85),
                     ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
@@ -1901,10 +2486,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       );
     }
     final reports = _showArchivedReports ? _archivedTaskReports : _taskReports;
-    if (reports.isEmpty) {
+    if (reports.isEmpty && !_taskOverdueOnly) {
       return Center(
         child: Text(
-          _showArchivedReports ? 'No archived reports' : 'No task reports',
+          _showArchivedReports ? 'No archived task reports' : 'No task reports',
         ),
       );
     }
@@ -1915,34 +2500,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                ChoiceChip(
-                  label: const Text('Current'),
-                  selected: !_showArchivedReports,
-                  onSelected: (sel) async {
-                    if (!sel) return;
-                    setState(() {
-                      _showArchivedReports = false;
-                    });
-                    await _fetchTaskReports();
-                  },
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Archived'),
-                  selected: _showArchivedReports,
-                  onSelected: (sel) async {
-                    if (!sel) return;
-                    setState(() {
-                      _showArchivedReports = true;
-                    });
-                    await _fetchTaskReports();
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -1996,46 +2553,79 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               children: [
                 ChoiceChip(
                   label: const Text('All'),
-                  selected: _reportStatusFilter == 'All',
+                  selected: _reportStatusFilter == 'All' && !_taskOverdueOnly,
                   onSelected: (sel) {
                     if (!sel) return;
                     setState(() {
                       _reportStatusFilter = 'All';
+                      _taskOverdueOnly = false;
                     });
                   },
                 ),
                 ChoiceChip(
                   label: const Text('Submitted'),
-                  selected: _reportStatusFilter == 'submitted',
+                  selected:
+                      _reportStatusFilter == 'submitted' && !_taskOverdueOnly,
                   onSelected: (sel) {
                     if (!sel) return;
                     setState(() {
                       _reportStatusFilter = 'submitted';
+                      _taskOverdueOnly = false;
                     });
                   },
                 ),
                 ChoiceChip(
                   label: const Text('Reviewed'),
-                  selected: _reportStatusFilter == 'reviewed',
+                  selected:
+                      _reportStatusFilter == 'reviewed' && !_taskOverdueOnly,
                   onSelected: (sel) {
                     if (!sel) return;
                     setState(() {
                       _reportStatusFilter = 'reviewed';
+                      _taskOverdueOnly = false;
                     });
                   },
+                ),
+                ChoiceChip(
+                  label: const Text('Overdue only'),
+                  selected: _taskOverdueOnly,
+                  onSelected: _showArchivedReports
+                      ? null
+                      : (sel) {
+                          setState(() {
+                            _taskOverdueOnly = sel;
+                            if (sel) {
+                              _reportStatusFilter = 'All';
+                            }
+                          });
+                          if (sel) {
+                            _fetchOverdueTasks();
+                          }
+                        },
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _filteredTaskReports().length,
-              itemBuilder: (context, index) {
-                final r = _filteredTaskReports()[index];
-                return _buildTaskReportCard(r);
-              },
-            ),
+            if (_taskOverdueOnly && !_showArchivedReports)
+              _buildOverdueTasksSection(),
+            if (!_taskOverdueOnly && reports.isEmpty)
+              Center(
+                child: Text(
+                  _showArchivedReports
+                      ? 'No archived task reports'
+                      : 'No task reports',
+                ),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _filteredTaskReports().length,
+                itemBuilder: (context, index) {
+                  final r = _filteredTaskReports()[index];
+                  return _buildTaskReportCard(r);
+                },
+              ),
           ],
         ),
       ),
@@ -2045,15 +2635,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Future<void> _exportReport() async {
     // Show export preview with filters applied
     if (_viewMode == 'attendance') {
-      final recordsToExport = _filteredAttendanceRecords;
+      final recordsToExport = _filteredAttendanceRecords
+          .expand(_attendanceSessionToReportModels)
+          .toList();
 
       if (recordsToExport.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No attendance records to export for selected filters',
-            ),
-          ),
+        AppWidgets.showWarningSnackbar(
+          context,
+          'No attendance records to export for selected filters',
         );
         return;
       }
@@ -2087,16 +2676,18 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       );
     } else {
       if (_taskReports.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No task reports to export')),
-        );
+        AppWidgets.showWarningSnackbar(context, 'No task reports to export');
         return;
       }
+
+      final attendanceForContext = _filteredAttendanceRecords
+          .expand(_attendanceSessionToReportModels)
+          .toList();
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => ReportExportPreviewScreen(
-            records: _attendanceRecords,
+            records: attendanceForContext,
             reportType: _viewMode,
             taskReports: _filteredTaskReports(),
             startDate: _filterDate != 'All Dates'

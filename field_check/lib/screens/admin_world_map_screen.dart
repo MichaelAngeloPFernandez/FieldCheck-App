@@ -175,7 +175,10 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
       _selectedUserTasks = const [];
     });
     try {
-      final tasks = await _taskService.fetchAssignedTasks(userId);
+      final tasks = await _taskService.fetchAssignedTasks(
+        userId,
+        archived: false,
+      );
       if (!mounted) return;
       setState(() {
         _selectedUserTasks = tasks;
@@ -413,10 +416,10 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
             _availability.isEmpty
                 ? 'Workload data not available for online employees.'
                 : _buildWorkloadSummary(),
-            style: TextStyle(
-              fontSize: 12,
-              color:
-                  Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.75),
             ),
           ),
         const SizedBox(height: 8),
@@ -558,19 +561,21 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
         const SizedBox(height: 4),
         Text(
           user.email,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.75),
           ),
         ),
         if (info != null) ...[
           const SizedBox(height: 4),
           Text(
             'Workload: ${info.workloadStatus} · Active: ${info.activeTasksCount}, Overdue: ${info.overdueTasksCount}',
-            style: TextStyle(
-              fontSize: 12,
-              color:
-                  Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

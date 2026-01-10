@@ -285,6 +285,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _buildRecordTile(AttendanceRecord record) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     final dtIn = record.checkInTime.toLocal();
     final dateStr = DateFormat('yyyy-MM-dd').format(dtIn);
     final timeInStr = TimeOfDay.fromDateTime(dtIn).format(context);
@@ -301,8 +302,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       chipBg = Colors.red.shade100;
       chipFg = Colors.red.shade900;
     } else if (record.isVoid) {
-      chipBg = Colors.grey.shade300;
-      chipFg = Colors.grey.shade900;
+      chipBg = onSurface.withValues(alpha: 0.1);
+      chipFg = onSurface.withValues(alpha: 0.85);
     } else if (isCompleted) {
       chipBg = Colors.blue.shade100;
       chipFg = Colors.blue.shade900;
@@ -327,7 +328,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
               child: Text(
                 typeLabel,
-                style: TextStyle(color: chipFg, fontSize: 12),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: chipFg,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
@@ -439,15 +443,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.orange.shade200),
                   ),
-                  child: const Row(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: Colors.orange),
-                      SizedBox(width: 8),
+                      const Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Note: Entries marked as VOID or Auto checkout were either cancelled by an admin or automatically checked out when your device was offline for too long. These entries may not be counted as normal attendance.',
-                          style: TextStyle(fontSize: 12, color: Colors.black87),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.85),
+                              ),
                         ),
                       ),
                     ],

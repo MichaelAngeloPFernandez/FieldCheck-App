@@ -90,6 +90,8 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
       return const SizedBox.shrink();
     }
 
+    final theme = Theme.of(context);
+
     final timerText = CheckInTimerService.formatDuration(_elapsedTime);
     const Color timerColor = Colors.green;
 
@@ -110,9 +112,12 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
                 children: [
                   Icon(Icons.timer, color: timerColor, size: 20),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     'Time Since Check-In',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: timerColor,
+                    ),
                   ),
                 ],
               ),
@@ -128,9 +133,12 @@ class _CheckInTimerWidgetState extends State<CheckInTimerWidget> {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Elapsed time since you checked in',
-            style: TextStyle(fontSize: 10, color: timerColor),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: timerColor,
+              fontWeight: FontWeight.w600,
+            ),
             textAlign: TextAlign.center,
           ),
         ],

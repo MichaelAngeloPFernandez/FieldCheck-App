@@ -72,9 +72,18 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
                     controller: _tabController,
                     isScrollable: true,
                     tabs: const [
-                      Tab(text: "Today's Report", icon: Icon(Icons.calendar_today)),
-                      Tab(text: 'Weekly Report', icon: Icon(Icons.calendar_view_week)),
-                      Tab(text: 'Monthly Report', icon: Icon(Icons.calendar_view_month)),
+                      Tab(
+                        text: "Today's Report",
+                        icon: Icon(Icons.calendar_today),
+                      ),
+                      Tab(
+                        text: 'Weekly Report',
+                        icon: Icon(Icons.calendar_view_week),
+                      ),
+                      Tab(
+                        text: 'Monthly Report',
+                        icon: Icon(Icons.calendar_view_month),
+                      ),
                     ],
                   ),
                 ),
@@ -188,7 +197,9 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
           const SizedBox(height: 8),
           Text(
             label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
             textAlign: TextAlign.center,
           ),
         ],
@@ -262,7 +273,11 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
                 decoration: BoxDecoration(
                   color: isToday ? Colors.blue.withValues(alpha: 0.2) : null,
                   border: Border.all(
-                    color: isToday ? Colors.blue : Colors.grey.shade300,
+                    color: isToday
+                        ? Colors.blue
+                        : Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.15),
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -276,7 +291,9 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
                           fontWeight: isToday
                               ? FontWeight.bold
                               : FontWeight.normal,
-                          color: isToday ? Colors.blue : Colors.black,
+                          color: isToday
+                              ? Colors.blue
+                              : Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       if (isToday)
@@ -367,7 +384,11 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
                   const SizedBox(height: 4),
                   Text(
                     'Tasks: ${dateStr?.totalTasks ?? 0}',
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.75),
+                    ),
                   ),
                 ],
               ),
@@ -501,7 +522,11 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
             const SizedBox(height: 4),
             Text(
               label,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
               textAlign: TextAlign.center,
             ),
           ],

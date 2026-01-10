@@ -1,10 +1,12 @@
 // ignore_for_file: use_build_context_synchronously, library_prefixes, unnecessary_null_aware_operator, unnecessary_null_comparison, unnecessary_non_null_assertion
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/availability_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/models/user_model.dart';
+import 'package:field_check/services/settings_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 
@@ -23,7 +25,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   List<Task> _tasks = [];
   List<Task> _archivedTasks = [];
   bool _isLoading = true;
-  bool _showArchived = false;
+  String _tab = 'current';
   String _difficultyFilter = 'all';
   String _sortBy = 'dueDate'; // 'dueDate', 'difficulty', 'status'
   late io.Socket _socket;
@@ -33,13 +35,62 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   final Map<String, double> _employeeDifficultyWeight = {};
   final Map<String, int> _employeeOverdueCount = {};
 
-  static const int _taskLimitPerEmployee = 5;
+  static const int _taskLimitMin = 1;
+  static const int _taskLimitMax = 50;
+
+  int _taskLimitPerEmployee = 10;
+  final Map<String, Set<String>> _taskAssignmentOverrides = {};
+
+  Timer? _fetchDebounce;
+
+  int _clampTaskLimit(int value) {
+    return value.clamp(_taskLimitMin, _taskLimitMax);
+  }
+
+  String _canonicalUserId(UserModel user) {
+    if (user.id.isNotEmpty) return user.id;
+    final fallback = user.employeeId;
+    return (fallback ?? '').trim();
+  }
 
   @override
   void initState() {
     super.initState();
     _fetchTasks();
+    _loadTaskLimit();
     _initSocket();
+  }
+
+  Future<void> _loadTaskLimit() async {
+    try {
+      final raw = await SettingsService().getSetting(
+        'task.maxActivePerEmployee',
+      );
+
+      int? parsed;
+      if (raw is num) {
+        parsed = raw.toInt();
+      } else if (raw is String) {
+        parsed = int.tryParse(raw);
+      } else if (raw is Map) {
+        final m = Map<String, dynamic>.from(raw);
+        final dynamic inner = m['maxActivePerEmployee'];
+        if (inner is num) {
+          parsed = inner.toInt();
+        } else if (inner is String) {
+          parsed = int.tryParse(inner);
+        }
+      }
+
+      if (parsed != null && mounted) {
+        final normalized = _clampTaskLimit(parsed);
+        setState(() {
+          _taskLimitPerEmployee = normalized;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading task limit setting: $e');
+    }
   }
 
   Future<void> _escalateTask(Task task) async {
@@ -112,8 +163,17 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
   @override
   void dispose() {
+    _fetchDebounce?.cancel();
     _socket.disconnect();
     super.dispose();
+  }
+
+  void _scheduleFetchTasks() {
+    _fetchDebounce?.cancel();
+    _fetchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      _fetchTasks();
+    });
   }
 
   void _initSocket() {
@@ -157,17 +217,37 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
       _socket.on('newTask', (data) {
         debugPrint('New task received: $data');
-        _fetchTasks();
+        _scheduleFetchTasks();
       });
 
       _socket.on('updatedTask', (data) {
         debugPrint('Task updated: $data');
-        _fetchTasks();
+        _scheduleFetchTasks();
       });
 
       _socket.on('deletedTask', (data) {
         debugPrint('Task deleted: $data');
-        _fetchTasks();
+        _scheduleFetchTasks();
+      });
+
+      _socket.on('taskAssignedToMultiple', (data) {
+        debugPrint('Task assigned to multiple: $data');
+        _scheduleFetchTasks();
+      });
+
+      _socket.on('taskUnassigned', (data) {
+        debugPrint('Task unassigned: $data');
+        _scheduleFetchTasks();
+      });
+
+      _socket.on('userTaskArchived', (data) {
+        debugPrint('User task archived: $data');
+        _scheduleFetchTasks();
+      });
+
+      _socket.on('userTaskRestored', (data) {
+        debugPrint('User task restored: $data');
+        _scheduleFetchTasks();
       });
     });
   }
@@ -176,6 +256,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     try {
       final current = await _taskService.getCurrentTasks();
       final archived = await _taskService.getArchivedTasks();
+      if (!mounted) return;
       setState(() {
         _tasks = current;
         _archivedTasks = archived;
@@ -185,6 +266,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     } catch (e) {
       // Handle error
       debugPrint('Error fetching tasks: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -227,9 +309,14 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       // Only count non-completed tasks
       if (task.status == 'completed') continue;
 
-      for (final assignee in task.assignedToMultiple) {
-        final userId = assignee.id;
+      final Set<String> assigneeIds = <String>{
+        ...task.assignedToMultiple
+            .map(_canonicalUserId)
+            .where((id) => id.isNotEmpty),
+        ...?task.teamMembers?.where((id) => id.trim().isNotEmpty),
+      };
 
+      for (final userId in assigneeIds) {
         // Count active tasks
         _employeeActiveTaskCount[userId] =
             (_employeeActiveTaskCount[userId] ?? 0) + 1;
@@ -566,13 +653,54 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       return;
     }
 
+    final Map<String, String> assigneeIdToEmployeeModelId = {};
+    for (final e in employees) {
+      if (e.id.isNotEmpty) {
+        assigneeIdToEmployeeModelId[e.id] = e.id;
+      }
+      final empId = e.employeeId;
+      if (empId != null && empId.trim().isNotEmpty) {
+        assigneeIdToEmployeeModelId[empId] = e.id;
+      }
+    }
+
     final Map<String, _AvailabilityInfo> availability = {};
+    final Set<String> availabilityAssignedIds = <String>{};
     try {
       final nearby = await _availabilityService.getNearbyForTask(task.id);
+      assert(() {
+        if (nearby.isNotEmpty) {
+          try {
+            final first = nearby.first;
+            debugPrint(
+              'Assign dialog debug: availability first keys=${first.keys.toList()}',
+            );
+          } catch (_) {}
+        }
+        return true;
+      }());
       for (final item in nearby) {
-        final String userId = (item['userId'] ?? '') as String;
-        if (userId.isEmpty) continue;
-        availability[userId] = _AvailabilityInfo(
+        final dynamic rawId =
+            item['userId'] ?? item['employeeId'] ?? item['_id'] ?? item['id'];
+        final String idStr = (rawId ?? '').toString();
+        if (idStr.isEmpty) continue;
+        final String normalizedId = assigneeIdToEmployeeModelId[idStr] ?? idStr;
+
+        final dynamic assignedValue =
+            item['isAssigned'] ??
+            item['assigned'] ??
+            item['assignedToTask'] ??
+            item['isAssignedToTask'] ??
+            item['alreadyAssigned'] ??
+            item['hasTask'] ??
+            item['hasThisTask'];
+        final bool isAssignedFlag =
+            assignedValue == true || assignedValue == 'true';
+        if (isAssignedFlag) {
+          availabilityAssignedIds.add(normalizedId);
+        }
+
+        availability[normalizedId] = _AvailabilityInfo(
           distanceMeters: (item['distanceMeters'] is num)
               ? (item['distanceMeters'] as num).toDouble()
               : 0,
@@ -589,101 +717,251 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       debugPrint('Error fetching nearby availability: $e');
     }
 
-    final Set<String> selectedEmployeeIds = <String>{};
-    final Set<String> overrideEmployeeIds = <String>{};
-    if (task.assignedToMultiple.isNotEmpty) {
-      selectedEmployeeIds.addAll(task.assignedToMultiple.map((u) => u.id));
-    } else if (task.assignedTo != null) {
-      selectedEmployeeIds.add(task.assignedTo!.id);
+    Task serverTask = task;
+    try {
+      serverTask = await _taskService.getTaskById(task.id);
+    } catch (e) {
+      debugPrint('Error fetching task details for assignment: $e');
     }
 
+    List<String> serverAssigneeIdsFromApi = <String>[];
+    try {
+      serverAssigneeIdsFromApi = await _taskService.getAssigneeIdsForTask(
+        task.id,
+      );
+    } catch (e) {
+      debugPrint('Error fetching task assignees for assignment: $e');
+    }
+
+    assert(() {
+      final assignedIds = serverTask.assignedToMultiple
+          .map(_canonicalUserId)
+          .where((id) => id.isNotEmpty)
+          .toList();
+      debugPrint(
+        'Assign dialog debug: taskId=${task.id} assignedToMultipleIds=$assignedIds teamMembers=${serverTask.teamMembers}',
+      );
+      final sampleEmployees = employees
+          .take(5)
+          .map((e) => 'id=${e.id}, employeeId=${e.employeeId}')
+          .toList();
+      debugPrint('Assign dialog debug: sample employees: $sampleEmployees');
+      debugPrint(
+        'Assign dialog debug: assigneeIdToEmployeeModelId keys sample: ${assigneeIdToEmployeeModelId.keys.take(10).toList()}',
+      );
+      return true;
+    }());
+
+    final selectedEmployeeIds = <String>{};
+    final overrideEmployeeIds = _taskAssignmentOverrides[task.id] ?? <String>{};
+
+    if (serverAssigneeIdsFromApi.isNotEmpty) {
+      selectedEmployeeIds.addAll(
+        serverAssigneeIdsFromApi
+            .map((raw) => assigneeIdToEmployeeModelId[raw] ?? raw)
+            .where((id) => id.isNotEmpty),
+      );
+    }
+
+    final initialSelectedEmployeeIds = <String>{...selectedEmployeeIds};
+
+    assert(() {
+      if (availabilityAssignedIds.isNotEmpty) {
+        debugPrint(
+          'Assign dialog debug: availabilityAssignedIds=$availabilityAssignedIds',
+        );
+      }
+      debugPrint(
+        'Assign dialog debug: selectedEmployeeIds(initial)=${selectedEmployeeIds.toList()} (count=${selectedEmployeeIds.length})',
+      );
+      return true;
+    }());
+
+    _taskAssignmentOverrides[task.id] = overrideEmployeeIds;
+
     if (!mounted) return;
+
+    bool replaceAssignees = false;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, dialogSetState) => AlertDialog(
-          title: Text('Assign Task: ${task.title}'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: employees.isEmpty
-                ? const Center(child: Text('No employees available'))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: employees.length,
-                    itemBuilder: (context, index) {
-                      final employee = employees[index];
-                      final isSelected = selectedEmployeeIds.contains(
-                        employee.id,
-                      );
-                      final info = availability[employee.id];
+        builder: (context, dialogSetState) {
+          return AlertDialog(
+            title: Text('Assign Task: ${task.title}'),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 520,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: const Text('Replace assignees'),
+                    subtitle: const Text(
+                      'When enabled, unchecking an employee will unassign them from this task.',
+                    ),
+                    value: replaceAssignees,
+                    onChanged: (val) {
+                      dialogSetState(() {
+                        replaceAssignees = val;
+                      });
+                    },
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: employees.isEmpty
+                        ? const Center(child: Text('No employees available'))
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: employees.length,
+                            itemBuilder: (context, index) {
+                              final employee = employees[index];
+                              final isSelected = selectedEmployeeIds.contains(
+                                employee.id,
+                              );
+                              final info = availability[employee.id];
 
-                    final activeCount = info?.activeTasksCount ??
-                        (_employeeActiveTaskCount[employee.id] ?? 0);
-                    final atLimit = activeCount >= _taskLimitPerEmployee;
-                    final isOverridden = overrideEmployeeIds.contains(
-                      employee.id,
-                    );
+                              final int activeCount = [
+                                info?.activeTasksCount ?? 0,
+                                _employeeActiveTaskCount[employee.id] ?? 0,
+                                employee.activeTaskCount ?? 0,
+                              ].reduce((a, b) => a > b ? a : b);
+                              final atLimit =
+                                  activeCount >= _taskLimitPerEmployee;
+                              final isOverridden = overrideEmployeeIds.contains(
+                                employee.id,
+                              );
+                              final isAlreadyAssigned =
+                                  initialSelectedEmployeeIds.contains(
+                                    employee.id,
+                                  );
 
-                    Color? nameColor;
-                    if (info != null) {
-                      switch (info.workloadStatus) {
-                        case 'overloaded':
-                          nameColor = Colors.redAccent;
-                          break;
-                        case 'busy':
-                          nameColor = Colors.orange;
-                          break;
-                        default:
-                          nameColor = Colors.green;
-                      }
-                    }
+                              Color? nameColor;
+                              if (info != null) {
+                                switch (info.workloadStatus) {
+                                  case 'overloaded':
+                                    nameColor = Colors.redAccent;
+                                    break;
+                                  case 'busy':
+                                    nameColor = Colors.orange;
+                                    break;
+                                  default:
+                                    nameColor = Colors.green;
+                                }
+                              }
 
-                    String subtitle = employee.email;
-                    if (info != null) {
-                      final parts = <String>[];
-                      parts.add(info.workloadStatus);
-                      if (info.activeTasksCount > 0) {
-                        parts.add('${info.activeTasksCount} active');
-                      }
-                      if (info.overdueTasksCount > 0) {
-                        parts.add('${info.overdueTasksCount} overdue');
-                      }
-                      if (info.distanceMeters > 0) {
-                        if (info.distanceMeters >= 1000) {
-                          parts.add(
-                            '${(info.distanceMeters / 1000).toStringAsFixed(1)} km',
-                          );
-                        } else {
-                          parts.add(
-                            '${info.distanceMeters.toStringAsFixed(0)} m',
-                          );
-                        }
-                      }
-                      subtitle = '${employee.email} · ${parts.join(' · ')}';
-                    }
+                              String subtitle = employee.email;
+                              if (info != null) {
+                                final parts = <String>[];
+                                parts.add(info.workloadStatus);
+                                if (info.activeTasksCount > 0) {
+                                  parts.add('${info.activeTasksCount} active');
+                                }
+                                if (info.overdueTasksCount > 0) {
+                                  parts.add(
+                                    '${info.overdueTasksCount} overdue',
+                                  );
+                                }
+                                if (info.distanceMeters > 0) {
+                                  if (info.distanceMeters >= 1000) {
+                                    parts.add(
+                                      '${(info.distanceMeters / 1000).toStringAsFixed(1)} km',
+                                    );
+                                  } else {
+                                    parts.add(
+                                      '${info.distanceMeters.toStringAsFixed(0)} m',
+                                    );
+                                  }
+                                }
+                                subtitle =
+                                    '${employee.email} · ${parts.join(' · ')}';
+                              }
 
-                    if (atLimit) {
-                      subtitle =
-                          '$subtitle · limit reached ($_taskLimitPerEmployee)';
-                    }
+                              if (atLimit &&
+                                  !(isAlreadyAssigned && isSelected)) {
+                                subtitle =
+                                    '$subtitle · limit reached ($_taskLimitPerEmployee)';
+                              }
 
-                      return CheckboxListTile(
-                        key: ValueKey('assign:${employee.id}'),
-                        title: Text(
-                          employee.name,
-                          style: TextStyle(color: nameColor),
-                        ),
-                        subtitle: Text(subtitle),
-                        value: isSelected,
-                        onChanged: (bool? selected) {
-                          if (selected == true && atLimit && !isOverridden) {
-                            showDialog<bool>(
+                              return CheckboxListTile(
+                                key: ValueKey('assign:${employee.id}'),
+                                title: Text(
+                                  employee.name,
+                                  style: TextStyle(color: nameColor),
+                                ),
+                                subtitle: Text(subtitle),
+                                value: isSelected,
+                                onChanged: (bool? selected) {
+                                  final isNewlySelecting =
+                                      selected == true && !isAlreadyAssigned;
+
+                                  if (isNewlySelecting &&
+                                      atLimit &&
+                                      !isOverridden) {
+                                    showDialog<bool>(
+                                      context: context,
+                                      builder: (dCtx) => AlertDialog(
+                                        title: const Text(
+                                          'Employee at task limit',
+                                        ),
+                                        content: Text(
+                                          '${employee.name} already has $activeCount active task(s), which is at/above the limit ($_taskLimitPerEmployee).\n\nOverride and assign anyway?',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.of(dCtx).pop(false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.of(dCtx).pop(true),
+                                            child: const Text('Override'),
+                                          ),
+                                        ],
+                                      ),
+                                    ).then((allow) {
+                                      if (allow != true) return;
+                                      if (!mounted) return;
+                                      dialogSetState(() {
+                                        overrideEmployeeIds.add(employee.id);
+                                        selectedEmployeeIds.add(employee.id);
+                                      });
+                                    });
+                                    return;
+                                  }
+
+                                  dialogSetState(() {
+                                    if (selected == true) {
+                                      selectedEmployeeIds.add(employee.id);
+                                    } else {
+                                      selectedEmployeeIds.remove(employee.id);
+                                      overrideEmployeeIds.remove(employee.id);
+                                    }
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: initialSelectedEmployeeIds.isEmpty
+                    ? null
+                    : () async {
+                        final bool confirm =
+                            await showDialog<bool>(
                               context: context,
                               builder: (dCtx) => AlertDialog(
-                                title: const Text('Employee at task limit'),
-                                content: Text(
-                                  '${employee.name} already has $activeCount active task(s), which is at/above the limit ($_taskLimitPerEmployee).\n\nOverride and assign anyway?',
+                                title: const Text('Unassign all assignees?'),
+                                content: const Text(
+                                  'This will remove all current assignees from this task.',
                                 ),
                                 actions: [
                                   TextButton(
@@ -694,132 +972,197 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                   TextButton(
                                     onPressed: () =>
                                         Navigator.of(dCtx).pop(true),
-                                    child: const Text('Override'),
+                                    child: const Text('Unassign all'),
                                   ),
                                 ],
                               ),
-                            ).then((allow) {
-                              if (allow != true) return;
-                              if (!mounted) return;
-                              dialogSetState(() {
-                                overrideEmployeeIds.add(employee.id);
-                                selectedEmployeeIds.add(employee.id);
-                              });
-                            });
-                            return;
-                          }
+                            ) ??
+                            false;
 
-                          dialogSetState(() {
-                            if (selected == true) {
-                              selectedEmployeeIds.add(employee.id);
-                            } else {
-                              selectedEmployeeIds.remove(employee.id);
-                              overrideEmployeeIds.remove(employee.id);
-                            }
-                          });
-                        },
-                      );
-                    },
-                  ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (selectedEmployeeIds.isNotEmpty) {
-                  try {
-                    final validIds = selectedEmployeeIds
-                        .where((id) => id.isNotEmpty)
-                        .toList();
-                    if (validIds.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Selected employees have invalid IDs'),
-                        ),
-                      );
-                      return;
-                    }
+                        if (!confirm) return;
 
-                    final blocked = validIds
-                        .where((id) {
-                          final info = availability[id];
-                          final activeCount = info?.activeTasksCount ??
-                              (_employeeActiveTaskCount[id] ?? 0);
-                          return activeCount >= _taskLimitPerEmployee &&
-                              !overrideEmployeeIds.contains(id);
-                        })
-                        .toList();
-                    if (blocked.isNotEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Some selected employees are at the task limit ($_taskLimitPerEmployee). Use Override to assign anyway.',
+                        try {
+                          await Future.wait(
+                            initialSelectedEmployeeIds.map(
+                              (id) => _taskService.unassignUserFromTask(
+                                task.id,
+                                id,
+                              ),
+                            ),
+                          );
+
+                          selectedEmployeeIds.clear();
+                          overrideEmployeeIds.clear();
+
+                          _fetchTasks();
+
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('All assignees unassigned.'),
+                            ),
+                          );
+                          Navigator.of(ctx).pop();
+                        } catch (e) {
+                          debugPrint('Error unassigning all: $e');
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Failed to unassign all assignees: $e',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                child: const Text('Unassign all'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  if (selectedEmployeeIds.isNotEmpty || replaceAssignees) {
+                    try {
+                      final validIds = selectedEmployeeIds
+                          .where((id) => id.isNotEmpty)
+                          .toList();
+                      if (validIds.isEmpty && !replaceAssignees) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Selected employees have invalid IDs',
+                            ),
                           ),
-                        ),
-                      );
-                      return;
-                    }
-
-                    final result = await _taskService.assignTaskToMultiple(
-                      task.id,
-                      validIds,
-                    );
-                    _fetchTasks();
-
-                    if (!mounted) return;
-
-                    final summary = result['summary'] as Map<String, dynamic>?;
-                    final total = summary?['total'] as int?;
-                    final successful = summary?['successful'] as int?;
-                    final failed = summary?['failed'] as int?;
-
-                    String message;
-                    if (summary != null &&
-                        total != null &&
-                        successful != null &&
-                        failed != null) {
-                      if (failed == 0) {
-                        message =
-                            'Task assigned to $successful of $total employees.';
-                      } else if (successful == 0) {
-                        message =
-                            'Failed to assign task to all $total employees (check workload limits).';
-                      } else {
-                        message =
-                            'Task assigned to $successful of $total employees. $failed failed (see workload limits).';
+                        );
+                        return;
                       }
-                    } else {
-                      message = 'Task assignment request completed.';
-                    }
 
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text(message)));
+                      final idsToAssign = replaceAssignees
+                          ? validIds
+                                .where(
+                                  (id) =>
+                                      !initialSelectedEmployeeIds.contains(id),
+                                )
+                                .toList()
+                          : validIds;
+                      final idsToUnassign = replaceAssignees
+                          ? initialSelectedEmployeeIds
+                                .where(
+                                  (id) => !selectedEmployeeIds.contains(id),
+                                )
+                                .toList()
+                          : <String>[];
 
-                    Navigator.of(ctx).pop();
-                  } catch (e) {
-                    debugPrint('Error assigning task: $e');
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to assign task: $e')),
-                      );
+                      final blocked = idsToAssign.where((id) {
+                        final info = availability[id];
+                        final employee = employees
+                            .where((e) => e.id == id)
+                            .cast<UserModel?>()
+                            .firstWhere((_) => true, orElse: () => null);
+                        final activeCount = [
+                          info?.activeTasksCount ?? 0,
+                          _employeeActiveTaskCount[id] ?? 0,
+                          employee?.activeTaskCount ?? 0,
+                        ].reduce((a, b) => a > b ? a : b);
+                        return activeCount >= _taskLimitPerEmployee &&
+                            !overrideEmployeeIds.contains(id);
+                      }).toList();
+                      if (blocked.isNotEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Some selected employees are at the task limit ($_taskLimitPerEmployee). Use Override to assign anyway.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      Map<String, dynamic> result = <String, dynamic>{};
+                      if (idsToAssign.isNotEmpty) {
+                        result = await _taskService.assignTaskToMultiple(
+                          task.id,
+                          idsToAssign,
+                        );
+                      }
+
+                      if (idsToUnassign.isNotEmpty) {
+                        await Future.wait(
+                          idsToUnassign.map(
+                            (id) =>
+                                _taskService.unassignUserFromTask(task.id, id),
+                          ),
+                        );
+                      }
+                      _fetchTasks();
+
+                      if (!mounted) return;
+
+                      _taskAssignmentOverrides.remove(task.id);
+
+                      final summary =
+                          result['summary'] as Map<String, dynamic>?;
+                      final total = summary?['total'] as int?;
+                      final successful = summary?['successful'] as int?;
+                      final failed = summary?['failed'] as int?;
+
+                      String message;
+                      if (replaceAssignees) {
+                        final assignedCount = idsToAssign.length;
+                        final unassignedCount = idsToUnassign.length;
+                        if (assignedCount == 0 && unassignedCount == 0) {
+                          message = 'No changes to task assignees.';
+                        } else if (assignedCount > 0 && unassignedCount > 0) {
+                          message =
+                              'Assignees updated. Added $assignedCount, removed $unassignedCount.';
+                        } else if (assignedCount > 0) {
+                          message = 'Assignees updated. Added $assignedCount.';
+                        } else {
+                          message =
+                              'Assignees updated. Removed $unassignedCount.';
+                        }
+                      } else if (summary != null &&
+                          total != null &&
+                          successful != null &&
+                          failed != null) {
+                        if (failed == 0) {
+                          message =
+                              'Task assigned to $successful of $total employees.';
+                        } else if (successful == 0) {
+                          message =
+                              'Failed to assign task to all $total employees (check workload limits).';
+                        } else {
+                          message =
+                              'Task assigned to $successful of $total employees. $failed failed (see workload limits).';
+                        }
+                      } else {
+                        message = 'Task assignment request completed.';
+                      }
+
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(message)));
+
+                      Navigator.of(ctx).pop();
+                    } catch (e) {
+                      debugPrint('Error assigning task: $e');
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed to assign task: $e')),
+                        );
+                      }
                     }
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please select at least one employee'),
+                      ),
+                    );
                   }
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please select at least one employee'),
-                    ),
-                  );
-                }
-              },
-              child: const Text('Assign'),
-            ),
-          ],
-        ),
+                },
+                child: Text(replaceAssignees ? 'Apply' : 'Assign'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -882,22 +1225,33 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
               children: [
                 ChoiceChip(
                   label: const Text('Current Tasks'),
-                  selected: !_showArchived,
+                  selected: _tab == 'current',
                   onSelected: (sel) {
                     if (!sel) return;
                     setState(() {
-                      _showArchived = false;
+                      _tab = 'current';
+                    });
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Overdue Tasks'),
+                  selected: _tab == 'expired',
+                  onSelected: (sel) {
+                    if (!sel) return;
+                    setState(() {
+                      _tab = 'expired';
                     });
                   },
                 ),
                 const SizedBox(width: 8),
                 ChoiceChip(
                   label: const Text('Archived Tasks'),
-                  selected: _showArchived,
+                  selected: _tab == 'archived',
                   onSelected: (sel) {
                     if (!sel) return;
                     setState(() {
-                      _showArchived = true;
+                      _tab = 'archived';
                     });
                   },
                 ),
@@ -948,8 +1302,23 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : () {
-                    final source = _showArchived ? _archivedTasks : _tasks;
+                    final List<Task> source;
+                    if (_tab == 'archived') {
+                      source = _archivedTasks;
+                    } else {
+                      source = _tasks;
+                    }
+
                     final filtered = source.where((task) {
+                      // Tab filtering
+                      if (_tab == 'current' && task.isOverdue) {
+                        return false;
+                      }
+                      if (_tab == 'expired' && !task.isOverdue) {
+                        return false;
+                      }
+
+                      // Difficulty filtering
                       if (_difficultyFilter == 'all') return true;
                       final d = (task.difficulty ?? '').toLowerCase();
                       return d == _difficultyFilter;
@@ -960,8 +1329,10 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     if (filtered.isEmpty) {
                       return Center(
                         child: Text(
-                          _showArchived
+                          _tab == 'archived'
                               ? 'No archived tasks.'
+                              : _tab == 'expired'
+                              ? 'No expired tasks.'
                               : 'No tasks available.',
                         ),
                       );
@@ -1022,7 +1393,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                if (!_showArchived) ...[
+                                if (_tab == 'current') ...[
                                   IconButton(
                                     icon: const Icon(Icons.edit),
                                     onPressed: () => _editTask(task),
@@ -1066,30 +1437,71 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                       return items;
                                     },
                                   ),
-                                ] else ...[
+                                ] else if (_tab == 'expired') ...[
+                                  IconButton(
+                                    icon: const Icon(Icons.edit),
+                                    onPressed: () => _editTask(task),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.assignment_ind),
+                                    onPressed: () => _assignTask(task),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: Colors.redAccent,
+                                    ),
+                                    tooltip: 'Delete task',
+                                    onPressed: () => _deleteTask(task.id),
+                                  ),
                                   PopupMenuButton<String>(
                                     icon: const Icon(Icons.more_vert),
                                     onSelected: (value) {
                                       switch (value) {
-                                        case 'restore':
-                                          _restoreTask(task);
+                                        case 'escalate':
+                                          _escalateTask(task);
                                           break;
-                                        case 'delete':
-                                          _deleteTask(task.id);
+                                        case 'archive':
+                                          _archiveTask(task);
                                           break;
                                       }
                                     },
-                                    itemBuilder: (context) =>
-                                        <PopupMenuEntry<String>>[
+                                    itemBuilder: (context) {
+                                      final items = <PopupMenuEntry<String>>[];
+
+                                      if (isOverdue &&
+                                          task.status != 'completed') {
+                                        items.add(
                                           const PopupMenuItem<String>(
-                                            value: 'restore',
-                                            child: Text('Restore task'),
+                                            value: 'escalate',
+                                            child: Text('Escalate (SMS)'),
                                           ),
-                                          const PopupMenuItem<String>(
-                                            value: 'delete',
-                                            child: Text('Delete task'),
-                                          ),
-                                        ],
+                                        );
+                                      }
+
+                                      items.add(
+                                        const PopupMenuItem<String>(
+                                          value: 'archive',
+                                          child: Text('Archive task'),
+                                        ),
+                                      );
+
+                                      return items;
+                                    },
+                                  ),
+                                ] else ...[
+                                  IconButton(
+                                    icon: const Icon(Icons.restore),
+                                    tooltip: 'Restore task',
+                                    onPressed: () => _restoreTask(task),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: Colors.redAccent,
+                                    ),
+                                    tooltip: 'Delete task',
+                                    onPressed: () => _deleteTask(task.id),
                                   ),
                                 ],
                               ],

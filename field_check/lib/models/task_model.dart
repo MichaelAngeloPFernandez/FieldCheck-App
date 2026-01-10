@@ -85,7 +85,40 @@ class Task {
     List<UserModel> assignedToMultiple = [];
     if (json['assignedToMultiple'] is List) {
       assignedToMultiple = (json['assignedToMultiple'] as List)
-          .map((e) => UserModel.fromJson(e as Map<String, dynamic>))
+          .map((e) {
+            if (e is Map<String, dynamic>) {
+              return UserModel.fromJson(e);
+            }
+            if (e is Map) {
+              return UserModel.fromJson(Map<String, dynamic>.from(e));
+            }
+            if (e is String) {
+              return UserModel(id: e, name: '', email: '', role: 'employee');
+            }
+            return UserModel(id: '', name: '', email: '', role: 'employee');
+          })
+          .where((u) => u.id.isNotEmpty)
+          .toList();
+    }
+
+    List<String>? teamMembers;
+    if (json['teamMembers'] is List) {
+      teamMembers = (json['teamMembers'] as List)
+          .whereType<String>()
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    } else if (json['userIds'] is List) {
+      teamMembers = (json['userIds'] as List)
+          .whereType<String>()
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    }
+
+    if (assignedToMultiple.isEmpty &&
+        teamMembers != null &&
+        teamMembers.isNotEmpty) {
+      assignedToMultiple = teamMembers
+          .map((id) => UserModel(id: id, name: '', email: '', role: 'employee'))
           .toList();
     }
 
@@ -121,9 +154,7 @@ class Task {
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       teamId: json['teamId'],
-      teamMembers: json['teamMembers'] != null
-          ? List<String>.from(json['teamMembers'])
-          : null,
+      teamMembers: teamMembers,
       isArchived: json['isArchived'] ?? false,
       isOverdue: json['isOverdue'] ?? false,
       checklist: checklist,

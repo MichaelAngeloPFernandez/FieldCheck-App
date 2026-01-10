@@ -44,7 +44,9 @@ class _AdminReportsHubScreenState extends State<AdminReportsHubScreen>
 
   @override
   void dispose() {
-    AdminReportsHubScreen.requestedInitialTab.removeListener(_tabRequestListener);
+    AdminReportsHubScreen.requestedInitialTab.removeListener(
+      _tabRequestListener,
+    );
     _tabController.dispose();
     super.dispose();
   }
@@ -56,8 +58,10 @@ class _AdminReportsHubScreenState extends State<AdminReportsHubScreen>
         title: const Text('Reports'),
         bottom: TabBar(
           controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
+          labelColor: Theme.of(context).colorScheme.onPrimary,
+          unselectedLabelColor: Theme.of(
+            context,
+          ).colorScheme.onPrimary.withValues(alpha: 0.75),
           indicatorColor: Colors.white,
           indicatorWeight: 3,
           tabs: const [
@@ -68,10 +72,7 @@ class _AdminReportsHubScreenState extends State<AdminReportsHubScreen>
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          _AdminReportsEmbedded(),
-          _EnhancedReportsEmbedded(),
-        ],
+        children: const [_AdminReportsEmbedded(), _EnhancedReportsEmbedded()],
       ),
     );
   }

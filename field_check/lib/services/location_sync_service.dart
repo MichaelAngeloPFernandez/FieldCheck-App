@@ -51,6 +51,10 @@ class LocationSyncService {
           })
           .build();
 
+      if (token != null) {
+        options['auth'] = {'token': token};
+      }
+
       options['reconnection'] = true;
       options['reconnectionAttempts'] = 999999;
       options['reconnectionDelay'] = 500;
@@ -107,7 +111,8 @@ class LocationSyncService {
     _isTracking = true;
     _startLocationStream();
     if (!_initialized) {
-      _lastError.value = 'socket_not_initialized: call initializeSocket() first';
+      _lastError.value =
+          'socket_not_initialized: call initializeSocket() first';
       _pendingEmitOnConnect = true;
       return;
     }
@@ -126,7 +131,8 @@ class LocationSyncService {
     _isTracking = true;
     _startLocationStream();
     if (!_initialized) {
-      _lastError.value = 'socket_not_initialized: call initializeSocket() first';
+      _lastError.value =
+          'socket_not_initialized: call initializeSocket() first';
       _pendingEmitOnConnect = true;
       return;
     }
@@ -150,6 +156,7 @@ class LocationSyncService {
       _syncLocationToBackend(pos);
     } catch (e) {
       _lastError.value = 'get_current_error: $e';
+      debugPrint('❌ LocationSyncService getCurrentPosition failed: $e');
     }
   }
 
@@ -205,6 +212,7 @@ class LocationSyncService {
             },
             onError: (e) {
               _lastError.value = 'position_stream_error: $e';
+              debugPrint('❌ LocationSyncService position_stream_error: $e');
               // Position stream error - retrying
               Future.delayed(const Duration(seconds: 5), _startLocationStream);
             },

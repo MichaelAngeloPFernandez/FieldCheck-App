@@ -37,6 +37,7 @@ class CheckoutNotificationService {
 
       if (token != null) {
         options['extraHeaders'] = {'Authorization': 'Bearer $token'};
+        options['auth'] = {'token': token};
       }
 
       options['reconnection'] = true;

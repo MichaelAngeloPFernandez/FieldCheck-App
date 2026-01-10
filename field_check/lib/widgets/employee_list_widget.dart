@@ -67,6 +67,8 @@ class _EmployeeListWidgetState extends State<EmployeeListWidget> {
     });
 
     if (filteredEmployees.isEmpty) {
+      final theme = Theme.of(context);
+      final onSurface = theme.colorScheme.onSurface;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -74,7 +76,10 @@ class _EmployeeListWidgetState extends State<EmployeeListWidget> {
             widget.showOnlineOnly
                 ? 'No online employees'
                 : 'No employees found',
-            style: const TextStyle(color: Colors.grey),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: onSurface.withValues(alpha: 0.75),
+            ),
           ),
         ),
       );

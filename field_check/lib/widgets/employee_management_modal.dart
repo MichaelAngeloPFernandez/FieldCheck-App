@@ -230,7 +230,12 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
                       _searchController.text.isEmpty
                           ? 'No employees found'
                           : 'No matching employees',
-                      style: const TextStyle(color: Colors.grey),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
                     ),
                   )
                 : ListView.builder(
@@ -258,7 +263,14 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
                             title: Text(employee.name),
                             subtitle: Text(
                               '$statusLabel • ${employee.employeeId}',
-                              style: const TextStyle(fontSize: 12),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.75),
+                                    fontWeight: FontWeight.w600,
+                                  ),
                             ),
                             trailing: IconButton(
                               icon: const Icon(Icons.info_outline),
@@ -357,9 +369,9 @@ class _EmployeeOptionsDialogState extends State<EmployeeOptionsDialog> {
                       ),
                       Text(
                         widget.employee.name,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -417,9 +429,15 @@ class _EmployeeOptionsDialogState extends State<EmployeeOptionsDialog> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text('15 min', style: TextStyle(fontSize: 10)),
-                        Text('120 min', style: TextStyle(fontSize: 10)),
+                      children: [
+                        Text(
+                          '15 min',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        Text(
+                          '120 min',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
                       ],
                     ),
                   ),
@@ -446,9 +464,15 @@ class _EmployeeOptionsDialogState extends State<EmployeeOptionsDialog> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text('1 task', style: TextStyle(fontSize: 10)),
-                        Text('50 tasks', style: TextStyle(fontSize: 10)),
+                      children: [
+                        Text(
+                          '1 task',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        Text(
+                          '50 tasks',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
                       ],
                     ),
                   ),
@@ -470,7 +494,7 @@ class _EmployeeOptionsDialogState extends State<EmployeeOptionsDialog> {
                           'Settings Summary',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 12,
+                            fontSize: 13,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -478,7 +502,7 @@ class _EmployeeOptionsDialogState extends State<EmployeeOptionsDialog> {
                           '• Auto-checkout: ${_autoCheckoutEnabled ? 'Enabled' : 'Disabled'}\n'
                           '• Offline threshold: $_checkoutMinutes minutes\n'
                           '• Max daily tasks: $_maxTasks',
-                          style: const TextStyle(fontSize: 11),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
@@ -496,8 +520,10 @@ class _EmployeeOptionsDialogState extends State<EmployeeOptionsDialog> {
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(context),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey[300],
-                        foregroundColor: Colors.black,
+                        backgroundColor: Theme.of(context).colorScheme.surface,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.9),
                       ),
                       child: const Text('Cancel'),
                     ),

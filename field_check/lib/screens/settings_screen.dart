@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/config/api_config.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -25,8 +26,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final UserService _userService = UserService();
   UserModel? _profile;
   bool _loadingProfile = true;
+  String? _profileError;
+  bool _isSyncing = false;
   Uint8List? _pickedAvatarBytes;
   String? _pickedAvatarFilename;
+
+  String _normalizeAvatarUrl(String rawPath) {
+    final p = (rawPath).trim();
+    if (p.isEmpty) return p;
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
+    return '${ApiConfig.baseUrl}/$p';
+  }
 
   @override
   void initState() {
@@ -56,17 +67,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadProfile() async {
+    setState(() {
+      _loadingProfile = true;
+      _profileError = null;
+    });
     try {
       final profile = await _userService.getProfile();
       if (!mounted) return;
       setState(() {
         _profile = profile;
         _loadingProfile = false;
+        _profileError = null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loadingProfile = false;
+        _profileError = 'Failed to load profile: $e';
       });
     }
   }
@@ -132,9 +149,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundImage: tempPickedAvatarBytes != null
                           ? MemoryImage(tempPickedAvatarBytes!)
                           : (_profile?.avatarUrl?.isNotEmpty == true
-                              ? NetworkImage(_profile!.avatarUrl!)
-                                  as ImageProvider
-                              : null),
+                                ? NetworkImage(
+                                        _normalizeAvatarUrl(
+                                          _profile!.avatarUrl!,
+                                        ),
+                                      )
+                                      as ImageProvider
+                                : null),
                       child:
                           tempPickedAvatarBytes == null &&
                               (_profile?.avatarUrl?.isEmpty ?? true)
@@ -226,6 +247,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _syncData() async {
+    if (_isSyncing) return;
     final app = MyApp.of(context);
     final syncService = app?.widget.syncService;
     if (syncService == null) {
@@ -239,6 +261,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     try {
+      setState(() {
+        _isSyncing = true;
+      });
       final pending = await syncService.getOfflineData();
       if (pending.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -256,13 +281,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       await syncService.syncOfflineData();
 
+      final remaining = await syncService.getOfflineData();
+      final syncedCount = pending.length - remaining.length;
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Sync completed successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (syncedCount > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Sync completed: $syncedCount synced, ${remaining.length} remaining',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Sync finished, but no records were synced (${remaining.length} still pending)',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -272,6 +313,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+        });
       }
     }
   }
@@ -302,9 +349,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundImage: _pickedAvatarBytes != null
                           ? MemoryImage(_pickedAvatarBytes!)
                           : (_profile?.avatarUrl?.isNotEmpty == true
-                              ? NetworkImage(_profile!.avatarUrl!)
-                                  as ImageProvider
-                              : null),
+                                ? NetworkImage(
+                                        _normalizeAvatarUrl(
+                                          _profile!.avatarUrl!,
+                                        ),
+                                      )
+                                      as ImageProvider
+                                : null),
                       child:
                           _pickedAvatarBytes == null &&
                               (_profile?.avatarUrl?.isEmpty ?? true)
@@ -326,23 +377,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 : (_profile?.name ?? '—'),
                             style: AppTheme.headingSm,
                           ),
+                          if (_profileError != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              _profileError!,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              onPressed: _loadProfile,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry'),
+                            ),
+                          ],
                           const SizedBox(height: 4),
                           Text(
                             _loadingProfile ? '' : (_profile?.role ?? ''),
-                            style:
-                                AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
+                            style: AppTheme.bodySm.copyWith(
+                              color: AppTheme.textSecondary,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            _loadingProfile ? '' : 'ID: ${_profile?.id ?? '—'}',
-                            style:
-                                AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
+                            _loadingProfile
+                                ? ''
+                                : 'ID: ${(_profile?.role == 'admin') ? (_profile?.id ?? '—') : (_profile?.employeeId ?? _profile?.id ?? '—')}',
+                            style: AppTheme.bodySm.copyWith(
+                              color: AppTheme.textSecondary,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             _loadingProfile ? '' : (_profile?.email ?? ''),
-                            style:
-                                AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
+                            style: AppTheme.bodySm.copyWith(
+                              color: AppTheme.textSecondary,
+                            ),
                           ),
                         ],
                       ),
@@ -380,10 +453,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
 
             // Appearance
-            const Text(
-              'Appearance',
-              style: AppTheme.labelLg,
-            ),
+            const Text('Appearance', style: AppTheme.labelLg),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -416,10 +486,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
 
             // App Settings
-            const Text(
-              'App Settings',
-              style: AppTheme.labelLg,
-            ),
+            const Text('App Settings', style: AppTheme.labelLg),
             const SizedBox(height: 8),
 
             SwitchListTile(
@@ -481,8 +548,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _syncData,
-                icon: const Icon(Icons.sync),
+                onPressed: _isSyncing ? null : _syncData,
+                icon: _isSyncing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync),
                 label: const Text('Sync Data'),
               ),
             ),

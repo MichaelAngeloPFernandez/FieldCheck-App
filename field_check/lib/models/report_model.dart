@@ -15,6 +15,7 @@ class ReportModel {
   final String? geofenceName;
   final bool isArchived;
   final List<String> attachments;
+  final bool taskIsOverdue;
 
   ReportModel({
     required this.id,
@@ -33,6 +34,7 @@ class ReportModel {
     this.geofenceName,
     this.isArchived = false,
     this.attachments = const [],
+    this.taskIsOverdue = false,
   });
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
@@ -64,6 +66,7 @@ class ReportModel {
       attachments: json['attachments'] is List
           ? List<String>.from(json['attachments'])
           : const [],
+      taskIsOverdue: json['taskIsOverdue'] ?? false,
     );
   }
 }

@@ -142,6 +142,10 @@ class EmployeeLocationService {
           .setTimeout(20000)
           .build();
 
+      if (token != null) {
+        options['auth'] = {'token': token};
+      }
+
       _socket = io.io(ApiConfig.baseUrl, options);
 
       _socket.onConnect((_) {

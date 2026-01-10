@@ -65,7 +65,8 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   String? _placesError;
   List<_PlaceSearchResult> _placeResults = [];
 
-  final TextEditingController _assignmentsSearchController = TextEditingController();
+  final TextEditingController _assignmentsSearchController =
+      TextEditingController();
   Timer? _assignmentsSearchDebounce;
   String _assignmentsFilter = 'all';
   final Set<String> _assignmentsSelectedEmployeeIds = <String>{};
@@ -154,17 +155,17 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     if (id == null) return null;
     final pending = _pendingGeofenceUpdates[id];
     if (pending != null) return pending;
-    return _geofences.where((g) => g.id == id).cast<Geofence?>().firstWhere(
-          (g) => g != null,
-          orElse: () => null,
-        );
+    return _geofences
+        .where((g) => g.id == id)
+        .cast<Geofence?>()
+        .firstWhere((g) => g != null, orElse: () => null);
   }
 
   Geofence? _originalGeofenceById(String id) {
-    return _geofences.where((g) => g.id == id).cast<Geofence?>().firstWhere(
-          (g) => g != null,
-          orElse: () => null,
-        );
+    return _geofences
+        .where((g) => g.id == id)
+        .cast<Geofence?>()
+        .firstWhere((g) => g != null, orElse: () => null);
   }
 
   bool get _hasPendingChanges => _pendingGeofenceUpdates.isNotEmpty;
@@ -301,7 +302,11 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
       }
 
       final results = decoded
-          .map((e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+          .map(
+            (e) => e is Map<String, dynamic>
+                ? e
+                : Map<String, dynamic>.from(e as Map),
+          )
           .map(_PlaceSearchResult.fromJson)
           .where((r) => r.latLng != null)
           .toList();
@@ -359,9 +364,13 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 ? [..._geofences, ..._pendingNewGeofences]
                 : [
                     ...(_geofences
-                        .map((g) => g.id != null && _pendingGeofenceUpdates.containsKey(g.id)
-                            ? _pendingGeofenceUpdates[g.id]!
-                            : g)
+                        .map(
+                          (g) =>
+                              g.id != null &&
+                                  _pendingGeofenceUpdates.containsKey(g.id)
+                              ? _pendingGeofenceUpdates[g.id]!
+                              : g,
+                        )
                         .toList()),
                     ..._pendingNewGeofences,
                   ],
@@ -421,17 +430,15 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       decoration: InputDecoration(
                         hintText: 'Search places (e.g., "Makati", "Ayala")',
                         hintStyle: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                         prefixIcon: Icon(
                           Icons.search,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.75),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.75),
                         ),
                         suffixIcon: _searchController.text.isEmpty
                             ? null
@@ -445,26 +452,24 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                 },
                                 icon: Icon(
                                   Icons.clear,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurface
+                                  color: Theme.of(context).colorScheme.onSurface
                                       .withValues(alpha: 0.75),
                                 ),
                               ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: BorderSide(
-                            color: Theme.of(context)
-                                .dividerColor
-                                .withValues(alpha: 0.35),
+                            color: Theme.of(
+                              context,
+                            ).dividerColor.withValues(alpha: 0.35),
                           ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: BorderSide(
-                            color: Theme.of(context)
-                                .dividerColor
-                                .withValues(alpha: 0.35),
+                            color: Theme.of(
+                              context,
+                            ).dividerColor.withValues(alpha: 0.35),
                           ),
                         ),
                         filled: true,
@@ -478,7 +483,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     ),
                   ),
 
-                  if (_isSearchingPlaces || _placesError != null || _placeResults.isNotEmpty)
+                  if (_isSearchingPlaces ||
+                      _placesError != null ||
+                      _placeResults.isNotEmpty)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
                       width: double.infinity,
@@ -487,9 +494,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                         color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Theme.of(context)
-                              .dividerColor
-                              .withValues(alpha: 0.35),
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.35),
                         ),
                       ),
                       child: _isSearchingPlaces
@@ -500,63 +507,75 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                   const SizedBox(
                                     width: 18,
                                     height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   ),
                                   const SizedBox(width: 10),
                                   Text(
                                     'Searching...',
                                     style: TextStyle(
-                                      color: Theme.of(context).colorScheme.onSurface,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
                                     ),
                                   ),
                                 ],
                               ),
                             )
                           : (_placeResults.isNotEmpty
-                              ? ListView.builder(
-                                  shrinkWrap: true,
-                                  itemCount: _placeResults.length,
-                                  itemBuilder: (context, index) {
-                                    final r = _placeResults[index];
-                                    return ListTile(
-                                      dense: true,
-                                      leading: const Icon(
-                                        Icons.place,
-                                        color: Colors.blue,
-                                      ),
-                                      title: Text(
-                                        r.displayName,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: Theme.of(context).colorScheme.onSurface,
+                                ? ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: _placeResults.length,
+                                    itemBuilder: (context, index) {
+                                      final r = _placeResults[index];
+                                      return ListTile(
+                                        dense: true,
+                                        leading: const Icon(
+                                          Icons.place,
+                                          color: Colors.blue,
                                         ),
-                                      ),
-                                      subtitle: r.latLng == null
-                                          ? null
-                                          : Text(
-                                              '${r.latLng!.latitude.toStringAsFixed(5)}, ${r.latLng!.longitude.toStringAsFixed(5)}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .onSurface
-                                                    .withValues(alpha: 0.7),
+                                        title: Text(
+                                          r.displayName,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurface,
+                                          ),
+                                        ),
+                                        subtitle: r.latLng == null
+                                            ? null
+                                            : Text(
+                                                '${r.latLng!.latitude.toStringAsFixed(5)}, ${r.latLng!.longitude.toStringAsFixed(5)}',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurface
+                                                          .withValues(
+                                                            alpha: 0.75,
+                                                          ),
+                                                    ),
                                               ),
-                                            ),
-                                      onTap: () => _selectPlaceResult(r),
-                                    );
-                                  },
-                                )
-                              : Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Text(
-                                    _placesError ?? 'No results',
-                                    style: TextStyle(
-                                      color: Theme.of(context).colorScheme.onSurface,
+                                        onTap: () => _selectPlaceResult(r),
+                                      );
+                                    },
+                                  )
+                                : Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Text(
+                                      _placesError ?? 'No results',
+                                      style: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
                                     ),
-                                  ),
-                                )),
+                                  )),
                     ),
                 ],
               ),
@@ -574,90 +593,94 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
               return Material(
                 color: Colors.transparent,
                 elevation: 10,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surface,
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(16)),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(16),
+                    ),
                     border: Border.all(
-                      color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                      color: Theme.of(
+                        context,
+                      ).dividerColor.withValues(alpha: 0.35),
                     ),
                   ),
-                child: DefaultTabController(
-                  length: 2,
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onVerticalDragUpdate: (details) {
-                          final current = _sheetController.size;
-                          final height =
-                              MediaQuery.of(context).size.height.clamp(1, 1e9);
-                          final delta = details.delta.dy / height;
-                          final next = (current - delta).clamp(0.18, 0.88);
-                          _sheetController.jumpTo(next);
-                        },
-                        onVerticalDragEnd: (_) {
-                          final current = _sheetController.size;
-                          final targets = [0.28, 0.5, 0.88];
-                          double best = targets.first;
-                          double bestDist = (current - best).abs();
-                          for (final t in targets.skip(1)) {
-                            final d = (current - t).abs();
-                            if (d < bestDist) {
-                              bestDist = d;
-                              best = t;
+                  child: DefaultTabController(
+                    length: 2,
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onVerticalDragUpdate: (details) {
+                            final current = _sheetController.size;
+                            final height = MediaQuery.of(
+                              context,
+                            ).size.height.clamp(1, 1e9);
+                            final delta = details.delta.dy / height;
+                            final next = (current - delta).clamp(0.18, 0.88);
+                            _sheetController.jumpTo(next);
+                          },
+                          onVerticalDragEnd: (_) {
+                            final current = _sheetController.size;
+                            final targets = [0.28, 0.5, 0.88];
+                            double best = targets.first;
+                            double bestDist = (current - best).abs();
+                            for (final t in targets.skip(1)) {
+                              final d = (current - t).abs();
+                              if (d < bestDist) {
+                                bestDist = d;
+                                best = t;
+                              }
                             }
-                          }
-                          _sheetController.animateTo(
-                            best,
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOut,
-                          );
-                        },
-                        child: Center(
-                          child: Container(
-                            width: 44,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(12),
+                            _sheetController.animateTo(
+                              best,
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                            );
+                          },
+                          child: Center(
+                            child: Container(
+                              width: 44,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.35),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      TabBar(
-                        labelColor: Theme.of(context).colorScheme.onSurface,
-                        unselectedLabelColor: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.7),
-                        indicatorColor: const Color(0xFF2688d4),
-                        dividerColor:
-                            Theme.of(context).dividerColor.withValues(alpha: 0.35),
-                        tabs: [
-                          const Tab(text: 'Geofences'),
-                          const Tab(text: 'Assignments'),
-                        ],
-                      ),
-                      Expanded(
-                        child: TabBarView(
-                          children: [
-                            _buildGeofenceTab(scrollController),
-                            _buildAssignmentsTab(scrollController),
+                        TabBar(
+                          labelColor: Theme.of(context).colorScheme.onSurface,
+                          unselectedLabelColor: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.7),
+                          indicatorColor: const Color(0xFF2688d4),
+                          dividerColor: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.35),
+                          tabs: [
+                            const Tab(text: 'Geofences'),
+                            const Tab(text: 'Assignments'),
                           ],
                         ),
-                      ),
-                    ],
+                        Expanded(
+                          child: TabBarView(
+                            children: [
+                              _buildGeofenceTab(scrollController),
+                              _buildAssignmentsTab(scrollController),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               );
             },
           ),
@@ -701,10 +724,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     child: Text(
                       'Discard',
                       style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.85),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.85),
                       ),
                     ),
                   ),
@@ -762,10 +784,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   Text(
                     selected.address,
                     style: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.7),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                 ],
@@ -779,10 +800,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
             child: Text(
               'No geofences found.',
               style: TextStyle(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.7),
               ),
             ),
           )
@@ -793,7 +813,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
               child: ListTile(
                 title: Text(
                   geofence.name.isEmpty ? '(New geofence)' : geofence.name,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
                 subtitle: Text(
                   geofence.address.isEmpty
@@ -802,10 +824,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.7),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
                 trailing: Text(
@@ -823,17 +844,18 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
               child: ListTile(
                 title: Text(
                   geofence.name,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
                 subtitle: Text(
                   geofence.address,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.7),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
                 onTap: () => _selectGeofence(geofence),
@@ -843,10 +865,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     Text(
                       '${geofence.radius.toInt()}m',
                       style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.85),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.85),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -866,10 +887,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     IconButton(
                       icon: Icon(
                         Icons.edit,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.85),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.85),
                       ),
                       onPressed: () => _showEditGeofenceDialog(geofence, index),
                     ),
@@ -891,7 +911,11 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     final selected = _selectedGeofence;
     return StatefulBuilder(
       builder: (context, setStateLocal) {
-        List<UserModel> applyFilter(String query, String filterMode, Set<String> assignedIds) {
+        List<UserModel> applyFilter(
+          String query,
+          String filterMode,
+          Set<String> assignedIds,
+        ) {
           Iterable<UserModel> base = _allEmployees;
           final q = query.trim().toLowerCase();
           if (q.isNotEmpty) {
@@ -910,7 +934,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
           if (g == null || g.id == null) return;
 
           final current = _pendingGeofenceUpdates[g.id!] ?? g;
-          final existing = List<UserModel>.from(current.assignedEmployees ?? const []);
+          final existing = List<UserModel>.from(
+            current.assignedEmployees ?? const [],
+          );
 
           if (assign) {
             for (final e in employees) {
@@ -943,7 +969,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
             .toSet();
 
         final stagedAdded = assignedIds.difference(originalAssignedIds).length;
-        final stagedRemoved = originalAssignedIds.difference(assignedIds).length;
+        final stagedRemoved = originalAssignedIds
+            .difference(assignedIds)
+            .length;
 
         final filtered = applyFilter(
           _assignmentsSearchController.text,
@@ -980,10 +1008,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                         child: Text(
                           'Discard',
                           style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.85),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.85),
                           ),
                         ),
                       ),
@@ -1013,10 +1040,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   child: Text(
                     'Select a geofence first (Geofences tab).',
                     style: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.7),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                 ),
@@ -1040,20 +1066,18 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       Text(
                         selected.address,
                         style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.7),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.7),
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'Assigned: ${assignedIds.length}',
                         style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.7),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.7),
                         ),
                       ),
                     ],
@@ -1080,10 +1104,12 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 ),
                 onChanged: (_) {
                   _assignmentsSearchDebounce?.cancel();
-                  _assignmentsSearchDebounce =
-                      Timer(const Duration(milliseconds: 200), () {
-                    if (mounted) setStateLocal(() {});
-                  });
+                  _assignmentsSearchDebounce = Timer(
+                    const Duration(milliseconds: 200),
+                    () {
+                      if (mounted) setStateLocal(() {});
+                    },
+                  );
                 },
               ),
               const SizedBox(height: 10),
@@ -1094,7 +1120,8 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   ChoiceChip(
                     label: const Text('All'),
                     selected: _assignmentsFilter == 'all',
-                    onSelected: (_) => setStateLocal(() => _assignmentsFilter = 'all'),
+                    onSelected: (_) =>
+                        setStateLocal(() => _assignmentsFilter = 'all'),
                   ),
                   ChoiceChip(
                     label: const Text('Assigned'),
@@ -1155,10 +1182,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     child: Text(
                       'Staged changes: +$stagedAdded assigned, -$stagedRemoved unassigned',
                       style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.85),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.85),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1204,7 +1230,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   itemBuilder: (context, idx) {
                     final emp = filtered[idx];
                     final isAssigned = assignedIds.contains(emp.id);
-                    final isChecked = _assignmentsSelectedEmployeeIds.contains(emp.id);
+                    final isChecked = _assignmentsSelectedEmployeeIds.contains(
+                      emp.id,
+                    );
                     return Card(
                       color: Theme.of(context).colorScheme.surface,
                       child: CheckboxListTile(
@@ -1229,10 +1257,8 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                           style: TextStyle(
                             color: isAssigned
                                 ? Colors.green.shade300
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.7),
+                                : Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.7),
                           ),
                         ),
                         controlAffinity: ListTileControlAffinity.leading,
@@ -1335,8 +1361,11 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
         final decoded = jsonDecode(res.body);
         if (decoded is! List) throw Exception('Unexpected response');
         final parsed = decoded
-            .map((e) =>
-                e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+            .map(
+              (e) => e is Map<String, dynamic>
+                  ? e
+                  : Map<String, dynamic>.from(e as Map),
+            )
             .map(_PlaceSearchResult.fromJson)
             .where((r) => r.latLng != null)
             .toList();
@@ -1375,7 +1404,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                         decoration: BoxDecoration(
                           color: Colors.red.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.red.withOpacity(0.4)),
+                          border: Border.all(
+                            color: Colors.red.withOpacity(0.4),
+                          ),
                         ),
                         child: Text(
                           dialogError!,
@@ -1394,25 +1425,29 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       ),
                       onChanged: (v) {
                         localDebounce?.cancel();
-                        localDebounce =
-                            Timer(const Duration(milliseconds: 500), () {
-                          setStateDialog(() {
-                            dialogError = null;
-                          });
-                          searchNominatim(v, setStateDialog);
-                        });
+                        localDebounce = Timer(
+                          const Duration(milliseconds: 500),
+                          () {
+                            setStateDialog(() {
+                              dialogError = null;
+                            });
+                            searchNominatim(v, setStateDialog);
+                          },
+                        );
                       },
                     ),
-                    if (isSearching || placesError != null || results.isNotEmpty)
+                    if (isSearching ||
+                        placesError != null ||
+                        results.isNotEmpty)
                       Container(
                         margin: const EdgeInsets.only(top: 8),
                         constraints: const BoxConstraints(maxHeight: 200),
                         decoration: BoxDecoration(
                           color: Theme.of(context).colorScheme.surface,
                           border: Border.all(
-                            color: Theme.of(context)
-                                .dividerColor
-                                .withValues(alpha: 0.35),
+                            color: Theme.of(
+                              context,
+                            ).dividerColor.withValues(alpha: 0.35),
                           ),
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -1442,50 +1477,52 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                 ),
                               )
                             : (results.isNotEmpty
-                                ? ListView.builder(
-                                    shrinkWrap: true,
-                                    itemCount: results.length,
-                                    itemBuilder: (context, index) {
-                                      final r = results[index];
-                                      return ListTile(
-                                        dense: true,
-                                        leading: const Icon(
-                                          Icons.place,
-                                          color: Colors.blue,
-                                        ),
-                                        title: Text(
-                                          r.displayName,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: Theme.of(context).colorScheme.onSurface,
+                                  ? ListView.builder(
+                                      shrinkWrap: true,
+                                      itemCount: results.length,
+                                      itemBuilder: (context, index) {
+                                        final r = results[index];
+                                        return ListTile(
+                                          dense: true,
+                                          leading: const Icon(
+                                            Icons.place,
+                                            color: Colors.blue,
                                           ),
+                                          title: Text(
+                                            r.displayName,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurface,
+                                            ),
+                                          ),
+                                          onTap: () {
+                                            final latLng = r.latLng;
+                                            if (latLng == null) return;
+                                            setStateDialog(() {
+                                              draftCenter = latLng;
+                                              results = [];
+                                              placesError = null;
+                                            });
+                                            miniController.move(latLng, 18);
+                                          },
+                                        );
+                                      },
+                                    )
+                                  : Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Text(
+                                        placesError ?? 'No results',
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.85),
                                         ),
-                                        onTap: () {
-                                          final latLng = r.latLng;
-                                          if (latLng == null) return;
-                                          setStateDialog(() {
-                                            draftCenter = latLng;
-                                            results = [];
-                                            placesError = null;
-                                          });
-                                          miniController.move(latLng, 18);
-                                        },
-                                      );
-                                    },
-                                  )
-                                : Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Text(
-                                      placesError ?? 'No results',
-                                      style: TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withValues(alpha: 0.85),
                                       ),
-                                    ),
-                                  )),
+                                    )),
                       ),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -1544,9 +1581,10 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         'Center: ${draftCenter.latitude.toStringAsFixed(5)}, ${draftCenter.longitude.toStringAsFixed(5)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF475569),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.75),
                         ),
                       ),
                     ),
@@ -1582,8 +1620,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                               final parsed = double.tryParse(val);
                               if (parsed == null) return;
                               setStateDialog(() {
-                                radiusValue =
-                                    parsed.clamp(20.0, 1000.0).toDouble();
+                                radiusValue = parsed
+                                    .clamp(20.0, 1000.0)
+                                    .toDouble();
                               });
                             },
                           ),
@@ -1617,15 +1656,17 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     Wrap(
                       spacing: 8.0,
                       children: List<Widget>.generate(26, (int index) {
-                        final letter =
-                            String.fromCharCode('A'.codeUnitAt(0) + index);
+                        final letter = String.fromCharCode(
+                          'A'.codeUnitAt(0) + index,
+                        );
                         return ChoiceChip(
                           label: Text(letter),
                           selected: dialogSelectedLabelLetter == letter,
                           onSelected: (bool selected) {
                             setStateDialog(() {
-                              dialogSelectedLabelLetter =
-                                  selected ? letter : null;
+                              dialogSelectedLabelLetter = selected
+                                  ? letter
+                                  : null;
                               dialogError = null;
                             });
                           },
@@ -1645,16 +1686,18 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     ),
                     const SizedBox(height: 8),
                     ..._allEmployees.map((employee) {
-                      final isSelected = dialogSelectedEmployees
-                          .any((e) => e.id == employee.id);
+                      final isSelected = dialogSelectedEmployees.any(
+                        (e) => e.id == employee.id,
+                      );
                       return CheckboxListTile(
                         title: Text(employee.name),
                         value: isSelected,
                         onChanged: (bool? value) {
                           setStateDialog(() {
                             if (value == true) {
-                              if (!dialogSelectedEmployees
-                                  .any((e) => e.id == employee.id)) {
+                              if (!dialogSelectedEmployees.any(
+                                (e) => e.id == employee.id,
+                              )) {
                                 dialogSelectedEmployees.add(employee);
                               }
                             } else {
@@ -1737,8 +1780,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     LatLng draftCenter = LatLng(geofence.latitude, geofence.longitude);
     double radiusValue = geofence.radius;
     String? dialogSelectedLabelLetter = geofence.labelLetter;
-    List<UserModel> dialogSelectedEmployees =
-        List<UserModel>.from(geofence.assignedEmployees ?? const []);
+    List<UserModel> dialogSelectedEmployees = List<UserModel>.from(
+      geofence.assignedEmployees ?? const [],
+    );
     bool isSearching = false;
     String? placesError;
     List<_PlaceSearchResult> results = [];
@@ -1781,8 +1825,11 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
         final decoded = jsonDecode(res.body);
         if (decoded is! List) throw Exception('Unexpected response');
         final parsed = decoded
-            .map((e) =>
-                e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+            .map(
+              (e) => e is Map<String, dynamic>
+                  ? e
+                  : Map<String, dynamic>.from(e as Map),
+            )
             .map(_PlaceSearchResult.fromJson)
             .where((r) => r.latLng != null)
             .toList();
@@ -1821,7 +1868,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                         decoration: BoxDecoration(
                           color: Colors.red.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.red.withOpacity(0.4)),
+                          border: Border.all(
+                            color: Colors.red.withOpacity(0.4),
+                          ),
                         ),
                         child: Text(
                           dialogError!,
@@ -1840,25 +1889,29 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       ),
                       onChanged: (v) {
                         localDebounce?.cancel();
-                        localDebounce =
-                            Timer(const Duration(milliseconds: 500), () {
-                          setStateDialog(() {
-                            dialogError = null;
-                          });
-                          searchNominatim(v, setStateDialog);
-                        });
+                        localDebounce = Timer(
+                          const Duration(milliseconds: 500),
+                          () {
+                            setStateDialog(() {
+                              dialogError = null;
+                            });
+                            searchNominatim(v, setStateDialog);
+                          },
+                        );
                       },
                     ),
-                    if (isSearching || placesError != null || results.isNotEmpty)
+                    if (isSearching ||
+                        placesError != null ||
+                        results.isNotEmpty)
                       Container(
                         margin: const EdgeInsets.only(top: 8),
                         constraints: const BoxConstraints(maxHeight: 200),
                         decoration: BoxDecoration(
                           color: Theme.of(context).colorScheme.surface,
                           border: Border.all(
-                            color: Theme.of(context)
-                                .dividerColor
-                                .withValues(alpha: 0.35),
+                            color: Theme.of(
+                              context,
+                            ).dividerColor.withValues(alpha: 0.35),
                           ),
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -1888,50 +1941,52 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                                 ),
                               )
                             : (results.isNotEmpty
-                                ? ListView.builder(
-                                    shrinkWrap: true,
-                                    itemCount: results.length,
-                                    itemBuilder: (context, index) {
-                                      final r = results[index];
-                                      return ListTile(
-                                        dense: true,
-                                        leading: const Icon(
-                                          Icons.place,
-                                          color: Colors.blue,
-                                        ),
-                                        title: Text(
-                                          r.displayName,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: Theme.of(context).colorScheme.onSurface,
+                                  ? ListView.builder(
+                                      shrinkWrap: true,
+                                      itemCount: results.length,
+                                      itemBuilder: (context, index) {
+                                        final r = results[index];
+                                        return ListTile(
+                                          dense: true,
+                                          leading: const Icon(
+                                            Icons.place,
+                                            color: Colors.blue,
                                           ),
+                                          title: Text(
+                                            r.displayName,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurface,
+                                            ),
+                                          ),
+                                          onTap: () {
+                                            final latLng = r.latLng;
+                                            if (latLng == null) return;
+                                            setStateDialog(() {
+                                              draftCenter = latLng;
+                                              results = [];
+                                              placesError = null;
+                                            });
+                                            miniController.move(latLng, 18);
+                                          },
+                                        );
+                                      },
+                                    )
+                                  : Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Text(
+                                        placesError ?? 'No results',
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.85),
                                         ),
-                                        onTap: () {
-                                          final latLng = r.latLng;
-                                          if (latLng == null) return;
-                                          setStateDialog(() {
-                                            draftCenter = latLng;
-                                            results = [];
-                                            placesError = null;
-                                          });
-                                          miniController.move(latLng, 18);
-                                        },
-                                      );
-                                    },
-                                  )
-                                : Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Text(
-                                      placesError ?? 'No results',
-                                      style: TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withValues(alpha: 0.85),
                                       ),
-                                    ),
-                                  )),
+                                    )),
                       ),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -1990,9 +2045,10 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         'Center: ${draftCenter.latitude.toStringAsFixed(5)}, ${draftCenter.longitude.toStringAsFixed(5)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF475569),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.75),
                         ),
                       ),
                     ),
@@ -2031,8 +2087,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                               final parsed = double.tryParse(val);
                               if (parsed == null) return;
                               setStateDialog(() {
-                                radiusValue =
-                                    parsed.clamp(20.0, 1000.0).toDouble();
+                                radiusValue = parsed
+                                    .clamp(20.0, 1000.0)
+                                    .toDouble();
                               });
                             },
                           ),
@@ -2066,15 +2123,17 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     Wrap(
                       spacing: 8.0,
                       children: List<Widget>.generate(26, (int index) {
-                        final letter =
-                            String.fromCharCode('A'.codeUnitAt(0) + index);
+                        final letter = String.fromCharCode(
+                          'A'.codeUnitAt(0) + index,
+                        );
                         return ChoiceChip(
                           label: Text(letter),
                           selected: dialogSelectedLabelLetter == letter,
                           onSelected: (bool selected) {
                             setStateDialog(() {
-                              dialogSelectedLabelLetter =
-                                  selected ? letter : null;
+                              dialogSelectedLabelLetter = selected
+                                  ? letter
+                                  : null;
                               dialogError = null;
                             });
                           },
@@ -2094,8 +2153,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     ),
                     const SizedBox(height: 8),
                     ..._allEmployees.map((employee) {
-                      final isSelected = dialogSelectedEmployees
-                          .any((e) => e.id == employee.id);
+                      final isSelected = dialogSelectedEmployees.any(
+                        (e) => e.id == employee.id,
+                      );
                       return CheckboxListTile(
                         title: Text(employee.name),
                         value: isSelected,
@@ -2103,8 +2163,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                           setStateDialog(() {
                             dialogError = null;
                             if (value == true) {
-                              if (!dialogSelectedEmployees
-                                  .any((e) => e.id == employee.id)) {
+                              if (!dialogSelectedEmployees.any(
+                                (e) => e.id == employee.id,
+                              )) {
                                 dialogSelectedEmployees.add(employee);
                               }
                             } else {

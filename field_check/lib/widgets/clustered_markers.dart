@@ -181,9 +181,11 @@ class ClusterMarkerWidget extends StatelessWidget {
               ),
               child: Text(
                 marker.name.split(' ').first,
-                style: const TextStyle(
-                  fontSize: 8,
-                  fontWeight: FontWeight.w600,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.9),
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

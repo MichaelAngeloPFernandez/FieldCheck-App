@@ -3,6 +3,15 @@ const Attendance = require('../models/Attendance');
 const Geofence = require('../models/Geofence');
 const { io } = require('../server'); // Import the io object
 const Report = require('../models/Report');
+const User = require('../models/User');
+
+async function populateReportById(reportId) {
+  return await Report.findById(reportId)
+    .populate('employee', 'name email employeeId avatarUrl')
+    .populate('task', 'title description difficulty dueDate status isArchived')
+    .populate('attendance')
+    .populate('geofence', 'name');
+}
 
 // @desc    Employee check-in
 // @route   POST /api/attendance/checkin
@@ -78,7 +87,8 @@ const checkIn = asyncHandler(async (req, res) => {
       io.emit('adminNotification', {
         type: 'attendance',
         action: 'auto-checkout',
-        employeeId: req.user._id,
+        userId: req.user._id,
+        employeeId: req.user.employeeId,
         employeeName: req.user.name,
         geofenceName: priorOpen.geofence?.name || null,
         checkInTime: saved.checkIn,
@@ -119,7 +129,8 @@ const checkIn = asyncHandler(async (req, res) => {
   io.emit('adminNotification', {
     type: 'attendance',
     action: 'check-in',
-    employeeId: req.user._id,
+    userId: req.user._id,
+    employeeId: req.user.employeeId,
     employeeName: req.user.name,
     geofenceName: geofence.name,
     timestamp: created.checkIn,
@@ -149,7 +160,12 @@ const checkIn = asyncHandler(async (req, res) => {
         geofence: geofence._id,
         content: 'Employee checked in',
       });
-      io.emit('newReport', rep);
+      try {
+        const populated = await populateReportById(rep._id);
+        io.emit('newReport', populated || rep);
+      } catch (_) {
+        io.emit('newReport', rep);
+      }
     } catch (e) {
       console.error('Failed to auto-create attendance check-in report:', e);
     }
@@ -246,7 +262,8 @@ const checkOut = asyncHandler(async (req, res) => {
   io.emit('adminNotification', {
     type: 'attendance',
     action: 'check-out',
-    employeeId: req.user._id,
+    userId: req.user._id,
+    employeeId: req.user.employeeId,
     employeeName: req.user.name,
     geofenceName: geofence.name,
     checkInTime: updated.checkIn,
@@ -279,7 +296,12 @@ const checkOut = asyncHandler(async (req, res) => {
         geofence: updated.geofence,
         content: 'Employee checked out',
       });
-      io.emit('newReport', rep);
+      try {
+        const populated = await populateReportById(rep._id);
+        io.emit('newReport', populated || rep);
+      } catch (_) {
+        io.emit('newReport', rep);
+      }
     } catch (e) {
       console.error('Failed to auto-create attendance check-out report:', e);
     }
@@ -311,7 +333,8 @@ const logAttendance = asyncHandler(async (req, res) => {
 // @route   GET /api/attendance
 // @access  Private/Admin
 const getAttendanceRecords = asyncHandler(async (req, res) => {
-  const { employeeId, geofenceId, startDate, endDate, status } = req.query;
+  const { employeeId, geofenceId, startDate, endDate, status, archived } =
+    req.query;
 
   const filter = {};
 
@@ -334,12 +357,60 @@ const getAttendanceRecords = asyncHandler(async (req, res) => {
     }
   }
 
+  if (archived === 'true') {
+    filter.isArchived = true;
+  } else if (archived === 'false') {
+    filter.isArchived = false;
+  }
+
   const attendance = await Attendance.find(filter)
     .populate('employee', 'name email')
     .populate('geofence', 'name')
     .sort({ checkIn: -1 });
 
   res.json(attendance);
+});
+
+// @desc    Archive attendance record
+// @route   PUT /api/attendance/:id/archive
+// @access  Private/Admin
+const archiveAttendanceRecord = asyncHandler(async (req, res) => {
+  const attendance = await Attendance.findById(req.params.id)
+    .populate('employee', 'name email')
+    .populate('geofence', 'name');
+
+  if (!attendance) {
+    res.status(404);
+    throw new Error('Attendance record not found');
+  }
+
+  attendance.isArchived = true;
+  const saved = await attendance.save();
+
+  io.emit('updatedAttendanceRecord', saved);
+
+  res.json(saved);
+});
+
+// @desc    Restore attendance record
+// @route   PUT /api/attendance/:id/restore
+// @access  Private/Admin
+const restoreAttendanceRecord = asyncHandler(async (req, res) => {
+  const attendance = await Attendance.findById(req.params.id)
+    .populate('employee', 'name email')
+    .populate('geofence', 'name');
+
+  if (!attendance) {
+    res.status(404);
+    throw new Error('Attendance record not found');
+  }
+
+  attendance.isArchived = false;
+  const saved = await attendance.save();
+
+  io.emit('updatedAttendanceRecord', saved);
+
+  res.json(saved);
 });
 
 // @desc    Get attendance status for all employees (Admin only)
@@ -614,6 +685,8 @@ module.exports = {
   checkOut,
   logAttendance,
   getAttendanceRecords,
+  archiveAttendanceRecord,
+  restoreAttendanceRecord,
   getAttendanceById,
   updateAttendance,
   deleteAttendance,

@@ -12,7 +12,7 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
     required this.employeeId,
   });
 
-  Color _statusColor(String status) {
+  Color _statusColor(BuildContext context, String status) {
     switch (status) {
       case 'completed':
         return Colors.green;
@@ -21,7 +21,7 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
       case 'pending':
         return Colors.blue;
       default:
-        return Colors.grey;
+        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
     }
   }
 
@@ -30,9 +30,7 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
     final isCompleted = task.status == 'completed';
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Task Details'),
-      ),
+      appBar: AppBar(title: const Text('Task Details')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -50,9 +48,12 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
               children: [
                 Chip(
                   label: Text(task.status),
-                  backgroundColor: _statusColor(task.status).withValues(alpha: 0.15),
+                  backgroundColor: _statusColor(
+                    context,
+                    task.status,
+                  ).withValues(alpha: 0.15),
                   labelStyle: TextStyle(
-                    color: _statusColor(task.status),
+                    color: _statusColor(context, task.status),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -89,13 +90,22 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
                     c.isCompleted ? Icons.check_circle : Icons.circle_outlined,
-                    color: c.isCompleted ? Colors.green : Colors.grey,
+                    color: c.isCompleted
+                        ? Colors.green
+                        : Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.55),
                   ),
                   title: Text(c.label),
                   subtitle: c.completedAt != null
                       ? Text(
                           'Completed at: ${c.completedAt!.toLocal().toString().split('.')[0]}',
-                          style: const TextStyle(fontSize: 12),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.75),
+                              ),
                         )
                       : null,
                 ),

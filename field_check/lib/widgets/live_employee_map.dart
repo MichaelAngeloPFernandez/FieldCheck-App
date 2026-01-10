@@ -85,6 +85,8 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     if (widget.employees.isEmpty) {
       return Container(
         height: widget.height,
@@ -99,20 +101,16 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
               Icon(
                 Icons.location_off,
                 size: 48,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.55),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.55),
               ),
               const SizedBox(height: 16),
               Text(
                 'No employees online',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.75),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: onSurface.withValues(alpha: 0.82),
                 ),
               ),
             ],
@@ -159,10 +157,9 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
                 borderRadius: BorderRadius.circular(8),
                 boxShadow: [
                   BoxShadow(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.12),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.12),
                     blurRadius: 4,
                   ),
                 ],
@@ -172,7 +169,7 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildLegendItem('🟢', 'Available / Standby', Colors.green),
-                  _buildLegendItem('🟢', 'Moving / On the go', Colors.green),
+                  _buildLegendItem('🔵', 'Moving / On the go', Colors.blue),
                   _buildLegendItem('🔴', 'Busy', Colors.red),
                   _buildLegendItem('⚫', 'Offline', Colors.grey),
                 ],
@@ -190,10 +187,9 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
                 borderRadius: BorderRadius.circular(8),
                 boxShadow: [
                   BoxShadow(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.12),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.12),
                     blurRadius: 4,
                   ),
                 ],
@@ -209,9 +205,9 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
                   const SizedBox(width: 6),
                   Text(
                     '${widget.employees.length} Online',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: onSurface.withValues(alpha: 0.85),
                     ),
                   ),
                 ],
@@ -234,9 +230,11 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Employee Locations',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
               // Grid of employee location cards
@@ -265,6 +263,8 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
   Widget _buildEmployeeLocationCard(EmployeeLocation employee) {
     final statusColor = _getStatusColor(employee.status);
     final statusIcon = _getStatusIcon(employee.status);
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
 
     return GestureDetector(
       onTap: () => _showEmployeeDetails(employee),
@@ -275,10 +275,9 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
           border: Border.all(color: statusColor.withValues(alpha: 0.3)),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurface
-                  .withValues(alpha: 0.08),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.08),
               blurRadius: 2,
             ),
           ],
@@ -302,9 +301,9 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
                 Expanded(
                   child: Text(
                     employee.name,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: onSurface.withValues(alpha: 0.9),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -316,12 +315,18 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
             // Location info
             Row(
               children: [
-                Icon(Icons.location_on, size: 12, color: Colors.grey),
+                Icon(
+                  Icons.location_on,
+                  size: 14,
+                  color: onSurface.withValues(alpha: 0.65),
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     '${employee.latitude.toStringAsFixed(4)}, ${employee.longitude.toStringAsFixed(4)}',
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: onSurface.withValues(alpha: 0.7),
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -335,14 +340,13 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
               children: [
                 Row(
                   children: [
-                    Icon(statusIcon, size: 12, color: statusColor),
+                    Icon(statusIcon, size: 14, color: statusColor),
                     const SizedBox(width: 4),
                     Text(
                       _getStatusLabel(employee.status),
-                      style: TextStyle(
-                        fontSize: 10,
+                      style: theme.textTheme.labelMedium?.copyWith(
                         color: statusColor,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
@@ -353,15 +357,14 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.blue[50],
+                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     '${employee.activeTaskCount} tasks',
-                    style: const TextStyle(
-                      fontSize: 9,
-                      color: Colors.blue,
-                      fontWeight: FontWeight.w600,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -379,9 +382,17 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 12)),
+          Text(emoji, style: Theme.of(context).textTheme.bodyMedium),
           const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontSize: 11)),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.82),
+            ),
+          ),
         ],
       ),
     );
@@ -423,7 +434,7 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
       case EmployeeStatus.available:
         return Colors.green;
       case EmployeeStatus.moving:
-        return Colors.green;
+        return Colors.blue;
       case EmployeeStatus.busy:
         return Colors.red;
       case EmployeeStatus.offline:

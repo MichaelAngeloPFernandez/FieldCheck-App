@@ -264,8 +264,8 @@ class _AdminEmployeeHistoryScreenState
       chipBg = Colors.red.shade100;
       chipFg = Colors.red.shade900;
     } else if (record.isVoid) {
-      chipBg = Colors.grey.shade300;
-      chipFg = Colors.grey.shade900;
+      chipBg = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12);
+      chipFg = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85);
     } else if (record.isCheckIn) {
       chipBg = Colors.green.shade100;
       chipFg = Colors.green.shade900;
@@ -290,7 +290,10 @@ class _AdminEmployeeHistoryScreenState
               ),
               child: Text(
                 typeLabel,
-                style: TextStyle(color: chipFg, fontSize: 12),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: chipFg,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
@@ -326,17 +329,21 @@ class _AdminEmployeeHistoryScreenState
   }
 
   Future<void> _exportHistoryForEmployee() async {
-    final recordsToExport = _filteredRecords.map((record) => ReportModel(
-      id: record.id,
-      type: 'attendance',
-      attendanceId: record.id,
-      employeeId: record.userId,
-      content: record.isCheckIn ? 'Check In' : 'Check Out',
-      status: record.isVoid ? 'void' : 'submitted',
-      submittedAt: record.timestamp,
-      employeeName: widget.employeeName,
-      geofenceName: record.geofenceName,
-    )).toList();
+    final recordsToExport = _filteredRecords
+        .map(
+          (record) => ReportModel(
+            id: record.id,
+            type: 'attendance',
+            attendanceId: record.id,
+            employeeId: record.userId,
+            content: record.isCheckIn ? 'Check In' : 'Check Out',
+            status: record.isVoid ? 'void' : 'submitted',
+            submittedAt: record.timestamp,
+            employeeName: widget.employeeName,
+            geofenceName: record.geofenceName,
+          ),
+        )
+        .toList();
 
     if (recordsToExport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -594,7 +601,7 @@ class _AdminEmployeeHistoryScreenState
                       Expanded(
                         child: Text(
                           'Note: Entries marked as VOID or Auto checkout were either cancelled by an admin or automatically checked out when the employee\'s device was offline for too long. These entries may be excluded from normal attendance totals.',
-                          style: TextStyle(fontSize: 12, color: Colors.black87),
+                          style: TextStyle(fontSize: 13),
                         ),
                       ),
                     ],
@@ -706,10 +713,9 @@ class _AdminEmployeeHistoryScreenState
           children: [
             Text(
               label,
-              style: TextStyle(
-                fontSize: 11,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: color,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 4),

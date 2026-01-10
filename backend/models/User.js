@@ -12,6 +12,11 @@ const userSchema = mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    employeeId: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     email: {
       type: String,
       required: false,
@@ -29,6 +34,30 @@ const userSchema = mongoose.Schema(
     avatarUrl: {
       type: String,
       default: '',
+    },
+    lastLatitude: {
+      type: Number,
+      default: null,
+    },
+    lastLongitude: {
+      type: Number,
+      default: null,
+    },
+    lastLocationUpdate: {
+      type: Date,
+      default: null,
+    },
+    isOnline: {
+      type: Boolean,
+      default: false,
+    },
+    activeTaskCount: {
+      type: Number,
+      default: 0,
+    },
+    workloadWeight: {
+      type: Number,
+      default: 0,
     },
     password: {
       type: String,

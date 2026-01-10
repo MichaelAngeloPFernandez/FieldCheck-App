@@ -17,9 +17,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
   final _usernameController = TextEditingController();
+  final _employeeIdController = TextEditingController();
   bool _isLoading = false;
   String? _error;
-  bool _isAdmin = false; // simple toggle to mirror previous quick role selection
+  bool _isAdmin =
+      false; // simple toggle to mirror previous quick role selection
 
   final _userService = UserService();
 
@@ -31,18 +33,27 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     });
     try {
       final role = _isAdmin ? 'admin' : 'employee';
-      AppLogger.info(AppLogger.tagAuth, 'Registration attempt for: ${_emailController.text.trim()} (role: $role)');
-      
+      AppLogger.info(
+        AppLogger.tagAuth,
+        'Registration attempt for: ${_emailController.text.trim()} (role: $role)',
+      );
+
       await _userService.register(
         _nameController.text.trim(),
         _emailController.text.trim(),
         _passwordController.text,
         role: role,
-        username: _usernameController.text.trim().isEmpty ? null : _usernameController.text.trim(),
+        employeeId: _isAdmin ? null : _employeeIdController.text.trim(),
+        username: _usernameController.text.trim().isEmpty
+            ? null
+            : _usernameController.text.trim(),
       );
       if (!mounted) return;
-      
-      AppLogger.success(AppLogger.tagAuth, 'Registration successful for: ${_emailController.text.trim()}');
+
+      AppLogger.success(
+        AppLogger.tagAuth,
+        'Registration successful for: ${_emailController.text.trim()}',
+      );
       AppWidgets.showSuccessSnackbar(
         context,
         'Registration successful. Check your email to activate your account.',
@@ -71,6 +82,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _passwordController.dispose();
     _nameController.dispose();
     _usernameController.dispose();
+    _employeeIdController.dispose();
     super.dispose();
   }
 
@@ -83,7 +95,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           IconButton(
             tooltip: 'Toggle theme',
             icon: Icon(
-              Theme.of(context).brightness == Brightness.dark ? Icons.dark_mode : Icons.light_mode,
+              Theme.of(context).brightness == Brightness.dark
+                  ? Icons.dark_mode
+                  : Icons.light_mode,
             ),
             onPressed: () => MyApp.of(context)?.toggleTheme(),
           ),
@@ -105,7 +119,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     if (_error != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12.0),
-                        child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
                       ),
                     TextFormField(
                       controller: _nameController,
@@ -130,7 +147,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       ),
                       validator: (value) {
                         // optional; if provided, enforce minimum length
-                        if (value != null && value.isNotEmpty && value.length < 3) {
+                        if (value != null &&
+                            value.isNotEmpty &&
+                            value.length < 3) {
                           return 'Username must be at least 3 characters';
                         }
                         return null;
@@ -172,11 +191,30 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         return null;
                       },
                     ),
+                    if (!_isAdmin) ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _employeeIdController,
+                        decoration: const InputDecoration(
+                          labelText: 'Employee ID',
+                          prefixIcon: Icon(Icons.badge_outlined),
+                        ),
+                        validator: (value) {
+                          if (_isAdmin) return null;
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Employee ID is required';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     SwitchListTile(
                       value: _isAdmin,
                       title: const Text('Register as Admin'),
-                      subtitle: const Text('Toggle to register admin vs employee'),
+                      subtitle: const Text(
+                        'Toggle to register admin vs employee',
+                      ),
                       onChanged: (val) => setState(() => _isAdmin = val),
                     ),
                     const SizedBox(height: 24),
@@ -188,7 +226,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('Create Account'),
                       ),

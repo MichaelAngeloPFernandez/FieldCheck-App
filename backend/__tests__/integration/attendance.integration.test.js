@@ -19,7 +19,19 @@ const {
   checkOutRateLimiter,
   cacheAttendanceData,
   invalidateAttendanceCache,
+  getMetrics,
+  cacheManager,
+  checkInLimiter,
+  checkOutLimiter,
+  performanceTracker,
 } = require('../../middleware/performanceOptimizer');
+
+const resetPerformanceGlobals = () => {
+  cacheManager.clear();
+  checkInLimiter.requests.clear();
+  checkOutLimiter.requests.clear();
+  performanceTracker.endpoints.clear();
+};
 
 // Mock Express app
 const createTestApp = () => {
@@ -50,6 +62,10 @@ const createTestApp = () => {
     res.json({ synced: true });
   });
 
+  app.get('/api/metrics', (req, res) => {
+    getMetrics(req, res);
+  });
+
   return app;
 };
 
@@ -57,6 +73,7 @@ describe('Attendance Endpoints - Integration Tests', () => {
   let app;
 
   beforeEach(() => {
+    resetPerformanceGlobals();
     app = createTestApp();
   });
 
@@ -250,6 +267,7 @@ describe('Concurrency & Race Conditions', () => {
   let app;
 
   beforeEach(() => {
+    resetPerformanceGlobals();
     app = createTestApp();
   });
 
@@ -303,6 +321,7 @@ describe('Error Handling', () => {
   let app;
 
   beforeEach(() => {
+    resetPerformanceGlobals();
     app = createTestApp();
   });
 
@@ -344,6 +363,7 @@ describe('Edge Cases', () => {
   let app;
 
   beforeEach(() => {
+    resetPerformanceGlobals();
     app = createTestApp();
   });
 

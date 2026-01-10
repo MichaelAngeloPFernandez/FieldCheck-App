@@ -40,6 +40,9 @@ console.log('🔌 Socket.io initialized');
 const employeeLocations = new Map(); // { userId: { lat, lng, accuracy, timestamp } }
 module.exports.employeeLocations = employeeLocations;
 
+// Throttle admin notifications for overtasked employees
+const overtaskNotified = new Map(); // { userId: { count: number, at: number } }
+
 // --- Presence tracking & real-time location monitoring ---
 let lastBroadcastCount = 0;
 io.on('connection', (socket) => {
@@ -48,6 +51,19 @@ io.on('connection', (socket) => {
     const authHeader =
       (socket.handshake.headers && socket.handshake.headers.authorization) ||
       (socket.handshake.headers && socket.handshake.headers.Authorization);
+
+    const authToken =
+      (socket.handshake && socket.handshake.auth && socket.handshake.auth.token)
+        ? socket.handshake.auth.token
+        : null;
+
+    if (authToken && typeof authToken === 'string') {
+      const decoded = jwt.verify(authToken, process.env.JWT_SECRET);
+      if (decoded && decoded.id) {
+        userIdFromToken = decoded.id;
+      }
+    }
+
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -65,12 +81,73 @@ io.on('connection', (socket) => {
     }
   } catch (_) {}
 
+  socket.on('employeeOnline', async (data) => {
+    try {
+      const payloadId =
+        data && (data.employeeId || data.userId || data.id)
+          ? String(data.employeeId || data.userId || data.id)
+          : '';
+
+      let userId = userIdFromToken;
+      if (
+        (typeof userId !== 'string' || userId.length !== 24) &&
+        payloadId.length === 24
+      ) {
+        userId = payloadId;
+        userIdFromToken = payloadId;
+      }
+
+      let name = (data && data.name ? String(data.name) : '').trim();
+      let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
+      const timestamp = data && data.timestamp ? data.timestamp : new Date().toISOString();
+
+      if (typeof userId === 'string' && userId.length === 24) {
+        try {
+          await User.findByIdAndUpdate(userId, { isOnline: true });
+        } catch (_) {}
+
+        if (!name || !employeeCode) {
+          try {
+            const u = await User.findById(userId).select('name employeeId');
+            if (u) {
+              if (!name && u.name) name = String(u.name);
+              if (!employeeCode && u.employeeId) employeeCode = String(u.employeeId);
+            }
+          } catch (_) {}
+        }
+      }
+
+      io.emit('adminNotification', {
+        type: 'employee',
+        action: 'employeeOnline',
+        userId,
+        employeeId: employeeCode,
+        name: name || 'Employee',
+        timestamp,
+        message: `${name || 'Employee'} is now online.`,
+      });
+    } catch (_) {}
+  });
+
   // Handle real-time location updates from employees while checked in
   socket.on('employeeLocationUpdate', (data, callback) => {
     try {
       const { latitude, longitude, accuracy, timestamp } = data;
-      const userId = userIdFromToken;
-      
+
+      const payloadId =
+        data && (data.employeeId || data.userId || data.id)
+          ? String(data.employeeId || data.userId || data.id)
+          : '';
+
+      let userId = userIdFromToken;
+      if (
+        (typeof userId !== 'string' || userId.length !== 24) &&
+        payloadId.length === 24
+      ) {
+        userId = payloadId;
+        userIdFromToken = payloadId;
+      }
+
       // Store latest location instantly
       employeeLocations.set(userId, {
         lat: latitude,
@@ -113,17 +190,20 @@ io.on('connection', (socket) => {
           // Enrich data for admin dashboards using EmployeeLocationService
           let name = 'Unknown';
           let isOnline = true;
-          let status = 'available';
+          let status = 'moving';
           let currentGeofence = null;
           let isCheckedIn = false;
+          let activeTaskCount = 0;
+          const maxActive = 3;
 
           if (typeof userId === 'string' && userId.length === 24) {
             try {
               const Attendance = require('./models/Attendance');
               const Geofence = require('./models/Geofence');
               const Task = require('./models/Task');
+              const UserTask = require('./models/UserTask');
 
-              const user = await User.findById(userId).select('name isOnline');
+              const user = await User.findById(userId).select('name isOnline employeeId');
               if (user) {
                 if (user.name) {
                   name = user.name;
@@ -145,37 +225,62 @@ io.on('connection', (socket) => {
               }
 
               // Check if employee has active tasks (busy status)
-              const activeTasks = await Task.find({
-                assignedTo: userId,
-                status: { $in: ['assigned', 'in_progress'] },
-              });
+              const now = new Date();
+              const assignments = await UserTask.find({
+                userId,
+                isArchived: { $ne: true },
+                status: { $ne: 'completed' },
+              }).select('taskId');
 
-              if (activeTasks.length > 0) {
-                status = 'busy';
-              } else if (isCheckedIn) {
-                status = 'available';
-              }
+              const taskIds = assignments.map((a) => a.taskId);
+              const tasks = taskIds.length
+                ? await Task.find({
+                    _id: { $in: taskIds },
+                    isArchived: { $ne: true },
+                  }).select('dueDate status isArchived')
+                : [];
 
-              // Check if employee is within any geofence
-              let isWithinGeofence = false;
-              if (isCheckedIn && currentGeofence) {
-                const geofences = await Geofence.find({ isActive: true });
-                for (const geofence of geofences) {
-                  const dx = latitude - geofence.latitude;
-                  const dy = longitude - geofence.longitude;
-                  const distance = Math.sqrt(dx * dx + dy * dy) * 111000;
-                  if (distance <= geofence.radius) {
-                    isWithinGeofence = true;
-                    break;
-                  }
+              const terminalStatuses = new Set(['completed', 'reviewed', 'closed']);
+              activeTaskCount = tasks.filter((t) => {
+                const status = String(t.status || '').toLowerCase();
+                if (t.isArchived) return false;
+                if (terminalStatuses.has(status)) return false;
+                if (t.dueDate && t.dueDate < now) return false;
+                return true;
+              }).length;
+
+              try {
+                await User.findByIdAndUpdate(userId, { activeTaskCount });
+              } catch (_) {}
+
+              // Throttled notification when already over the limit
+              if (activeTaskCount > maxActive) {
+                const nowMs = Date.now();
+                const prev = overtaskNotified.get(userId);
+                const shouldNotify =
+                  !prev ||
+                  prev.count !== activeTaskCount ||
+                  (nowMs - prev.at) > 10 * 60 * 1000;
+
+                if (shouldNotify) {
+                  overtaskNotified.set(userId, { count: activeTaskCount, at: nowMs });
+                  io.emit('adminNotification', {
+                    type: 'task',
+                    action: 'employeeOvertasked',
+                    userId,
+                    employeeId: user?.employeeId ? String(user.employeeId) : null,
+                    name,
+                    activeTaskCount,
+                    maxActive,
+                    timestamp: new Date().toISOString(),
+                    message: `${name} is over the task limit (${activeTaskCount}/${maxActive}).`,
+                    severity: 'warning',
+                  });
                 }
               }
 
-              // Override status for map display: green (checked in), blue (outside geofence), red (busy)
-              if (activeTasks.length > 0) {
+              if (activeTaskCount > 0) {
                 status = 'busy';
-              } else if (isCheckedIn && !isWithinGeofence) {
-                status = 'moving';
               } else if (isCheckedIn) {
                 status = 'available';
               }
@@ -192,7 +297,7 @@ io.on('connection', (socket) => {
             speed: 0,
             status,
             timestamp: timestamp || new Date().toISOString(),
-            activeTaskCount: 0,
+            activeTaskCount,
             workloadScore: 0,
             currentGeofence,
             distanceToNearestTask: null,

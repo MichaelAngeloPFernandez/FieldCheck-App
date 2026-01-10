@@ -4,6 +4,8 @@ import '../services/user_service.dart';
 import '../services/realtime_service.dart';
 import '../models/user_model.dart';
 import 'dart:async';
+import '../widgets/app_widgets.dart';
+import '../config/api_config.dart';
 
 class ManageAdminsScreen extends StatefulWidget {
   const ManageAdminsScreen({super.key, this.showInactiveOnly = false});
@@ -21,6 +23,14 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
   final Set<String> _selectedAdminIds = {};
   bool _isSelectMode = false;
   late StreamSubscription<Map<String, dynamic>> _userEventSubscription;
+
+  String _normalizeAvatarUrl(String rawPath) {
+    final p = rawPath.trim();
+    if (p.isEmpty) return p;
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
+    return '${ApiConfig.baseUrl}/$p';
+  }
 
   @override
   void initState() {
@@ -126,9 +136,10 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to deactivate'),
+        );
       }
     }
   }
@@ -171,9 +182,10 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete'),
+        );
       }
     }
   }
@@ -254,6 +266,7 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
           emailController.text.trim(),
           passwordController.text,
           role: 'admin',
+          employeeId: null,
           phone: phoneController.text.trim().isEmpty
               ? null
               : phoneController.text.trim(),
@@ -265,8 +278,12 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add administrator: $e')),
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to add administrator',
+          ),
         );
       }
     }
@@ -300,9 +317,10 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete'),
+        );
       }
     }
   }
@@ -335,9 +353,10 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to deactivate: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to deactivate'),
+        );
       }
     }
   }
@@ -370,9 +389,10 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to reactivate: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to reactivate'),
+        );
       }
     }
   }
@@ -466,9 +486,10 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
         await _refresh();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Update failed'),
+        );
       }
     }
   }
@@ -488,7 +509,7 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                 icon: const Icon(Icons.person_add),
                 label: const Text('Add Admin'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
                   foregroundColor: const Color(0xFF2688d4),
                 ),
               ),
@@ -523,7 +544,9 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
           // Search and Filter Section
           Container(
             padding: const EdgeInsets.all(12),
-            color: Colors.grey.shade100,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.04),
             child: Column(
               children: [
                 // Search bar
@@ -658,8 +681,19 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                                   });
                                 },
                               )
-                            : const CircleAvatar(
-                                child: Icon(Icons.admin_panel_settings),
+                            : CircleAvatar(
+                                backgroundImage:
+                                    (user.avatarUrl != null &&
+                                        user.avatarUrl!.trim().isNotEmpty)
+                                    ? NetworkImage(
+                                        _normalizeAvatarUrl(user.avatarUrl!),
+                                      )
+                                    : null,
+                                child:
+                                    (user.avatarUrl == null ||
+                                        user.avatarUrl!.trim().isEmpty)
+                                    ? const Icon(Icons.admin_panel_settings)
+                                    : null,
                               ),
                         title: Text(user.name),
                         subtitle: Text(

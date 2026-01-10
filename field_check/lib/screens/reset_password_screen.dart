@@ -5,10 +5,7 @@ import 'package:field_check/services/user_service.dart';
 class ResetPasswordScreen extends StatefulWidget {
   final String? token;
 
-  const ResetPasswordScreen({
-    super.key,
-    this.token,
-  });
+  const ResetPasswordScreen({super.key, this.token});
 
   @override
   State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
@@ -18,8 +15,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final UserService _userService = UserService();
   final TextEditingController _tokenController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
-  
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+
   bool _isLoading = false;
   bool _showPassword = false;
   bool _showConfirmPassword = false;
@@ -68,7 +66,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
     if (!_isStrongPassword(_passwordController.text)) {
       setState(() {
-        _errorMessage = 'Password must contain uppercase, lowercase, number, and special character';
+        _errorMessage =
+            'Password must contain uppercase, lowercase, number, and special character';
       });
       return;
     }
@@ -90,7 +89,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         _tokenController.text,
         _passwordController.text,
       );
-      
+
       setState(() {
         _isLoading = false;
         _successMessage = 'Password reset successfully!';
@@ -130,7 +129,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     final hasLowercase = password.contains(RegExp(r'[a-z]'));
     final hasDigit = password.contains(RegExp(r'[0-9]'));
     final hasSpecialChar = password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
-    
+
     return hasUppercase && hasLowercase && hasDigit && hasSpecialChar;
   }
 
@@ -140,7 +139,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
     if (password.length >= 8) strength++;
     if (password.length >= 12) strength++;
-    if (password.contains(RegExp(r'[a-z]')) && password.contains(RegExp(r'[A-Z]'))) strength++;
+    if (password.contains(RegExp(r'[a-z]')) &&
+        password.contains(RegExp(r'[A-Z]'))) {
+      strength++;
+    }
     if (password.contains(RegExp(r'[0-9]'))) strength++;
     if (password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) strength++;
 
@@ -198,7 +200,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
-              
+
               // Header
               Center(
                 child: Column(
@@ -292,7 +294,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.check_circle_outline, color: Colors.green.shade600),
+                      Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.green.shade600,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -386,17 +391,18 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Password Strength:',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         Text(
                           _getStrengthText(),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _getStrengthColor(),
-                          ),
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: _getStrengthColor(),
+                              ),
                         ),
                       ],
                     ),
@@ -406,7 +412,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       child: LinearProgressIndicator(
                         value: _passwordStrength / 5,
                         minHeight: 6,
-                        backgroundColor: Colors.grey.shade300,
+                        backgroundColor: Theme.of(
+                          context,
+                        ).dividerColor.withValues(alpha: 0.35),
                         valueColor: AlwaysStoppedAnimation<Color>(
                           _getStrengthColor(),
                         ),
@@ -428,8 +436,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     ),
                     _buildPasswordRequirement(
                       'Special character required',
-                      _passwordController.text
-                          .contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]')),
+                      _passwordController.text.contains(
+                        RegExp(r'[!@#$%^&*(),.?":{}|<>]'),
+                      ),
                     ),
                   ],
                 ),
@@ -437,12 +446,13 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               const SizedBox(height: 24),
 
               // Confirm Password
-              const Text(
+              Text(
                 'Confirm Password',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.9),
                 ),
               ),
               const SizedBox(height: 8),
@@ -455,7 +465,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _showConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                      _showConfirmPassword
+                          ? Icons.visibility
+                          : Icons.visibility_off,
                     ),
                     onPressed: () {
                       setState(() {
@@ -519,10 +531,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   onPressed: _isLoading ? null : () => Navigator.pop(context),
                   child: const Text(
                     'Cancel',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -534,6 +543,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   Widget _buildPasswordRequirement(String text, bool isMet) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -541,14 +551,15 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           Icon(
             isMet ? Icons.check_circle : Icons.circle_outlined,
             size: 18,
-            color: isMet ? Colors.green : Colors.grey,
+            color: isMet ? Colors.green : onSurface.withValues(alpha: 0.55),
           ),
           const SizedBox(width: 8),
           Text(
             text,
             style: TextStyle(
-              fontSize: 12,
-              color: isMet ? Colors.green : Colors.grey.shade600,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: isMet ? Colors.green : onSurface.withValues(alpha: 0.75),
             ),
           ),
         ],

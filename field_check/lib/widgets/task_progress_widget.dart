@@ -24,7 +24,9 @@ class TaskProgressWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final clampedProgress = progress.clamp(0.0, 1.0);
     final percentage = (clampedProgress * 100).toStringAsFixed(0);
-    final bgColor = backgroundColor ?? Colors.grey[300]!;
+    final bgColor =
+        backgroundColor ??
+        Theme.of(context).dividerColor.withValues(alpha: 0.35);
     final pColor = progressColor ?? _getProgressColor(clampedProgress);
 
     return Column(
@@ -39,9 +41,8 @@ class TaskProgressWidget extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -51,7 +52,11 @@ class TaskProgressWidget extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 4.0),
                       child: Text(
                         subtitle!,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.75),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

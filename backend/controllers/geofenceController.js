@@ -4,6 +4,14 @@ const Attendance = require('../models/Attendance');
 const Report = require('../models/Report');
 const { io } = require('../server');
 
+async function populateReportById(reportId) {
+  return await Report.findById(reportId)
+    .populate('employee', 'name email employeeId avatarUrl')
+    .populate('task', 'title description difficulty dueDate status isArchived')
+    .populate('attendance')
+    .populate('geofence', 'name');
+}
+
 // @desc    Create a new geofence
 // @route   POST /api/geofences
 // @access  Private/Admin
@@ -133,7 +141,12 @@ const updateGeofence = asyncHandler(async (req, res) => {
                   geofence: geofence._id,
                   content: `Auto-checkout: Employee removed from geofence assignment by admin`,
                 });
-                io.emit('newReport', report);
+                try {
+                  const populated = await populateReportById(report._id);
+                  io.emit('newReport', populated || report);
+                } catch (_) {
+                  io.emit('newReport', report);
+                }
               } catch (e) {
                 console.error('Failed to create auto-checkout report:', e);
               }

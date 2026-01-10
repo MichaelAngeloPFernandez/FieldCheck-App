@@ -35,7 +35,8 @@ class CustomMap extends StatefulWidget {
 }
 
 class _CustomMapState extends State<CustomMap> {
-  MapController get _mapController => widget.mapController ?? _internalMapController;
+  MapController get _mapController =>
+      widget.mapController ?? _internalMapController;
   final MapController _internalMapController = MapController();
 
   Geofence? _nearestGeofence() {
@@ -190,6 +191,8 @@ class _CustomMapState extends State<CustomMap> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     // Better initial centering based on current location or first geofence
     final LatLng initialCenter = widget.currentLocation != null
         ? LatLng(
@@ -218,8 +221,8 @@ class _CustomMapState extends State<CustomMap> {
       width: widget.width,
       height: widget.height,
       decoration: BoxDecoration(
-        color: Colors.grey[200],
-        border: Border.all(color: Colors.grey),
+        color: theme.colorScheme.surface,
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.6)),
         borderRadius: BorderRadius.circular(8.0),
       ),
       child: Stack(
@@ -293,9 +296,11 @@ class _CustomMapState extends State<CustomMap> {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
+                  color: theme.colorScheme.surface.withValues(alpha: 0.92),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(
+                    color: theme.dividerColor.withValues(alpha: 0.6),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -308,10 +313,19 @@ class _CustomMapState extends State<CustomMap> {
                     const SizedBox(width: 8),
                     Text(
                       '${nearest.name}${nearest.labelLetter != null ? ' • ${nearest.labelLetter}' : ''}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: onSurface.withValues(alpha: 0.9),
+                      ),
                     ),
                     const SizedBox(width: 12),
-                    Text('$distance m'),
+                    Text(
+                      '$distance m',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: onSurface.withValues(alpha: 0.85),
+                      ),
+                    ),
                     const SizedBox(width: 12),
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -329,7 +343,8 @@ class _CustomMapState extends State<CustomMap> {
                       ),
                       child: Text(
                         isAssigned ? 'Assigned' : 'Not assigned',
-                        style: TextStyle(
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
                           color: isAssigned
                               ? Colors.green.shade700
                               : Colors.orange.shade700,

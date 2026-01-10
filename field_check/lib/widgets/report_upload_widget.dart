@@ -21,6 +21,8 @@ class _ReportUploadWidgetState extends State<ReportUploadWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Card(
       elevation: 2,
       margin: const EdgeInsets.all(12),
@@ -29,17 +31,21 @@ class _ReportUploadWidgetState extends State<ReportUploadWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Upload Report',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
+                border: Border.all(
+                  color: theme.dividerColor.withValues(alpha: 0.5),
+                ),
                 borderRadius: BorderRadius.circular(8),
-                color: Colors.grey.shade50,
+                color: theme.colorScheme.surface,
               ),
               child: Column(
                 children: [
@@ -51,11 +57,11 @@ class _ReportUploadWidgetState extends State<ReportUploadWidget> {
                   const SizedBox(height: 12),
                   Text(
                     _selectedFileName ?? 'Select a file to upload',
-                    style: TextStyle(
-                      fontSize: 14,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                       color: _selectedFileName != null
                           ? Colors.green
-                          : Colors.grey,
+                          : onSurface.withValues(alpha: 0.75),
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -78,9 +84,12 @@ class _ReportUploadWidgetState extends State<ReportUploadWidget> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'File Requirements:',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: onSurface.withValues(alpha: 0.9),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   _buildRequirement('Maximum size: 50 MB'),
@@ -98,13 +107,22 @@ class _ReportUploadWidgetState extends State<ReportUploadWidget> {
   }
 
   Widget _buildRequirement(String text) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           const Icon(Icons.check_circle, size: 16, color: Colors.green),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 12))),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: onSurface.withValues(alpha: 0.82),
+              ),
+            ),
+          ),
         ],
       ),
     );

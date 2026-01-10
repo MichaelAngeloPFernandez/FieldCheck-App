@@ -15,6 +15,14 @@ const Report = require('../models/Report');
 const Settings = require('../models/Settings');
 const notificationService = require('../services/notificationService');
 
+async function populateReportById(reportId) {
+  return await Report.findById(reportId)
+    .populate('employee', 'name email employeeId avatarUrl')
+    .populate('task', 'title description difficulty dueDate status isArchived')
+    .populate('attendance')
+    .populate('geofence', 'name');
+}
+
 // Run daily cleanup at 2 AM (UTC)
 // Format: '0 2 * * *' = every day at 02:00
 const CLEANUP_SCHEDULE = '0 2 * * *';
@@ -213,7 +221,12 @@ const autoCheckoutOfflineEmployees = async () => {
                 'Attendance auto-checked out and voided (offline too long)',
             });
             if (global.io) {
-              global.io.emit('newReport', rep);
+              try {
+                const populated = await populateReportById(rep._id);
+                global.io.emit('newReport', populated || rep);
+              } catch (_) {
+                global.io.emit('newReport', rep);
+              }
             }
           } catch (e) {
             console.error(
@@ -284,6 +297,23 @@ const notifyOverdueTasks = async () => {
         await Promise.all(
           users.map((u) => notificationService.notifyTaskOverdue(u, task))
         );
+
+        try {
+          if (global.io) {
+            global.io.emit('adminNotification', {
+              type: 'task',
+              action: 'overdue',
+              taskId: String(task._id),
+              taskTitle: task.title,
+              dueDate: task.dueDate,
+              severity: 'warning',
+              timestamp: new Date().toISOString(),
+              message: `Task "${task.title}" is now overdue.`,
+            });
+          }
+        } catch (err) {
+          console.error('Failed to emit admin overdue notification:', err.message || err);
+        }
 
         task.overdueNotified = true;
         await task.save();

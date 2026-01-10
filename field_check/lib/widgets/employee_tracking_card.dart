@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/widgets/workload_indicator_widget.dart';
+import 'package:field_check/config/api_config.dart';
 
 class EmployeeTrackingCard extends StatelessWidget {
   final UserModel employee;
@@ -16,9 +17,21 @@ class EmployeeTrackingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     final isOnline = employee.isOnline ?? false;
     final taskCount = employee.activeTaskCount ?? 0;
     final workload = employee.workloadWeight ?? 0.0;
+
+    final rawAvatar = employee.avatarUrl?.trim() ?? '';
+    final hasAvatar = rawAvatar.isNotEmpty;
+    final avatarUrl = !hasAvatar
+        ? ''
+        : (rawAvatar.startsWith('http://') || rawAvatar.startsWith('https://'))
+        ? rawAvatar
+        : rawAvatar.startsWith('/')
+        ? '${ApiConfig.baseUrl}$rawAvatar'
+        : '${ApiConfig.baseUrl}/$rawAvatar';
 
     return Card(
       elevation: 2,
@@ -37,15 +50,18 @@ class EmployeeTrackingCard extends StatelessWidget {
                   CircleAvatar(
                     radius: 20,
                     backgroundColor: isOnline ? Colors.green : Colors.grey,
-                    child: Text(
-                      employee.name.isNotEmpty
-                          ? employee.name[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    backgroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
+                    child: hasAvatar
+                        ? null
+                        : Text(
+                            employee.name.isNotEmpty
+                                ? employee.name[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                   const SizedBox(width: 12),
                   // Name and status
@@ -55,9 +71,9 @@ class EmployeeTrackingCard extends StatelessWidget {
                       children: [
                         Text(
                           employee.name,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: onSurface.withValues(alpha: 0.9),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -75,9 +91,11 @@ class EmployeeTrackingCard extends StatelessWidget {
                             const SizedBox(width: 4),
                             Text(
                               isOnline ? 'Online' : 'Offline',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isOnline ? Colors.green : Colors.grey,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: isOnline
+                                    ? Colors.green
+                                    : onSurface.withValues(alpha: 0.65),
                               ),
                             ),
                           ],
@@ -111,9 +129,8 @@ class EmployeeTrackingCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           '${employee.lastLatitude!.toStringAsFixed(4)}, ${employee.lastLongitude!.toStringAsFixed(4)}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: onSurface.withValues(alpha: 0.72),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -126,10 +143,15 @@ class EmployeeTrackingCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildInfoChip('Tasks', taskCount.toString()),
-                  _buildInfoChip('Workload', workload.toStringAsFixed(1)),
+                  _buildInfoChip(context, 'Tasks', taskCount.toString()),
+                  _buildInfoChip(
+                    context,
+                    'Workload',
+                    workload.toStringAsFixed(1),
+                  ),
                   if (employee.lastLocationUpdate != null)
                     _buildInfoChip(
+                      context,
                       'Updated',
                       _formatTime(employee.lastLocationUpdate!),
                     ),
@@ -142,16 +164,21 @@ class EmployeeTrackingCard extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoChip(String label, String value) {
+  Widget _buildInfoChip(BuildContext context, String label, String value) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.1),
+        color: onSurface.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         '$label: $value',
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+        style: theme.textTheme.labelMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: onSurface.withValues(alpha: 0.82),
+        ),
       ),
     );
   }

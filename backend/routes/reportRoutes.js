@@ -50,6 +50,8 @@ router.post(
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
+    console.log(`Report attachment uploaded: ${req.file.path}`);
+
     const relPath = `/uploads/reports/${req.file.filename}`;
     res.status(201).json({
       path: relPath,

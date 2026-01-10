@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 import '../services/user_service.dart';
@@ -106,7 +106,9 @@ class AuthProvider with ChangeNotifier {
       return true;
     } catch (e) {
       _error = e.toString();
-      debugPrint('❌ Login failed: $e');
+      if (kDebugMode) {
+        debugPrint('❌ Login failed: $e');
+      }
       return false;
     } finally {
       _isLoading = false;
@@ -121,6 +123,7 @@ class AuthProvider with ChangeNotifier {
     String password,
     String role, {
     String? username,
+    String? employeeId,
   }) async {
     try {
       _isLoading = true;
@@ -132,6 +135,7 @@ class AuthProvider with ChangeNotifier {
         email,
         password,
         role: role,
+        employeeId: employeeId,
         username: username,
       );
 
@@ -141,7 +145,9 @@ class AuthProvider with ChangeNotifier {
       return true;
     } catch (e) {
       _error = e.toString();
-      debugPrint('❌ Registration failed: $e');
+      if (kDebugMode) {
+        debugPrint('❌ Registration failed: $e');
+      }
       return false;
     } finally {
       _isLoading = false;
