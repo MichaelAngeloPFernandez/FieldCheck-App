@@ -8,24 +8,7 @@ const Settings = require('../models/Settings');
 const notificationService = require('../services/notificationService');
 
 async function getMaxActiveTasksPerEmployee() {
-  const DEFAULT_MAX = 10;
-  try {
-    const doc = await Settings.findOne({ key: 'task.maxActivePerEmployee' });
-    if (!doc) return DEFAULT_MAX;
-    const value = doc.value;
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-      return value;
-    }
-    if (value && typeof value === 'object') {
-      const num = value.maxActivePerEmployee;
-      if (typeof num === 'number' && Number.isFinite(num) && num > 0) {
-        return num;
-      }
-    }
-    return DEFAULT_MAX;
-  } catch (_) {
-    return DEFAULT_MAX;
-  }
+  return 3;
 }
 
 // --- Task status helpers ----------------------------------------------------
@@ -39,6 +22,80 @@ function normalizeTaskStatus(status) {
 
 function isTerminalTaskStatus(status) {
   return TERMINAL_TASK_STATUSES.includes(normalizeTaskStatus(status));
+}
+
+function doesTaskCountTowardActiveLimit(taskDoc, now = new Date()) {
+  if (!taskDoc) return false;
+  if (taskDoc.isArchived) return false;
+  if (isTerminalTaskStatus(taskDoc.status)) return false;
+  if (taskDoc.dueDate && taskDoc.dueDate < now) return false;
+  return true;
+}
+
+async function countActiveNonOverdueTasksForUser(userId) {
+  const now = new Date();
+  const assignments = await UserTask.find({
+    userId,
+    isArchived: { $ne: true },
+    status: { $ne: 'completed' },
+  }).select('taskId');
+
+  const taskIds = assignments.map((a) => a.taskId).filter(Boolean);
+  const tasks = taskIds.length
+    ? await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } }).select(
+        '_id dueDate status isArchived',
+      )
+    : [];
+
+  return tasks.filter((t) => doesTaskCountTowardActiveLimit(t, now)).length;
+}
+
+async function trimOverLimitAssignmentsForUser(userId, maxActive) {
+  const now = new Date();
+
+  const assignments = await UserTask.find({
+    userId,
+    isArchived: { $ne: true },
+    status: { $ne: 'completed' },
+  })
+    .sort({ assignedAt: 1 })
+    .select('_id userId taskId assignedAt isArchived status');
+
+  if (!assignments.length) return 0;
+
+  const taskIds = assignments.map((a) => a.taskId).filter(Boolean);
+  const tasks = taskIds.length
+    ? await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } }).select(
+        '_id dueDate status isArchived',
+      )
+    : [];
+
+  const taskMap = new Map(tasks.map((t) => [t._id.toString(), t]));
+  const countable = assignments.filter((a) => {
+    const t = taskMap.get(a.taskId?.toString() || '');
+    return doesTaskCountTowardActiveLimit(t, now);
+  });
+
+  if (countable.length <= maxActive) return 0;
+
+  const toArchive = countable.slice(0, countable.length - maxActive);
+  for (const ut of toArchive) {
+    if (ut.isArchived) continue;
+    ut.isArchived = true;
+    await ut.save();
+
+    io.emit('userTaskArchived', {
+      id: ut._id.toString(),
+      userId: ut.userId.toString(),
+      taskId: ut.taskId.toString(),
+    });
+    io.emit('taskUnassigned', {
+      taskId: ut.taskId.toString(),
+      userId: ut.userId.toString(),
+    });
+  }
+
+  return toArchive.length;
 }
 
 function canTransitionTaskStatus(fromStatus, toStatus) {
@@ -357,10 +414,19 @@ const getUserTasks = asyncHandler(async (req, res) => {
 // @access Private
 const getAssignedTasks = asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const assignments = await UserTask.find({ userId });
+
+  const archived =
+    String(req.query.archived || 'false').trim().toLowerCase() === 'true';
+
+  const assignments = await UserTask.find({
+    userId,
+    isArchived: archived ? true : { $ne: true },
+  });
   const taskIds = assignments.map((a) => a.taskId);
   const tasks = await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } });
-  const userTaskIdMap = Object.fromEntries(assignments.map((a) => [a.taskId.toString(), a._id.toString()]));
+  const userTaskIdMap = Object.fromEntries(
+    assignments.map((a) => [a.taskId.toString(), a._id.toString()]),
+  );
   res.json(tasks.map((t) => toTaskJson(t, userTaskIdMap[t._id.toString()])));
 });
 
@@ -388,15 +454,10 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
 
   const maxActive = await getMaxActiveTasksPerEmployee();
 
-  const activeAssignments = await UserTask.find({
-    userId,
-    status: { $ne: 'completed' },
-  });
-  const activeTaskIds = activeAssignments.map((a) => a.taskId);
-  const activeTasks = activeTaskIds.length
-    ? await Task.find({ _id: { $in: activeTaskIds }, isArchived: { $ne: true } }).select('_id')
-    : [];
-  const activeCount = activeTasks.length;
+  // Auto-heal legacy over-limit users (e.g., 4/3) back down to max.
+  await trimOverLimitAssignmentsForUser(userId, maxActive);
+
+  const activeCount = await countActiveNonOverdueTasksForUser(userId);
 
   if (activeCount >= maxActive) {
     res.status(400);
@@ -406,6 +467,9 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
   }
 
   const ut = await UserTask.create({ taskId, userId });
+
+  // Reuse existing client handlers by emitting the "multiple" event with a single user.
+  io.emit('taskAssignedToMultiple', { taskId, userIds: [userId] });
 
   // Auto-set task status on assignment if it hasn't started/completed yet
   if (!isTerminalTaskStatus(task.status) && normalizeTaskStatus(task.status) !== 'in_progress') {
@@ -474,22 +538,39 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
 
   const maxActive = await getMaxActiveTasksPerEmployee();
 
+  // Auto-heal legacy over-limit users (e.g., 4/3) back down to max before counting.
+  await Promise.all(
+    [...new Set(userIds)].map(async (uid) => {
+      try {
+        await trimOverLimitAssignmentsForUser(uid, maxActive);
+      } catch (_) {}
+    }),
+  );
+
   const nonCompletedAssignments = await UserTask.find({
     userId: { $in: userIds },
+    isArchived: { $ne: true },
     status: { $ne: 'completed' },
-  });
+  }).select('userId taskId');
 
-  const activeTaskIds = nonCompletedAssignments.map((a) => a.taskId);
-  const activeTasks = activeTaskIds.length
-    ? await Task.find({
-        _id: { $in: activeTaskIds },
-        isArchived: { $ne: true },
-      }).select('_id')
+  const now = new Date();
+  const allTaskIds = nonCompletedAssignments.map((a) => a.taskId).filter(Boolean);
+  const activeTasks = allTaskIds.length
+    ? await Task.find({ _id: { $in: allTaskIds }, isArchived: { $ne: true } }).select(
+        '_id dueDate status isArchived',
+      )
     : [];
-  const activeTaskIdSet = new Set(activeTasks.map((t) => t._id.toString()));
+
+  const countableTaskIdSet = new Set(
+    activeTasks
+      .filter((t) => doesTaskCountTowardActiveLimit(t, now))
+      .map((t) => t._id.toString()),
+  );
+
   const activeCounts = new Map();
   for (const a of nonCompletedAssignments) {
-    if (!activeTaskIdSet.has(a.taskId.toString())) continue;
+    const taskIdStr = a.taskId?.toString();
+    if (!taskIdStr || !countableTaskIdSet.has(taskIdStr)) continue;
     const key = a.userId.toString();
     activeCounts.set(key, (activeCounts.get(key) || 0) + 1);
   }
@@ -820,11 +901,173 @@ const blockTask = asyncHandler(async (req, res) => {
   res.json(toTaskJson(updated));
 });
 
+// @route GET /api/tasks/overdue
+// @access Private/Admin
+const getOverdueTasks = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const tasks = await Task.find({
+    isArchived: { $ne: true },
+    dueDate: { $exists: true, $ne: null, $lt: now },
+  }).sort({ dueDate: 1 });
+
+  const overdue = tasks.filter((t) => !isTerminalTaskStatus(t.status));
+  res.status(200).json(overdue.map((t) => toTaskJson(t)));
+});
+
+// @route GET /api/tasks/:taskId/assignees
+// @access Private/Admin
+const getTaskAssignees = asyncHandler(async (req, res) => {
+  const { taskId } = req.params;
+
+  const task = await Task.findById(taskId).lean();
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  const assignments = await UserTask.find({ taskId, isArchived: { $ne: true } }).select(
+    'userId',
+  );
+
+  const assigneeIds = new Set();
+  const addAssigneeId = (raw) => {
+    if (raw == null) return;
+    const s = String(raw).trim();
+    if (!s) return;
+    const lower = s.toLowerCase();
+    if (lower === 'null' || lower === 'undefined') return;
+    assigneeIds.add(s);
+  };
+
+  for (const a of assignments) {
+    addAssigneeId(a.userId);
+  }
+
+  // Backward compatibility: some legacy deployments may have stored assignees
+  // directly on the Task document rather than via UserTask.
+  const legacyCandidateFields = [
+    task.assignedToMultiple,
+    task.teamMembers,
+    task.userIds,
+    task.assignees,
+    task.assignedEmployees,
+    task.assignedUsers,
+    task.assignedTo,
+  ];
+
+  for (const field of legacyCandidateFields) {
+    if (!field) continue;
+
+    if (Array.isArray(field)) {
+      for (const entry of field) {
+        if (!entry) continue;
+        if (typeof entry === 'string') {
+          addAssigneeId(entry);
+          continue;
+        }
+        if (typeof entry === 'object') {
+          const id = entry.userId || entry._id || entry.id || entry.employeeId;
+          addAssigneeId(id);
+        }
+      }
+      continue;
+    }
+
+    if (typeof field === 'string') {
+      addAssigneeId(field);
+      continue;
+    }
+
+    if (typeof field === 'object') {
+      const id = field.userId || field._id || field.id || field.employeeId;
+      addAssigneeId(id);
+    }
+  }
+
+  res.status(200).json(Array.from(assigneeIds));
+});
+
+// @route DELETE /api/tasks/:taskId/unassign/:userId
+// @access Private/Admin
+const unassignTaskFromUser = asyncHandler(async (req, res) => {
+  const { taskId, userId } = req.params;
+
+  const ut = await UserTask.findOne({ taskId, userId });
+  if (!ut) {
+    return res.status(404).json({ message: 'Assignment not found' });
+  }
+
+  if (!ut.isArchived) {
+    ut.isArchived = true;
+    await ut.save();
+    io.emit('userTaskArchived', {
+      id: ut._id.toString(),
+      userId: ut.userId.toString(),
+      taskId: ut.taskId.toString(),
+    });
+  }
+
+  io.emit('taskUnassigned', { taskId, userId });
+  res.status(200).json({ message: 'Task unassigned' });
+});
+
+// @route PUT /api/tasks/user-task/:userTaskId/archive
+// @access Private
+const archiveUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+
+  ut.isArchived = true;
+  await ut.save();
+  io.emit('userTaskArchived', {
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+  });
+  res.status(200).json({ message: 'UserTask archived' });
+});
+
+// @route PUT /api/tasks/user-task/:userTaskId/restore
+// @access Private
+const restoreUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+
+  const maxActive = await getMaxActiveTasksPerEmployee();
+  await trimOverLimitAssignmentsForUser(ut.userId.toString(), maxActive);
+  const activeCount = await countActiveNonOverdueTasksForUser(ut.userId.toString());
+  if (activeCount >= maxActive) {
+    res.status(400);
+    throw new Error(
+      `User has reached the maximum number of active tasks (${activeCount}/${maxActive})`,
+    );
+  }
+
+  ut.isArchived = false;
+  await ut.save();
+  io.emit('userTaskRestored', {
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+  });
+  res.status(200).json({ message: 'UserTask restored' });
+});
+
 module.exports = {
   getTask,
   getTasks,
   getCurrentTasks,
   getArchivedTasks,
+  getOverdueTasks,
+  getTaskAssignees,
   createTask,
   updateTask,
   deleteTask,
@@ -832,9 +1075,12 @@ module.exports = {
   getAssignedTasks,
   assignTaskToUser,
   assignTaskToMultipleUsers,
+  unassignTaskFromUser,
   updateUserTaskStatus,
   updateTaskChecklistItem,
   blockTask,
+  archiveUserTask,
+  restoreUserTask,
   archiveTask,
   restoreTask,
   escalateTask,

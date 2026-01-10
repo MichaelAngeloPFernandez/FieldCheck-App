@@ -5,6 +5,10 @@ const sendEmail = require('../utils/emailService');
 const { generateToken, generateRefreshToken, verifyRefreshToken } = require('../utils/generateToken');
 const { v4: uuidv4 } = require('uuid');
 
+function escapeRegExp(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // @desc    Auth user & get token
 // @route   POST /api/users/login
 // @access  Public
@@ -52,6 +56,8 @@ const authUser = asyncHandler(async (req, res) => {
     username: user.username,
     email: user.email,
     phone: user.phone,
+    employeeId: user.employeeId,
+    avatarUrl: user.avatarUrl,
     role: user.role,
     token: generateToken(user._id),
     refreshToken: generateRefreshToken(user._id, user.tokenVersion || 0),
@@ -62,12 +68,14 @@ const authUser = asyncHandler(async (req, res) => {
 // @route   POST /api/users
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, username, email, password, role, phone } = req.body;
+  const { name, username, email, password, role, phone, employeeId } = req.body;
 
   const io = require('../server').io;
 
   const emailStr = (email || '').toString().trim().toLowerCase();
   const usernameStr = (username || '').toString().trim().toLowerCase();
+  const roleStr = (role || 'employee').toString().trim().toLowerCase();
+  const employeeIdStr = (employeeId || '').toString().trim();
 
   const userExists = await User.findOne({ email: emailStr });
   if (userExists) {
@@ -83,6 +91,20 @@ const registerUser = asyncHandler(async (req, res) => {
     }
   }
 
+  if (roleStr !== 'admin') {
+    if (!employeeIdStr) {
+      res.status(400);
+      throw new Error('employeeId is required for employees');
+    }
+    const employeeIdTaken = await User.findOne({
+      employeeId: { $regex: `^${escapeRegExp(employeeIdStr)}$`, $options: 'i' },
+    });
+    if (employeeIdTaken) {
+      res.status(400);
+      throw new Error('Employee ID is already taken');
+    }
+  }
+
   const verificationToken = uuidv4();
 
   const user = await User.create({
@@ -90,8 +112,9 @@ const registerUser = asyncHandler(async (req, res) => {
     username: usernameStr || emailStr.split('@')[0],
     email: emailStr,
     password,
-    role,
+    role: roleStr,
     phone: phone || undefined,
+    employeeId: roleStr !== 'admin' ? employeeIdStr : '',
     verificationToken,
     verificationTokenExpires: Date.now() + 3600000, // 1 hour
   });
@@ -119,6 +142,8 @@ const registerUser = asyncHandler(async (req, res) => {
       username: user.username,
       email: user.email,
       phone: user.phone,
+      employeeId: user.employeeId,
+      avatarUrl: user.avatarUrl,
       role: user.role,
       token: generateToken(user._id),
       refreshToken: generateRefreshToken(user._id, user.tokenVersion || 0),
@@ -142,6 +167,8 @@ const registerUser = asyncHandler(async (req, res) => {
       username: user.username,
       email: user.email,
       phone: user.phone,
+      employeeId: user.employeeId,
+      avatarUrl: user.avatarUrl,
       role: user.role,
       message: 'Verification email sent',
     });
@@ -253,6 +280,8 @@ const getUserProfile = asyncHandler(async (req, res) => {
       username: user.username,
       email: user.email,
       phone: user.phone,
+      employeeId: user.employeeId,
+      avatarUrl: user.avatarUrl,
       role: user.role,
     });
   } else {
@@ -286,6 +315,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       email: updatedUser.email,
       phone: updatedUser.phone,
       avatarUrl: updatedUser.avatarUrl, // Include avatarUrl in the response
+      employeeId: updatedUser.employeeId,
       role: updatedUser.role,
       token: generateToken(updatedUser._id),
       refreshToken: generateRefreshToken(updatedUser._id, updatedUser.tokenVersion || 0),
@@ -383,7 +413,7 @@ const getUsers = asyncHandler(async (req, res) => {
   if (role) {
     query.role = role;
   }
-  const users = await User.find(query).select('_id name username email phone role isActive isVerified');
+  const users = await User.find(query).select('_id name username email phone role isActive isVerified employeeId avatarUrl');
   res.json(users);
 });
 
@@ -396,6 +426,22 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('User not found');
   }
+
+  if (Object.prototype.hasOwnProperty.call(req.body, 'employeeId')) {
+    const nextEmployeeId = (req.body.employeeId ?? '').toString().trim();
+    if (nextEmployeeId && nextEmployeeId.toLowerCase() !== (user.employeeId || '').toString().trim().toLowerCase()) {
+      const employeeIdTaken = await User.findOne({
+        employeeId: { $regex: `^${escapeRegExp(nextEmployeeId)}$`, $options: 'i' },
+        _id: { $ne: user._id },
+      });
+      if (employeeIdTaken) {
+        res.status(400);
+        throw new Error('Employee ID is already taken');
+      }
+    }
+    user.employeeId = nextEmployeeId;
+  }
+
   user.name = req.body.name ?? user.name;
   user.username = (req.body.username ?? user.username ?? '').toString().trim().toLowerCase();
   user.email = (req.body.email ?? user.email ?? '').toString().trim().toLowerCase();
@@ -411,6 +457,8 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
     username: updatedUser.username,
     email: updatedUser.email,
     phone: updatedUser.phone,
+    employeeId: updatedUser.employeeId,
+    avatarUrl: updatedUser.avatarUrl,
     role: updatedUser.role,
     isActive: updatedUser.isActive,
   });
@@ -562,7 +610,21 @@ const logout = asyncHandler(async (req, res) => {
     throw new Error('User not found');
   }
   user.tokenVersion = (user.tokenVersion || 0) + 1;
+  user.isOnline = false;
+  if (typeof user.status === 'string') {
+    user.status = 'offline';
+  }
   await user.save();
+
+  try {
+    if (global.io) {
+      global.io.emit('employeeOffline', {
+        employeeId: user._id.toString(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (_) {}
+
   res.json({ message: 'Logged out' });
 });
 
@@ -613,6 +675,8 @@ const googleSignIn = asyncHandler(async (req, res) => {
     name: user.name,
     username: user.username,
     email: user.email,
+    employeeId: user.employeeId,
+    avatarUrl: user.avatarUrl,
     role: user.role,
     token: generateToken(user._id),
     refreshToken: generateRefreshToken(user._id, user.tokenVersion || 0),

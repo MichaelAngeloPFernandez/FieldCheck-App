@@ -78,7 +78,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final EmployeeLocationService _locationService = EmployeeLocationService();
   final GeofenceService _geofenceService = GeofenceService();
 
-  static const int _taskLimitPerEmployee = 5;
+  static const int _taskLimitPerEmployee = 3;
 
   static const int _navDashboard = 0;
   static const int _navEmployees = 1;
@@ -92,8 +92,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _isFetchingRealtime = false;
   bool _isFetchingDashboard = false;
   Timer? _dashboardReloadDebounce;
+  bool _dashboardDirty = false;
   Timer? _liveLocationUiThrottle;
   bool _liveLocationDirty = false;
+  Timer? _onlineEmployeesReloadDebounce;
 
   // Map data
   final Map<String, UserModel> _employees = {};
@@ -118,6 +120,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   static const LatLng _defaultCenter = LatLng(14.5995, 120.9842); // Manila
   bool _showNoEmployeesPopup = true;
 
+  bool _pendingOnlineEmployeeRefresh = false;
+
   bool _isInspectorCollapsed = true;
 
   String? _selectedEmployeeId;
@@ -127,19 +131,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _inspectionIndex = -1;
 
   final MapController _mapController = MapController();
-  final TextEditingController _employeeSearchController = TextEditingController();
+  final TextEditingController _employeeSearchController =
+      TextEditingController();
   String _employeeStatusFilter = 'all';
   Timer? _employeeSearchDebounce;
 
   static final Color _panelBorderBlue = Colors.blue.shade200;
   static const Color _panelTextPrimary = Colors.black87;
-  static const Color _panelTextSecondary = Colors.black54;
   static const double _controlFontSize = 13;
 
-  Widget _maybeTooltip({
-    required String message,
-    required Widget child,
-  }) {
+  Widget _maybeTooltip({required String message, required Widget child}) {
     if (kIsWeb) return child;
     return Tooltip(message: message, child: child);
   }
@@ -153,6 +154,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       return mapped.trim();
     }
     return id;
+  }
+
+  String _selectedEmployeeLabel() {
+    final selectedId = _inspectedEmployeeId;
+    if (selectedId == null) return '(none)';
+
+    final selectedUser = _employees[selectedId];
+    final code = (selectedUser?.employeeId ?? '').trim();
+    if (code.isNotEmpty) return code;
+
+    final name = (selectedUser?.name ?? '').trim();
+    if (name.isNotEmpty) return name;
+
+    final locName = (_employeeLocations[selectedId]?.name ?? '').trim();
+    if (locName.isNotEmpty) return locName;
+
+    return selectedId;
   }
 
   void _rebuildEmployeeIdAlias() {
@@ -224,6 +242,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return DateTime.now().difference(ts) <= _gpsOnlineWindow;
   }
 
+  bool _isEmployeeOnline(String userId) {
+    final loc = _employeeLocations[userId];
+    if (loc != null) {
+      return loc.isOnline;
+    }
+    return _isGpsOnline(userId);
+  }
+
   int get _gpsOnlineCount {
     final cutoff = DateTime.now().subtract(_gpsOnlineWindow);
     return _lastGpsUpdate.values.where((ts) => ts.isAfter(cutoff)).length;
@@ -237,7 +263,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       final cutoff = DateTime.now().subtract(_gpsOnlineWindow);
       final staleIds = _lastGpsUpdate.entries
-          .where((e) => e.value.isBefore(cutoff))
+          .where((e) {
+            final id = e.key;
+            final loc = _employeeLocations[id];
+            final isEmployeeOnline = loc?.isOnline ?? false;
+            return !isEmployeeOnline && e.value.isBefore(cutoff);
+          })
           .map((e) => e.key)
           .toList();
 
@@ -276,10 +307,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _pushInspection(String userId) {
+    final canonical = _canonicalUserId(userId);
+    if (canonical.trim().isEmpty) return;
+
+    final existingIdx = _inspectionStack.indexOf(canonical);
     setState(() {
-      _inspectionStack.add(userId);
-      _inspectionIndex = _inspectionStack.length - 1;
-      _selectedEmployeeId = userId;
+      if (existingIdx >= 0) {
+        _inspectionIndex = existingIdx;
+      } else {
+        _inspectionStack.add(canonical);
+        _inspectionIndex = _inspectionStack.length - 1;
+      }
+      _selectedEmployeeId = canonical;
       _isInspectorCollapsed = false;
     });
 
@@ -438,7 +477,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               const SizedBox(height: 2),
               Text(
                 total > 0 ? '${idx + 1} / $total' : '0 / 0',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
+                ),
               ),
             ],
           ),
@@ -475,7 +518,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildEmployeeInspectorHeader(onExit: onExit, onPrev: onPrev, onNext: onNext),
+          _buildEmployeeInspectorHeader(
+            onExit: onExit,
+            onPrev: onPrev,
+            onNext: onNext,
+          ),
           const SizedBox(height: 12),
           const Text('Tap an employee marker to inspect.'),
         ],
@@ -502,7 +549,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _liveLocationFallbackSub?.cancel();
     _liveLocationFallbackSub = _realtimeService.locationStream.listen((data) {
       try {
-        final String rawId = (data['employeeId'] ?? data['userId'] ?? '').toString();
+        final String rawId = (data['employeeId'] ?? data['userId'] ?? '')
+            .toString();
         final employeeId = _canonicalUserId(rawId);
         if (employeeId.trim().isEmpty) return;
         final num? latN = data['latitude'] as num?;
@@ -538,8 +586,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _dashboardReloadDebounce?.cancel();
     _dashboardReloadDebounce = Timer(const Duration(milliseconds: 800), () {
       if (!mounted) return;
+      _dashboardDirty = true;
       if (_selectedIndex != 0) return;
-      _loadRealtimeUpdates();
+      _loadDashboardData();
     });
   }
 
@@ -593,11 +642,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
-        onTap: () {
+        onTap: () async {
           setState(() {
             notif.isRead = true;
           });
-          _showNotificationDetails(notif);
+          await _showNotificationDetails(notif);
         },
         leading: Container(
           width: 36,
@@ -611,8 +660,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             notif.type == 'attendance'
                 ? Icons.access_time
                 : (notif.type == 'report'
-                    ? Icons.description
-                    : Icons.notifications),
+                      ? Icons.description
+                      : Icons.notifications),
             color: color,
             size: 18,
           ),
@@ -652,7 +701,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  void _showNotificationDetails(DashboardNotification notif) {
+  Future<void> _showNotificationDetails(DashboardNotification notif) async {
     final payload = notif.payload ?? const <String, dynamic>{};
     final ts = DateFormat('yyyy-MM-dd HH:mm:ss').format(notif.timestamp);
 
@@ -660,16 +709,75 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     String? employeeId;
     String? action;
 
+    String? userId;
+
+    Map<String, dynamic>? employeeObj;
+    try {
+      final raw = payload['employee'];
+      if (raw is Map<String, dynamic>) {
+        employeeObj = raw;
+      } else if (raw is Map) {
+        employeeObj = Map<String, dynamic>.from(raw);
+      } else if (raw != null) {
+        userId = raw.toString();
+      }
+    } catch (_) {
+      employeeObj = null;
+    }
+
+    try {
+      if (userId == null) {
+        final rawId = employeeObj?['_id'] ?? employeeObj?['id'];
+        userId = rawId?.toString();
+      }
+    } catch (_) {
+      userId = userId;
+    }
+
     try {
       employeeName = (payload['name'] ?? payload['employeeName']) as String?;
     } catch (_) {
       employeeName = null;
     }
+
+    employeeName ??= employeeObj?['name'] as String?;
+
+    String? employeeCode;
     try {
-      employeeId = (payload['employeeId'] ?? payload['userId']) as String?;
+      employeeCode = payload['employeeId'] as String?;
+    } catch (_) {
+      employeeCode = null;
+    }
+    employeeCode ??= employeeObj?['employeeId']?.toString();
+
+    final uid = userId;
+    final canonicalId = uid == null ? null : _canonicalUserId(uid);
+    if ((employeeName == null || employeeName.trim().isEmpty) &&
+        canonicalId != null &&
+        canonicalId.trim().isNotEmpty) {
+      await _ensureEmployeeLoaded(canonicalId);
+    }
+
+    final resolved = canonicalId == null ? null : _employees[canonicalId];
+    employeeName ??= resolved?.name;
+    employeeCode ??= resolved?.employeeId;
+
+    try {
+      employeeId = (payload['userId'] ?? payload['employeeUserId']) as String?;
     } catch (_) {
       employeeId = null;
     }
+
+    if (employeeId == null) {
+      try {
+        employeeId = canonicalId;
+      } catch (_) {
+        employeeId = null;
+      }
+    }
+
+    // Prefer displaying the employee's readable employeeId/code if available.
+    employeeId = employeeCode ?? employeeId;
     try {
       action = payload['action'] as String?;
     } catch (_) {
@@ -712,7 +820,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               onPressed: () {
                 Navigator.pop(ctx);
                 setState(() {
-                  _selectedIndex = _navReports;
+                  _selectedIndex = 4;
                 });
               },
               icon: const Icon(Icons.description),
@@ -723,7 +831,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               onPressed: () {
                 Navigator.pop(ctx);
                 setState(() {
-                  _selectedIndex = _navReports;
+                  _selectedIndex = 4;
                 });
                 AdminReportsHubScreen.selectInitialTab(1);
               },
@@ -749,20 +857,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Text(
-                      'Notifications',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Notifications',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    if (unread > 0) ...[
-                      const SizedBox(width: 8),
-                      _buildNotificationBadge(unread),
+                      if (unread > 0) ...[
+                        const SizedBox(width: 8),
+                        _buildNotificationBadge(unread),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
                 TextButton(
                   onPressed: _showNotificationsInbox,
@@ -775,10 +889,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               Text(
                 'No notifications yet',
                 style: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.7),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
               )
             else
@@ -832,10 +945,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final user = _employees[userId];
     final loc = _employeeLocations[userId];
     final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
-    final isBusy = activeTaskCount >= _taskLimitPerEmployee;
-    final isOnline = _isGpsOnline(userId);
+    final isBusy = activeTaskCount >= 1;
+    final isOnline = _isEmployeeOnline(userId);
+    final hasLiveLocation = _liveLocations[userId] != null;
 
-    if (!isOnline) return false;
+    // Allow employees who either have a recent GPS ping or at least a last-known
+    // location on the map. This prevents "online" employees from disappearing
+    // solely because their last GPS ping is slightly stale.
+    if (!isOnline && !hasLiveLocation) return false;
 
     if (_employeeStatusFilter == 'busy' && !isBusy) return false;
     if (_employeeStatusFilter == 'available' && isBusy) return false;
@@ -844,7 +961,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (q.isNotEmpty) {
       final name = (user?.name ?? '').toLowerCase();
       final email = (user?.email ?? '').toLowerCase();
-      if (!name.contains(q) && !email.contains(q)) {
+      final username = (user?.username ?? '').toLowerCase();
+      final employeeCode = (user?.employeeId ?? '').toLowerCase();
+      if (!name.contains(q) &&
+          !email.contains(q) &&
+          !username.contains(q) &&
+          !employeeCode.contains(q)) {
         return false;
       }
     }
@@ -1029,9 +1151,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               padding: const EdgeInsets.only(top: 6),
               child: Text(
                 'No geofences available',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _panelTextSecondary,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
                 ),
               ),
             ),
@@ -1061,10 +1184,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _nearbyRadiusMeters >= 1000
                     ? '${(_nearbyRadiusMeters / 1000).toStringAsFixed(1)} km'
                     : '${_nearbyRadiusMeters.toStringAsFixed(0)} m',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: _panelTextPrimary,
-                  fontWeight: FontWeight.w600,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.9),
                 ),
               ),
             ],
@@ -1076,9 +1200,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _nearbyMode == 'admin'
                     ? 'Admin location not available for Nearby mode.'
                     : 'Select a geofence to enable Nearby mode.',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: _panelTextSecondary,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
                 ),
               ),
             ),
@@ -1098,10 +1223,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       child: Text(
         text,
-        style: const TextStyle(
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
@@ -1125,20 +1249,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          const Text(
-                            'Notifications',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'Notifications',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                          if (unreadCount > 0) ...[
-                            const SizedBox(width: 8),
-                            _buildNotificationBadge(unreadCount),
+                            if (unreadCount > 0) ...[
+                              const SizedBox(width: 8),
+                              _buildNotificationBadge(unreadCount),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                       TextButton.icon(
                         onPressed: () {
@@ -1149,8 +1279,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             }
                           });
                         },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 36),
+                        ),
                         icon: const Icon(Icons.done_all, size: 18),
-                        label: const Text('Mark all read'),
+                        label: const Text(
+                          'Mark all read',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
@@ -1161,10 +1299,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             child: Text(
                               'No notifications',
                               style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.7),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7),
                               ),
                             ),
                           )
@@ -1239,7 +1376,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         final completed = _dashboardStats?.tasks.completed ?? 0;
         return AlertDialog(
           title: const Text('Tasks'),
-          content: Text('Total: $total\nPending: $pending\nCompleted: $completed'),
+          content: Text(
+            'Total: $total\nPending: $pending\nCompleted: $completed',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -1259,9 +1398,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         final today = _dashboardStats?.attendance.today ?? 0;
         final checkIns = _dashboardStats?.attendance.todayCheckIns ?? 0;
         final checkOuts = _dashboardStats?.attendance.todayCheckOuts ?? 0;
+        final open = (checkIns - checkOuts).clamp(0, checkIns);
         return AlertDialog(
           title: const Text("Today's Attendance"),
-          content: Text('Records: $today\nCheck-ins: $checkIns\nCheck-outs: $checkOuts'),
+          content: Text(
+            'Records: $today\nCheck-ins: $checkIns\nCheck-outs: $checkOuts\nOpen: $open',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -1277,18 +1419,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       await _locationService.initialize();
       _employeeLocationsSnapshotSub?.cancel();
-      _employeeLocationsSnapshotSub = _locationService.employeeLocationsStream.listen((locations) {
-        if (!mounted) return;
-        _employeeLocations
-          ..clear()
-          ..addEntries(
-            locations.map(
-              (loc) => MapEntry(_canonicalUserId(loc.employeeId), loc),
-            ),
-          );
-        _liveLocationDirty = true;
-        _scheduleLiveLocationUiUpdate();
-      });
+      _employeeLocationsSnapshotSub = _locationService.employeeLocationsStream
+          .listen((locations) {
+            if (!mounted) return;
+            _employeeLocations
+              ..clear()
+              ..addEntries(
+                locations.map(
+                  (loc) => MapEntry(_canonicalUserId(loc.employeeId), loc),
+                ),
+              );
+
+            final onlineIds = <String>{
+              for (final loc in locations)
+                if (loc.isOnline) _canonicalUserId(loc.employeeId),
+            }..removeWhere((id) => id.trim().isEmpty);
+
+            // Prune any markers/trails that are no longer online.
+            // This prevents "ghost" markers that persist after logout.
+            if (_liveLocations.isNotEmpty) {
+              final ids = _liveLocations.keys.toList();
+              for (final id in ids) {
+                if (!onlineIds.contains(id)) {
+                  _liveLocations.remove(id);
+                  _lastGpsUpdate.remove(id);
+                  _trails.remove(id);
+                }
+              }
+            }
+
+            _liveLocationDirty = true;
+            _scheduleLiveLocationUiUpdate();
+          });
 
       _subscribeToLocations();
     } catch (_) {}
@@ -1299,38 +1461,73 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _adminNotifSub = _realtimeService.notificationStream.listen((data) {
       try {
         final action = (data['action'] ?? '') as String;
-        if (action != 'employeeOnline') {
+        if (action == 'employeeOnline') {
+          final employeeName = (data['name'] ?? 'Employee') as String;
+          final key = 'employeeOnline:$employeeName';
+          if (_snackDedupKeys.contains(key)) return;
+          _snackDedupKeys.add(key);
+
+          setState(() {
+            _notifications.insert(
+              0,
+              DashboardNotification(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                title: 'Employee Online',
+                message: '$employeeName is now online.',
+                type: 'employee',
+                timestamp: DateTime.now(),
+                payload: data,
+              ),
+            );
+
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$employeeName is online'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          });
+
+          if (mounted) {
+            setState(() {});
+          }
           return;
         }
-        final employeeName = (data['name'] ?? 'Employee') as String;
-        final key = 'employeeOnline:$employeeName';
-        if (_snackDedupKeys.contains(key)) return;
-        _snackDedupKeys.add(key);
 
-        setState(() {
-          _notifications.insert(
-            0,
-            DashboardNotification(
-              id: DateTime.now().millisecondsSinceEpoch.toString(),
-              title: 'Employee Online',
-              message: '$employeeName is now online.',
-              type: 'employee',
-              timestamp: DateTime.now(),
-              payload: data,
-            ),
-          );
+        if (action == 'overdue' && (data['type'] == 'task')) {
+          final taskTitle = (data['taskTitle'] ?? 'Task') as String;
+          final taskId = (data['taskId'] ?? '') as String;
+          final key = 'taskOverdue:$taskId';
+          if (_snackDedupKeys.contains(key)) return;
+          _snackDedupKeys.add(key);
 
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$employeeName is online'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        });
+          setState(() {
+            _notifications.insert(
+              0,
+              DashboardNotification(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                title: 'Task overdue',
+                message: 'Task "$taskTitle" is now overdue.',
+                type: 'task',
+                timestamp: DateTime.now(),
+                payload: data,
+              ),
+            );
 
-        if (mounted) {
-          setState(() {});
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Task "$taskTitle" is now overdue.'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          });
+
+          if (mounted) {
+            setState(() {});
+          }
+          return;
         }
       } catch (_) {}
     });
@@ -1352,6 +1549,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _taskStreamSub?.cancel();
     _taskStreamSub = _realtimeService.taskStream.listen((event) {
       if (!mounted) return;
+      try {
+        final type = (event['type'] ?? '').toString();
+        if (type == 'assigned_multiple' ||
+            type == 'unassigned' ||
+            type == 'user_task_archived' ||
+            type == 'user_task_restored' ||
+            type == 'status_updated') {
+          if (_selectedIndex == 0) {
+            _scheduleOnlineEmployeeRefresh();
+          } else {
+            // We intentionally avoid hammering the dashboard endpoint while
+            // the admin is on other tabs, but we also don't want to miss
+            // updates. Mark pending and apply when they return.
+            _pendingOnlineEmployeeRefresh = true;
+          }
+        }
+      } catch (_) {}
       _scheduleDashboardReload();
     });
 
@@ -1425,9 +1639,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             message: message,
             type: notifType,
             timestamp: DateTime.now(),
-            payload: event['data'] is Map<String, dynamic>
-                ? event['data'] as Map<String, dynamic>
-                : null,
+            payload: (() {
+              final raw = event['data'] is Map
+                  ? Map<String, dynamic>.from(event['data'] as Map)
+                  : <String, dynamic>{};
+              raw['action'] = action;
+              return raw;
+            })(),
           ),
         );
         if (_notifications.length > 50) {
@@ -1436,7 +1654,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       });
 
       if (shouldSnackbar) {
-        final key = snackbarKey ?? '$notifType:${action.isEmpty ? 'event' : action}';
+        final key =
+            snackbarKey ?? '$notifType:${action.isEmpty ? 'event' : action}';
         final isDup = _snackDedupKeys.contains(key);
         if (!isDup) {
           _snackDedupKeys.add(key);
@@ -1458,7 +1677,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   void _startRefreshTimer() {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (_selectedIndex == 0 && !_isFetchingRealtime) {
+      if (_selectedIndex != 0) {
+        return;
+      }
+
+      // If something changed (socket events) while we were active, refresh full
+      // stats so the 4 cards stay accurate.
+      if (_dashboardDirty) {
+        _loadDashboardData();
+        return;
+      }
+
+      // Periodic refresh:
+      // - Realtime updates every 30s
+      // - Full stats refresh every 2 minutes to avoid stale cards even if
+      //   socket events are missed.
+      if (timer.tick % 4 == 0) {
+        _loadDashboardData();
+        return;
+      }
+
+      if (!_isFetchingRealtime) {
         _loadRealtimeUpdates();
       }
     });
@@ -1470,6 +1709,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _gpsSweepTimer?.cancel();
     _dashboardReloadDebounce?.cancel();
     _liveLocationUiThrottle?.cancel();
+    _onlineEmployeesReloadDebounce?.cancel();
     _employeeSearchDebounce?.cancel();
     _adminNotifSub?.cancel();
     _attendanceStreamSub?.cancel();
@@ -1495,6 +1735,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           _dashboardStats = stats;
           _realtimeUpdates = realtime;
           _isLoading = false;
+          _dashboardDirty = false;
         });
       }
     } catch (e) {
@@ -1547,6 +1788,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           _selectedIndex = 0;
       }
     });
+
+    // If we navigated back to the dashboard and stats were marked dirty
+    // (or not loaded yet), refresh immediately.
+    if (_selectedIndex == 0 && (_dashboardStats == null || _dashboardDirty)) {
+      _loadDashboardData();
+    }
+
+    // Apply any missed online employee refreshes (e.g. task assigned/unassigned
+    // while admin was in Task Management).
+    if (_selectedIndex == 0 && _pendingOnlineEmployeeRefresh) {
+      _pendingOnlineEmployeeRefresh = false;
+      _loadOnlineEmployeeLocations();
+    }
   }
 
   int _currentNavIndex() {
@@ -1677,9 +1931,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       children: [
                         Icon(
                           collapsed ? Icons.chevron_left : Icons.chevron_right,
-                          color: hasSelection
-                              ? Colors.blueGrey.shade700
-                              : Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurface
+                              .withValues(alpha: hasSelection ? 0.85 : 0.6),
                           size: 26,
                         ),
                         if (collapsed && hasSelection)
@@ -1692,7 +1945,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.green.shade600,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 1),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1,
+                                ),
                               ),
                             ),
                           ),
@@ -1702,10 +1958,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ),
             ),
-            if (!collapsed)
-              Expanded(
-                child: _buildEmployeeSidePanel(),
-              ),
+            if (!collapsed) Expanded(child: _buildEmployeeSidePanel()),
           ],
         ),
       ),
@@ -1717,7 +1970,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       height: 400,
       child: Card(
         elevation: 4,
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -1731,8 +1984,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Selected: ${_inspectedEmployeeId ?? "(none)"}',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                'Selected: ${_selectedEmployeeLabel()}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.85),
+                ),
               ),
               const SizedBox(height: 12),
               Expanded(
@@ -1764,17 +2022,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         const SizedBox(height: 8),
         Text(
           'Tap an employee marker to view details.',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.75),
+          ),
         ),
       ],
     );
   }
 
   Widget _buildEmployeeDetailsContent(String userId, UserModel? user) {
-    final isOnline = _isGpsOnline(userId);
+    final isOnline = _isEmployeeOnline(userId);
     final loc = _employeeLocations[userId];
     final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
-    final isBusy = activeTaskCount >= _taskLimitPerEmployee;
+    final isBusy = activeTaskCount >= 1;
 
     final email = (user?.email ?? '').trim();
     final phone = (user?.phone ?? '').trim();
@@ -1790,7 +2052,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         const SizedBox(height: 4),
         Text(
           user?.email ?? '',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.75),
+          ),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -1807,7 +2073,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             FilledButton.tonalIcon(
               onPressed: email.isEmpty
                   ? null
-                  : () => _launchExternalUri(Uri(scheme: 'mailto', path: email)),
+                  : () =>
+                        _launchExternalUri(Uri(scheme: 'mailto', path: email)),
               icon: const Icon(Icons.email_outlined),
               label: const Text('Email'),
             ),
@@ -1842,12 +2109,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         if (isOnline && _liveLocations.containsKey(userId))
           Text(
             'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
           )
         else
           Text(
             'Location not available',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
           ),
         const SizedBox(height: 8),
         Theme(
@@ -1880,22 +2155,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             ListView(
                               padding: EdgeInsets.zero,
                               children: [
-                                _buildDetailRow(
-                                  'Name',
-                                  user?.name ?? 'N/A',
-                                ),
-                                _buildDetailRow(
-                                  'Email',
-                                  user?.email ?? 'N/A',
-                                ),
-                                _buildDetailRow(
-                                  'Phone',
-                                  user?.phone ?? 'N/A',
-                                ),
-                                _buildDetailRow(
-                                  'Role',
-                                  user?.role ?? 'N/A',
-                                ),
+                                _buildDetailRow('Name', user?.name ?? 'N/A'),
+                                _buildDetailRow('Email', user?.email ?? 'N/A'),
+                                _buildDetailRow('Phone', user?.phone ?? 'N/A'),
+                                _buildDetailRow('Role', user?.role ?? 'N/A'),
                               ],
                             ),
                             ListView(
@@ -1944,6 +2207,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   setState(() {
                     _selectedIndex = 0;
                   });
+
+                  if (_dashboardStats == null || _dashboardDirty) {
+                    _loadDashboardData();
+                  }
+
+                  if (_pendingOnlineEmployeeRefresh) {
+                    _pendingOnlineEmployeeRefresh = false;
+                    _loadOnlineEmployeeLocations();
+                  }
                 },
               )
             : null,
@@ -1996,8 +2268,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         backgroundColor: Theme.of(context).colorScheme.surface,
         showUnselectedLabels: true,
         selectedItemColor: brandColor,
-        unselectedItemColor:
-            Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+        unselectedItemColor: Theme.of(
+          context,
+        ).colorScheme.onSurface.withValues(alpha: 0.7),
         selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
         selectedIconTheme: const IconThemeData(color: brandColor, size: 28),
         unselectedIconTheme: const IconThemeData(size: 24),
@@ -2006,10 +2279,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             icon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'Employees',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Employees'),
           BottomNavigationBarItem(
             icon: Icon(Icons.assessment),
             label: 'Reports',
@@ -2049,13 +2319,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     if (_dashboardStats == null) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('Failed to load dashboard data'),
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.45),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load dashboard data',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.85),
+              ),
+            ),
           ],
         ),
       );
@@ -2071,64 +2355,68 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-            // Real-time status indicator
-            if (_realtimeUpdates != null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.wifi, color: Colors.green.shade600),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Live Updates Active • $_gpsOnlineCount Online',
-                      style: TextStyle(
-                        color: Colors.green.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
+                // Real-time status indicator
+                if (_realtimeUpdates != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
                     ),
-                  ],
-                ),
-              ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.wifi, color: Colors.green.shade600),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Live Updates Active • $_gpsOnlineCount Online',
+                            style: TextStyle(
+                              color: Colors.green.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
-            const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-            // World Map - Live Employee Tracking
-            if (isWide)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _buildWorldMapSection(isWide: true)),
-                  const SizedBox(width: 12),
-                  _buildEmployeeInspectorDrawer(),
-                ],
-              )
-            else
-              _buildWorldMapSection(isWide: false),
+                // World Map - Live Employee Tracking
+                if (isWide)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _buildWorldMapSection(isWide: true)),
+                      const SizedBox(width: 12),
+                      _buildEmployeeInspectorDrawer(),
+                    ],
+                  )
+                else
+                  _buildWorldMapSection(isWide: false),
 
-            const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-            // Statistics Cards
-            _buildStatsGrid(),
+                // Statistics Cards
+                _buildStatsGrid(),
 
-            const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-            // Recent Activities
-            _buildRecentActivities(),
+                // Recent Activities
+                _buildRecentActivities(),
 
-            const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-            // Quick Actions
-            _buildQuickActions(),
+                // Quick Actions
+                _buildQuickActions(),
 
-            const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-            // Real-time Notifications
-            _buildNotificationsPanel(),
+                // Real-time Notifications
+                _buildNotificationsPanel(),
               ],
             ),
           ),
@@ -2138,55 +2426,55 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildStatsGrid() {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.4,
-      children: [
-        GestureDetector(
-          onTap: _showEmployeeAvailabilityDialog,
-          child: _buildStatCard(
-            title: 'Total Employees',
-            value: _dashboardStats!.users.totalEmployees.toString(),
-            icon: Icons.people,
-            color: Colors.blue,
-            subtitle: '${_dashboardStats!.users.activeEmployees} active',
-          ),
-        ),
-        GestureDetector(
-          onTap: _showGeofenceDetailsDialog,
-          child: _buildStatCard(
-            title: 'Geofences',
-            value: _dashboardStats!.geofences.total.toString(),
-            icon: Icons.location_on,
-            color: Colors.green,
-            subtitle: '${_dashboardStats!.geofences.active} active',
-          ),
-        ),
-        GestureDetector(
-          onTap: _showTasksDialog,
-          child: _buildStatCard(
-            title: 'Tasks',
-            value: _dashboardStats!.tasks.total.toString(),
-            icon: Icons.task,
-            color: Colors.orange,
-            subtitle: '${_dashboardStats!.tasks.pending} pending',
-          ),
-        ),
-        GestureDetector(
-          onTap: _showAttendanceDialog,
-          child: _buildStatCard(
-            title: 'Today\'s Attendance',
-            value: _dashboardStats!.attendance.today.toString(),
-            icon: Icons.check_circle,
-            color: Colors.purple,
-            subtitle: '${_dashboardStats!.attendance.todayCheckIns} check-ins',
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 520;
+        final checkIns = _dashboardStats?.attendance.todayCheckIns ?? 0;
+        final checkOuts = _dashboardStats?.attendance.todayCheckOuts ?? 0;
+        final openAttendance = (checkIns - checkOuts).clamp(0, checkIns);
+        return GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: isNarrow ? 1 : 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: isNarrow ? 3.0 : 1.4,
+          children: [
+            _buildStatCard(
+              title: 'Total Employees',
+              value: _dashboardStats!.users.totalEmployees.toString(),
+              icon: Icons.people,
+              color: Colors.blue,
+              subtitle: '${_dashboardStats!.users.activeEmployees} active',
+              onTap: _showEmployeeAvailabilityDialog,
+            ),
+            _buildStatCard(
+              title: 'Geofences',
+              value: _dashboardStats!.geofences.total.toString(),
+              icon: Icons.location_on,
+              color: Colors.green,
+              subtitle: '${_dashboardStats!.geofences.active} active',
+              onTap: _showGeofenceDetailsDialog,
+            ),
+            _buildStatCard(
+              title: 'Tasks',
+              value: _dashboardStats!.tasks.total.toString(),
+              icon: Icons.task,
+              color: Colors.orange,
+              subtitle: '${_dashboardStats!.tasks.pending} pending',
+              onTap: _showTasksDialog,
+            ),
+            _buildStatCard(
+              title: 'Today\'s Attendance',
+              value: _dashboardStats!.attendance.today.toString(),
+              icon: Icons.check_circle,
+              color: Colors.purple,
+              subtitle: '$openAttendance open • $checkOuts checked out',
+              onTap: _showAttendanceDialog,
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2196,49 +2484,85 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required IconData icon,
     required Color color,
     String? subtitle,
+    VoidCallback? onTap,
   }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(icon, color: color, size: 22),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: color.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Icon(icon, color: color, size: 18),
+                    ),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          value,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: color,
+                  title,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: onSurface.withValues(alpha: 0.9),
                   ),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: onSurface.withValues(alpha: 0.7),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -2260,11 +2584,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             if (_dashboardStats!.recentActivities.attendances.isNotEmpty) ...[
               const Text(
                 'Recent Check-ins',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               ...(_dashboardStats!.recentActivities.attendances
@@ -2280,7 +2600,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       subtitle: Text(attendance.geofenceName),
                       trailing: Text(
                         DateFormat('HH:mm').format(attendance.timestamp),
-                        style: const TextStyle(fontSize: 12),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
                   )),
@@ -2289,11 +2609,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               const SizedBox(height: 16),
               const Text(
                 'Recent Tasks',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               ...(_dashboardStats!.recentActivities.tasks
@@ -2314,7 +2630,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       subtitle: Text(task.assignedToName ?? 'Unassigned'),
                       trailing: Text(
                         DateFormat('MMM dd').format(task.createdAt),
-                        style: const TextStyle(fontSize: 12),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
                   )),
@@ -2456,10 +2772,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(height: 6),
             Text(
               label,
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: color,
-                fontWeight: FontWeight.w500,
-                fontSize: 11,
+                fontWeight: FontWeight.w700,
               ),
               textAlign: TextAlign.center,
               maxLines: 2,
@@ -2474,7 +2789,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildWorldMapSection({required bool isWide}) {
     return Card(
       elevation: 4,
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2487,19 +2802,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: _panelBorderBlue, width: 1.5),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Map Controls',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: _panelTextPrimary,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.9),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -2508,21 +2824,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Live Employee Tracking',
-                  style: TextStyle(
-                    fontSize: 16,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: _panelTextPrimary,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.9),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Online: $_gpsOnlineCount employees',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: _panelTextSecondary,
-                    fontWeight: FontWeight.w600,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.75),
                   ),
                 ),
               ],
@@ -2531,14 +2849,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Container(
             height: 400,
             decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.grey.shade300)),
+              border: Border(
+                top: BorderSide(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.12),
+                ),
+              ),
             ),
             child: Stack(
               children: [
                 Container(
                   margin: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: _panelBorderBlue, width: 1.5),
                   ),
@@ -2577,18 +2901,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               final user = _employees[entry.key];
                               final empLocation = _employeeLocations[entry.key];
 
-                              final tooltipText = (user != null && user.name.trim().isNotEmpty)
+                              final tooltipText =
+                                  (user != null && user.name.trim().isNotEmpty)
                                   ? user.name
-                                  : ((user != null && user.email.trim().isNotEmpty)
-                                      ? user.email
-                                      : 'Employee');
+                                  : ((user != null &&
+                                            user.email.trim().isNotEmpty)
+                                        ? user.email
+                                        : 'Employee');
 
                               final activeTaskCount =
                                   empLocation?.activeTaskCount ??
                                   user?.activeTaskCount ??
                                   0;
-                              final isBusy =
-                                  activeTaskCount >= _taskLimitPerEmployee;
+                              final isBusy = activeTaskCount >= 1;
 
                               Color markerColor;
                               IconData markerIcon;
@@ -2626,10 +2951,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       _panTo(entry.value, zoom: 16);
 
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .hideCurrentSnackBar();
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).hideCurrentSnackBar();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text(
                                               'Selected ${entry.key}',
@@ -2704,7 +3031,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.98),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _panelBorderBlue, width: 1.5),
+                          border: Border.all(
+                            color: _panelBorderBlue,
+                            width: 1.5,
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.15),
@@ -2719,24 +3049,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             Icon(
                               Icons.location_off,
                               size: 48,
-                              color: Colors.grey.shade400,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.35),
                             ),
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               'No online employees',
-                              style: TextStyle(
-                                color: Colors.black87,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'Employees will appear here once they log in',
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 13,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.75),
+                                  ),
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -2750,20 +3082,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.grey.shade200)),
-              color: Colors.grey.shade50,
+              border: Border(
+                top: BorderSide(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.10),
+                ),
+              ),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.04),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   'Drag to pan • Scroll to zoom',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.75),
+                  ),
                 ),
                 if (_liveLocations.isNotEmpty)
                   Text(
                     '${_trails.length} trails',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.75),
+                    ),
                   ),
               ],
             ),
@@ -2826,21 +3174,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 style: TextStyle(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 8),
-                              if (_isGpsOnline(userId) && _liveLocations.containsKey(userId))
+                              if (_isEmployeeOnline(userId) &&
+                                  _liveLocations.containsKey(userId))
                                 Text(
                                   'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade700,
-                                  ),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.75),
+                                      ),
                                 )
                               else
                                 Text(
                                   'Location not available',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade500,
-                                  ),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.7),
+                                      ),
                                 ),
                             ],
                           ),
@@ -2852,8 +3207,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             children: [
                               _buildStatusRow(
                                 'Online Status',
-                                _isGpsOnline(userId) ? 'Online' : 'Offline',
-                                _isGpsOnline(userId) ? Colors.green : Colors.grey,
+                                _isEmployeeOnline(userId)
+                                    ? 'Online'
+                                    : 'Offline',
+                                _isEmployeeOnline(userId)
+                                    ? Colors.green
+                                    : Colors.grey,
                               ),
                               _buildStatusRow(
                                 'Active Tasks',
@@ -2922,7 +3281,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildAvailabilityInfo(String userId) {
     // Check if employee is in live locations (online)
-    final isOnline = _isGpsOnline(userId);
+    final isOnline = _isEmployeeOnline(userId);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2949,7 +3308,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.85),
+            ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2961,7 +3325,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Text(
               value,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 13,
                 color: valueColor,
                 fontWeight: FontWeight.w600,
               ),
@@ -2981,13 +3345,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             width: 60,
             child: Text(
               label,
-              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.85),
+              ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -2999,7 +3372,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildFloatingEmployeeIndicators() {
     // Get online employees only
     final onlineEmployees = _liveLocations.entries
-        .where((entry) => _isGpsOnline(entry.key))
+        .where((entry) => _isEmployeeOnline(entry.key))
         .toList();
 
     if (onlineEmployees.isEmpty) return const SizedBox.shrink();
@@ -3276,13 +3649,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           '📍 Loaded ${response.length} online employees from backend',
         );
         setState(() {
+          final seenOnlineIds = <String>{};
           for (final emp in response) {
             final rawId =
-                (emp['userId'] ?? emp['employeeId'] ?? emp['id'] ?? '').toString();
+                (emp['userId'] ?? emp['employeeId'] ?? emp['id'] ?? '')
+                    .toString();
             final userId = _canonicalUserId(rawId);
+            if (userId.trim().isNotEmpty) {
+              seenOnlineIds.add(userId);
+            }
             final lat = (emp['latitude'] as num?)?.toDouble();
             final lng = (emp['longitude'] as num?)?.toDouble();
             final name = emp['name'] ?? 'Unknown';
+
+            final nextActiveTaskCount =
+                (emp['activeTaskCount'] as num?)?.toInt() ?? 0;
 
             // Ensure we have a UserModel entry for tooltip/inspector.
             // Sometimes fetchEmployees() may return different ids than the live location feed.
@@ -3291,10 +3672,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               final nextName = (emp['name'] ?? '').toString();
               final nextEmail = (emp['email'] ?? '').toString();
               final nextPhone = (emp['phone'] ?? '').toString();
-              final nextRole = (emp['role'] ?? existing?.role ?? 'employee').toString();
-              final nextEmployeeId = (emp['employeeId'] ?? '').toString();
-              final nextActiveTaskCount =
-                  (emp['activeTaskCount'] as num?)?.toInt() ?? existing?.activeTaskCount;
+              final nextRole = (emp['role'] ?? existing?.role ?? 'employee')
+                  .toString();
+              final nextEmployeeId =
+                  (emp['employeeCode'] ?? emp['employeeId'] ?? '').toString();
 
               if (existing == null) {
                 _employees[userId] = UserModel(
@@ -3303,7 +3684,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   email: nextEmail,
                   phone: nextPhone.trim().isNotEmpty ? nextPhone : null,
                   role: nextRole,
-                  employeeId: nextEmployeeId.trim().isNotEmpty ? nextEmployeeId : null,
+                  employeeId: nextEmployeeId.trim().isNotEmpty
+                      ? nextEmployeeId
+                      : null,
                   isOnline: true,
                   activeTaskCount: nextActiveTaskCount,
                 );
@@ -3311,11 +3694,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _employees[userId] = UserModel(
                   id: existing.id,
                   name: nextName.trim().isNotEmpty ? nextName : existing.name,
-                  email: nextEmail.trim().isNotEmpty ? nextEmail : existing.email,
-                  phone: nextPhone.trim().isNotEmpty ? nextPhone : existing.phone,
+                  email: nextEmail.trim().isNotEmpty
+                      ? nextEmail
+                      : existing.email,
+                  phone: nextPhone.trim().isNotEmpty
+                      ? nextPhone
+                      : existing.phone,
                   role: nextRole,
-                  employeeId: existing.employeeId ??
-                      (nextEmployeeId.trim().isNotEmpty ? nextEmployeeId : null),
+                  employeeId: nextEmployeeId.trim().isNotEmpty
+                      ? nextEmployeeId
+                      : existing.employeeId,
                   avatarUrl: existing.avatarUrl,
                   username: existing.username,
                   isActive: existing.isActive,
@@ -3328,17 +3716,83 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   workloadWeight: existing.workloadWeight,
                 );
               }
+
+              final existingLoc = _employeeLocations[userId];
+              if (existingLoc != null) {
+                _employeeLocations[userId] = EmployeeLocation(
+                  employeeId: existingLoc.employeeId,
+                  name: existingLoc.name,
+                  latitude: existingLoc.latitude,
+                  longitude: existingLoc.longitude,
+                  accuracy: existingLoc.accuracy,
+                  speed: existingLoc.speed,
+                  status: existingLoc.status,
+                  timestamp: existingLoc.timestamp,
+                  activeTaskCount: nextActiveTaskCount,
+                  workloadScore: existingLoc.workloadScore,
+                  currentGeofence: existingLoc.currentGeofence,
+                  distanceToNearestTask: existingLoc.distanceToNearestTask,
+                  isOnline: existingLoc.isOnline,
+                  batteryLevel: existingLoc.batteryLevel,
+                );
+              }
             }
 
             // Only add if we have valid userId and coordinates
             if (userId.isNotEmpty && lat != null && lng != null) {
               _liveLocations[userId] = LatLng(lat, lng);
               _lastGpsUpdate[userId] = DateTime.now();
+
+              final tsRaw = (emp['timestamp'] ?? '').toString();
+              final ts = DateTime.tryParse(tsRaw) ?? DateTime.now();
+              final status = nextActiveTaskCount >= 1
+                  ? EmployeeStatus.busy
+                  : EmployeeStatus.available;
+
+              _employeeLocations[userId] = EmployeeLocation(
+                employeeId: userId,
+                name: name.toString(),
+                latitude: lat,
+                longitude: lng,
+                accuracy: 0,
+                speed: null,
+                status: status,
+                timestamp: ts,
+                activeTaskCount: nextActiveTaskCount,
+                workloadScore: 0,
+                currentGeofence: null,
+                distanceToNearestTask: null,
+                isOnline: true,
+                batteryLevel: null,
+              );
+
               debugPrint('✅ Added employee $name ($userId) at ($lat, $lng)');
             } else {
               debugPrint(
                 '⚠️ Skipped employee $name - missing location data: lat=$lat, lng=$lng',
               );
+            }
+          }
+
+          // Prune anything not present in the authoritative online list.
+          final existingIds = _liveLocations.keys.toList();
+          for (final id in existingIds) {
+            if (!seenOnlineIds.contains(id)) {
+              _liveLocations.remove(id);
+              _lastGpsUpdate.remove(id);
+              _trails.remove(id);
+            }
+          }
+
+          final locIds = _employeeLocations.keys.toList();
+          for (final id in locIds) {
+            final loc = _employeeLocations[id];
+            if (loc != null &&
+                loc.isOnline == false &&
+                !seenOnlineIds.contains(id)) {
+              // Keep the offline location object if it helps inspector text,
+              // but ensure marker-related maps are cleared above.
+              continue;
             }
           }
 
@@ -3354,17 +3808,41 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  void _scheduleOnlineEmployeeRefresh() {
+    _onlineEmployeesReloadDebounce?.cancel();
+    _onlineEmployeesReloadDebounce = Timer(
+      const Duration(milliseconds: 600),
+      () {
+        if (!mounted) return;
+        if (_selectedIndex != 0) return;
+        _loadOnlineEmployeeLocations();
+      },
+    );
+  }
+
   void _subscribeToLocations() {
     _employeeLocationsSub?.cancel();
-    _employeeLocationsSub = _locationService.employeeLocationsStream.listen((locations) {
+    _employeeLocationsSub = _locationService.employeeLocationsStream.listen((
+      locations,
+    ) {
       if (!mounted) return;
       setState(() {
         final wasEmpty = _liveLocations.isEmpty;
         for (final empLoc in locations) {
           final pos = LatLng(empLoc.latitude, empLoc.longitude);
           final id = _canonicalUserId(empLoc.employeeId);
-          _liveLocations[id] = pos;
-          _lastGpsUpdate[id] = empLoc.timestamp;
+          _employeeLocations[id] = empLoc;
+
+          if (empLoc.isOnline) {
+            _liveLocations[id] = pos;
+            _lastGpsUpdate[id] = DateTime.now();
+          } else {
+            // Employee logged out / marked offline: remove marker immediately.
+            _liveLocations.remove(id);
+            _lastGpsUpdate.remove(id);
+            _trails.remove(id);
+            continue;
+          }
 
           final trail = _trails[id] ?? <LatLng>[];
           if (trail.isEmpty || trail.last != pos) {

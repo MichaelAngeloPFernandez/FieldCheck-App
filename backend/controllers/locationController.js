@@ -1,8 +1,115 @@
 const User = require('../models/User');
 const Attendance = require('../models/Attendance');
 const Task = require('../models/Task');
+const UserTask = require('../models/UserTask');
 const Geofence = require('../models/Geofence');
 const Report = require('../models/Report');
+
+async function countActiveNonOverdueTasksForUsers(userIds) {
+  const now = new Date();
+  const terminalStatuses = new Set(['completed', 'reviewed', 'closed']);
+
+  const assignments = await UserTask.find({
+    userId: { $in: userIds },
+    isArchived: { $ne: true },
+    status: { $ne: 'completed' },
+  }).select('userId taskId');
+
+  const counts = new Map(userIds.map((id) => [id.toString(), 0]));
+  if (!assignments.length) return counts;
+
+  const taskIds = assignments.map((a) => a.taskId).filter(Boolean);
+  const tasks = taskIds.length
+    ? await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } }).select(
+        '_id dueDate status isArchived',
+      )
+    : [];
+
+  const countableTaskIds = new Set(
+    tasks
+      .filter((t) => {
+        const status = String(t.status || '').toLowerCase();
+        if (t.isArchived) return false;
+        if (terminalStatuses.has(status)) return false;
+        if (t.dueDate && t.dueDate < now) return false;
+        return true;
+      })
+      .map((t) => t._id.toString()),
+  );
+
+  for (const a of assignments) {
+    const taskId = a.taskId?.toString();
+    if (!taskId || !countableTaskIds.has(taskId)) continue;
+    const key = a.userId.toString();
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  return counts;
+}
+
+async function trimOverLimitAssignmentsForUser(userId, maxActive) {
+  const now = new Date();
+  const terminalStatuses = new Set(['completed', 'reviewed', 'closed']);
+
+  const assignments = await UserTask.find({
+    userId,
+    isArchived: { $ne: true },
+    status: { $ne: 'completed' },
+  })
+    .sort({ assignedAt: 1 })
+    .select('_id userId taskId assignedAt isArchived status');
+
+  if (!assignments.length) return 0;
+
+  const taskIds = assignments.map((a) => a.taskId).filter(Boolean);
+  const tasks = taskIds.length
+    ? await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } }).select(
+        '_id dueDate status isArchived',
+      )
+    : [];
+
+  const taskMap = new Map(tasks.map((t) => [t._id.toString(), t]));
+  const countable = assignments.filter((a) => {
+    const t = taskMap.get(a.taskId?.toString() || '');
+    if (!t) return false;
+    const status = String(t.status || '').toLowerCase();
+    if (t.isArchived) return false;
+    if (terminalStatuses.has(status)) return false;
+    if (t.dueDate && t.dueDate < now) return false;
+    return true;
+  });
+
+  if (countable.length <= maxActive) return 0;
+
+  const toArchive = countable.slice(0, countable.length - maxActive);
+  for (const ut of toArchive) {
+    if (ut.isArchived) continue;
+    ut.isArchived = true;
+    await ut.save();
+
+    if (global.io) {
+      global.io.emit('userTaskArchived', {
+        id: ut._id.toString(),
+        userId: ut.userId.toString(),
+        taskId: ut.taskId.toString(),
+      });
+      global.io.emit('taskUnassigned', {
+        taskId: ut.taskId.toString(),
+        userId: ut.userId.toString(),
+      });
+    }
+  }
+
+  return toArchive.length;
+}
+
+async function populateReportById(reportId) {
+  return await Report.findById(reportId)
+    .populate('employee', 'name email employeeId avatarUrl')
+    .populate('task', 'title description difficulty dueDate status isArchived')
+    .populate('attendance')
+    .populate('geofence', 'name');
+}
 
 /**
  * Location Controller - Handles real-time employee location tracking
@@ -60,23 +167,35 @@ exports.updateLocation = async (req, res) => {
     }
 
     // Determine employee status based on activity
-    let status = 'available';
-    if (speed && speed > 0.5) {
-      status = 'moving'; // Employee is moving
+    let activeTaskCount = 0;
+    try {
+      const userTaskDocs = await UserTask.find({
+        userId: employeeId,
+        status: { $in: ['pending', 'in_progress'] },
+      }).select('taskId');
+      const taskIds = Array.isArray(userTaskDocs)
+        ? userTaskDocs.map((d) => d.taskId).filter(Boolean)
+        : [];
+
+      if (taskIds.length > 0) {
+        activeTaskCount = await Task.countDocuments({
+          _id: { $in: taskIds },
+          isArchived: false,
+          status: { $nin: ['completed', 'closed'] },
+        });
+      }
+    } catch (_) {
+      activeTaskCount = 0;
     }
 
-    // Check for active tasks
-    const activeTasks = await Task.find({
-      assignedTo: employeeId,
-      status: { $in: ['assigned', 'in_progress'] },
-    });
-
-    if (activeTasks.length > 0) {
+    let status = 'moving';
+    if (activeTaskCount >= 1) {
       status = 'busy';
+    } else if (currentGeofence) {
+      status = 'available';
     }
 
-    // Calculate workload score
-    const workloadScore = Math.min(activeTasks.length / 5, 1.0); // Max 5 tasks = 100%
+    const workloadScore = Math.min(activeTaskCount / 5, 1.0);
 
     // Prepare location data
     const locationData = {
@@ -89,7 +208,7 @@ exports.updateLocation = async (req, res) => {
       altitude: altitude || 0,
       status,
       timestamp: new Date().toISOString(),
-      activeTaskCount: activeTasks.length,
+      activeTaskCount,
       workloadScore,
       currentGeofence: currentGeofence?.name || null,
       distanceToNearestTask: null,
@@ -98,19 +217,35 @@ exports.updateLocation = async (req, res) => {
     };
 
     // Calculate distance to nearest task
-    if (activeTasks.length > 0) {
+    if (activeTaskCount > 0) {
       let minDistance = Infinity;
-      for (const task of activeTasks) {
-        if (task.latitude && task.longitude) {
-          const distance = calculateDistance(
-            latitude,
-            longitude,
-            task.latitude,
-            task.longitude
-          );
-          minDistance = Math.min(minDistance, distance);
+      try {
+        const userTaskDocs = await UserTask.find({
+          userId: employeeId,
+          status: { $in: ['pending', 'in_progress'] },
+        }).select('taskId');
+        const taskIds = Array.isArray(userTaskDocs)
+          ? userTaskDocs.map((d) => d.taskId).filter(Boolean)
+          : [];
+
+        const activeTasks = await Task.find({
+          _id: { $in: taskIds },
+          isArchived: false,
+          status: { $nin: ['completed', 'closed'] },
+        }).select('latitude longitude');
+
+        for (const task of activeTasks) {
+          if (task.latitude && task.longitude) {
+            const distance = calculateDistance(
+              latitude,
+              longitude,
+              task.latitude,
+              task.longitude
+            );
+            minDistance = Math.min(minDistance, distance);
+          }
         }
-      }
+      } catch (_) {}
       if (minDistance !== Infinity) {
         locationData.distanceToNearestTask = minDistance;
       }
@@ -214,18 +349,33 @@ exports.getEmployeeLocation = async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    const activeTasks = await Task.find({
-      assignedTo: employeeId,
-      status: { $in: ['assigned', 'in_progress'] },
-    });
+    let activeTaskCount = 0;
+    try {
+      const userTaskDocs = await UserTask.find({
+        userId: employeeId,
+        status: { $in: ['pending', 'in_progress'] },
+      }).select('taskId');
+      const taskIds = Array.isArray(userTaskDocs)
+        ? userTaskDocs.map((d) => d.taskId).filter(Boolean)
+        : [];
+      if (taskIds.length > 0) {
+        activeTaskCount = await Task.countDocuments({
+          _id: { $in: taskIds },
+          isArchived: false,
+          status: { $nin: ['completed', 'closed'] },
+        });
+      }
+    } catch (_) {
+      activeTaskCount = 0;
+    }
 
     const location = {
       employeeId: user._id,
       name: user.name,
       latitude: user.lastLatitude,
       longitude: user.lastLongitude,
-      activeTaskCount: activeTasks.length,
-      workloadScore: Math.min(activeTasks.length / 5, 1.0),
+      activeTaskCount,
+      workloadScore: Math.min(activeTaskCount / 5, 1.0),
       isOnline: user.isOnline,
       timestamp: user.lastLocationUpdate,
     };
@@ -330,7 +480,12 @@ exports.autoCheckoutEmployee = async (req, res) => {
         content: 'Attendance auto-checked out and voided (offline too long)',
       });
       if (global.io) {
-        global.io.emit('newReport', rep);
+        try {
+          const populated = await populateReportById(rep._id);
+          global.io.emit('newReport', populated || rep);
+        } catch (_) {
+          global.io.emit('newReport', rep);
+        }
       }
     } catch (e) {
       console.error('Failed to auto-create auto-checkout report:', e);
@@ -427,11 +582,26 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 exports.getOnlineEmployees = async (req, res) => {
   try {
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const maxActive = 3;
 
     const onlineUsers = await User.find({
       isOnline: true,
-      lastLocationUpdate: { $gte: fiveMinutesAgo },
-    }).select('_id name lastLatitude lastLongitude lastLocationUpdate isOnline activeTaskCount workloadWeight');
+    }).select('_id name username email phone employeeId lastLatitude lastLongitude lastLocationUpdate isOnline activeTaskCount workloadWeight');
+
+    await Promise.all(
+      onlineUsers.map(async (u) => {
+        try {
+          const trimmed = await trimOverLimitAssignmentsForUser(u._id, maxActive);
+          return trimmed;
+        } catch (_) {
+          return 0;
+        }
+      }),
+    );
+
+    const activeCounts = await countActiveNonOverdueTasksForUsers(
+      onlineUsers.map((u) => u._id),
+    );
 
     const locations = onlineUsers
       .filter((user) =>
@@ -443,13 +613,18 @@ exports.getOnlineEmployees = async (req, res) => {
       .map((user) => ({
         userId: user._id.toString(),
         employeeId: user._id.toString(),
+        employeeCode: (user.employeeId || '').toString(),
         name: user.name,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
         latitude: user.lastLatitude,
         longitude: user.lastLongitude,
         accuracy: 0,
         timestamp: user.lastLocationUpdate?.toISOString() || new Date().toISOString(),
         isOnline: user.isOnline,
-        activeTaskCount: user.activeTaskCount || 0,
+        isStale: !!(user.lastLocationUpdate && user.lastLocationUpdate < fiveMinutesAgo),
+        activeTaskCount: activeCounts.get(user._id.toString()) || 0,
         workloadScore: user.workloadWeight || 0,
       }));
 
