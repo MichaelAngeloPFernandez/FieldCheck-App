@@ -43,10 +43,44 @@ module.exports.employeeLocations = employeeLocations;
 // Throttle admin notifications for overtasked employees
 const overtaskNotified = new Map(); // { userId: { count: number, at: number } }
 
+// Track active sockets per user for accurate online/offline presence.
+// We only mark a user offline when their *last* socket disconnects.
+const userSockets = new Map(); // { userId: Set(socketId) }
+const pendingOfflineTimers = new Map(); // { userId: Timeout }
+const OFFLINE_GRACE_MS = 15000;
+
 // --- Presence tracking & real-time location monitoring ---
 let lastBroadcastCount = 0;
 io.on('connection', (socket) => {
   let userIdFromToken = socket.id;
+  const _trackSocketForUser = (userId) => {
+    if (typeof userId !== 'string' || userId.length !== 24) return;
+    let set = userSockets.get(userId);
+    if (!set) {
+      set = new Set();
+      userSockets.set(userId, set);
+    }
+    set.add(socket.id);
+
+    const pending = pendingOfflineTimers.get(userId);
+    if (pending) {
+      clearTimeout(pending);
+      pendingOfflineTimers.delete(userId);
+    }
+  };
+
+  const _untrackSocketForUser = (userId) => {
+    if (typeof userId !== 'string' || userId.length !== 24) return 0;
+    const set = userSockets.get(userId);
+    if (!set) return 0;
+    set.delete(socket.id);
+    if (set.size <= 0) {
+      userSockets.delete(userId);
+      return 0;
+    }
+    return set.size;
+  };
+
   try {
     const authHeader =
       (socket.handshake.headers && socket.handshake.headers.authorization) ||
@@ -73,6 +107,11 @@ io.on('connection', (socket) => {
     }
   } catch (_) {}
 
+  // Store the resolved userId on the socket for later disconnect handling.
+  socket.data = socket.data || {};
+  socket.data.userId = userIdFromToken;
+  _trackSocketForUser(userIdFromToken);
+
   try {
     const count = io.of('/').sockets.size;
     if (count !== lastBroadcastCount) {
@@ -96,6 +135,9 @@ io.on('connection', (socket) => {
         userId = payloadId;
         userIdFromToken = payloadId;
       }
+
+      socket.data.userId = userIdFromToken;
+      _trackSocketForUser(userIdFromToken);
 
       let name = (data && data.name ? String(data.name) : '').trim();
       let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
@@ -332,6 +374,56 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    const userId =
+      socket && socket.data && socket.data.userId
+        ? String(socket.data.userId)
+        : (typeof userIdFromToken === 'string' ? userIdFromToken : '');
+
+    const remaining = _untrackSocketForUser(userId);
+    if (remaining === 0 && typeof userId === 'string' && userId.length === 24) {
+      // Use a short grace period to prevent flicker during brief reconnects.
+      if (!pendingOfflineTimers.has(userId)) {
+        const timer = setTimeout(async () => {
+          try {
+            const current = userSockets.get(userId);
+            if (current && current.size > 0) {
+              return;
+            }
+
+            try {
+              const updated = await User.findOneAndUpdate(
+                { _id: userId, role: 'employee' },
+                {
+                  isOnline: false,
+                  status: 'offline',
+                },
+                { new: true },
+              );
+
+              if (!updated) {
+                return;
+              }
+            } catch (_) {}
+
+            try {
+              employeeLocations.delete(userId);
+            } catch (_) {}
+
+            try {
+              io.emit('employeeOffline', {
+                employeeId: String(userId),
+                timestamp: new Date().toISOString(),
+              });
+            } catch (_) {}
+          } finally {
+            pendingOfflineTimers.delete(userId);
+          }
+        }, OFFLINE_GRACE_MS);
+
+        pendingOfflineTimers.set(userId, timer);
+      }
+    }
+
     try {
       const count = io.of('/').sockets.size;
       if (count !== lastBroadcastCount) {
@@ -490,6 +582,16 @@ process.on('uncaughtException', (error) => {
 (async () => {
   try {
     await connectDB();
+
+    // On startup, clear any stale employee presence flags.
+    // Employees will flip back online automatically when their app reconnects.
+    try {
+      await User.updateMany(
+        { role: 'employee', isOnline: true },
+        { $set: { isOnline: false, status: 'offline' } },
+      );
+    } catch (_) {}
+
     if (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true') {
       const { seedDevData } = require('./utils/seedDev');
       await seedDevData();
