@@ -576,9 +576,20 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                 Expanded(
                                   flex: 1,
                                   child: const Text(
-                                    'Time',
+                                    'Check-In',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Check-Out',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red,
                                     ),
                                   ),
                                 ),
@@ -594,18 +605,10 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                                 Expanded(
                                   flex: 1,
                                   child: const Text(
-                                    'Status',
+                                    'Elapsed Time',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 1,
-                                  child: const Text(
-                                    'Duration',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                      color: Colors.purple,
                                     ),
                                   ),
                                 ),
@@ -614,66 +617,85 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                           ),
                           const SizedBox(height: 8),
 
-                          // Table rows (preview first 10)
-                          ...widget.records.take(10).map((record) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    flex: 2,
-                                    child: Text(
-                                      record.employeeName ?? 'Unknown',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 1,
-                                    child: Text(
-                                      dateFormat.format(record.timestamp),
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 1,
-                                    child: Text(
-                                      timeFormat.format(record.timestamp),
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 1,
-                                    child: Text(
-                                      record.geofenceName ?? 'N/A',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 1,
-                                    child: Text(
-                                      record.isCheckIn ? 'In' : 'Out',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: record.isCheckIn
-                                            ? Colors.green
-                                            : Colors.red,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 1,
-                                    child: Text(
-                                      record.elapsedHours != null
+                          // Table rows (show only completed sessions, first 10)
+                          ...widget.records
+                              .where((r) => r.checkOutTime != null)
+                              .take(10)
+                              .map((record) {
+                                final checkOutStr = record.checkOutTime != null
+                                    ? timeFormat.format(record.checkOutTime!)
+                                    : 'N/A';
+                                final elapsedDisplay =
+                                    record.elapsedHours != null
+                                    ? record.elapsedHours! >= 1
                                           ? '${record.elapsedHours!.toStringAsFixed(2)} hrs'
-                                          : 'Ongoing',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
+                                          : '${(record.elapsedHours! * 60).toStringAsFixed(0)} min'
+                                    : 'Ongoing';
+
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
                                   ),
-                                ],
-                              ),
-                            );
-                          }),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          record.employeeName ?? 'Unknown',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 1,
+                                        child: Text(
+                                          dateFormat.format(record.checkInTime),
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 1,
+                                        child: Text(
+                                          timeFormat.format(record.checkInTime),
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 1,
+                                        child: Text(
+                                          checkOutStr,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 1,
+                                        child: Text(
+                                          record.geofenceName ?? 'N/A',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 1,
+                                        child: Text(
+                                          elapsedDisplay,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.purple,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
 
                           if (widget.records.length > 10)
                             Padding(

@@ -43,12 +43,6 @@ class CheckInTimerService {
 
     debugPrint('Elapsed-time tracking started for $employeeId at $startTime');
 
-    // Create periodic timer to emit updates
-    _activeTimers[employeeId] = Timer.periodic(
-      const Duration(seconds: 1),
-      (timer) => _updateTimer(employeeId),
-    );
-
     // Emit initial event with 0 elapsed time to show 00:00 on first display
     _timerStream.add(
       CheckInTimerEvent(
@@ -56,6 +50,13 @@ class CheckInTimerService {
         checkInTime: startTime,
         elapsedTime: Duration.zero,
       ),
+    );
+
+    // Create periodic timer to emit updates after initial 00:00 display
+    // First tick happens after 1 second, so timer shows 00:01 correctly
+    _activeTimers[employeeId] = Timer.periodic(
+      const Duration(seconds: 1),
+      (timer) => _updateTimer(employeeId),
     );
   }
 

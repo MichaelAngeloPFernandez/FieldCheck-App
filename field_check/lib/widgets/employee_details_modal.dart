@@ -141,6 +141,59 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Employee Status Card (Prominent)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(
+                        employee.status,
+                      ).withValues(alpha: 0.1),
+                      border: Border.all(
+                        color: _getStatusColor(employee.status),
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Employee Presence Status',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _getStatusColor(
+                              employee.status,
+                            ).withValues(alpha: 0.2),
+                            border: Border.all(
+                              color: _getStatusColor(employee.status),
+                              width: 2,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _getStatusEmoji(employee.status),
+                              style: const TextStyle(fontSize: 28),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          statusLabel,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   // Location section
                   _buildSection('Current Location', [
                     _buildInfoRow(
@@ -431,6 +484,19 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
         return '🔴 Busy';
       case EmployeeStatus.offline:
         return '⚫ Offline';
+    }
+  }
+
+  String _getStatusEmoji(EmployeeStatus status) {
+    switch (status) {
+      case EmployeeStatus.available:
+        return '🟢';
+      case EmployeeStatus.moving:
+        return '🚗';
+      case EmployeeStatus.busy:
+        return '🔴';
+      case EmployeeStatus.offline:
+        return '⚫';
     }
   }
 }

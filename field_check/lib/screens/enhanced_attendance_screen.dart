@@ -450,16 +450,14 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         );
         debugPrint('CurrentGeofence.name: ${_currentGeofence?.name}');
         debugPrint(
-          'Assigned geofences (${_assignedGeofences.length}): ' +
-              _assignedGeofences
+          'Assigned geofences (${_assignedGeofences.length}): ${_assignedGeofences
                   .map((g) => '${g.id ?? 'no-id'}:${g.name}')
-                  .join(', '),
+                  .join(', ')}',
         );
         debugPrint(
-          'All geofences (${_allGeofences.length}): ' +
-              _allGeofences
+          'All geofences (${_allGeofences.length}): ${_allGeofences
                   .map((g) => '${g.id ?? 'no-id'}:${g.name}')
-                  .join(', '),
+                  .join(', ')}',
         );
         debugPrint('Attendance payload: $attendanceData');
       } catch (e) {
@@ -705,31 +703,6 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                   ),
 
                 const SizedBox(height: 16),
-                if (!_isOnline)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.cloud_off, color: Colors.orange.shade700),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Offline. Pending sync: $_pendingSyncCount',
-                            style: TextStyle(color: Colors.orange.shade700),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _isLoading ? null : _syncOfflineAttendance,
-                          child: const Text('Sync Now'),
-                        ),
-                      ],
-                    ),
-                  ),
 
                 // Location status
                 _buildLocationCard(),
@@ -878,7 +851,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
               CheckInTimerWidget(
                 employeeId: _userModelId ?? 'unknown',
                 isCheckedIn: _isCheckedIn,
-                checkInTimestamp: _lastCheckTimestamp,
+                checkInTimestamp: DateTime.now(),
               ),
             const SizedBox(height: 24),
             Container(

@@ -84,6 +84,11 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     ) {
       if (mounted) {
         setState(() {
+          // Cache full location objects so we can derive status/color per employee
+          _employeeLocations
+            ..clear()
+            ..addAll(locations);
+
           for (final empLoc in locations) {
             final pos = LatLng(empLoc.latitude, empLoc.longitude);
             _liveLocations[empLoc.employeeId] = pos;
@@ -281,59 +286,65 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                       height: 50,
                       child: GestureDetector(
                         onTap: () => _onEmployeeTap(entry.key),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: markerColor,
-                                border: Border.all(
+                        child: Tooltip(
+                          message:
+                              '${user?.name ?? 'Employee'} • ${empLocation.status.toString().split('.').last}',
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: markerColor,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: markerColor.withValues(alpha: 0.5),
+                                      blurRadius: 8,
+                                      spreadRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                                padding: const EdgeInsets.all(6),
+                                child: Icon(
+                                  markerIcon,
                                   color: Colors.white,
-                                  width: 2,
+                                  size: 20,
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: markerColor.withValues(alpha: 0.5),
-                                    blurRadius: 8,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
                               ),
-                              padding: const EdgeInsets.all(6),
-                              child: Icon(
-                                markerIcon,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(3),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                    blurRadius: 2,
-                                  ),
-                                ],
-                              ),
-                              child: Text(
-                                user?.name.split(' ').first ?? 'Emp',
-                                style: const TextStyle(
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w600,
+                              const SizedBox(height: 2),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 1,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(3),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      blurRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  user?.name.split(' ').first ?? 'Emp',
+                                  style: const TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     );

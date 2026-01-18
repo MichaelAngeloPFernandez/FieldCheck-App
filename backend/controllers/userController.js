@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid');
 // @access  Public
 const authUser = asyncHandler(async (req, res) => {
   const { email, username, identifier, password } = req.body;
+  const { io } = require('../server');
 
   let user;
   const value = (identifier || email || username || '').toString().trim().toLowerCase();
@@ -45,6 +46,28 @@ const authUser = asyncHandler(async (req, res) => {
     res.status(403);
     throw new Error('Account is deactivated. Contact admin.');
   }
+
+  // Mark user as online for presence tracking
+  try {
+    user.isOnline = true;
+    user.lastLoginAt = new Date();
+    await user.save();
+  } catch (_) {}
+
+  // Broadcast admin notification when an employee logs in
+  try {
+    if (io && user.role === 'employee') {
+      io.emit('adminNotification', {
+        type: 'presence',
+        action: 'login',
+        employeeId: user._id,
+        employeeName: user.name,
+        timestamp: new Date(),
+        message: `${user.name} logged in`,
+        severity: 'info',
+      });
+    }
+  } catch (_) {}
 
   res.json({
     _id: user._id,
@@ -520,13 +543,38 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 // @route   POST /api/users/logout
 // @access  Private
 const logout = asyncHandler(async (req, res) => {
+  const { io } = require('../server');
   const user = await User.findById(req.user._id);
   if (!user) {
     res.status(404);
     throw new Error('User not found');
   }
   user.tokenVersion = (user.tokenVersion || 0) + 1;
+
+  // Mark user as offline for presence tracking
+  try {
+    user.isOnline = false;
+    user.lastLogoutAt = new Date();
+  } catch (_) {}
+
   await user.save();
+
+  // Notify admins that an employee logged out / went offline
+  try {
+    if (io && user.role === 'employee') {
+      io.emit('employeeOffline', { employeeId: user._id.toString() });
+      io.emit('adminNotification', {
+        type: 'presence',
+        action: 'logout',
+        employeeId: user._id,
+        employeeName: user.name,
+        timestamp: new Date(),
+        message: `${user.name} logged out`,
+        severity: 'info',
+      });
+    }
+  } catch (_) {}
+
   res.json({ message: 'Logged out' });
 });
 

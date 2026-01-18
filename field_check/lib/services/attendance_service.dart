@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
@@ -321,6 +322,12 @@ class AttendanceRecord {
     final checkInStr = json['checkInTime'] ?? attendance['checkIn'];
     final checkOutStr = json['checkOutTime'] ?? attendance['checkOut'];
 
+    String _readString(dynamic v) {
+      if (v == null) return '';
+      if (v is String) return v;
+      return v.toString();
+    }
+
     final checkInTime = checkInStr != null
         ? DateTime.parse(checkInStr.toString())
         : DateTime.now();
@@ -345,12 +352,8 @@ class AttendanceRecord {
         attendance['status'] ??
         (checkOutTime != null ? 'out' : 'in');
 
-    // Calculate elapsed hours
-    double? elapsedHours;
-    if (checkOutTime != null) {
-      final elapsed = checkOutTime.difference(checkInTime);
-      elapsedHours = elapsed.inSeconds / 3600.0;
-    }
+    // Use backend-provided elapsedHours; it's already calculated server-side
+    double? elapsedHours = (json['elapsedHours'] as num?)?.toDouble();
 
     return AttendanceRecord(
       id: json['id'] ?? json['_id'] ?? '',
@@ -369,10 +372,32 @@ class AttendanceRecord {
           (json['longitude'] as num?)?.toDouble(),
       geofenceId:
           geofence?['_id'] ?? json['geofenceId'] ?? attendance['geofence'],
-      geofenceName: geofence?['name'] ?? json['geofenceName'],
-      userId: employee?['_id'] ?? json['userId'] ?? '',
-      employeeName: employee?['name'] ?? json['employeeName'],
-      employeeEmail: employee?['email'] ?? json['employeeEmail'],
+      geofenceName:
+          geofence?['name'] ??
+          json['geofenceName'] ??
+          attendance['geofenceName'] ??
+          json['location'] ??
+          'Unknown Location',
+      userId:
+          employee?['_id'] ??
+          (json['userId'] is Map<String, dynamic>
+              ? (json['userId'] as Map<String, dynamic>)['_id']
+              : json['userId']) ??
+          '',
+      employeeName:
+          employee?['name'] ??
+          (json['employeeName'] is Map<String, dynamic>
+              ? (json['employeeName'] as Map<String, dynamic>)['name']
+              : _readString(json['employeeName']).isNotEmpty
+              ? _readString(json['employeeName'])
+              : null),
+      employeeEmail:
+          employee?['email'] ??
+          (json['employeeEmail'] is Map<String, dynamic>
+              ? (json['employeeEmail'] as Map<String, dynamic>)['email']
+              : _readString(json['employeeEmail']).isNotEmpty
+              ? _readString(json['employeeEmail'])
+              : null),
       isVoid:
           (attendance['isVoid'] as bool?) ?? (json['isVoid'] as bool?) ?? false,
       autoCheckout:

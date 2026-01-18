@@ -8,6 +8,7 @@ import '../services/realtime_service.dart';
 import '../widgets/employee_status_view.dart';
 import '../widgets/live_employee_map.dart';
 import '../widgets/employee_management_modal.dart';
+import 'admin_world_map_screen.dart';
 
 class EnhancedAdminDashboardScreen extends StatefulWidget {
   const EnhancedAdminDashboardScreen({super.key});
@@ -41,7 +42,8 @@ class _EnhancedAdminDashboardScreenState
   // Per-box notification counters
   int _attendanceNotificationCount = 0;
   int _taskNotificationCount = 0;
-  int _reportNotificationCount = 0;
+  // Reserved for future per-report notifications (currently unused)
+  // int _reportNotificationCount = 0;
 
   @override
   void initState() {
@@ -156,8 +158,6 @@ class _EnhancedAdminDashboardScreenState
               _attendanceNotificationCount++;
             } else if (notificationType == 'task') {
               _taskNotificationCount++;
-            } else if (notificationType == 'report') {
-              _reportNotificationCount++;
             }
           });
 
@@ -194,7 +194,7 @@ class _EnhancedAdminDashboardScreenState
       _notificationBadgeCount = 0;
       _attendanceNotificationCount = 0;
       _taskNotificationCount = 0;
-      _reportNotificationCount = 0;
+      // _reportNotificationCount = 0;
     });
   }
 
@@ -259,6 +259,16 @@ class _EnhancedAdminDashboardScreenState
         title: const Text('Admin Dashboard'),
         elevation: 0,
         actions: [
+          // Open full-screen world map of all online employees
+          IconButton(
+            tooltip: 'World Map',
+            icon: const Icon(Icons.public),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminWorldMapScreen()),
+              );
+            },
+          ),
           // Notification badge
           Stack(
             children: [

@@ -68,6 +68,43 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
     });
   }
 
+  Future<void> _updateUserTaskStatus(
+    Task task,
+    String newStatus, {
+    String? successMessage,
+  }) async {
+    if (task.userTaskId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot update this task: missing assignment id.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      await TaskService().updateUserTaskStatus(task.userTaskId!, newStatus);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            successMessage ??
+                'Task status updated to ${newStatus.replaceAll('_', ' ')}',
+          ),
+        ),
+      );
+      await _refreshTasks();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update task status: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   double _taskProgressValue(Task task) {
     if (task.checklist.isNotEmpty) {
       final clamped = task.progressPercent.clamp(0, 100);
@@ -199,6 +236,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                       itemBuilder: (context, index) {
                         final task = tasks[index];
                         final isCompleted = task.status == 'completed';
+                        final isInProgress = task.status == 'in_progress';
                         return GestureDetector(
                           onTap: isCompleted
                               ? null
@@ -291,6 +329,41 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen> {
                                           ),
                                         ),
                                       ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  // Task action buttons: Accept/Start and Decline
+                                  if (!isCompleted) Row(
+                                    children: [
+                                      ElevatedButton.icon(
+                                        icon: Icon(
+                                          isInProgress
+                                              ? Icons.play_arrow
+                                              : Icons.check_circle,
+                                          size: 18,
+                                        ),
+                                        label: Text(
+                                          isInProgress
+                                              ? 'Continue'
+                                              : 'Accept / Start',
+                                        ),
+                                        onPressed: () => _updateUserTaskStatus(
+                                          task,
+                                          'in_progress',
+                                          successMessage:
+                                              'Task accepted and marked in progress.',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      TextButton(
+                                        onPressed: () => _updateUserTaskStatus(
+                                          task,
+                                          'pending',
+                                          successMessage:
+                                              'Task left as pending (no changes).',
+                                        ),
+                                        child: const Text('Decline'),
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 8),

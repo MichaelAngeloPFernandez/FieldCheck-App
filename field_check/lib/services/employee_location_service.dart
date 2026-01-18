@@ -135,12 +135,17 @@ class EmployeeLocationService {
     try {
       final token = await _userService.getToken();
       final options = io.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .setExtraHeaders({
             if (token != null) 'Authorization': 'Bearer $token',
           })
-          .setTimeout(20000)
+          .setTimeout(60000)
           .build();
+
+      options['reconnection'] = true;
+      options['reconnectionAttempts'] = 999999;
+      options['reconnectionDelay'] = 1000;
+      options['reconnectionDelayMax'] = 10000;
 
       _socket = io.io(ApiConfig.baseUrl, options);
 
