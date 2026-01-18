@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const morgan = require('morgan');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const path = require('path');
 const User = require('./models/User');
 const EmployeeLocation = require('./models/EmployeeLocation');
@@ -21,6 +22,7 @@ console.log('📦 Modules loaded, environment configured');
 
 const app = express();
 const server = http.createServer(app); // Create http server
+let dbReady = false;
 const io = new Server(server, { // Initialize socket.io
   cors: {
     origin: "*", // Allow all origins for now, refine later
@@ -479,7 +481,12 @@ app.use(cors({
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  const readyState = mongoose?.connection?.readyState;
+  const connected = dbReady || readyState === 1;
+  if (!connected) {
+    return res.status(503).json({ status: 'starting' });
+  }
+  return res.json({ status: 'ok' });
 });
 
 app.get('/', (req, res) => {
@@ -581,34 +588,53 @@ process.on('uncaughtException', (error) => {
 
 (async () => {
   try {
-    await connectDB();
-
-    // On startup, clear any stale employee presence flags.
-    // Employees will flip back online automatically when their app reconnects.
-    try {
-      await User.updateMany(
-        { role: 'employee', isOnline: true },
-        { $set: { isOnline: false, status: 'offline' } },
-      );
-    } catch (_) {}
-
-    if (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true') {
-      const { seedDevData } = require('./utils/seedDev');
-      await seedDevData();
-    }
-    
-    // Initialize automation jobs (email verification cleanup, etc.)
-    const { initializeAutomation } = require('./utils/automationService');
-    initializeAutomation();
-    
-    // Initialize offline employee void attendance job
-    const { initializeOfflineEmployeeVoidJob } = require('./utils/offlineEmployeeVoidJob');
-    initializeOfflineEmployeeVoidJob();
-    
     server.listen(port, '0.0.0.0', () => { // Listen on all network interfaces
       console.log(`Backend server listening at http://0.0.0.0:${port}`);
       console.log(`Accessible from your device at: http://192.168.8.35:${port}`);
     });
+
+    const runStartupMaintenance = process.env.DISABLE_STARTUP_MAINTENANCE !== 'true';
+    const runBackgroundJobs = process.env.DISABLE_JOBS !== 'true';
+
+    let postDbInitDone = false;
+    const connectDbWithRetry = async () => {
+      try {
+        await connectDB();
+        dbReady = true;
+
+        if (!postDbInitDone) {
+          postDbInitDone = true;
+
+          if (runStartupMaintenance) {
+            try {
+              await User.updateMany(
+                { role: 'employee', isOnline: true },
+                { $set: { isOnline: false, status: 'offline' } },
+              );
+            } catch (_) {}
+          }
+
+          if (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true') {
+            const { seedDevData } = require('./utils/seedDev');
+            await seedDevData();
+          }
+          
+          if (runBackgroundJobs) {
+            const { initializeAutomation } = require('./utils/automationService');
+            initializeAutomation();
+            
+            const { initializeOfflineEmployeeVoidJob } = require('./utils/offlineEmployeeVoidJob');
+            initializeOfflineEmployeeVoidJob();
+          }
+        }
+      } catch (err) {
+        dbReady = false;
+        console.error('Failed to connect to database:', err && err.message ? err.message : err);
+        setTimeout(connectDbWithRetry, 10000);
+      }
+    };
+
+    connectDbWithRetry();
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);

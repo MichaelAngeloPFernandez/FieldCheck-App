@@ -2,16 +2,23 @@ const mongoose = require('mongoose');
 let memoryServer;
 
 const connectDB = async () => {
-  const uri = process.env.MONGO_URI;
+  const uri = process.env.MONGO_URI || process.env.MONGODB_URI;
   try {
     if (uri) {
-      await mongoose.connect(uri);
+      await mongoose.connect(uri, {
+        serverSelectionTimeoutMS: 15000,
+        connectTimeoutMS: 15000,
+        socketTimeoutMS: 45000,
+      });
       console.log(`MongoDB Connected: ${mongoose.connection.host}`);
       return;
     }
     throw new Error('MONGO_URI not set');
   } catch (error) {
     console.error(`Primary DB connect failed: ${error.message}`);
+    if (process.env.NODE_ENV === 'production') {
+      throw error;
+    }
     try {
       const { MongoMemoryServer } = require('mongodb-memory-server');
       memoryServer = await MongoMemoryServer.create();
