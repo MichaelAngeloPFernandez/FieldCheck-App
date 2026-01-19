@@ -614,7 +614,8 @@ process.on('uncaughtException', (error) => {
             } catch (_) {}
           }
 
-          if (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true') {
+          const isProduction = process.env.NODE_ENV === 'production';
+          if (!isProduction && (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true')) {
             const { seedDevData } = require('./utils/seedDev');
             await seedDevData();
           }
