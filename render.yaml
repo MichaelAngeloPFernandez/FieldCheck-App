@@ -47,7 +47,7 @@ services:
     
     # GitHub integration
     repo: https://github.com/MichaelAngeloPFernandez/FieldCheck-App
-    branch: main
+    branch: master
     autoPublishPath: /backend
     
     # Deployment configuration

@@ -18,6 +18,29 @@ console.log('🚀 Starting server initialization...');
 
 dotenv.config();
 
+const _normalizeEnv = (keys) => {
+  for (const key of keys) {
+    const v = process.env[key];
+    if (typeof v === 'string') {
+      process.env[key] = v.trim();
+    }
+  }
+};
+
+_normalizeEnv(['NODE_ENV', 'JWT_SECRET', 'JWT_REFRESH_SECRET', 'MONGO_URI', 'MONGODB_URI', 'PORT']);
+
+const _isProdEnv = (process.env.NODE_ENV || '').trim() === 'production';
+if (_isProdEnv) {
+  if (!process.env.JWT_SECRET) {
+    console.error('Missing required env var: JWT_SECRET');
+    process.exit(1);
+  }
+  if (!process.env.MONGO_URI && !process.env.MONGODB_URI) {
+    console.error('Missing required env var: MONGO_URI (or MONGODB_URI)');
+    process.exit(1);
+  }
+}
+
 console.log('📦 Modules loaded, environment configured');
 
 const app = express();
@@ -364,11 +387,11 @@ io.on('connection', (socket) => {
         }
       });
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`📍 Location: ${userId} at (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) • Accuracy: ${accuracy.toFixed(1)}m`);
+      if ((process.env.NODE_ENV || '').trim() === 'development') {
+        console.log(` Location: ${userId} at (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) • Accuracy: ${accuracy.toFixed(1)}m`);
       }
     } catch (e) {
-      console.error('Error handling location update:', e);
+      console.error('Error handling location update:', e && e.message ? e.message : e);
       if (typeof callback === 'function') {
         callback({ received: false, error: e.message });
       }
@@ -439,11 +462,11 @@ io.on('connection', (socket) => {
 // Security & performance middleware
 app.use(helmet());
 app.use(compression());
-if (process.env.NODE_ENV !== 'production') {
+if ((process.env.NODE_ENV || '').trim() !== 'production') {
   app.use(morgan('dev'));
 }
 // Rate limiting: keep strict in production, relax/disable in development
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = (process.env.NODE_ENV || '').trim() === 'production';
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
   max: parseInt(process.env.RATE_LIMIT_MAX || (isProd ? '1000' : '0')), // 0 disables in dev
@@ -484,7 +507,7 @@ app.get('/api/health', async (req, res) => {
   const readyState = mongoose?.connection?.readyState;
   const connected = dbReady || readyState === 1;
 
-  const nodeEnv = process.env.NODE_ENV || 'development';
+  const nodeEnv = (process.env.NODE_ENV || 'development').trim();
   const dbHost = mongoose?.connection?.host || null;
   const dbName = mongoose?.connection?.db?.databaseName || null;
   const gitCommit = process.env.RENDER_GIT_COMMIT || process.env.SOURCE_VERSION || null;
@@ -642,7 +665,7 @@ process.on('uncaughtException', (error) => {
             } catch (_) {}
           }
 
-          const isProduction = process.env.NODE_ENV === 'production';
+          const isProduction = (process.env.NODE_ENV || '').trim() === 'production';
           if (!isProduction && (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true')) {
             const { seedDevData } = require('./utils/seedDev');
             await seedDevData();
