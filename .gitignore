@@ -2,3 +2,8 @@ backend/.env*
 backend/coverage/ 
 backend/uploads/ 
 backend/test-results/
+
+!backend/.env.example
+
+.firebase/
+field_check/build/

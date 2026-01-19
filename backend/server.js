@@ -480,13 +480,41 @@ app.use(cors({
 // Serve uploaded files (e.g., report attachments)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   const readyState = mongoose?.connection?.readyState;
   const connected = dbReady || readyState === 1;
+
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  const dbHost = mongoose?.connection?.host || null;
+  const dbName = mongoose?.connection?.db?.databaseName || null;
+  const gitCommit = process.env.RENDER_GIT_COMMIT || process.env.SOURCE_VERSION || null;
+
   if (!connected) {
-    return res.status(503).json({ status: 'starting' });
+    return res.status(503).json({
+      status: 'starting',
+      nodeEnv,
+      db: { readyState, host: dbHost, name: dbName },
+      build: { gitCommit },
+    });
   }
-  return res.json({ status: 'ok' });
+
+  const verbose = req.query.verbose === '1' || req.query.verbose === 'true';
+  let userCount;
+  if (verbose) {
+    try {
+      userCount = await User.countDocuments({});
+    } catch (_) {
+      userCount = undefined;
+    }
+  }
+
+  return res.json({
+    status: 'ok',
+    nodeEnv,
+    db: { readyState, host: dbHost, name: dbName },
+    build: { gitCommit },
+    ...(verbose ? { userCount } : {}),
+  });
 });
 
 app.get('/', (req, res) => {

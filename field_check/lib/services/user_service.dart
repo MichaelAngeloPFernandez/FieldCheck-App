@@ -9,9 +9,40 @@ import '../config/api_config.dart';
 
 class UserService {
   static final String _baseUrl = '${ApiConfig.baseUrl}/api';
+  static final Uri _healthUri = Uri.parse('${ApiConfig.baseUrl}/api/health');
   // Add cached profile and getter
   UserModel? _cachedProfile;
   UserModel? get currentUser => _cachedProfile;
+
+  Future<void> _warmUpBackend({
+    Duration maxWait = const Duration(seconds: 70),
+  }) async {
+    final deadline = DateTime.now().add(maxWait);
+
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final res = await http
+            .get(_healthUri)
+            .timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200) {
+          try {
+            final decoded = json.decode(res.body);
+            if (decoded is Map<String, dynamic>) {
+              final status = (decoded['status'] ?? '').toString();
+              if (status == 'ok') return;
+            }
+          } catch (_) {
+            return;
+          }
+          return;
+        }
+      } catch (_) {
+        // Ignore and retry
+      }
+
+      await Future.delayed(const Duration(seconds: 2));
+    }
+  }
 
   String _extractErrorMessage(http.Response response, String fallback) {
     try {
@@ -131,13 +162,14 @@ class UserService {
 
   Future<UserModel> loginIdentifier(String identifier, String password) async {
     try {
+      await _warmUpBackend();
       final response = await http
           .post(
             Uri.parse('$_baseUrl/users/login'),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'identifier': identifier, 'password': password}),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 60));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final token = data['token'] as String?;
@@ -181,19 +213,53 @@ class UserService {
         'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
       );
     } on TimeoutException catch (_) {
-      throw Exception('Request timed out. Server may be busy or unreachable.');
+      try {
+        await _warmUpBackend();
+        final retryResponse = await http
+            .post(
+              Uri.parse('$_baseUrl/users/login'),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({
+                'identifier': identifier,
+                'password': password,
+              }),
+            )
+            .timeout(const Duration(seconds: 60));
+        if (retryResponse.statusCode == 200) {
+          final data = json.decode(retryResponse.body);
+          final token = data['token'] as String?;
+          final refreshToken = data['refreshToken'] as String?;
+          final prefs = await SharedPreferences.getInstance();
+          if (token != null) {
+            await prefs.setString('auth_token', token);
+          }
+          if (refreshToken != null) {
+            await prefs.setString('refresh_token', refreshToken);
+          }
+          _cachedProfile = UserModel.fromJson(data);
+          return _cachedProfile!;
+        }
+
+        final message = _extractErrorMessage(retryResponse, 'Login failed');
+        throw Exception(message);
+      } catch (_) {
+        throw Exception(
+          'Request timed out. Server may be busy or unreachable.',
+        );
+      }
     }
   }
 
   Future<UserModel> login(String email, String password) async {
     try {
+      await _warmUpBackend();
       final response = await http
           .post(
             Uri.parse('$_baseUrl/users/login'),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'identifier': email, 'password': password}),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 60));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final token = data['token'] as String?;
@@ -233,7 +299,38 @@ class UserService {
         'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
       );
     } on TimeoutException catch (_) {
-      throw Exception('Request timed out. Server may be busy or unreachable.');
+      try {
+        await _warmUpBackend();
+        final retryResponse = await http
+            .post(
+              Uri.parse('$_baseUrl/users/login'),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({'identifier': email, 'password': password}),
+            )
+            .timeout(const Duration(seconds: 60));
+
+        if (retryResponse.statusCode == 200) {
+          final data = json.decode(retryResponse.body);
+          final token = data['token'] as String?;
+          final refreshToken = data['refreshToken'] as String?;
+          final prefs = await SharedPreferences.getInstance();
+          if (token != null) {
+            await prefs.setString('auth_token', token);
+          }
+          if (refreshToken != null) {
+            await prefs.setString('refresh_token', refreshToken);
+          }
+          _cachedProfile = UserModel.fromJson(data);
+          return _cachedProfile!;
+        }
+
+        final message = _extractErrorMessage(retryResponse, 'Login failed');
+        throw Exception(message);
+      } catch (_) {
+        throw Exception(
+          'Request timed out. Server may be busy or unreachable.',
+        );
+      }
     }
   }
 
