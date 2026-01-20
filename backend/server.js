@@ -10,6 +10,7 @@ const compression = require('compression');
 const morgan = require('morgan');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const fs = require('fs');
 const path = require('path');
 const User = require('./models/User');
 const EmployeeLocation = require('./models/EmployeeLocation');
@@ -569,6 +570,45 @@ app.use(cors({
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const flutterWebBuildPath = path.join(__dirname, '..', 'field_check', 'build', 'web');
+let cachedAssetManifestJson = null;
+
+const _walkDirFiles = (dirPath, basePath) => {
+  const out = [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      out.push(..._walkDirFiles(full, basePath));
+    } else if (entry.isFile()) {
+      out.push(path.relative(basePath, full).split(path.sep).join('/'));
+    }
+  }
+  return out;
+};
+
+const _buildAssetManifestJson = () => {
+  const assetsDir = path.join(flutterWebBuildPath, 'assets');
+  const files = _walkDirFiles(assetsDir, assetsDir);
+  const manifest = {};
+
+  for (const rel of files) {
+    if (
+      rel === 'AssetManifest.bin' ||
+      rel === 'AssetManifest.bin.json' ||
+      rel === 'AssetManifest.json'
+    ) {
+      continue;
+    }
+
+    const keyA = rel;
+    const keyB = `assets/${rel}`;
+    manifest[keyA] = [keyA];
+    manifest[keyB] = [keyB];
+  }
+
+  return manifest;
+};
+
 app.use(
   express.static(flutterWebBuildPath, {
     index: false,
@@ -585,8 +625,16 @@ app.use(
 );
 
 app.get('/assets/AssetManifest.json', (req, res) => {
-  res.type('application/json');
-  return res.sendFile(path.join(flutterWebBuildPath, 'assets', 'AssetManifest.bin.json'));
+  try {
+    if (!cachedAssetManifestJson) {
+      cachedAssetManifestJson = _buildAssetManifestJson();
+    }
+
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.status(200).json(cachedAssetManifestJson);
+  } catch (_) {
+    return res.status(200).json({});
+  }
 });
 
 app.get('/api/health', async (req, res) => {
