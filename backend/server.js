@@ -525,12 +525,16 @@ io.on('connection', (socket) => {
   });
 });
 
-// Security & performance middleware
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+  }),
+);
 app.use(compression());
 if ((process.env.NODE_ENV || '').trim() !== 'production') {
   app.use(morgan('dev'));
 }
+
 // Rate limiting: keep strict in production, relax/disable in development
 const isProd = (process.env.NODE_ENV || '').trim() === 'production';
 const limiter = rateLimit({
@@ -618,6 +622,19 @@ app.use(
     immutable: true,
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+        return;
+      }
+
+      const base = path.basename(filePath);
+      if (
+        base === 'main.dart.js' ||
+        base === 'flutter_bootstrap.js' ||
+        base === 'flutter.js' ||
+        base === 'flutter_service_worker.js' ||
+        base === 'version.json' ||
+        base === 'manifest.json'
+      ) {
         res.setHeader('Cache-Control', 'no-cache');
       }
     },
