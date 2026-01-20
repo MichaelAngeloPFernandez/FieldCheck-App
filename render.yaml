@@ -54,6 +54,7 @@ services:
     buildFilter:
       paths:
         - backend/**
+        - field_check/build/web/**
     
     # Prebuilt Docker image (optional)
     # image: node:18-alpine

@@ -48,14 +48,6 @@ npm install -g netlify-cli
 netlify deploy --prod --dir=build/web
 ```
 
-### Deploy to Firebase Hosting
-```bash
-npm install -g firebase-tools
-firebase login
-firebase init hosting
-firebase deploy --only hosting
-```
-
 ---
 
 ## ⚙️ Before Deployment
@@ -194,7 +186,6 @@ build/web/
 - **Netlify** - Easy setup, good free tier, analytics
 
 ### Alternative
-- **Firebase Hosting** - Google infrastructure, free tier
 - **GitHub Pages** - Free, simple, no backend needed
 
 ---

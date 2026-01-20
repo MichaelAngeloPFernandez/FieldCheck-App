@@ -493,15 +493,17 @@ const availabilityRoutes = require('./routes/availabilityRoutes');
 const employeeTrackingRoutes = require('./routes/employeeTrackingRoutes');
 const locationRoutes = require('./routes/locationRoutes');
 
-app.use(express.json({ limit: '200kb' })); // To parse JSON bodies (limited)
+app.use(express.json({ limit: '200kb' })); 
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Serve uploaded files (e.g., report attachments)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+const flutterWebBuildPath = path.join(__dirname, '..', 'field_check', 'build', 'web');
+app.use(express.static(flutterWebBuildPath));
 
 app.get('/api/health', async (req, res) => {
   const readyState = mongoose?.connection?.readyState;
@@ -540,10 +542,6 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-app.get('/', (req, res) => {
-  res.send('Hello from the backend!');
-});
-
 app.use('/api/users', userRoutes);
 app.use('/api/geofences', geofenceRoutes);
 app.use('/api/attendance', attendanceRoutes);
@@ -557,12 +555,20 @@ app.use('/api/availability', availabilityRoutes);
 app.use('/api/employee-tracking', employeeTrackingRoutes);
 app.use('/api/location', locationRoutes);
 
-// Offline sync endpoint
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+    return next();
+  }
+  return res.sendFile(path.join(flutterWebBuildPath, 'index.html'));
+});
+
 const { protect } = require('./middleware/authMiddleware');
 const Attendance = require('./models/Attendance');
 const Geofence = require('./models/Geofence');
+
 app.post('/api/sync', protect, async (req, res) => {
   const payload = req.body || {};
+
   const results = { attendanceProcessed: 0 };
   try {
     const items = Array.isArray(payload.attendance) ? payload.attendance : [];
@@ -571,6 +577,7 @@ app.post('/api/sync', protect, async (req, res) => {
         const geofence = await Geofence.findById(item.geofenceId);
         if (!geofence) continue;
         const toRad = (deg) => (deg * Math.PI) / 180;
+
         const haversineMeters = (lat1, lon1, lat2, lon2) => {
           const R = 6371000;
           const dLat = toRad(lat2 - lat1);
