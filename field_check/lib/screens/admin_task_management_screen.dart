@@ -458,6 +458,8 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     dueDate: dueDate!,
                     assignedBy: _userService.currentUser?.id ?? 'unknown_admin',
                     createdAt: DateTime.now(),
+                    updatedAt: DateTime.now(),
+                    lastViewedAt: null,
                     status: 'pending',
                     rawStatus: 'pending',
                     progressPercent: 0,

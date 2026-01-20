@@ -39,6 +39,8 @@ class Task {
   final DateTime dueDate;
   final String assignedBy; // Admin user ID
   final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? lastViewedAt;
   final String status; // e.g., 'pending', 'in_progress', 'completed'
   final String rawStatus;
   final int progressPercent;
@@ -64,6 +66,8 @@ class Task {
     required this.dueDate,
     required this.assignedBy,
     required this.createdAt,
+    required this.updatedAt,
+    this.lastViewedAt,
     required this.status,
     required this.rawStatus,
     required this.progressPercent,
@@ -133,6 +137,17 @@ class Task {
         ? (json['progressPercent'] as num).toInt()
         : 0;
 
+    final createdAt = DateTime.parse(json['createdAt']);
+    final updatedAtRaw = (json['updatedAt'] ?? json['createdAt'])?.toString();
+    final updatedAt = updatedAtRaw != null
+        ? (DateTime.tryParse(updatedAtRaw) ?? createdAt)
+        : createdAt;
+
+    final lastViewedAtRaw = json['lastViewedAt']?.toString();
+    final lastViewedAt = lastViewedAtRaw != null
+        ? DateTime.tryParse(lastViewedAtRaw)
+        : null;
+
     return Task(
       id: json['_id'] ?? json['id'] ?? '',
       title: json['title'] ?? '',
@@ -141,7 +156,9 @@ class Task {
       difficulty: json['difficulty'],
       dueDate: DateTime.parse(json['dueDate']),
       assignedBy: json['assignedBy'] ?? '',
-      createdAt: DateTime.parse(json['createdAt']),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      lastViewedAt: lastViewedAt,
       status: json['status'] ?? 'pending',
       rawStatus: json['rawStatus'] ?? (json['status'] ?? 'pending'),
       progressPercent: progress,
@@ -172,6 +189,8 @@ class Task {
       'dueDate': dueDate.toIso8601String(),
       'assignedBy': assignedBy,
       'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'lastViewedAt': lastViewedAt?.toIso8601String(),
       'status': status,
       'rawStatus': rawStatus,
       'progressPercent': progressPercent,
@@ -199,6 +218,8 @@ class Task {
     DateTime? dueDate,
     String? assignedBy,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    DateTime? lastViewedAt,
     String? status,
     String? rawStatus,
     int? progressPercent,
@@ -224,6 +245,8 @@ class Task {
       dueDate: dueDate ?? this.dueDate,
       assignedBy: assignedBy ?? this.assignedBy,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      lastViewedAt: lastViewedAt ?? this.lastViewedAt,
       status: status ?? this.status,
       rawStatus: rawStatus ?? this.rawStatus,
       progressPercent: progressPercent ?? this.progressPercent,

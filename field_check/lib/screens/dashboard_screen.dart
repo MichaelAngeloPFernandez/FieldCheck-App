@@ -41,6 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<CheckoutWarning>? _checkoutWarningSub;
   StreamSubscription<AutoCheckoutEvent>? _autoCheckoutSub;
   StreamSubscription<Map<String, dynamic>>? _taskEventsSub;
+  StreamSubscription<Map<String, dynamic>>? _unreadCountsSub;
   Timer? _taskBadgeDebounce;
   String? _userModelId;
   bool _loadingUserId = true;
@@ -96,6 +97,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     _subscribeToTaskEvents();
+    _subscribeToUnreadCounts();
+  }
+
+  void _subscribeToUnreadCounts() {
+    _unreadCountsSub?.cancel();
+    _unreadCountsSub = _realtimeService.unreadCountsStream.listen((counts) {
+      final raw = counts['tasks'];
+      final next = raw is int
+          ? raw
+          : raw is num
+          ? raw.toInt()
+          : int.tryParse(raw?.toString() ?? '') ?? 0;
+
+      if (!mounted) return;
+      setState(() {
+        _tasksBadgeCount = next;
+      });
+    });
   }
 
   void _subscribeToTaskEvents() {
@@ -121,14 +140,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     int oldCount = _tasksBadgeCount;
 
     try {
-      final tasks = await TaskService().fetchAssignedTasks(
-        userId,
-        archived: false,
-      );
-      final count = tasks
-          .where((t) => !t.isArchived)
-          .where((t) => t.status == 'pending' || t.status == 'in_progress')
-          .length;
+      final count = await TaskService().fetchTasksUnreadCount();
 
       if (!mounted) return;
       setState(() {
@@ -156,6 +168,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {
       // Ignore badge refresh errors
     }
+  }
+
+  Future<void> _clearTasksBadge() async {
+    try {
+      await TaskService().markTasksScopeRead();
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _tasksBadgeCount = 0;
+    });
   }
 
   Future<void> _toggleLocationTracking() async {
@@ -254,6 +277,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _autoCheckoutSub?.cancel();
     _taskBadgeDebounce?.cancel();
     _taskEventsSub?.cancel();
+    _unreadCountsSub?.cancel();
     super.dispose();
   }
 
@@ -462,7 +486,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           if (index == 5) {
             // When user opens Tasks tab, refresh and clear badge noise.
-            _refreshTasksBadge(showSnackIfNew: false);
+            _clearTasksBadge();
           }
         },
         type: BottomNavigationBarType.fixed,

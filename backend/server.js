@@ -138,6 +138,25 @@ io.on('connection', (socket) => {
   _trackSocketForUser(userIdFromToken);
 
   try {
+    if (typeof userIdFromToken === 'string' && userIdFromToken.length === 24) {
+      socket.join(`user:${userIdFromToken}`);
+      setImmediate(async () => {
+        try {
+          const u = await User.findById(userIdFromToken).select('role');
+          if (u && u.role === 'admin') {
+            socket.join('role:admin');
+          }
+
+          try {
+            const appNotificationService = require('./services/appNotificationService');
+            await appNotificationService.emitUnreadCounts(userIdFromToken);
+          } catch (_) {}
+        } catch (_) {}
+      });
+    }
+  } catch (_) {}
+
+  try {
     const count = io.of('/').sockets.size;
     if (count !== lastBroadcastCount) {
       lastBroadcastCount = count;
@@ -193,6 +212,23 @@ io.on('connection', (socket) => {
         timestamp,
         message: `${name || 'Employee'} is now online.`,
       });
+
+      try {
+        const appNotificationService = require('./services/appNotificationService');
+        await appNotificationService.createForAdmins({
+          excludeUserId: userId,
+          type: 'employee',
+          action: 'employeeOnline',
+          title: 'Employee Online',
+          message: `${name || 'Employee'} is now online.`,
+          payload: {
+            userId,
+            employeeId: employeeCode,
+            name: name || 'Employee',
+            timestamp,
+          },
+        });
+      } catch (_) {}
     } catch (_) {}
   });
 
@@ -256,6 +292,8 @@ io.on('connection', (socket) => {
 
           // Enrich data for admin dashboards using EmployeeLocationService
           let name = 'Unknown';
+          let username = null;
+          let employeeId = null;
           let isOnline = true;
           let status = 'moving';
           let currentGeofence = null;
@@ -270,10 +308,16 @@ io.on('connection', (socket) => {
               const Task = require('./models/Task');
               const UserTask = require('./models/UserTask');
 
-              const user = await User.findById(userId).select('name isOnline employeeId');
+              const user = await User.findById(userId).select('name username isOnline employeeId');
               if (user) {
                 if (user.name) {
                   name = user.name;
+                }
+                if (user.username) {
+                  username = user.username;
+                }
+                if (user.employeeId) {
+                  employeeId = String(user.employeeId);
                 }
                 if (typeof user.isOnline === 'boolean') {
                   isOnline = user.isOnline;
@@ -358,6 +402,7 @@ io.on('connection', (socket) => {
           io.emit('employeeLocationUpdate', {
             employeeId: String(userId),
             name,
+            username,
             latitude,
             longitude,
             accuracy: accuracy || 0,
@@ -375,6 +420,9 @@ io.on('connection', (socket) => {
           // Existing lightweight event used by RealtimeService/AdminWorldMap
           io.emit('liveEmployeeLocation', {
             employeeId: String(userId),
+            name,
+            username,
+            employeeCode: employeeId,
             socketId: socket.id,
             userId,
             latitude,
@@ -440,6 +488,23 @@ io.on('connection', (socket) => {
                 timestamp: new Date().toISOString(),
               });
             } catch (_) {}
+
+            try {
+              const appNotificationService = require('./services/appNotificationService');
+              const name = (await User.findById(userId).select('name'))?.name || 'Employee';
+              await appNotificationService.createForAdmins({
+                excludeUserId: userId,
+                type: 'employee',
+                action: 'employeeOffline',
+                title: 'Employee Offline',
+                message: `${name} is now offline.`,
+                payload: {
+                  userId,
+                  name,
+                  timestamp: new Date().toISOString(),
+                },
+              });
+            } catch (_) {}
           } finally {
             pendingOfflineTimers.delete(userId);
           }
@@ -489,6 +554,7 @@ const reportRoutes = require('./routes/reportRoutes');
 const exportRoutes = require('./routes/exportRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const appNotificationRoutes = require('./routes/appNotificationRoutes');
 const availabilityRoutes = require('./routes/availabilityRoutes');
 const employeeTrackingRoutes = require('./routes/employeeTrackingRoutes');
 const locationRoutes = require('./routes/locationRoutes');
@@ -503,7 +569,25 @@ app.use(cors({
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const flutterWebBuildPath = path.join(__dirname, '..', 'field_check', 'build', 'web');
-app.use(express.static(flutterWebBuildPath));
+app.use(
+  express.static(flutterWebBuildPath, {
+    index: false,
+    etag: true,
+    lastModified: true,
+    maxAge: '365d',
+    immutable: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    },
+  }),
+);
+
+app.get('/assets/AssetManifest.json', (req, res) => {
+  res.type('application/json');
+  return res.sendFile(path.join(flutterWebBuildPath, 'assets', 'AssetManifest.bin.json'));
+});
 
 app.get('/api/health', async (req, res) => {
   const readyState = mongoose?.connection?.readyState;
@@ -551,6 +635,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/app-notifications', appNotificationRoutes);
 app.use('/api/availability', availabilityRoutes);
 app.use('/api/employee-tracking', employeeTrackingRoutes);
 app.use('/api/location', locationRoutes);
@@ -559,6 +644,10 @@ app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
     return next();
   }
+  if (path.extname(req.path || '') !== '') {
+    return res.status(404).end();
+  }
+  res.setHeader('Cache-Control', 'no-cache');
   return res.sendFile(path.join(flutterWebBuildPath, 'index.html'));
 });
 

@@ -399,6 +399,7 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
 
   Future<void> _edit(UserModel user) async {
     final nameController = TextEditingController(text: user.name);
+    final usernameController = TextEditingController(text: user.username ?? '');
     final emailController = TextEditingController(text: user.email);
     final phoneController = TextEditingController(text: user.phone ?? '');
     String role = user.role;
@@ -419,6 +420,10 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                   decoration: const InputDecoration(labelText: 'Full Name'),
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                TextFormField(
+                  controller: usernameController,
+                  decoration: const InputDecoration(labelText: 'Username'),
                 ),
                 TextFormField(
                   controller: emailController,
@@ -472,11 +477,13 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
 
     if (ok == true) {
       try {
+        final nextUsername = usernameController.text.trim();
         await _userService.updateUserByAdmin(
           user.id,
           name: nameController.text.trim(),
           email: emailController.text.trim(),
           role: role,
+          username: nextUsername.isEmpty ? null : nextUsername,
           phone: phoneController.text.trim(),
         );
         if (!mounted) return;
@@ -666,6 +673,11 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                     itemBuilder: (context, index) {
                       final UserModel user = filtered[index];
                       final isSelected = _selectedAdminIds.contains(user.id);
+                      final displayName =
+                          (user.username != null &&
+                              user.username!.trim().isNotEmpty)
+                          ? user.username!.trim()
+                          : user.name;
 
                       return ListTile(
                         leading: _isSelectMode
@@ -695,7 +707,7 @@ class _ManageAdminsScreenState extends State<ManageAdminsScreen> {
                                     ? const Icon(Icons.admin_panel_settings)
                                     : null,
                               ),
-                        title: Text(user.name),
+                        title: Text(displayName),
                         subtitle: Text(
                           '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',
                           maxLines: 2,

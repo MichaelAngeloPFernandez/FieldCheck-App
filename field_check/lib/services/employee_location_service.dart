@@ -16,6 +16,7 @@ enum EmployeeStatus {
 class EmployeeLocation {
   final String employeeId;
   final String name;
+  final String? username;
   final double latitude;
   final double longitude;
   final double accuracy;
@@ -32,6 +33,7 @@ class EmployeeLocation {
   EmployeeLocation({
     required this.employeeId,
     required this.name,
+    this.username,
     required this.latitude,
     required this.longitude,
     required this.accuracy,
@@ -50,6 +52,7 @@ class EmployeeLocation {
     return EmployeeLocation(
       employeeId: json['employeeId'] as String,
       name: json['name'] as String,
+      username: json['username'] as String?,
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
       accuracy: (json['accuracy'] as num).toDouble(),
@@ -70,6 +73,7 @@ class EmployeeLocation {
   Map<String, dynamic> toJson() => {
     'employeeId': employeeId,
     'name': name,
+    'username': username,
     'latitude': latitude,
     'longitude': longitude,
     'accuracy': accuracy,
@@ -210,6 +214,7 @@ class EmployeeLocationService {
           final updatedLocation = EmployeeLocation(
             employeeId: oldLocation.employeeId,
             name: oldLocation.name,
+            username: oldLocation.username,
             latitude: oldLocation.latitude,
             longitude: oldLocation.longitude,
             accuracy: oldLocation.accuracy,
@@ -241,6 +246,7 @@ class EmployeeLocationService {
           final offlineLocation = EmployeeLocation(
             employeeId: oldLocation.employeeId,
             name: oldLocation.name,
+            username: oldLocation.username,
             latitude: oldLocation.latitude,
             longitude: oldLocation.longitude,
             accuracy: oldLocation.accuracy,

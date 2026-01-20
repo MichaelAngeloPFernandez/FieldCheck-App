@@ -315,6 +315,21 @@ const notifyOverdueTasks = async () => {
           console.error('Failed to emit admin overdue notification:', err.message || err);
         }
 
+        try {
+          const appNotificationService = require('../services/appNotificationService');
+          await appNotificationService.createForAdmins({
+            type: 'task',
+            action: 'overdue',
+            title: 'Task Overdue',
+            message: `Task "${task.title}" is now overdue.`,
+            payload: {
+              taskId: String(task._id),
+              taskTitle: task.title,
+              dueDate: task.dueDate,
+            },
+          });
+        } catch (_) {}
+
         task.overdueNotified = true;
         await task.save();
       } catch (e) {

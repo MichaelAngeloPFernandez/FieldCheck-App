@@ -201,6 +201,7 @@ exports.updateLocation = async (req, res) => {
     const locationData = {
       employeeId,
       name: user.name,
+      username: user.username || null,
       latitude,
       longitude,
       accuracy: accuracy || 0,

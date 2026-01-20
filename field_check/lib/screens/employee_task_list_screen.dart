@@ -47,8 +47,21 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
       widget.userModelId,
       archived: _fetchArchived,
     );
+    _markTasksScopeRead();
     _initRealtimeService();
     _autosaveService.initialize();
+  }
+
+  Future<void> _markTasksScopeRead() async {
+    try {
+      await TaskService().markTasksScopeRead();
+    } catch (_) {}
+  }
+
+  bool _isTaskNew(Task task) {
+    final lastViewedAt = task.lastViewedAt;
+    if (lastViewedAt == null) return true;
+    return task.updatedAt.isAfter(lastViewedAt);
   }
 
   bool get _isCurrentTab => _tabController.index == 0;
@@ -149,6 +162,20 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
 
   Future<void> _openTaskDetails(Task task) async {
     final isCompleted = task.status == 'completed';
+
+    final userTaskId = task.userTaskId;
+    if (userTaskId != null && userTaskId.trim().isNotEmpty) {
+      TaskService().markUserTaskViewed(userTaskId).then((_) {
+        if (!mounted) return;
+        setState(() {
+          _assignedTasksFuture = TaskService().fetchAssignedTasks(
+            widget.userModelId,
+            archived: _fetchArchived,
+          );
+        });
+      });
+    }
+
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -182,6 +209,29 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                       ),
                     ),
                     const SizedBox(width: 8),
+                    if (_isTaskNew(task))
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Text(
+                          'NEW',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                    if (_isTaskNew(task)) const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -583,6 +633,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                       itemBuilder: (context, index) {
                         final task = tasks[index];
                         final isCompleted = task.status == 'completed';
+                        final isNew = _isTaskNew(task);
                         return GestureDetector(
                           onTap: () => _openTaskDetails(task),
                           child: Card(
@@ -606,6 +657,38 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                                           ),
                                         ),
                                       ),
+                                      if (isNew) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.red.withValues(
+                                                alpha: 0.35,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'NEW',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelMedium
+                                                ?.copyWith(
+                                                  color: Colors.red,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
                                       IconButton(
                                         tooltip: _isOverdueTab
                                             ? 'Delete'

@@ -366,6 +366,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
 
   Future<void> _edit(UserModel user) async {
     final nameController = TextEditingController(text: user.name);
+    final usernameController = TextEditingController(text: user.username ?? '');
     final employeeIdController = TextEditingController(
       text: (user.employeeId ?? '').toString(),
     );
@@ -389,6 +390,10 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                   decoration: const InputDecoration(labelText: 'Full Name'),
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                TextFormField(
+                  controller: usernameController,
+                  decoration: const InputDecoration(labelText: 'Username'),
                 ),
                 TextFormField(
                   controller: employeeIdController,
@@ -446,11 +451,13 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
 
     if (ok == true) {
       try {
+        final nextUsername = usernameController.text.trim();
         await _userService.updateUserByAdmin(
           user.id,
           name: nameController.text.trim(),
           email: emailController.text.trim(),
           role: role,
+          username: nextUsername.isEmpty ? null : nextUsername,
           employeeId: employeeIdController.text.trim().isEmpty
               ? null
               : employeeIdController.text.trim(),
@@ -679,6 +686,11 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                     itemBuilder: (context, index) {
                       final UserModel user = filtered[index];
                       final isSelected = _selectedEmployeeIds.contains(user.id);
+                      final displayName =
+                          (user.username != null &&
+                              user.username!.trim().isNotEmpty)
+                          ? user.username!.trim()
+                          : user.name;
 
                       return ListTile(
                         leading: _isSelectMode
@@ -708,7 +720,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                     ? const Icon(Icons.person)
                                     : null,
                               ),
-                        title: Text(user.name),
+                        title: Text(displayName),
                         subtitle: Text(
                           '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',
                           maxLines: 2,

@@ -8,6 +8,8 @@ import '../config/api_config.dart';
 
 class TaskService {
   final String _baseUrl = '${ApiConfig.baseUrl}/api/tasks';
+  final String _appNotificationsBaseUrl =
+      '${ApiConfig.baseUrl}/api/app-notifications';
 
   Future<Map<String, String>> _headers({bool jsonContent = true}) async {
     final headers = <String, String>{};
@@ -445,6 +447,68 @@ class TaskService {
     if (response.statusCode != 200) {
       throw Exception('Failed to update user task status');
     }
+  }
+
+  Future<void> markTasksScopeRead() async {
+    final response = await http.post(
+      Uri.parse('$_appNotificationsBaseUrl/mark-read-scope'),
+      headers: await _headers(),
+      body: json.encode({'scope': 'tasks'}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark tasks read');
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchUnreadCounts() async {
+    final response = await http
+        .get(
+          Uri.parse('$_appNotificationsBaseUrl/unread-count'),
+          headers: await _headers(jsonContent: false),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load unread counts');
+    }
+
+    final decoded = json.decode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    return <String, dynamic>{};
+  }
+
+  Future<int> fetchTasksUnreadCount() async {
+    final counts = await fetchUnreadCounts();
+    final raw = counts['tasks'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '') ?? 0;
+  }
+
+  Future<DateTime?> markUserTaskViewed(String userTaskId) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/view'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark task viewed');
+    }
+
+    if (response.body.isEmpty) return null;
+    final decoded = json.decode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      final raw = decoded['lastViewedAt']?.toString();
+      if (raw == null) return null;
+      return DateTime.tryParse(raw);
+    }
+    return null;
   }
 
   Future<Task> updateTaskChecklistItem({

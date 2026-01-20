@@ -265,6 +265,10 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
     final statusIcon = _getStatusIcon(employee.status);
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
+    final displayName =
+        (employee.username != null && employee.username!.trim().isNotEmpty)
+        ? employee.username!.trim()
+        : employee.name;
 
     return GestureDetector(
       onTap: () => _showEmployeeDetails(employee),
@@ -300,7 +304,7 @@ class _LiveEmployeeMapState extends State<LiveEmployeeMap> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    employee.name,
+                    displayName,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: onSurface.withValues(alpha: 0.9),

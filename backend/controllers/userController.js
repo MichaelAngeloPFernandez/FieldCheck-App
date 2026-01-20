@@ -21,12 +21,14 @@ const authUser = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Email or username is required');
   }
-  if (value.includes('@')) {
-    user = await User.findOne({ email: value });
-  } else {
-    user = await User.findOne({ username: value });
-    // fallback: allow login by name if username not set
-    if (!user) user = await User.findOne({ name: value });
+  const exactInsensitive = new RegExp(`^${escapeRegExp(value)}$`, 'i');
+  // Be tolerant: users may enter email or username; handle case differences safely.
+  user = await User.findOne({
+    $or: [{ email: exactInsensitive }, { username: exactInsensitive }],
+  });
+  // fallback: allow login by name if username not set
+  if (!user) {
+    user = await User.findOne({ name: exactInsensitive });
   }
 
   if (!user) {
@@ -443,13 +445,49 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
   }
 
   user.name = req.body.name ?? user.name;
-  user.username = (req.body.username ?? user.username ?? '').toString().trim().toLowerCase();
-  user.email = (req.body.email ?? user.email ?? '').toString().trim().toLowerCase();
+
+  if (Object.prototype.hasOwnProperty.call(req.body, 'username')) {
+    const nextUsername = (req.body.username ?? '').toString().trim().toLowerCase();
+    if (nextUsername && nextUsername !== (user.username || '').toString().trim().toLowerCase()) {
+      const usernameTaken = await User.findOne({
+        username: { $regex: `^${escapeRegExp(nextUsername)}$`, $options: 'i' },
+        _id: { $ne: user._id },
+      });
+      if (usernameTaken) {
+        res.status(400);
+        throw new Error('Username is already taken');
+      }
+    }
+    // Avoid overwriting with empty string
+    if (nextUsername) {
+      user.username = nextUsername;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body, 'email')) {
+    const nextEmail = (req.body.email ?? '').toString().trim().toLowerCase();
+    if (nextEmail && nextEmail !== (user.email || '').toString().trim().toLowerCase()) {
+      const emailTaken = await User.findOne({
+        email: { $regex: `^${escapeRegExp(nextEmail)}$`, $options: 'i' },
+        _id: { $ne: user._id },
+      });
+      if (emailTaken) {
+        res.status(400);
+        throw new Error('User with this email already exists');
+      }
+    }
+    // Avoid overwriting with empty string
+    if (nextEmail) {
+      user.email = nextEmail;
+    }
+  }
+
   if (Object.prototype.hasOwnProperty.call(req.body, 'phone')) {
     user.phone = req.body.phone;
   }
   if (req.body.role) user.role = req.body.role;
   if (typeof req.body.isActive !== 'undefined') user.isActive = req.body.isActive;
+
   const updatedUser = await user.save();
   res.json({
     _id: updatedUser._id,

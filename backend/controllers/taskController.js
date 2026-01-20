@@ -1061,6 +1061,35 @@ const restoreUserTask = asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'UserTask restored' });
 });
 
+const markUserTaskViewed = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authenticated');
+  }
+
+  if (req.user.role !== 'admin' && ut.userId.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error('Not authorized to update this task assignment');
+  }
+
+  ut.lastViewedAt = new Date();
+  await ut.save();
+
+  res.status(200).json({
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+    lastViewedAt: ut.lastViewedAt.toISOString(),
+  });
+});
+
 module.exports = {
   getTask,
   getTasks,
@@ -1077,6 +1106,7 @@ module.exports = {
   assignTaskToMultipleUsers,
   unassignTaskFromUser,
   updateUserTaskStatus,
+  markUserTaskViewed,
   updateTaskChecklistItem,
   blockTask,
   archiveUserTask,

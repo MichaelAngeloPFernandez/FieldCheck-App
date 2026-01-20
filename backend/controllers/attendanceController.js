@@ -4,6 +4,7 @@ const Geofence = require('../models/Geofence');
 const { io } = require('../server'); // Import the io object
 const Report = require('../models/Report');
 const User = require('../models/User');
+const appNotificationService = require('../services/appNotificationService');
 
 async function populateReportById(reportId) {
   return await Report.findById(reportId)
@@ -137,6 +138,23 @@ const checkIn = asyncHandler(async (req, res) => {
     message: `${req.user.name} checked in at ${geofence.name}`,
     severity: 'info',
   });
+
+  try {
+    await appNotificationService.createForAdmins({
+      excludeUserId: req.user._id,
+      type: 'attendance',
+      action: 'check-in',
+      title: 'Employee Check-in',
+      message: `${req.user.name} checked in at ${geofence.name}`,
+      payload: {
+        userId: req.user._id.toString(),
+        employeeId: req.user.employeeId,
+        employeeName: req.user.name,
+        geofenceName: geofence.name,
+        timestamp: created.checkIn,
+      },
+    });
+  } catch (_) {}
 
   // Populate and emit full data asynchronously (don't block response)
   setImmediate(async () => {
@@ -273,6 +291,26 @@ const checkOut = asyncHandler(async (req, res) => {
     message: `${req.user.name} checked out from ${geofence.name}`,
     severity: 'info',
   });
+
+  try {
+    await appNotificationService.createForAdmins({
+      excludeUserId: req.user._id,
+      type: 'attendance',
+      action: 'check-out',
+      title: 'Employee Checked Out',
+      message: `${req.user.name} checked out from ${geofence.name}`,
+      payload: {
+        userId: req.user._id.toString(),
+        employeeId: req.user.employeeId,
+        employeeName: req.user.name,
+        geofenceId: geofence._id.toString(),
+        geofenceName: geofence.name,
+        checkInTime: updated.checkIn,
+        checkOutTime: updated.checkOut,
+        elapsedHours: ((updated.checkOut - updated.checkIn) / (1000 * 60 * 60)).toFixed(2),
+      },
+    });
+  } catch (_) {}
 
   // Populate and emit full data asynchronously (don't block response)
   setImmediate(async () => {

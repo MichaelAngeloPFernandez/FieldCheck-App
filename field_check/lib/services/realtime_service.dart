@@ -24,6 +24,8 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _notificationController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _unreadCountsController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   bool _isConnected = false;
   Timer? _reconnectTimer;
@@ -39,6 +41,8 @@ class RealtimeService {
   Stream<Map<String, dynamic>> get locationStream => _locationController.stream;
   Stream<Map<String, dynamic>> get notificationStream =>
       _notificationController.stream;
+  Stream<Map<String, dynamic>> get unreadCountsStream =>
+      _unreadCountsController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -295,6 +299,18 @@ class RealtimeService {
           'action': data['action'] ?? 'info',
           'data': data,
         });
+      }
+    });
+
+    _socket!.on('unreadCounts', (data) {
+      try {
+        if (data is Map<String, dynamic>) {
+          _unreadCountsController.add(data);
+        } else if (data is Map) {
+          _unreadCountsController.add(Map<String, dynamic>.from(data));
+        }
+      } catch (e) {
+        print('Error processing unreadCounts: $e');
       }
     });
   }
