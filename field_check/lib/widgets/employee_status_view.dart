@@ -374,7 +374,7 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
       case EmployeeStatus.available:
         return Colors.green;
       case EmployeeStatus.moving:
-        return Colors.green;
+        return Colors.blue;
       case EmployeeStatus.busy:
         return Colors.red;
       case EmployeeStatus.offline:
@@ -398,9 +398,9 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
   String _getStatusLabel(EmployeeStatus status) {
     switch (status) {
       case EmployeeStatus.available:
-        return 'Available';
+        return 'Checked In';
       case EmployeeStatus.moving:
-        return 'Moving';
+        return 'Online';
       case EmployeeStatus.busy:
         return 'Busy';
       case EmployeeStatus.offline:

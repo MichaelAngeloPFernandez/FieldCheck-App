@@ -785,10 +785,18 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
     bool replaceAssignees = false;
 
+    String? limitWarning;
+
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, dialogSetState) {
+          void showLimitWarning(String message) {
+            dialogSetState(() {
+              limitWarning = message;
+            });
+          }
+
           return AlertDialog(
             title: Text('Assign Task: ${task.title}'),
             content: SizedBox(
@@ -796,6 +804,63 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
               height: 520,
               child: Column(
                 children: [
+                  if (limitWarning != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Task limit reached',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.orange,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  limitWarning!,
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.85),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Dismiss',
+                            onPressed: () {
+                              dialogSetState(() {
+                                limitWarning = null;
+                              });
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
                   SwitchListTile(
                     title: const Text('Replace assignees'),
                     subtitle: const Text(
@@ -899,6 +964,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                   if (isNewlySelecting &&
                                       atLimit &&
                                       !isOverridden) {
+                                    showLimitWarning(
+                                      '${employee.name} is already at/above the max active tasks ($_taskLimitPerEmployee). Use Override to assign anyway, or unassign/archive some tasks first.',
+                                    );
                                     showDialog<bool>(
                                       context: context,
                                       builder: (dCtx) => AlertDialog(
@@ -1068,12 +1136,8 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                             !overrideEmployeeIds.contains(id);
                       }).toList();
                       if (blocked.isNotEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Some selected employees are at the task limit ($_taskLimitPerEmployee). Use Override to assign anyway.',
-                            ),
-                          ),
+                        showLimitWarning(
+                          'Some selected employees are at the task limit ($_taskLimitPerEmployee). Tap the employee again and choose Override, or deselect them.',
                         );
                         return;
                       }

@@ -48,7 +48,7 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
       filtered = filtered.where((e) {
         switch (_selectedFilter) {
           case 'online':
-            return e.status == EmployeeStatus.available;
+            return e.isOnline && e.status != EmployeeStatus.offline;
           case 'busy':
             return e.status == EmployeeStatus.busy;
           case 'moving':
@@ -80,7 +80,7 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
       case EmployeeStatus.available:
         return Colors.green;
       case EmployeeStatus.moving:
-        return Colors.green;
+        return Colors.blue;
       case EmployeeStatus.busy:
         return Colors.red;
       case EmployeeStatus.offline:
@@ -91,9 +91,9 @@ class _EmployeeManagementModalState extends State<EmployeeManagementModal> {
   String _getStatusLabel(EmployeeStatus status) {
     switch (status) {
       case EmployeeStatus.available:
-        return 'Online';
+        return 'Checked In';
       case EmployeeStatus.moving:
-        return 'Moving';
+        return 'Online';
       case EmployeeStatus.busy:
         return 'Busy';
       case EmployeeStatus.offline:

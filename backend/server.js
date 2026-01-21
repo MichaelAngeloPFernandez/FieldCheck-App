@@ -75,6 +75,54 @@ const userSockets = new Map(); // { userId: Set(socketId) }
 const pendingOfflineTimers = new Map(); // { userId: Timeout }
 const OFFLINE_GRACE_MS = 15000;
 
+let _cachedMaxActivePerEmployee = null;
+let _cachedMaxActivePerEmployeeAt = 0;
+const _maxActiveCacheMs = 60 * 1000;
+
+const _haversineMeters = (lat1, lon1, lat2, lon2) => {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+const _getMaxActivePerEmployee = async () => {
+  const now = Date.now();
+  if (
+    _cachedMaxActivePerEmployee != null &&
+    now - _cachedMaxActivePerEmployeeAt < _maxActiveCacheMs
+  ) {
+    return _cachedMaxActivePerEmployee;
+  }
+
+  try {
+    const Settings = require('./models/Settings');
+    const doc = await Settings.findOne({ key: 'task.maxActivePerEmployee' })
+      .select('value')
+      .lean();
+    const raw = doc?.value;
+    const parsed =
+      typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string'
+          ? parseInt(raw, 10)
+          : NaN;
+    const normalized = Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+    _cachedMaxActivePerEmployee = normalized;
+    _cachedMaxActivePerEmployeeAt = now;
+    return normalized;
+  } catch (_) {
+    return _cachedMaxActivePerEmployee != null ? _cachedMaxActivePerEmployee : 10;
+  }
+};
+
 // --- Presence tracking & real-time location monitoring ---
 let lastBroadcastCount = 0;
 io.on('connection', (socket) => {
@@ -299,8 +347,9 @@ io.on('connection', (socket) => {
           let status = 'moving';
           let currentGeofence = null;
           let isCheckedIn = false;
+          let isWithinCheckedInGeofence = false;
           let activeTaskCount = 0;
-          const maxActive = 3;
+          let maxActive = 10;
 
           if (typeof userId === 'string' && userId.length === 24) {
             try {
@@ -334,6 +383,27 @@ io.on('connection', (socket) => {
               if (openAttendance) {
                 isCheckedIn = true;
                 currentGeofence = openAttendance.geofence?.name || null;
+                try {
+                  const gf = openAttendance.geofence;
+                  if (
+                    gf &&
+                    typeof gf.latitude === 'number' &&
+                    typeof gf.longitude === 'number' &&
+                    typeof gf.radius === 'number'
+                  ) {
+                    const dist = _haversineMeters(
+                      gf.latitude,
+                      gf.longitude,
+                      latitude,
+                      longitude,
+                    );
+                    isWithinCheckedInGeofence = dist <= gf.radius;
+                  } else {
+                    isWithinCheckedInGeofence = true;
+                  }
+                } catch (_) {
+                  isWithinCheckedInGeofence = true;
+                }
               }
 
               // Check if employee has active tasks (busy status)
@@ -361,6 +431,18 @@ io.on('connection', (socket) => {
                 return true;
               }).length;
 
+              const startedStatuses = new Set(['in_progress']);
+              const startedTaskCount = tasks.filter((t) => {
+                const status = String(t.status || '').toLowerCase();
+                if (t.isArchived) return false;
+                if (terminalStatuses.has(status)) return false;
+                return startedStatuses.has(status);
+              }).length;
+
+              try {
+                maxActive = await _getMaxActivePerEmployee();
+              } catch (_) {}
+
               try {
                 await User.findByIdAndUpdate(userId, { activeTaskCount });
               } catch (_) {}
@@ -372,7 +454,7 @@ io.on('connection', (socket) => {
                 const shouldNotify =
                   !prev ||
                   prev.count !== activeTaskCount ||
-                  (nowMs - prev.at) > 10 * 60 * 1000;
+                  nowMs - prev.at > 10 * 60 * 1000;
 
                 if (shouldNotify) {
                   overtaskNotified.set(userId, { count: activeTaskCount, at: nowMs });
@@ -391,9 +473,9 @@ io.on('connection', (socket) => {
                 }
               }
 
-              if (activeTaskCount > 0) {
+              if (startedTaskCount > 0) {
                 status = 'busy';
-              } else if (isCheckedIn) {
+              } else if (isCheckedIn && isWithinCheckedInGeofence) {
                 status = 'available';
               }
             } catch (_) {}
