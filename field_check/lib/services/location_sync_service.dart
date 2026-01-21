@@ -73,7 +73,8 @@ class LocationSyncService {
         } catch (_) {}
 
         // If sharing/tracking started before socket was connected, emit once now.
-        if (_sharingEnabled && (_pendingEmitOnConnect || _isTracking)) {
+        if ((_sharingEnabled || _isCheckedIn) &&
+            (_pendingEmitOnConnect || _isTracking)) {
           _pendingEmitOnConnect = false;
           _emitCurrentOnce();
         }
@@ -106,10 +107,11 @@ class LocationSyncService {
   /// Start real-time location tracking during check-in
   /// Emits location updates to backend every 10-15 seconds
   void startTracking() {
-    if (_isTracking) return;
     _isCheckedIn = true;
-    _isTracking = true;
-    _startLocationStream();
+    if (!_isTracking) {
+      _isTracking = true;
+      _startLocationStream();
+    }
     if (!_initialized) {
       _lastError.value =
           'socket_not_initialized: call initializeSocket() first';
@@ -127,9 +129,10 @@ class LocationSyncService {
   /// This powers the admin map "online/roaming" status.
   void startSharing() {
     _sharingEnabled = true;
-    if (_isTracking) return;
-    _isTracking = true;
-    _startLocationStream();
+    if (!_isTracking) {
+      _isTracking = true;
+      _startLocationStream();
+    }
     if (!_initialized) {
       _lastError.value =
           'socket_not_initialized: call initializeSocket() first';
@@ -145,7 +148,11 @@ class LocationSyncService {
 
   Future<void> _emitCurrentOnce() async {
     try {
-      if (!_sharingEnabled || !_initialized || !_socket.connected) return;
+      if (!(_sharingEnabled || _isCheckedIn) ||
+          !_initialized ||
+          !_socket.connected) {
+        return;
+      }
       final pos = await geolocator.Geolocator.getCurrentPosition(
         locationSettings: const geolocator.LocationSettings(
           accuracy: geolocator.LocationAccuracy.best,
@@ -163,21 +170,24 @@ class LocationSyncService {
   /// Stop location tracking during check-out
   void stopTracking() {
     _isCheckedIn = false;
-    _isTracking = false;
-    _sharingEnabled = false;
-    try {
-      _positionSubscription?.cancel();
-    } catch (e) {
-      // Error stopping location tracking - ignored
+    if (!_sharingEnabled) {
+      _isTracking = false;
+      try {
+        _positionSubscription?.cancel();
+      } catch (e) {
+        // Error stopping location tracking - ignored
+      }
     }
   }
 
   void stopSharing() {
     _sharingEnabled = false;
-    _isTracking = false;
-    try {
-      _positionSubscription?.cancel();
-    } catch (_) {}
+    if (!_isCheckedIn) {
+      _isTracking = false;
+      try {
+        _positionSubscription?.cancel();
+      } catch (_) {}
+    }
   }
 
   /// Internal method to start position stream and sync
@@ -226,7 +236,11 @@ class LocationSyncService {
 
   /// Sync employee location to backend via Socket.io
   void _syncLocationToBackend(geolocator.Position position) {
-    if (!_sharingEnabled || !_initialized || !_socket.connected) return;
+    if (!(_sharingEnabled || _isCheckedIn) ||
+        !_initialized ||
+        !_socket.connected) {
+      return;
+    }
 
     try {
       final profile = _userService.currentUser;

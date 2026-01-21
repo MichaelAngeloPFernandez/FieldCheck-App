@@ -785,15 +785,15 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
     bool replaceAssignees = false;
 
-    String? limitWarning;
+    String? dialogNotice;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, dialogSetState) {
-          void showLimitWarning(String message) {
+          void showDialogNotice(String message) {
             dialogSetState(() {
-              limitWarning = message;
+              dialogNotice = message;
             });
           }
 
@@ -804,7 +804,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
               height: 520,
               child: Column(
                 children: [
-                  if (limitWarning != null)
+                  if (dialogNotice != null)
                     Container(
                       width: double.infinity,
                       margin: const EdgeInsets.only(bottom: 12),
@@ -829,7 +829,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
-                                  'Task limit reached',
+                                  'Action needed',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w800,
                                     color: Colors.orange,
@@ -837,7 +837,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  limitWarning!,
+                                  dialogNotice!,
                                   style: TextStyle(
                                     color: Theme.of(context)
                                         .colorScheme
@@ -853,7 +853,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                             tooltip: 'Dismiss',
                             onPressed: () {
                               dialogSetState(() {
-                                limitWarning = null;
+                                dialogNotice = null;
                               });
                             },
                             icon: const Icon(Icons.close),
@@ -964,7 +964,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                   if (isNewlySelecting &&
                                       atLimit &&
                                       !isOverridden) {
-                                    showLimitWarning(
+                                    showDialogNotice(
                                       '${employee.name} is already at/above the max active tasks ($_taskLimitPerEmployee). Use Override to assign anyway, or unassign/archive some tasks first.',
                                     );
                                     showDialog<bool>(
@@ -1067,21 +1067,17 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           _fetchTasks();
 
                           if (!mounted) return;
+                          Navigator.of(ctx).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('All assignees unassigned.'),
                             ),
                           );
-                          Navigator.of(ctx).pop();
                         } catch (e) {
                           debugPrint('Error unassigning all: $e');
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Failed to unassign all assignees: $e',
-                              ),
-                            ),
+                          showDialogNotice(
+                            'Failed to unassign all assignees: $e',
                           );
                         }
                       },
@@ -1095,13 +1091,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           .where((id) => id.isNotEmpty)
                           .toList();
                       if (validIds.isEmpty && !replaceAssignees) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Selected employees have invalid IDs',
-                            ),
-                          ),
-                        );
+                        showDialogNotice('Selected employees have invalid IDs');
                         return;
                       }
 
@@ -1136,7 +1126,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                             !overrideEmployeeIds.contains(id);
                       }).toList();
                       if (blocked.isNotEmpty) {
-                        showLimitWarning(
+                        showDialogNotice(
                           'Some selected employees are at the task limit ($_taskLimitPerEmployee). Tap the employee again and choose Override, or deselect them.',
                         );
                         return;
@@ -1202,26 +1192,19 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       } else {
                         message = 'Task assignment request completed.';
                       }
+                      Navigator.of(ctx).pop();
 
                       ScaffoldMessenger.of(
                         context,
                       ).showSnackBar(SnackBar(content: Text(message)));
-
-                      Navigator.of(ctx).pop();
                     } catch (e) {
                       debugPrint('Error assigning task: $e');
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed to assign task: $e')),
-                        );
+                        showDialogNotice('Failed to assign task: $e');
                       }
                     }
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Please select at least one employee'),
-                      ),
-                    );
+                    showDialogNotice('Please select at least one employee');
                   }
                 },
                 child: Text(replaceAssignees ? 'Apply' : 'Assign'),
