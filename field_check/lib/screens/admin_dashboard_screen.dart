@@ -21,7 +21,7 @@ import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/models/geofence_model.dart';
 import 'package:field_check/widgets/admin_info_modal.dart';
-import 'package:intl/intl.dart';
+import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -637,7 +637,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildNotificationItem(DashboardNotification notif) {
     final color = _notificationTypeColor(notif.type);
-    final ts = DateFormat('MMM d, HH:mm').format(notif.timestamp);
+    final ts = formatManila(notif.timestamp, 'MMM d, HH:mm');
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
@@ -703,7 +703,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _showNotificationDetails(DashboardNotification notif) async {
     final payload = notif.payload ?? const <String, dynamic>{};
-    final ts = DateFormat('yyyy-MM-dd HH:mm:ss').format(notif.timestamp);
+    final ts = formatManila(notif.timestamp, 'yyyy-MM-dd HH:mm:ss');
 
     String? employeeName;
     String? employeeId;
@@ -2630,7 +2630,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       title: Text(attendance.userName),
                       subtitle: Text(attendance.geofenceName),
                       trailing: Text(
-                        DateFormat('HH:mm').format(attendance.timestamp),
+                        formatManila(attendance.timestamp, 'HH:mm'),
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
@@ -2660,7 +2660,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       title: Text(task.title),
                       subtitle: Text(task.assignedToName ?? 'Unassigned'),
                       trailing: Text(
-                        DateFormat('MMM dd').format(task.createdAt),
+                        formatManila(task.createdAt, 'MMM dd'),
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),

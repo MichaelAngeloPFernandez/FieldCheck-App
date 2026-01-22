@@ -14,6 +14,7 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
+import 'package:field_check/utils/manila_time.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 
@@ -142,7 +143,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 final t = _overdueTasks[index];
                 final due = DateFormat(
                   'yyyy-MM-dd',
-                ).format(t.dueDate.toLocal());
+                ).format(toManilaTime(t.dueDate));
                 String assignees;
                 if (t.assignedToMultiple.isNotEmpty) {
                   final names = t.assignedToMultiple
@@ -437,10 +438,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   void _showAttendanceDetails(AttendanceRecord record) {
-    final dtIn = record.checkInTime.toLocal();
+    final dtIn = toManilaTime(record.checkInTime);
     final dateStr = DateFormat('yyyy-MM-dd').format(dtIn);
     final timeInStr = DateFormat('HH:mm').format(dtIn);
-    final dtOut = record.checkOutTime?.toLocal();
+    final dtOut = record.checkOutTime == null
+        ? null
+        : toManilaTime(record.checkOutTime!);
     final timeOutStr = dtOut == null ? '-' : DateFormat('HH:mm').format(dtOut);
     final durationStr = record.elapsedHours == null
         ? '-'
@@ -1159,7 +1162,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
     if (_attendanceStartDate != null || _attendanceEndDate != null) {
       result = result.where((record) {
-        final dt = record.checkInTime.toLocal();
+        final dt = toManilaTime(record.checkInTime);
 
         if (_attendanceStartDate != null &&
             dt.isBefore(_attendanceStartDate!)) {
@@ -1273,7 +1276,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     const brandColor = Color(0xFF2688d4);
 
     String formatTime(DateTime? dt) =>
-        dt == null ? '-' : DateFormat('HH:mm').format(dt.toLocal());
+        dt == null ? '-' : formatManila(dt, 'HH:mm');
 
     return Scaffold(
       appBar: AppBar(
@@ -1644,10 +1647,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                               context,
                                             ).colorScheme.secondary;
                                           }
-                                          final date = record.checkInTime
-                                              .toLocal()
-                                              .toString()
-                                              .split(' ')[0];
+                                          final date = formatManila(
+                                            record.checkInTime,
+                                            'yyyy-MM-dd',
+                                          );
 
                                           final timeIn = formatTime(
                                             record.checkInTime,
@@ -1823,7 +1826,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               _buildDetailRow('Status:', r.status),
               _buildDetailRow(
                 'Submitted:',
-                DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal()),
+                formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
               ),
               if (r.content.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -2002,7 +2005,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               final r = reports[i];
               final submitted = DateFormat(
                 'yyyy-MM-dd HH:mm',
-              ).format(r.submittedAt.toLocal());
+              ).format(toManilaTime(r.submittedAt));
               return ListTile(
                 title: Text(
                   r.employeeName ?? r.employeeId,
@@ -2280,7 +2283,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Widget _buildTaskReportCard(ReportModel r) {
     final submitted = DateFormat(
       'yyyy-MM-dd HH:mm',
-    ).format(r.submittedAt.toLocal());
+    ).format(toManilaTime(r.submittedAt));
     final attachmentCount = r.attachments.length;
 
     return Card(

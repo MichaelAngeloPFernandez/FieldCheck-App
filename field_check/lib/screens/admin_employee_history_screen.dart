@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:field_check/services/attendance_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/models/report_model.dart';
+import 'package:field_check/utils/manila_time.dart';
 
 class AdminEmployeeHistoryScreen extends StatefulWidget {
   final String employeeId;
@@ -76,7 +77,7 @@ class _AdminEmployeeHistoryScreenState
 
     if (_startDateFilter != null || _endDateFilter != null) {
       base = base.where((record) {
-        final dt = record.timestamp.toLocal();
+        final dt = toManilaTime(record.timestamp);
 
         if (_startDateFilter != null && dt.isBefore(_startDateFilter!)) {
           return false;
@@ -94,7 +95,7 @@ class _AdminEmployeeHistoryScreenState
     final q = _searchQuery.toLowerCase();
 
     return dateFiltered.where((record) {
-      final dt = record.timestamp.toLocal();
+      final dt = toManilaTime(record.timestamp);
       final dateStr = DateFormat('yyyy-MM-dd').format(dt);
       final timeStr = TimeOfDay.fromDateTime(dt).format(context);
       final locationName = record.geofenceName ?? 'Unknown location';
@@ -124,7 +125,7 @@ class _AdminEmployeeHistoryScreenState
     final Map<String, List<AttendanceRecord>> grouped = {};
 
     for (final record in records) {
-      final dt = record.timestamp.toLocal();
+      final dt = toManilaTime(record.timestamp);
       final key = '${dt.year}-${dt.month.toString().padLeft(2, '0')}';
       grouped.putIfAbsent(key, () => <AttendanceRecord>[]).add(record);
     }
@@ -137,8 +138,8 @@ class _AdminEmployeeHistoryScreenState
   }
 
   void _setQuickDateFilter(String value) {
-    final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
+    final now = manilaNow();
+    final todayStart = DateTime.utc(now.year, now.month, now.day);
 
     DateTime? start;
     DateTime? endExclusive;
@@ -154,10 +155,10 @@ class _AdminEmployeeHistoryScreenState
         endExclusive = start.add(const Duration(days: 7));
         break;
       case 'month':
-        start = DateTime(todayStart.year, todayStart.month, 1);
+        start = DateTime.utc(todayStart.year, todayStart.month, 1);
         final nextMonth = todayStart.month == 12
-            ? DateTime(todayStart.year + 1, 1, 1)
-            : DateTime(todayStart.year, todayStart.month + 1, 1);
+            ? DateTime.utc(todayStart.year + 1, 1, 1)
+            : DateTime.utc(todayStart.year, todayStart.month + 1, 1);
         endExclusive = nextMonth;
         break;
       case 'all':
@@ -175,7 +176,7 @@ class _AdminEmployeeHistoryScreenState
   }
 
   Future<void> _pickCustomDateRange() async {
-    final now = DateTime.now();
+    final now = manilaNow();
     final baseStart = _startDateFilter ?? DateTime(now.year, now.month, 1);
     final baseEnd = _endDateFilter != null
         ? _endDateFilter!.subtract(const Duration(days: 1))
@@ -190,12 +191,12 @@ class _AdminEmployeeHistoryScreenState
 
     if (picked == null) return;
 
-    final start = DateTime(
+    final start = DateTime.utc(
       picked.start.year,
       picked.start.month,
       picked.start.day,
     );
-    final endExclusive = DateTime(
+    final endExclusive = DateTime.utc(
       picked.end.year,
       picked.end.month,
       picked.end.day,
@@ -209,7 +210,7 @@ class _AdminEmployeeHistoryScreenState
   }
 
   void _showRecordInfo(AttendanceRecord record) {
-    final dt = record.timestamp.toLocal();
+    final dt = toManilaTime(record.timestamp);
     final dateStr = DateFormat('yyyy-MM-dd').format(dt);
     final timeStr = TimeOfDay.fromDateTime(dt).format(context);
     final locationName = record.geofenceName ?? 'Unknown location';
