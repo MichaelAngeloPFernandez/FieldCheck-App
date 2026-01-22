@@ -412,7 +412,7 @@ io.on('connection', (socket) => {
                 userId,
                 isArchived: { $ne: true },
                 status: { $ne: 'completed' },
-              }).select('taskId');
+              }).select('taskId status');
 
               const taskIds = assignments.map((a) => a.taskId);
               const tasks = taskIds.length
@@ -431,12 +431,16 @@ io.on('connection', (socket) => {
                 return true;
               }).length;
 
-              const startedStatuses = new Set(['in_progress']);
-              const startedTaskCount = tasks.filter((t) => {
-                const status = String(t.status || '').toLowerCase();
-                if (t.isArchived) return false;
-                if (terminalStatuses.has(status)) return false;
-                return startedStatuses.has(status);
+              const taskById = new Map(tasks.map((t) => [String(t._id), t]));
+              const startedTaskCount = assignments.filter((a) => {
+                const st = String(a.status || '').toLowerCase();
+                if (st !== 'in_progress') return false;
+                const task = taskById.get(String(a.taskId));
+                if (!task) return false;
+                const taskStatus = String(task.status || '').toLowerCase();
+                if (task.isArchived) return false;
+                if (terminalStatuses.has(taskStatus)) return false;
+                return true;
               }).length;
 
               try {

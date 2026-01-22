@@ -944,7 +944,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _passesEmployeeFilters(String userId) {
     final user = _employees[userId];
     final loc = _employeeLocations[userId];
-    final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
     final isBusy = loc?.status == EmployeeStatus.busy;
     final isOnline = _isEmployeeOnline(userId);
     final hasLiveLocation = _liveLocations[userId] != null;
@@ -2101,6 +2100,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ? 'Busy'
               : loc?.status == EmployeeStatus.available
               ? 'Checked In'
+              : loc?.status == EmployeeStatus.offline
+              ? 'Offline'
               : isOnline
               ? 'Online'
               : 'Offline',
@@ -2108,6 +2109,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ? Colors.red
               : loc?.status == EmployeeStatus.available
               ? Colors.green
+              : loc?.status == EmployeeStatus.offline
+              ? Colors.grey
               : isOnline
               ? Colors.blue
               : Colors.grey,
@@ -2182,6 +2185,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       ? 'Busy'
                                       : loc?.status == EmployeeStatus.available
                                       ? 'Checked In'
+                                      : loc?.status == EmployeeStatus.offline
+                                      ? 'Offline'
                                       : isOnline
                                       ? 'Online'
                                       : 'Offline',
@@ -2189,6 +2194,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       ? Colors.red
                                       : loc?.status == EmployeeStatus.available
                                       ? Colors.green
+                                      : loc?.status == EmployeeStatus.offline
+                                      ? Colors.grey
                                       : isOnline
                                       ? Colors.blue
                                       : Colors.grey,
@@ -2932,11 +2939,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                             user.email.trim().isNotEmpty)
                                         ? user.email
                                         : 'Employee');
-
-                              final activeTaskCount =
-                                  empLocation?.activeTaskCount ??
-                                  user?.activeTaskCount ??
-                                  0;
                               final isBusy =
                                   empLocation?.status == EmployeeStatus.busy;
 
@@ -2967,6 +2969,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     highlightShape: BoxShape.circle,
                                     onTap: () {
                                       final id = _canonicalUserId(entry.key);
+                                      final selectedUser = _employees[id];
+                                      final code =
+                                          (selectedUser?.employeeId ?? '')
+                                              .trim();
+                                      final name = (selectedUser?.name ?? '')
+                                          .trim();
+                                      final label = code.isNotEmpty
+                                          ? code
+                                          : (name.isNotEmpty ? name : id);
                                       debugPrint(
                                         '🧭 Marker tapped (map): ${entry.key} -> $id',
                                       );
@@ -2981,9 +2992,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                           context,
                                         ).showSnackBar(
                                           SnackBar(
-                                            content: Text(
-                                              'Selected ${entry.key}',
-                                            ),
+                                            content: Text('Selected $label'),
                                             duration: const Duration(
                                               milliseconds: 900,
                                             ),
@@ -3236,6 +3245,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     : _employeeLocations[userId]?.status ==
                                           EmployeeStatus.available
                                     ? 'Checked In'
+                                    : _employeeLocations[userId]?.status ==
+                                          EmployeeStatus.offline
+                                    ? 'Offline'
                                     : _isEmployeeOnline(userId)
                                     ? 'Online'
                                     : 'Offline',
@@ -3245,6 +3257,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     : _employeeLocations[userId]?.status ==
                                           EmployeeStatus.available
                                     ? Colors.green
+                                    : _employeeLocations[userId]?.status ==
+                                          EmployeeStatus.offline
+                                    ? Colors.grey
                                     : _isEmployeeOnline(userId)
                                     ? Colors.blue
                                     : Colors.grey,
