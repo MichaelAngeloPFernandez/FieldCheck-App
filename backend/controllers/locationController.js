@@ -47,6 +47,46 @@ async function countActiveNonOverdueTasksForUsers(userIds) {
   return counts;
 }
 
+async function countStartedInProgressTasksForUsers(userIds) {
+  const terminalStatuses = new Set(['completed', 'reviewed', 'closed']);
+
+  const assignments = await UserTask.find({
+    userId: { $in: userIds },
+    isArchived: { $ne: true },
+    status: 'in_progress',
+  }).select('userId taskId');
+
+  const counts = new Map(userIds.map((id) => [id.toString(), 0]));
+  if (!assignments.length) return counts;
+
+  const taskIds = assignments.map((a) => a.taskId).filter(Boolean);
+  const tasks = taskIds.length
+    ? await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } }).select(
+        '_id status isArchived',
+      )
+    : [];
+
+  const startedTaskIds = new Set(
+    tasks
+      .filter((t) => {
+        const status = String(t.status || '').toLowerCase();
+        if (t.isArchived) return false;
+        if (terminalStatuses.has(status)) return false;
+        return status === 'in_progress';
+      })
+      .map((t) => t._id.toString()),
+  );
+
+  for (const a of assignments) {
+    const taskId = a.taskId?.toString();
+    if (!taskId || !startedTaskIds.has(taskId)) continue;
+    const key = a.userId.toString();
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  return counts;
+}
+
 async function trimOverLimitAssignmentsForUser(userId, maxActive) {
   const now = new Date();
   const terminalStatuses = new Set(['completed', 'reviewed', 'closed']);
@@ -166,32 +206,86 @@ exports.updateLocation = async (req, res) => {
       }
     }
 
-    // Determine employee status based on activity
     let activeTaskCount = 0;
+    let startedTaskCount = 0;
     try {
+      const terminalStatuses = new Set(['completed', 'reviewed', 'closed']);
+      const startedStatuses = new Set(['in_progress']);
+
       const userTaskDocs = await UserTask.find({
         userId: employeeId,
+        isArchived: { $ne: true },
         status: { $in: ['pending', 'in_progress'] },
-      }).select('taskId');
+      }).select('taskId status');
+
       const taskIds = Array.isArray(userTaskDocs)
         ? userTaskDocs.map((d) => d.taskId).filter(Boolean)
         : [];
 
       if (taskIds.length > 0) {
-        activeTaskCount = await Task.countDocuments({
+        const tasks = await Task.find({
           _id: { $in: taskIds },
-          isArchived: false,
-          status: { $nin: ['completed', 'closed'] },
-        });
+          isArchived: { $ne: true },
+        }).select('_id status isArchived');
+
+        const tasksById = new Map(tasks.map((t) => [t._id.toString(), t]));
+
+        const activeTaskIds = new Set();
+        const startedTaskIds = new Set();
+
+        for (const ut of userTaskDocs) {
+          const taskId = ut.taskId?.toString();
+          if (!taskId) continue;
+          const t = tasksById.get(taskId);
+          if (!t || t.isArchived) continue;
+          const taskStatus = String(t.status || '').toLowerCase();
+          if (terminalStatuses.has(taskStatus)) continue;
+
+          activeTaskIds.add(taskId);
+
+          const assignmentStatus = String(ut.status || '').toLowerCase();
+          if (startedStatuses.has(assignmentStatus) || startedStatuses.has(taskStatus)) {
+            startedTaskIds.add(taskId);
+          }
+        }
+
+        activeTaskCount = activeTaskIds.size;
+        startedTaskCount = startedTaskIds.size;
       }
     } catch (_) {
       activeTaskCount = 0;
+      startedTaskCount = 0;
+    }
+
+    let checkedInAttendance = null;
+    try {
+      checkedInAttendance = await Attendance.findOne({
+        employee: employeeId,
+        isArchived: { $ne: true },
+        isVoid: { $ne: true },
+        status: 'in',
+        checkOut: null,
+      })
+        .sort({ checkIn: -1 })
+        .populate('geofence', 'name latitude longitude radius');
+    } catch (_) {
+      checkedInAttendance = null;
+    }
+
+    let isWithinCheckedInGeofence = false;
+    if (checkedInAttendance?.geofence) {
+      const g = checkedInAttendance.geofence;
+      const dist = calculateDistance(latitude, longitude, g.latitude, g.longitude);
+      isWithinCheckedInGeofence = dist <= g.radius;
+      if (isWithinCheckedInGeofence) {
+        currentGeofence = g;
+      }
     }
 
     let status = 'moving';
-    if (activeTaskCount >= 1) {
+    if (startedTaskCount > 0) {
       status = 'busy';
-    } else if (currentGeofence) {
+    } else if (checkedInAttendance && isWithinCheckedInGeofence) {
       status = 'available';
     }
 
@@ -210,6 +304,7 @@ exports.updateLocation = async (req, res) => {
       status,
       timestamp: new Date().toISOString(),
       activeTaskCount,
+      startedTaskCount,
       workloadScore,
       currentGeofence: currentGeofence?.name || null,
       distanceToNearestTask: null,
@@ -604,6 +699,20 @@ exports.getOnlineEmployees = async (req, res) => {
       onlineUsers.map((u) => u._id),
     );
 
+    const startedCounts = await countStartedInProgressTasksForUsers(
+      onlineUsers.map((u) => u._id),
+    );
+
+    const checkedInDocs = await Attendance.find({
+      employee: { $in: onlineUsers.map((u) => u._id) },
+      isArchived: { $ne: true },
+      isVoid: { $ne: true },
+      status: 'in',
+      checkOut: null,
+    }).select('employee');
+
+    const checkedInSet = new Set(checkedInDocs.map((d) => d.employee.toString()));
+
     const locations = onlineUsers
       .filter((user) =>
         user.lastLatitude !== undefined &&
@@ -626,6 +735,13 @@ exports.getOnlineEmployees = async (req, res) => {
         isOnline: user.isOnline,
         isStale: !!(user.lastLocationUpdate && user.lastLocationUpdate < fiveMinutesAgo),
         activeTaskCount: activeCounts.get(user._id.toString()) || 0,
+        startedTaskCount: startedCounts.get(user._id.toString()) || 0,
+        status:
+          (startedCounts.get(user._id.toString()) || 0) > 0
+            ? 'busy'
+            : checkedInSet.has(user._id.toString())
+              ? 'available'
+              : 'moving',
         workloadScore: user.workloadWeight || 0,
       }));
 

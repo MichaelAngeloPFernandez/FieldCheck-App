@@ -945,7 +945,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final user = _employees[userId];
     final loc = _employeeLocations[userId];
     final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
-    final isBusy = activeTaskCount >= 1;
+    final isBusy = loc?.status == EmployeeStatus.busy;
     final isOnline = _isEmployeeOnline(userId);
     final hasLiveLocation = _liveLocations[userId] != null;
 
@@ -2036,7 +2036,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final isOnline = _isEmployeeOnline(userId);
     final loc = _employeeLocations[userId];
     final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
-    final isBusy = activeTaskCount >= 1;
+    final isBusy = loc?.status == EmployeeStatus.busy;
 
     final email = (user?.email ?? '').trim();
     final phone = (user?.phone ?? '').trim();
@@ -2097,8 +2097,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         const SizedBox(height: 12),
         _buildStatusRow(
           'Online Status',
-          isOnline ? 'Online' : 'Offline',
-          isOnline ? Colors.green : Colors.grey,
+          loc?.status == EmployeeStatus.busy
+              ? 'Busy'
+              : loc?.status == EmployeeStatus.available
+              ? 'Checked In'
+              : isOnline
+              ? 'Online'
+              : 'Offline',
+          loc?.status == EmployeeStatus.busy
+              ? Colors.red
+              : loc?.status == EmployeeStatus.available
+              ? Colors.green
+              : isOnline
+              ? Colors.blue
+              : Colors.grey,
         ),
         _buildStatusRow(
           'Task Load',
@@ -2166,8 +2178,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               children: [
                                 _buildStatusRow(
                                   'Online Status',
-                                  isOnline ? 'Online' : 'Offline',
-                                  isOnline ? Colors.green : Colors.grey,
+                                  loc?.status == EmployeeStatus.busy
+                                      ? 'Busy'
+                                      : loc?.status == EmployeeStatus.available
+                                      ? 'Checked In'
+                                      : isOnline
+                                      ? 'Online'
+                                      : 'Offline',
+                                  loc?.status == EmployeeStatus.busy
+                                      ? Colors.red
+                                      : loc?.status == EmployeeStatus.available
+                                      ? Colors.green
+                                      : isOnline
+                                      ? Colors.blue
+                                      : Colors.grey,
                                 ),
                                 _buildStatusRow(
                                   'Active Tasks',
@@ -2913,7 +2937,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   empLocation?.activeTaskCount ??
                                   user?.activeTaskCount ??
                                   0;
-                              final isBusy = activeTaskCount >= 1;
+                              final isBusy =
+                                  empLocation?.status == EmployeeStatus.busy;
 
                               Color markerColor;
                               IconData markerIcon;
@@ -2921,15 +2946,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               if (isBusy) {
                                 markerColor = Colors.red;
                                 markerIcon = Icons.schedule;
+                              } else if (empLocation?.status ==
+                                  EmployeeStatus.available) {
+                                markerColor = Colors.green;
+                                markerIcon = Icons.check_circle;
                               } else {
-                                final status = empLocation?.status;
-                                if (status == EmployeeStatus.available) {
-                                  markerColor = Colors.green;
-                                  markerIcon = Icons.check_circle;
-                                } else {
-                                  markerColor = Colors.blue;
-                                  markerIcon = Icons.directions_run;
-                                }
+                                markerColor = Colors.blue;
+                                markerIcon = Icons.directions_run;
                               }
 
                               return Marker(
@@ -3207,17 +3230,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             children: [
                               _buildStatusRow(
                                 'Online Status',
-                                _isEmployeeOnline(userId)
+                                _employeeLocations[userId]?.status ==
+                                        EmployeeStatus.busy
+                                    ? 'Busy'
+                                    : _employeeLocations[userId]?.status ==
+                                          EmployeeStatus.available
+                                    ? 'Checked In'
+                                    : _isEmployeeOnline(userId)
                                     ? 'Online'
                                     : 'Offline',
-                                _isEmployeeOnline(userId)
+                                _employeeLocations[userId]?.status ==
+                                        EmployeeStatus.busy
+                                    ? Colors.red
+                                    : _employeeLocations[userId]?.status ==
+                                          EmployeeStatus.available
                                     ? Colors.green
+                                    : _isEmployeeOnline(userId)
+                                    ? Colors.blue
                                     : Colors.grey,
                               ),
                               _buildStatusRow(
                                 'Active Tasks',
-                                '${user?.activeTaskCount ?? 0}',
-                                Colors.blue,
+                                '${_employeeLocations[userId]?.activeTaskCount ?? user?.activeTaskCount ?? 0}',
+                                _employeeLocations[userId]?.status ==
+                                        EmployeeStatus.busy
+                                    ? Colors.red
+                                    : Colors.blue,
                               ),
                               _buildStatusRow(
                                 'Workload',
@@ -3280,16 +3318,31 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildAvailabilityInfo(String userId) {
-    // Check if employee is in live locations (online)
+    final user = _employees[userId];
+    if (user == null) return const SizedBox.shrink();
+
     final isOnline = _isEmployeeOnline(userId);
+    final loc = _employeeLocations[userId];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildStatusRow(
           'Current Status',
-          isOnline ? 'Online' : 'Offline',
-          isOnline ? Colors.green : Colors.grey,
+          loc?.status == EmployeeStatus.busy
+              ? 'Busy'
+              : loc?.status == EmployeeStatus.available
+              ? 'Checked In'
+              : isOnline
+              ? 'Online'
+              : 'Offline',
+          loc?.status == EmployeeStatus.busy
+              ? Colors.red
+              : loc?.status == EmployeeStatus.available
+              ? Colors.green
+              : isOnline
+              ? Colors.blue
+              : Colors.grey,
         ),
         if (isOnline) ...[
           _buildStatusRow('Vacancy', 'Available', Colors.green),
@@ -3745,9 +3798,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
               final tsRaw = (emp['timestamp'] ?? '').toString();
               final ts = DateTime.tryParse(tsRaw) ?? DateTime.now();
-              final status = nextActiveTaskCount >= 1
-                  ? EmployeeStatus.busy
-                  : EmployeeStatus.available;
+              EmployeeStatus status = EmployeeStatus.moving;
+              final statusRaw = (emp['status'] ?? '').toString().trim();
+              if (statusRaw.isNotEmpty) {
+                status = EmployeeLocation.fromJson({
+                  'employeeId': userId,
+                  'name': name.toString(),
+                  'latitude': lat,
+                  'longitude': lng,
+                  'accuracy': 0,
+                  'status': statusRaw,
+                  'timestamp': ts.toIso8601String(),
+                  'activeTaskCount': nextActiveTaskCount,
+                  'workloadScore': 0,
+                  'isOnline': true,
+                }).status;
+              }
 
               _employeeLocations[userId] = EmployeeLocation(
                 employeeId: userId,

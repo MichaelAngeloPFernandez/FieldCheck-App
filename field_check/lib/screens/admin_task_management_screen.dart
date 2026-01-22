@@ -1192,11 +1192,24 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       } else {
                         message = 'Task assignment request completed.';
                       }
-                      Navigator.of(ctx).pop();
 
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(message)));
+                      if (!replaceAssignees &&
+                          summary != null &&
+                          total != null &&
+                          successful != null &&
+                          failed != null &&
+                          failed > 0) {
+                        showDialogNotice(message);
+                        return;
+                      }
+
+                      Navigator.of(ctx).pop();
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text(message)));
+                      });
                     } catch (e) {
                       debugPrint('Error assigning task: $e');
                       if (mounted) {
