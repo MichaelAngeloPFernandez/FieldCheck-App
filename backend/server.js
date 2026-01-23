@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const User = require('./models/User');
 const EmployeeLocation = require('./models/EmployeeLocation');
+const notificationService = require('./services/notificationService');
 
 console.log('🚀 Starting server initialization...');
 
@@ -65,6 +66,8 @@ console.log('🔌 Socket.io initialized');
 // Track employee locations for real-time dashboard updates
 const employeeLocations = new Map(); // { userId: { lat, lng, accuracy, timestamp } }
 module.exports.employeeLocations = employeeLocations;
+
+const employeeLocationPayloads = new Map();
 
 // Throttle admin notifications for overtasked employees
 const overtaskNotified = new Map(); // { userId: { count: number, at: number } }
@@ -213,6 +216,146 @@ io.on('connection', (socket) => {
     }
   } catch (_) {}
 
+  socket.on('joinLocationRoom', async () => {
+    try {
+      const requesterId =
+        socket && socket.data && socket.data.userId ? String(socket.data.userId) : '';
+
+      if (typeof requesterId !== 'string' || requesterId.length !== 24) {
+        return;
+      }
+
+      const requester = await User.findById(requesterId).select('role').lean();
+      if (!requester || requester.role !== 'admin') {
+        return;
+      }
+
+      const employees = await User.find({ role: 'employee', isOnline: true })
+        .select('name username employeeId lastLatitude lastLongitude lastLocationUpdate activeTaskCount isOnline')
+        .lean();
+
+      if (!employees.length) {
+        socket.emit('employeeLocationsUpdate', []);
+        return;
+      }
+
+      const employeeIds = employees.map((e) => e._id);
+
+      const inProgress = await (async () => {
+        try {
+          const UserTask = require('./models/UserTask');
+          return await UserTask.find({
+            userId: { $in: employeeIds },
+            isArchived: { $ne: true },
+            status: 'in_progress',
+          })
+            .select('userId')
+            .lean();
+        } catch (_) {
+          return [];
+        }
+      })();
+
+      const inProgressCount = new Map();
+      for (const ut of inProgress) {
+        const key = ut && ut.userId ? String(ut.userId) : '';
+        if (!key) continue;
+        inProgressCount.set(key, (inProgressCount.get(key) || 0) + 1);
+      }
+
+      const openAttendanceByUser = await (async () => {
+        try {
+          const Attendance = require('./models/Attendance');
+          const rows = await Attendance.find({
+            employee: { $in: employeeIds },
+            checkOut: { $exists: false },
+            isVoid: { $ne: true },
+          })
+            .sort({ createdAt: -1 })
+            .populate('geofence', 'name')
+            .select('employee geofence')
+            .lean();
+
+          const map = new Map();
+          for (const row of rows) {
+            const key = row && row.employee ? String(row.employee) : '';
+            if (!key) continue;
+            if (!map.has(key)) {
+              map.set(key, row);
+            }
+          }
+          return map;
+        } catch (_) {
+          return new Map();
+        }
+      })();
+
+      const snapshot = [];
+      for (const emp of employees) {
+        const userId = emp && emp._id ? String(emp._id) : '';
+        if (!userId) continue;
+
+        const cached = employeeLocationPayloads.get(userId);
+        const latitude =
+          cached && typeof cached.latitude === 'number'
+            ? cached.latitude
+            : typeof emp.lastLatitude === 'number'
+              ? emp.lastLatitude
+              : null;
+        const longitude =
+          cached && typeof cached.longitude === 'number'
+            ? cached.longitude
+            : typeof emp.lastLongitude === 'number'
+              ? emp.lastLongitude
+              : null;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          continue;
+        }
+
+        const openAttendance = openAttendanceByUser.get(userId);
+        const geofenceName =
+          openAttendance && openAttendance.geofence
+            ? openAttendance.geofence.name || null
+            : null;
+        const startedCount = inProgressCount.get(userId) || 0;
+
+        let status = 'moving';
+        if (startedCount > 0) {
+          status = 'busy';
+        } else if (openAttendance) {
+          status = 'available';
+        }
+
+        snapshot.push({
+          employeeId: userId,
+          name: emp && emp.name ? String(emp.name) : 'Employee',
+          username: emp && emp.username ? String(emp.username) : null,
+          latitude,
+          longitude,
+          accuracy: cached && typeof cached.accuracy === 'number' ? cached.accuracy : 0,
+          speed: 0,
+          status,
+          timestamp: (
+            cached && cached.timestamp
+              ? String(cached.timestamp)
+              : emp && emp.lastLocationUpdate
+                ? new Date(emp.lastLocationUpdate).toISOString()
+                : new Date().toISOString()
+          ),
+          activeTaskCount: typeof emp.activeTaskCount === 'number' ? emp.activeTaskCount : 0,
+          workloadScore: 0,
+          currentGeofence: geofenceName,
+          distanceToNearestTask: null,
+          isOnline: true,
+          batteryLevel: null,
+        });
+      }
+
+      socket.emit('employeeLocationsUpdate', snapshot);
+    } catch (_) {}
+  });
+
   socket.on('employeeOnline', async (data) => {
     try {
       const payloadId =
@@ -358,7 +501,7 @@ io.on('connection', (socket) => {
               const Task = require('./models/Task');
               const UserTask = require('./models/UserTask');
 
-              const user = await User.findById(userId).select('name username isOnline employeeId');
+              const user = await User.findById(userId).select('name username isOnline employeeId phone');
               if (user) {
                 if (user.name) {
                   name = user.name;
@@ -403,6 +546,17 @@ io.on('connection', (socket) => {
                   }
                 } catch (_) {
                   isWithinCheckedInGeofence = true;
+                }
+
+                if (!isWithinCheckedInGeofence) {
+                  setImmediate(async () => {
+                    try {
+                      await notificationService.notifyLocationWarning(
+                        user,
+                        `Outside geofence boundary${currentGeofence ? ` of ${currentGeofence}` : ''}`,
+                      );
+                    } catch (_) {}
+                  });
                 }
               }
 
@@ -474,6 +628,16 @@ io.on('connection', (socket) => {
                     message: `${name} is over the task limit (${activeTaskCount}/${maxActive}).`,
                     severity: 'warning',
                   });
+
+                  setImmediate(async () => {
+                    try {
+                      await notificationService.notifyWorkloadWarning(
+                        user,
+                        activeTaskCount,
+                        maxActive,
+                      );
+                    } catch (_) {}
+                  });
                 }
               }
 
@@ -486,7 +650,7 @@ io.on('connection', (socket) => {
           }
 
           // Emit rich EmployeeLocation-compatible payload for admin dashboard
-          io.emit('employeeLocationUpdate', {
+          const richPayload = {
             employeeId: String(userId),
             name,
             username,
@@ -502,7 +666,10 @@ io.on('connection', (socket) => {
             distanceToNearestTask: null,
             isOnline,
             batteryLevel: null,
-          });
+          };
+
+          employeeLocationPayloads.set(String(userId), richPayload);
+          io.emit('employeeLocationUpdate', richPayload);
 
           // Existing lightweight event used by RealtimeService/AdminWorldMap
           io.emit('liveEmployeeLocation', {
@@ -567,6 +734,10 @@ io.on('connection', (socket) => {
 
             try {
               employeeLocations.delete(userId);
+            } catch (_) {}
+
+            try {
+              employeeLocationPayloads.delete(userId);
             } catch (_) {}
 
             try {

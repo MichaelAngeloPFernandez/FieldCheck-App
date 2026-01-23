@@ -60,16 +60,52 @@ async function notifyTaskOverdue(user, task) {
   await sendSms(user.phone, body);
 }
 
-module.exports = {
-  sendSms,
-  notifyTaskAssigned,
-  notifyTaskOverdue,
-};
- 
 async function notifyTaskEscalated(user, task) {
   if (!user || !user.phone) return;
   const label = formatTaskLabel(task);
   const body = `Task escalated: ${label}. Please address immediately.`;
+  await sendSms(user.phone, body);
+}
+
+async function notifyAttendanceCheckIn(user, geofence) {
+  if (!user || !user.phone) return;
+  const geofenceName = geofence?.name ? ` at ${geofence.name}` : '';
+  const body = `Attendance update: you checked in${geofenceName}.`;
+  await sendSms(user.phone, body);
+}
+
+async function notifyAttendanceCheckOut(user, geofence) {
+  if (!user || !user.phone) return;
+  const geofenceName = geofence?.name ? ` from ${geofence.name}` : '';
+  const body = `Attendance update: you checked out${geofenceName}.`;
+  await sendSms(user.phone, body);
+}
+
+async function notifyAutoCheckoutWarning(user, minutesRemaining, geofenceName) {
+  if (!user || !user.phone) return;
+  if (Number.isFinite(minutesRemaining)) {
+    const plural = minutesRemaining === 1 ? '' : 's';
+    const geofenceLabel = geofenceName ? ` at ${geofenceName}` : '';
+    const body = `Auto-checkout warning: you will be checked out in ${minutesRemaining} minute${plural} if you remain offline${geofenceLabel}.`;
+    await sendSms(user.phone, body);
+    return;
+  }
+
+  const geofenceLabel = geofenceName ? ` at ${geofenceName}` : '';
+  const body = `Auto-checkout notice: your previous session was auto-closed${geofenceLabel}.`;
+  await sendSms(user.phone, body);
+}
+
+async function notifyLocationWarning(user, reason) {
+  if (!user || !user.phone) return;
+  const body = `Location Verification Failed: ${reason || 'Unknown reason'}. Please verify your GPS is enabled.`;
+  await sendSms(user.phone, body);
+}
+
+async function notifyWorkloadWarning(user, activeTaskCount, maxActive) {
+  if (!user || !user.phone) return;
+  const limitLabel = Number.isFinite(maxActive) ? `/${maxActive}` : '';
+  const body = `Workload Alert: You have ${activeTaskCount}${limitLabel} active tasks. Consider completing some or requesting help.`;
   await sendSms(user.phone, body);
 }
 
@@ -78,4 +114,9 @@ module.exports = {
   notifyTaskAssigned,
   notifyTaskOverdue,
   notifyTaskEscalated,
+  notifyAttendanceCheckIn,
+  notifyAttendanceCheckOut,
+  notifyAutoCheckoutWarning,
+  notifyLocationWarning,
+  notifyWorkloadWarning,
 };

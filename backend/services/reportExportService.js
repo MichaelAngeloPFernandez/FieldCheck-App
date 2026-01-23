@@ -522,20 +522,28 @@ class ReportExportService {
 
     // Helper function to format time as HH:MM AM/PM
     // Times are already stored in PH timezone (UTC+8) in MongoDB
+    const _manilaTimeFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const _manilaDateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+
     const formatTime = (date) => {
       if (!date) return '-';
-      const d = new Date(date);
-      const hours = d.getHours();
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      return `${String(displayHours).padStart(2, '0')}:${minutes} ${ampm}`;
+      return _manilaTimeFormatter.format(new Date(date));
     };
 
     // Each record has both checkIn and checkOut times
     records.forEach((record) => {
-      const checkInDate = new Date(record.checkIn);
-      const date = checkInDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+      const date = _manilaDateFormatter.format(new Date(record.checkIn)); // YYYY-MM-DD format
       
       const employeeName = record.employee?.name || 'N/A';
       const locationName = record.geofence?.name || 'N/A';

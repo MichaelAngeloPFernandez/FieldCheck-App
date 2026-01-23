@@ -4,6 +4,7 @@ const UserTask = require('../models/UserTask');
 const User = require('../models/User');
 const { io } = require('../server');
 const Report = require('../models/Report');
+const Attendance = require('../models/Attendance');
 const Settings = require('../models/Settings');
 const notificationService = require('../services/notificationService');
 
@@ -747,6 +748,82 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
       console.error('Failed to auto-create task completion report:', e);
     }
   }
+  // Emit employeeLocationUpdate so admin dashboards update status/marker color
+  // even when the employee is not continuously streaming GPS.
+  try {
+    const userId = ut.userId;
+    const now = new Date();
+
+    const activeTaskCount = await UserTask.countDocuments({
+      userId,
+      isArchived: { $ne: true },
+      status: { $ne: 'completed' },
+    });
+
+    // Best-effort: keep user's active task count in sync
+    try {
+      await User.findByIdAndUpdate(userId, { activeTaskCount });
+    } catch (_) {}
+
+    const user = await User.findById(userId).select(
+      'name username lastLatitude lastLongitude lastLocationUpdate isOnline',
+    );
+
+    const latitude = user && typeof user.lastLatitude === 'number' ? user.lastLatitude : null;
+    const longitude = user && typeof user.lastLongitude === 'number' ? user.lastLongitude : null;
+
+    if (typeof latitude === 'number' && typeof longitude === 'number') {
+      const inProgressCount = await UserTask.countDocuments({
+        userId,
+        isArchived: { $ne: true },
+        status: 'in_progress',
+      });
+
+      const openAttendance = await Attendance.findOne({
+        employee: userId,
+        checkOut: { $exists: false },
+        isVoid: { $ne: true },
+      })
+        .populate('geofence', 'name')
+        .select('geofence')
+        .lean();
+
+      const geofenceName =
+        openAttendance && openAttendance.geofence
+          ? openAttendance.geofence.name || null
+          : null;
+
+      let derivedStatus = 'moving';
+      if (inProgressCount > 0 || nextStatus === 'in_progress') {
+        derivedStatus = 'busy';
+      } else if (openAttendance) {
+        derivedStatus = 'available';
+      }
+
+      io.emit('employeeLocationUpdate', {
+        employeeId: userId.toString(),
+        name: user && user.name ? String(user.name) : 'Employee',
+        username: user && user.username ? String(user.username) : null,
+        latitude,
+        longitude,
+        accuracy: 0,
+        speed: 0,
+        status: derivedStatus,
+        timestamp: (
+          user && user.lastLocationUpdate
+            ? new Date(user.lastLocationUpdate).toISOString()
+            : now.toISOString()
+        ),
+        activeTaskCount,
+        workloadScore: 0,
+        currentGeofence: geofenceName,
+        distanceToNearestTask: null,
+        isOnline: user && typeof user.isOnline === 'boolean' ? user.isOnline : true,
+        batteryLevel: null,
+      });
+    }
+  } catch (_) {}
+
   io.emit('updatedUserTaskStatus', {
     id: ut._id.toString(),
     userId: ut.userId.toString(),

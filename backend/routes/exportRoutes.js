@@ -6,6 +6,7 @@ const {
   exportTasksPDF,
   exportTasksExcel,
   exportCombinedExcel,
+  emailReport,
 } = require('../controllers/exportController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
@@ -22,5 +23,8 @@ router.get('/tasks/excel', exportTasksExcel);
 
 // Combined export route
 router.get('/combined/excel', exportCombinedExcel);
+
+// Email report export
+router.post('/email-report', emailReport);
 
 module.exports = router;

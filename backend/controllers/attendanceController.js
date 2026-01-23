@@ -4,7 +4,9 @@ const Geofence = require('../models/Geofence');
 const { io } = require('../server'); // Import the io object
 const Report = require('../models/Report');
 const User = require('../models/User');
+const UserTask = require('../models/UserTask');
 const appNotificationService = require('../services/appNotificationService');
+const notificationService = require('../services/notificationService');
 
 async function populateReportById(reportId) {
   return await Report.findById(reportId)
@@ -22,6 +24,9 @@ const checkIn = asyncHandler(async (req, res) => {
   
   // Validate location coordinates
   if (isNaN(latitude) || isNaN(longitude) || latitude === undefined || longitude === undefined) {
+    notificationService
+      .notifyLocationWarning(req.user, 'Invalid latitude or longitude')
+      .catch(() => {});
     res.status(400);
     throw new Error('Invalid latitude or longitude');
   }
@@ -50,6 +55,12 @@ const checkIn = asyncHandler(async (req, res) => {
   };
   const distanceMeters = haversineMeters(geofence.latitude, geofence.longitude, latitude, longitude);
   if (distanceMeters > geofence.radius) {
+    notificationService
+      .notifyLocationWarning(
+        req.user,
+        `Outside geofence boundary of ${geofence.name}`,
+      )
+      .catch(() => {});
     res.status(403);
     throw new Error('Outside geofence boundary');
   }
@@ -58,7 +69,7 @@ const checkIn = asyncHandler(async (req, res) => {
   // before creating a new check-in. This prevents stuck/open sessions when
   // previous check-outs were missed due to client/network/timezone issues.
   const now = new Date();
-  const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  const phTime = new Date(now.getTime());
 
   const priorOpen = await Attendance.findOne({
     employee: req.user._id,
@@ -99,6 +110,16 @@ const checkIn = asyncHandler(async (req, res) => {
         message: `${req.user.name} previous session auto-closed before new check-in`,
         severity: 'warning',
       });
+
+      setImmediate(async () => {
+        try {
+          await notificationService.notifyAutoCheckoutWarning(
+            req.user,
+            null,
+            priorOpen.geofence?.name || null,
+          );
+        } catch (_) {}
+      });
     } catch (e) {
       console.error('Failed to auto-close prior open attendance for', req.user._id, e.message || e);
     }
@@ -115,7 +136,57 @@ const checkIn = asyncHandler(async (req, res) => {
   });
 
   const created = await attendance.save();
-  
+
+  // Persist last-known coordinates & online status so admin late-join snapshots
+  // always have a reliable location even if live GPS sharing is disabled.
+  try {
+    const now = new Date();
+    const userId = req.user?._id;
+    if (userId) {
+      const activeTaskCount = await UserTask.countDocuments({
+        userId,
+        isArchived: { $ne: true },
+        status: { $ne: 'completed' },
+      });
+
+      await User.findByIdAndUpdate(
+        userId,
+        {
+          isOnline: true,
+          lastLatitude: Number(latitude),
+          lastLongitude: Number(longitude),
+          lastLocationUpdate: now,
+          activeTaskCount,
+        },
+        { new: false },
+      );
+
+      const inProgressCount = await UserTask.countDocuments({
+        userId,
+        isArchived: { $ne: true },
+        status: 'in_progress',
+      });
+
+      io.emit('employeeLocationUpdate', {
+        employeeId: userId.toString(),
+        name: req.user?.name ? String(req.user.name) : 'Employee',
+        username: req.user?.username ? String(req.user.username) : null,
+        latitude: Number(latitude),
+        longitude: Number(longitude),
+        accuracy: 0,
+        speed: 0,
+        status: inProgressCount > 0 ? 'busy' : 'available',
+        timestamp: now.toISOString(),
+        activeTaskCount,
+        workloadScore: 0,
+        currentGeofence: geofence?.name || null,
+        distanceToNearestTask: null,
+        isOnline: true,
+        batteryLevel: null,
+      });
+    }
+  } catch (_) {}
+
   // Emit immediately with basic data for fast UI update
   io.emit('newAttendanceRecord', {
     _id: created._id,
@@ -151,10 +222,16 @@ const checkIn = asyncHandler(async (req, res) => {
         employeeId: req.user.employeeId,
         employeeName: req.user.name,
         geofenceName: geofence.name,
-        timestamp: created.checkIn,
+        checkInTime: created.checkIn,
       },
     });
   } catch (_) {}
+
+  setImmediate(async () => {
+    try {
+      await notificationService.notifyAttendanceCheckIn(req.user, geofence);
+    } catch (_) {}
+  });
 
   // Populate and emit full data asynchronously (don't block response)
   setImmediate(async () => {
@@ -197,15 +274,20 @@ const checkIn = asyncHandler(async (req, res) => {
 // @access  Private
 const checkOut = asyncHandler(async (req, res) => {
   const { latitude, longitude, geofenceId } = req.body;
-  
-  console.log(`[CHECKOUT] Employee ${req.user._id} attempting checkout with geofenceId: ${geofenceId}`);
-  
+
+  console.log(
+    `[CHECKOUT] Employee ${req.user._id} attempting checkout with geofenceId: ${geofenceId}`,
+  );
+
   // Validate location coordinates
   if (isNaN(latitude) || isNaN(longitude) || latitude === undefined || longitude === undefined) {
+    notificationService
+      .notifyLocationWarning(req.user, 'Invalid latitude or longitude')
+      .catch(() => {});
     res.status(400);
     throw new Error('Invalid latitude or longitude');
   }
-  
+
   // Find the most recent open attendance record for this employee
   // Do NOT restrict by local "today" window — sometimes date math
   // mismatches (timezone shifts) can prevent finding the open record.
@@ -214,15 +296,19 @@ const checkOut = asyncHandler(async (req, res) => {
   const openRecord = await Attendance.findOne({
     employee: req.user._id,
     checkOut: { $exists: false },
-  }).sort({ createdAt: -1 }).populate('geofence');
+  })
+    .sort({ createdAt: -1 })
+    .populate('geofence');
 
   if (!openRecord) {
     console.log(`[CHECKOUT] No open record found for employee ${req.user._id}`);
     res.status(400);
     throw new Error('No active attendance record to check out');
   }
-  
-  console.log(`[CHECKOUT] Found open record: ${openRecord._id}, geofence: ${openRecord.geofence?._id}`);
+
+  console.log(
+    `[CHECKOUT] Found open record: ${openRecord._id}, geofence: ${openRecord.geofence?._id}`,
+  );
 
   // CRITICAL: Ensure geofence exists in the record
   if (!openRecord.geofence) {
@@ -231,23 +317,25 @@ const checkOut = asyncHandler(async (req, res) => {
       res.status(400);
       throw new Error('Geofence information missing. Please check in again.');
     }
-    
-    const geofence = await Geofence.findById(geofenceId);
-    if (!geofence) {
+
+    const fallbackGeofence = await Geofence.findById(geofenceId);
+    if (!fallbackGeofence) {
       res.status(404);
       throw new Error('Geofence not found');
     }
-    
+
     // Assign geofence to the record
-    openRecord.geofence = geofence._id;
-    console.warn(`⚠️ WARNING: Attendance record ${openRecord._id} had missing geofence. Auto-assigned: ${geofence._id}`);
+    openRecord.geofence = fallbackGeofence._id;
+    console.warn(
+      `⚠️ WARNING: Attendance record ${openRecord._id} had missing geofence. Auto-assigned: ${fallbackGeofence._id}`,
+    );
   }
-  
+
   // Get the geofence (either from record or just assigned)
-  const geofence = openRecord.geofence._id 
+  const geofence = openRecord.geofence._id
     ? await Geofence.findById(openRecord.geofence._id)
     : await Geofence.findById(openRecord.geofence);
-    
+
   if (!geofence) {
     res.status(404);
     throw new Error('Geofence not found in database');
@@ -257,14 +345,64 @@ const checkOut = asyncHandler(async (req, res) => {
   // even if they've moved outside the geofence or if the geofence is inactive.
 
   // Record time in Philippine timezone (UTC+8)
-  const phTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
-  
+  const phTime = new Date();
+
   openRecord.checkOut = phTime;
   openRecord.status = 'out';
   openRecord.location = { lat: latitude, lng: longitude };
 
   const updated = await openRecord.save();
-  
+
+  // Persist last-known coordinates & online status for late-join admin snapshots
+  // and emit a rich employeeLocationUpdate to refresh admin map/status instantly.
+  try {
+    const now = new Date();
+    const userId = req.user?._id;
+    if (userId) {
+      const activeTaskCount = await UserTask.countDocuments({
+        userId,
+        isArchived: { $ne: true },
+        status: { $ne: 'completed' },
+      });
+
+      await User.findByIdAndUpdate(
+        userId,
+        {
+          isOnline: true,
+          lastLatitude: Number(latitude),
+          lastLongitude: Number(longitude),
+          lastLocationUpdate: now,
+          activeTaskCount,
+        },
+        { new: false },
+      );
+
+      const inProgressCount = await UserTask.countDocuments({
+        userId,
+        isArchived: { $ne: true },
+        status: 'in_progress',
+      });
+
+      io.emit('employeeLocationUpdate', {
+        employeeId: userId.toString(),
+        name: req.user?.name ? String(req.user.name) : 'Employee',
+        username: req.user?.username ? String(req.user.username) : null,
+        latitude: Number(latitude),
+        longitude: Number(longitude),
+        accuracy: 0,
+        speed: 0,
+        status: inProgressCount > 0 ? 'busy' : 'moving',
+        timestamp: now.toISOString(),
+        activeTaskCount,
+        workloadScore: 0,
+        currentGeofence: geofence?.name || null,
+        distanceToNearestTask: null,
+        isOnline: true,
+        batteryLevel: null,
+      });
+    }
+  } catch (_) {}
+
   // Emit immediately with basic data for fast UI update
   io.emit('updatedAttendanceRecord', {
     _id: updated._id,
@@ -311,6 +449,12 @@ const checkOut = asyncHandler(async (req, res) => {
       },
     });
   } catch (_) {}
+
+  setImmediate(async () => {
+    try {
+      await notificationService.notifyAttendanceCheckOut(req.user, geofence);
+    } catch (_) {}
+  });
 
   // Populate and emit full data asynchronously (don't block response)
   setImmediate(async () => {
@@ -456,9 +600,30 @@ const restoreAttendanceRecord = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const getAllEmployeesAttendanceStatus = asyncHandler(async (req, res) => {
   const now = new Date();
-  const phNow = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-  const todayStart = new Date(Date.UTC(phNow.getUTCFullYear(), phNow.getUTCMonth(), phNow.getUTCDate(), 0, 0, 0));
-  const todayEnd = new Date(Date.UTC(phNow.getUTCFullYear(), phNow.getUTCMonth(), phNow.getUTCDate(), 23, 59, 59));
+  const offsetMs = 8 * 60 * 60 * 1000;
+  const phNow = new Date(now.getTime() + offsetMs);
+  const todayStart = new Date(
+    Date.UTC(
+      phNow.getUTCFullYear(),
+      phNow.getUTCMonth(),
+      phNow.getUTCDate(),
+      0,
+      0,
+      0,
+      0,
+    ) - offsetMs,
+  );
+  const todayEnd = new Date(
+    Date.UTC(
+      phNow.getUTCFullYear(),
+      phNow.getUTCMonth(),
+      phNow.getUTCDate(),
+      23,
+      59,
+      59,
+      999,
+    ) - offsetMs,
+  );
 
   // Get all open attendance records for today
   const openRecords = await Attendance.find({
@@ -599,17 +764,18 @@ const getAttendanceStatus = asyncHandler(async (req, res) => {
   let lastGeofenceName = null;
   let lastCheckTimestamp = null;
 
-  // Helper function to format time as HH:MM AM/PM in PH timezone (UTC+8)
+  // Helper function to format time as HH:MM AM/PM in Asia/Manila (UTC+8)
+  // without mutating stored timestamps (we store dates in UTC in MongoDB).
+  const _manilaTimeFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
   const formatTime = (date) => {
     if (!date) return null;
-    const d = new Date(date);
-    // Convert to PH timezone (UTC+8)
-    const phTime = new Date(d.getTime() + (8 * 60 * 60 * 1000));
-    const hours = phTime.getUTCHours();
-    const minutes = String(phTime.getUTCMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    return `${String(displayHours).padStart(2, '0')}:${minutes} ${ampm}`;
+    return _manilaTimeFormatter.format(new Date(date));
   };
 
   if (openRecord) {
