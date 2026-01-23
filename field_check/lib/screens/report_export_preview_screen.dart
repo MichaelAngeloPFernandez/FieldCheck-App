@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/config/api_config.dart';
@@ -14,7 +15,8 @@ class ReportExportPreviewScreen extends StatefulWidget {
   final String reportType; // 'attendance' or 'task'
   final DateTime? startDate;
   final DateTime? endDate;
-  final String? locationFilter;
+  final String? locationFilterId;
+  final String? locationFilterLabel;
   final String? statusFilter;
   final List<ReportModel>? taskReports;
   final String? employeeIdFilter;
@@ -25,7 +27,8 @@ class ReportExportPreviewScreen extends StatefulWidget {
     required this.reportType,
     this.startDate,
     this.endDate,
-    this.locationFilter,
+    this.locationFilterId,
+    this.locationFilterLabel,
     this.statusFilter,
     this.taskReports,
     this.employeeIdFilter,
@@ -131,8 +134,8 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         final exclusiveEnd = widget.endDate!.add(const Duration(days: 1));
         queryParams['endDate'] = exclusiveEnd.toIso8601String();
       }
-      if (widget.locationFilter != null) {
-        queryParams['geofenceId'] = widget.locationFilter!;
+      if (widget.locationFilterId != null) {
+        queryParams['geofenceId'] = widget.locationFilterId!;
       }
       if (widget.statusFilter != null) {
         queryParams['status'] = widget.statusFilter!;
@@ -248,14 +251,200 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
     }
   }
 
-  Future<void> _exportToCSV() async {
+  Future<String?> _resolveDefaultEmail() async {
+    try {
+      final userService = UserService();
+      final cached = userService.currentUser?.email;
+      if (cached != null && cached.isNotEmpty) return cached;
+      final profile = await userService.getProfile();
+      return profile.email;
+    } catch (e) {
+      debugPrint('Error loading default email: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, String>?> _promptEmailParams(String? defaultEmail) async {
+    final controller = TextEditingController(text: defaultEmail ?? '');
+    String format = 'pdf';
+
+    return showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Email report'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Recipients (comma-separated)',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      hintText: 'admin@company.com, ops@company.com',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Format',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(format),
+                    initialValue: format,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'pdf', child: Text('PDF')),
+                      DropdownMenuItem(
+                        value: 'xlsx',
+                        child: Text('Excel (XLSX)'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setStateDialog(() {
+                        format = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(ctx, {
+                      'recipients': controller.text.trim(),
+                      'format': format,
+                    });
+                  },
+                  child: const Text('Send'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _emailReport() async {
     setState(() {
       _isExporting = true;
       _exportError = null;
     });
 
     try {
-      debugPrint('Starting CSV export...');
+      final token = await _getToken();
+      if (token == null) {
+        throw Exception('Missing auth token');
+      }
+
+      final defaultEmail = await _resolveDefaultEmail();
+      final params = await _promptEmailParams(defaultEmail);
+      if (params == null) {
+        setState(() {
+          _isExporting = false;
+        });
+        return;
+      }
+
+      final recipients = params['recipients']?.trim() ?? '';
+      if (recipients.isEmpty) {
+        throw Exception('Please enter at least one recipient email');
+      }
+
+      final format = params['format'] ?? 'pdf';
+      final body = <String, dynamic>{
+        'reportType': widget.reportType,
+        'format': format,
+        'recipients': recipients,
+      };
+
+      if (widget.startDate != null) {
+        body['startDate'] = widget.startDate!.toIso8601String();
+      }
+      if (widget.endDate != null) {
+        final exclusiveEnd = widget.endDate!.add(const Duration(days: 1));
+        body['endDate'] = exclusiveEnd.toIso8601String();
+      }
+      if (widget.locationFilterId != null) {
+        body['geofenceId'] = widget.locationFilterId!;
+      }
+      if (widget.statusFilter != null) {
+        body['status'] = widget.statusFilter!;
+      }
+      if (widget.employeeIdFilter != null) {
+        body['employeeId'] = widget.employeeIdFilter!;
+      }
+
+      final uri = Uri.parse('${ApiConfig.baseUrl}/api/export/email-report');
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 40));
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Report emailed successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to email report: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() {
+        _exportError = 'Email failed: $e';
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Email failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isExporting = false;
+      });
+    }
+  }
+
+  Future<void> _exportToExcel() async {
+    setState(() {
+      _isExporting = true;
+      _exportError = null;
+    });
+
+    try {
+      debugPrint('Starting Excel export...');
       final token = await _getToken();
       final queryParams = <String, String>{'type': widget.reportType};
 
@@ -267,8 +456,8 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         final exclusiveEnd = widget.endDate!.add(const Duration(days: 1));
         queryParams['endDate'] = exclusiveEnd.toIso8601String();
       }
-      if (widget.locationFilter != null) {
-        queryParams['geofenceId'] = widget.locationFilter!;
+      if (widget.locationFilterId != null) {
+        queryParams['geofenceId'] = widget.locationFilterId!;
       }
       if (widget.statusFilter != null) {
         queryParams['status'] = widget.statusFilter!;
@@ -281,7 +470,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         '${ApiConfig.baseUrl}/api/export/${widget.reportType}/excel',
       ).replace(queryParameters: queryParams);
 
-      debugPrint('Requesting CSV from: $uri');
+      debugPrint('Requesting Excel from: $uri');
       final response = await http
           .get(uri, headers: {'Authorization': 'Bearer $token'})
           .timeout(const Duration(seconds: 30));
@@ -294,12 +483,13 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
         // Save file using native Android method
         try {
           final fileName =
-              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.csv';
+              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.xlsx';
 
           setState(() {
             _lastExportBytes = response.bodyBytes;
             _lastExportFilename = fileName;
-            _lastExportMimeType = 'text/csv';
+            _lastExportMimeType =
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
           });
 
           final filePath = await _saveFileToDownloads(
@@ -314,7 +504,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('✓ CSV saved to: $filePath'),
+                content: Text('✓ Excel saved to: $filePath'),
                 backgroundColor: Colors.green,
                 duration: const Duration(seconds: 4),
               ),
@@ -328,7 +518,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Your CSV report has been saved!'),
+                    const Text('Your Excel report has been saved!'),
                     const SizedBox(height: 12),
                     const Text(
                       'File path:',
@@ -360,10 +550,10 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
             );
           }
         } catch (e) {
-          throw Exception('Failed to save CSV file: $e');
+          throw Exception('Failed to save Excel file: $e');
         }
       } else {
-        throw Exception('Failed to export CSV: ${response.statusCode}');
+        throw Exception('Failed to export Excel: ${response.statusCode}');
       }
     } catch (e) {
       setState(() {
@@ -397,6 +587,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMM dd, yyyy');
     final timeFormat = DateFormat('hh:mm a');
+    final locationLabel = widget.locationFilterLabel ?? widget.locationFilterId;
 
     return Scaffold(
       appBar: AppBar(
@@ -418,8 +609,10 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
           // Export format selection
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
               children: [
                 ElevatedButton.icon(
                   onPressed: _isExporting ? null : _exportToPDF,
@@ -437,11 +630,26 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: _isExporting ? null : _exportToCSV,
+                  onPressed: _isExporting ? null : _exportToExcel,
                   icon: const Icon(Icons.table_chart),
                   label: const Text('Export Excel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.12),
+                    disabledForegroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _isExporting ? null : _emailReport,
+                  icon: const Icon(Icons.email),
+                  label: const Text('Email Report'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2688d4),
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: Theme.of(
                       context,
@@ -548,7 +756,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                         ],
                       ),
 
-                    if (widget.locationFilter != null)
+                    if (locationLabel != null)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -556,7 +764,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                             'Location Filter:',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          Text(widget.locationFilter!),
+                          Text(locationLabel),
                           const SizedBox(height: 12),
                         ],
                       ),
@@ -914,7 +1122,7 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                     // Footer
                     Center(
                       child: Text(
-                        'This is a preview of your export. Click "Export PDF" or "Export CSV" to download the complete file.',
+                        'This is a preview of your export. Click "Export PDF" or "Export Excel" to download the complete file.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: Theme.of(

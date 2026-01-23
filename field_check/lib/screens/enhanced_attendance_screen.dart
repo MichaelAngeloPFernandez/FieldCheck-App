@@ -314,48 +314,263 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     } catch (_) {}
   }
 
-  Widget _buildLocationStatusBanner() {
-    if (_locationIssueMessage == null) return const SizedBox.shrink();
+  Widget _buildSectionHeader({
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
 
+  Widget _buildSurfaceCard({
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.all(16),
+  }) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(padding: padding, child: child),
+    );
+  }
+
+  Widget _buildStatusPill(String label, Color color, {IconData? icon}) {
+    final theme = Theme.of(context);
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.red.shade200),
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.gps_off, color: Colors.red.shade700),
-          const SizedBox(width: 8),
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow({required String label, required String value}) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
           Expanded(
             child: Text(
-              _locationIssueMessage!,
-              style: TextStyle(
-                color: Colors.red.shade700,
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          if (_locationServiceDisabled)
-            TextButton(
-              onPressed: _openSystemLocationSettings,
-              child: const Text('Open Settings'),
-            )
-          else if (_locationPermissionDeniedForever)
-            TextButton(
-              onPressed: _openSystemAppSettings,
-              child: const Text('Open Settings'),
-            )
-          else
-            TextButton(
-              onPressed: _isLoading ? null : _updateLocation,
-              child: const Text('Retry'),
-            ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBanner({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required Color color,
+    Widget? action,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (action != null) action,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGeofenceRow({
+    required Geofence geofence,
+    required bool highlighted,
+    required List<Widget> tags,
+  }) {
+    final theme = Theme.of(context);
+    final highlightColor = theme.colorScheme.primary;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? highlightColor.withValues(alpha: 0.08)
+            : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: highlighted
+              ? highlightColor.withValues(alpha: 0.3)
+              : theme.colorScheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.location_on,
+            size: 18,
+            color: highlighted
+                ? highlightColor
+                : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              geofence.name,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: highlighted ? FontWeight.w700 : FontWeight.w600,
+                color: highlighted ? highlightColor : null,
+              ),
+            ),
+          ),
+          Wrap(spacing: 6, children: tags),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationStatusBanner() {
+    if (_locationIssueMessage == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.error;
+    Widget action;
+
+    if (_locationServiceDisabled) {
+      action = TextButton.icon(
+        onPressed: _openSystemLocationSettings,
+        icon: const Icon(Icons.settings),
+        label: const Text('Open settings'),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      );
+    } else if (_locationPermissionDeniedForever) {
+      action = TextButton.icon(
+        onPressed: _openSystemAppSettings,
+        icon: const Icon(Icons.settings),
+        label: const Text('Open settings'),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      );
+    } else {
+      action = TextButton.icon(
+        onPressed: _isLoading ? null : _updateLocation,
+        icon: const Icon(Icons.refresh),
+        label: const Text('Retry'),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+
+    return _buildBanner(
+      icon: Icons.gps_off,
+      title: _locationIssueMessage!,
+      color: color,
+      action: action,
     );
   }
 
@@ -823,6 +1038,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
@@ -831,65 +1047,53 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Attendance',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 4),
+                Text(
+                  'Clock in, verify your location, and manage your shift.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(height: 20),
 
-                // Real-time status indicator
                 if (_realtimeService.isConnected)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.wifi, color: Colors.green.shade600),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Live Updates Active',
-                          style: TextStyle(
-                            color: Colors.green.shade700,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
+                  _buildBanner(
+                    icon: Icons.wifi,
+                    title: 'Live updates active',
+                    subtitle: 'Your attendance changes sync instantly.',
+                    color: Colors.green.shade600,
                   ),
 
-                const SizedBox(height: 16),
+                if (_realtimeService.isConnected) const SizedBox(height: 12),
+
                 if (!_isOnline)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.cloud_off, color: Colors.orange.shade700),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Offline. Pending sync: $_pendingSyncCount',
-                            style: TextStyle(color: Colors.orange.shade700),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _isLoading ? null : _syncOfflineAttendance,
-                          child: const Text('Sync Now'),
-                        ),
-                      ],
+                  _buildBanner(
+                    icon: Icons.cloud_off,
+                    title: 'Offline mode',
+                    subtitle: 'Pending sync: $_pendingSyncCount',
+                    color: Colors.orange.shade700,
+                    action: TextButton.icon(
+                      onPressed: _isLoading ? null : _syncOfflineAttendance,
+                      icon: const Icon(Icons.sync),
+                      label: const Text('Sync now'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.orange.shade700,
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
 
-                const SizedBox(height: 16),
-                _buildLocationStatusBanner(),
+                if (!_isOnline) const SizedBox(height: 12),
+
+                if (_locationIssueMessage != null) _buildLocationStatusBanner(),
+
+                if (_locationIssueMessage != null) const SizedBox(height: 12),
 
                 // Location status
                 _buildLocationCard(),
@@ -913,240 +1117,221 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   }
 
   Widget _buildAllGeofencesCard() {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'All Locations (Info)',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            ...(_allGeofences.map(
-              (g) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.place,
-                      size: 16,
-                      color: g.isActive
-                          ? Colors.blue
-                          : Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(g.name)),
-                    Text(
-                      g.isActive ? 'Active' : 'Inactive',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: g.isActive
-                            ? Colors.blue
-                            : Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.6),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+    final theme = Theme.of(context);
+    return _buildSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: 'All Locations',
+            subtitle: 'Reference list of available sites',
+          ),
+          const SizedBox(height: 12),
+          ...(_allGeofences.map(
+            (g) => _buildGeofenceRow(
+              geofence: g,
+              highlighted: false,
+              tags: [
+                _buildStatusPill(
+                  g.isActive ? 'Active' : 'Inactive',
+                  g.isActive
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
-              ),
-            )),
-          ],
-        ),
+                _buildStatusPill('${g.radius}m', theme.colorScheme.primary),
+              ],
+            ),
+          )),
+        ],
       ),
     );
   }
 
   Widget _buildLocationCard() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Current Location',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  _isWithinAnyGeofence ? Icons.check_circle : Icons.error,
-                  color: _isWithinAnyGeofence ? Colors.green : Colors.red,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _isWithinAnyGeofence
-                      ? 'Within authorized area'
-                      : 'Outside authorized area',
-                  style: TextStyle(
-                    color: _isWithinAnyGeofence ? Colors.green : Colors.red,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (_currentGeofence != null) ...[
-              Text(
-                'Current: ${_currentGeofence!.name}',
-                style: const TextStyle(fontSize: 14),
+    final theme = Theme.of(context);
+    final statusColor = _isWithinAnyGeofence
+        ? Colors.green
+        : theme.colorScheme.error;
+    return _buildSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: 'Current Location',
+            subtitle: 'GPS and geofence validation',
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildStatusPill(
+                _isWithinAnyGeofence
+                    ? 'Within authorized area'
+                    : 'Outside authorized area',
+                statusColor,
+                icon: _isWithinAnyGeofence
+                    ? Icons.check_circle
+                    : Icons.error_outline,
               ),
-              if (_currentDistanceMeters != null)
-                Text(
-                  'Distance: ${_currentDistanceMeters!.toStringAsFixed(1)}m',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.75),
-                  ),
+              if (_currentGeofence != null)
+                _buildStatusPill(
+                  'Nearest: ${_currentGeofence!.name}',
+                  theme.colorScheme.primary,
                 ),
             ],
-            if (_userPosition != null)
-              Text(
-                'Coordinates: ${_userPosition!.latitude.toStringAsFixed(6)}, ${_userPosition!.longitude.toStringAsFixed(6)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.75),
-                ),
-              ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+          if (_currentGeofence != null)
+            _buildInfoRow(
+              label: 'Current geofence',
+              value: _currentGeofence!.name,
+            ),
+          if (_currentDistanceMeters != null)
+            _buildInfoRow(
+              label: 'Distance',
+              value: '${_currentDistanceMeters!.toStringAsFixed(1)} m',
+            ),
+          if (_userPosition != null)
+            _buildInfoRow(
+              label: 'Coordinates',
+              value:
+                  '${_userPosition!.latitude.toStringAsFixed(6)}, ${_userPosition!.longitude.toStringAsFixed(6)}',
+            ),
+        ],
       ),
     );
   }
 
   Widget _buildAttendanceCard() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Text(
-              _isCheckedIn
-                  ? 'You are currently CHECKED IN'
-                  : 'You are currently CHECKED OUT',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: _isCheckedIn ? Colors.green : Colors.red,
-              ),
-              textAlign: TextAlign.center,
+    final theme = Theme.of(context);
+    final checkInColor = Colors.green.shade600;
+    final checkOutColor = theme.colorScheme.error;
+    final actionColor = _isCheckedIn ? checkOutColor : checkInColor;
+
+    return _buildSurfaceCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildSectionHeader(
+            title: 'Check-in Status',
+            subtitle: _isCheckedIn
+                ? 'Tracking your active shift'
+                : 'You are currently off shift',
+            trailing: _buildStatusPill(
+              _isCheckedIn ? 'Checked in' : 'Checked out',
+              actionColor,
             ),
-            const SizedBox(height: 16),
-            // Location Tracker Indicator
-            LocationTrackerIndicator(
+          ),
+          const SizedBox(height: 16),
+          LocationTrackerIndicator(
+            isCheckedIn: _isCheckedIn,
+            onTap: _updateLocation,
+          ),
+          const SizedBox(height: 16),
+          if (_isCheckedIn)
+            CheckInTimerWidget(
+              employeeId: _userModelId ?? 'unknown',
               isCheckedIn: _isCheckedIn,
-              onTap: _updateLocation,
+              checkInTimestamp: _lastCheckTimestamp,
             ),
-            const SizedBox(height: 16),
-            // Check-In Timer Widget
-            if (_isCheckedIn)
-              CheckInTimerWidget(
-                employeeId: _userModelId ?? 'unknown',
-                isCheckedIn: _isCheckedIn,
-                checkInTimestamp: _lastCheckTimestamp,
-              ),
-            const SizedBox(height: 24),
-            Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _isCheckedIn ? Colors.red[100] : Colors.green[100],
-                border: Border.all(
-                  color: _isCheckedIn ? Colors.red : Colors.green,
-                  width: 4,
+          const SizedBox(height: 24),
+          Container(
+            width: 200,
+            height: 200,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: actionColor.withValues(alpha: 0.12),
+              border: Border.all(color: actionColor, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: actionColor.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
                 ),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap:
-                      (_isLoading || (!_isWithinAnyGeofence && !_isCheckedIn))
-                      ? null
-                      : _toggleAttendance,
-                  child: Center(
-                    child: _isLoading
-                        ? const CircularProgressIndicator()
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _isCheckedIn ? Icons.logout : Icons.login,
-                                size: 48,
-                                color: _isCheckedIn ? Colors.red : Colors.green,
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: (_isLoading || (!_isWithinAnyGeofence && !_isCheckedIn))
+                    ? null
+                    : _toggleAttendance,
+                child: Center(
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _isCheckedIn ? Icons.logout : Icons.login,
+                              size: 48,
+                              color: actionColor,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _isCheckedIn ? 'CHECK OUT' : 'CHECK IN',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: actionColor,
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _isCheckedIn ? 'CHECK OUT' : 'CHECK IN',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: _isCheckedIn
-                                      ? Colors.red
-                                      : Colors.green,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
+                            ),
+                          ],
+                        ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            if (!_isWithinAnyGeofence && !_isCheckedIn) ...[
-              const Text(
-                'Move inside your assigned geofence to check in.',
-                style: TextStyle(color: Colors.red),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton.icon(
+          ),
+          const SizedBox(height: 16),
+          if (!_isWithinAnyGeofence && !_isCheckedIn)
+            _buildBanner(
+              icon: Icons.warning_amber_rounded,
+              title: 'Move inside your assigned geofence to check in.',
+              subtitle: 'Tap refresh after you get closer to your site.',
+              color: theme.colorScheme.error,
+              action: TextButton.icon(
                 onPressed: _isLoading ? null : _updateLocation,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Refresh Location'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
+                label: const Text('Refresh location'),
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-            ],
-            if (!_isWithinAnyGeofence && _isCheckedIn) ...[
-              const Text(
-                'You are outside your geofence. You can still check out.',
-                style: TextStyle(color: Colors.orange),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton.icon(
+            ),
+          if (!_isWithinAnyGeofence && !_isCheckedIn)
+            const SizedBox(height: 12),
+          if (!_isWithinAnyGeofence && _isCheckedIn)
+            _buildBanner(
+              icon: Icons.info_outline,
+              title: 'You are outside your geofence. You can still check out.',
+              subtitle: 'Refresh your location if needed.',
+              color: Colors.orange.shade700,
+              action: TextButton.icon(
                 onPressed: _isLoading ? null : _updateLocation,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Refresh Location'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
+                label: const Text('Refresh location'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange.shade700,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-            ],
-            Text(
-              _isCheckedIn
-                  ? 'Checked in at $_lastCheckTime'
-                  : _lastCheckTime == "--:--"
-                  ? 'Not checked in yet'
-                  : 'Checked out at $_lastCheckTime',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-          ],
-        ),
+          if (!_isWithinAnyGeofence && _isCheckedIn) const SizedBox(height: 12),
+          Text(
+            _isCheckedIn
+                ? 'Checked in at $_lastCheckTime'
+                : _lastCheckTime == "--:--"
+                ? 'Not checked in yet'
+                : 'Checked out at $_lastCheckTime',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1226,61 +1411,29 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   }
 
   Widget _buildGeofencesCard() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Your Assigned Locations',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            ...(_assignedGeofences.map(
-              (geofence) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.location_on,
-                      size: 16,
-                      color: geofence.id == _currentGeofence?.id
-                          ? Colors.green
-                          : Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        geofence.name,
-                        style: TextStyle(
-                          color: geofence.id == _currentGeofence?.id
-                              ? Colors.green
-                              : null,
-                          fontWeight: geofence.id == _currentGeofence?.id
-                              ? FontWeight.bold
-                              : null,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '${geofence.radius}m',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.75),
-                      ),
-                    ),
-                  ],
+    final theme = Theme.of(context);
+    return _buildSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: 'Your Assigned Locations',
+            subtitle: 'Tap refresh to update your nearest site',
+          ),
+          const SizedBox(height: 12),
+          ...(_assignedGeofences.map(
+            (geofence) => _buildGeofenceRow(
+              geofence: geofence,
+              highlighted: geofence.id == _currentGeofence?.id,
+              tags: [
+                _buildStatusPill(
+                  '${geofence.radius}m',
+                  theme.colorScheme.primary,
                 ),
-              ),
-            )),
-          ],
-        ),
+              ],
+            ),
+          )),
+        ],
       ),
     );
   }

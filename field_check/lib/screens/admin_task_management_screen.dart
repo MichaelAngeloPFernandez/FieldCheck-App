@@ -9,6 +9,7 @@ import 'package:field_check/models/user_model.dart';
 import 'package:field_check/services/settings_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
+import 'package:field_check/utils/manila_time.dart';
 
 class AdminTaskManagementScreen extends StatefulWidget {
   const AdminTaskManagementScreen({super.key});
@@ -359,134 +360,229 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     DateTime? dueDate;
     String taskType = 'general';
     String taskDifficulty = 'medium';
+    String? dialogError;
+    bool isSubmitting = false;
 
     await showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Add New Task'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(labelText: 'Title'),
-                ),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(labelText: 'Description'),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: taskType,
-                  decoration: const InputDecoration(labelText: 'Task Type'),
-                  items: const [
-                    DropdownMenuItem(value: 'general', child: Text('General')),
-                    DropdownMenuItem(
-                      value: 'inspection',
-                      child: Text('Inspection'),
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter dialogSetState) {
+            return AlertDialog(
+              title: const Text('Add New Task'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (dialogError != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              color: Colors.red.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                dialogError!,
+                                style: TextStyle(color: Colors.red.shade800),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    TextField(
+                      controller: titleController,
+                      decoration: const InputDecoration(labelText: 'Title'),
+                      onChanged: (_) {
+                        if (dialogError != null) {
+                          dialogSetState(() => dialogError = null);
+                        }
+                      },
                     ),
-                    DropdownMenuItem(
-                      value: 'maintenance',
-                      child: Text('Maintenance'),
+                    TextField(
+                      controller: descriptionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                      ),
+                      onChanged: (_) {
+                        if (dialogError != null) {
+                          dialogSetState(() => dialogError = null);
+                        }
+                      },
                     ),
-                    DropdownMenuItem(
-                      value: 'delivery',
-                      child: Text('Delivery'),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: taskType,
+                      decoration: const InputDecoration(labelText: 'Task Type'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'general',
+                          child: Text('General'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'inspection',
+                          child: Text('Inspection'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'maintenance',
+                          child: Text('Maintenance'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'delivery',
+                          child: Text('Delivery'),
+                        ),
+                        DropdownMenuItem(value: 'other', child: Text('Other')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        dialogSetState(() {
+                          taskType = value;
+                          dialogError = null;
+                        });
+                      },
                     ),
-                    DropdownMenuItem(value: 'other', child: Text('Other')),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: taskDifficulty,
+                      decoration: const InputDecoration(
+                        labelText: 'Difficulty',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'easy', child: Text('Easy')),
+                        DropdownMenuItem(
+                          value: 'medium',
+                          child: Text('Medium'),
+                        ),
+                        DropdownMenuItem(value: 'hard', child: Text('Hard')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        dialogSetState(() {
+                          taskDifficulty = value;
+                          dialogError = null;
+                        });
+                      },
+                    ),
+                    ListTile(
+                      title: Text(
+                        dueDate == null
+                            ? 'Due Date: (required)'
+                            : 'Due Date: ${formatManila(dueDate, 'yyyy-MM-dd')}',
+                      ),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final DateTime? selected = await showDatePicker(
+                          context: context,
+                          initialDate: dueDate ?? DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(2100),
+                        );
+                        if (selected != null) {
+                          dialogSetState(() {
+                            dueDate = selected;
+                            dialogError = null;
+                          });
+                        }
+                      },
+                    ),
                   ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    taskType = value;
-                  },
                 ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: taskDifficulty,
-                  decoration: const InputDecoration(labelText: 'Difficulty'),
-                  items: const [
-                    DropdownMenuItem(value: 'easy', child: Text('Easy')),
-                    DropdownMenuItem(value: 'medium', child: Text('Medium')),
-                    DropdownMenuItem(value: 'hard', child: Text('Hard')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    taskDifficulty = value;
-                  },
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
                 ),
-                ListTile(
-                  title: Text(
-                    dueDate == null
-                        ? 'Select Due Date'
-                        : 'Due Date: ${dueDate!.toLocal().toString().split(' ')[0]}',
-                  ),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    dueDate = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime(2100),
-                    );
-                    // This setState is to update the dialog's UI
-                    if (mounted) {
-                      setState(() {});
-                    }
-                  },
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final String title = titleController.text.trim();
+                          final String description = descriptionController.text
+                              .trim();
+
+                          if (title.isEmpty) {
+                            dialogSetState(() {
+                              dialogError = 'Title is required.';
+                            });
+                            return;
+                          }
+                          if (description.isEmpty) {
+                            dialogSetState(() {
+                              dialogError = 'Description is required.';
+                            });
+                            return;
+                          }
+                          if (dueDate == null) {
+                            dialogSetState(() {
+                              dialogError = 'Due date is required.';
+                            });
+                            return;
+                          }
+
+                          dialogSetState(() {
+                            dialogError = null;
+                            isSubmitting = true;
+                          });
+
+                          final newTask = Task(
+                            id: '', // ID will be generated by the backend
+                            title: title,
+                            description: description,
+                            type: taskType,
+                            difficulty: taskDifficulty,
+                            dueDate: dueDate!,
+                            assignedBy:
+                                _userService.currentUser?.id ?? 'unknown_admin',
+                            createdAt: DateTime.now(),
+                            updatedAt: DateTime.now(),
+                            lastViewedAt: null,
+                            status: 'pending',
+                            rawStatus: 'pending',
+                            progressPercent: 0,
+                            userTaskId: null,
+                            assignedTo: null,
+                            geofenceId: null,
+                            latitude: null,
+                            longitude: null,
+                          );
+                          try {
+                            await _taskService.createTask(newTask);
+                            _fetchTasks();
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Task added successfully!'),
+                                ),
+                              );
+                            }
+                            Navigator.of(context).pop();
+                          } catch (e) {
+                            debugPrint('Error adding task: $e');
+                            dialogSetState(() {
+                              dialogError = 'Failed to add task: $e';
+                              isSubmitting = false;
+                            });
+                          }
+                        },
+                  child: const Text('Add'),
                 ),
               ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (titleController.text.isNotEmpty &&
-                    descriptionController.text.isNotEmpty &&
-                    dueDate != null) {
-                  final newTask = Task(
-                    id: '', // ID will be generated by the backend
-                    title: titleController.text,
-                    description: descriptionController.text,
-                    type: taskType,
-                    difficulty: taskDifficulty,
-                    dueDate: dueDate!,
-                    assignedBy: _userService.currentUser?.id ?? 'unknown_admin',
-                    createdAt: DateTime.now(),
-                    updatedAt: DateTime.now(),
-                    lastViewedAt: null,
-                    status: 'pending',
-                    rawStatus: 'pending',
-                    progressPercent: 0,
-                    userTaskId: null,
-                    assignedTo: null,
-                    geofenceId: null,
-                    latitude: null,
-                    longitude: null,
-                  );
-                  try {
-                    await _taskService.createTask(newTask);
-                    _fetchTasks();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Task added successfully!')),
-                    );
-                    Navigator.of(context).pop();
-                  } catch (e) {
-                    debugPrint('Error adding task: $e');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to add task: $e')),
-                    );
-                  }
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -502,84 +598,162 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     DateTime? dueDate = task.dueDate;
     String taskType = task.type ?? 'general';
     String taskDifficulty = task.difficulty ?? 'medium';
+    String? dialogError;
+    bool isSubmitting = false;
 
     await showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Edit Task'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(labelText: 'Title'),
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter dialogSetState) {
+            return AlertDialog(
+              title: const Text('Edit Task'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (dialogError != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              color: Colors.red.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                dialogError!,
+                                style: TextStyle(color: Colors.red.shade800),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    TextField(
+                      controller: titleController,
+                      decoration: const InputDecoration(labelText: 'Title'),
+                      onChanged: (_) {
+                        if (dialogError != null) {
+                          dialogSetState(() => dialogError = null);
+                        }
+                      },
+                    ),
+                    TextField(
+                      controller: descriptionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                      ),
+                      onChanged: (_) {
+                        if (dialogError != null) {
+                          dialogSetState(() => dialogError = null);
+                        }
+                      },
+                    ),
+                    ListTile(
+                      title: Text(
+                        dueDate == null
+                            ? 'Due Date: (required)'
+                            : 'Due Date: ${formatManila(dueDate, 'yyyy-MM-dd')}',
+                      ),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final DateTime? selected = await showDatePicker(
+                          context: context,
+                          initialDate: dueDate ?? DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(2100),
+                        );
+                        if (selected != null) {
+                          dialogSetState(() {
+                            dueDate = selected;
+                            dialogError = null;
+                          });
+                        }
+                      },
+                    ),
+                  ],
                 ),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(labelText: 'Description'),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
                 ),
-                ListTile(
-                  title: Text(
-                    dueDate == null
-                        ? 'Select Due Date'
-                        : 'Due Date: ${dueDate!.toLocal().toString().split(' ')[0]}',
-                  ),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    dueDate = await showDatePicker(
-                      context: context,
-                      initialDate: dueDate ?? DateTime.now(),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime(2100),
-                    );
-                    // This setState is to update the dialog's UI
-                    if (mounted) {
-                      setState(() {});
-                    }
-                  },
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final String title = titleController.text.trim();
+                          final String description = descriptionController.text
+                              .trim();
+
+                          if (title.isEmpty) {
+                            dialogSetState(() {
+                              dialogError = 'Title is required.';
+                            });
+                            return;
+                          }
+                          if (description.isEmpty) {
+                            dialogSetState(() {
+                              dialogError = 'Description is required.';
+                            });
+                            return;
+                          }
+                          if (dueDate == null) {
+                            dialogSetState(() {
+                              dialogError = 'Due date is required.';
+                            });
+                            return;
+                          }
+
+                          dialogSetState(() {
+                            dialogError = null;
+                            isSubmitting = true;
+                          });
+
+                          final updatedTask = task.copyWith(
+                            title: title,
+                            description: description,
+                            type: taskType,
+                            difficulty: taskDifficulty,
+                            dueDate: dueDate!,
+                          );
+                          try {
+                            await _taskService.updateTask(updatedTask);
+                            _fetchTasks();
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Task updated successfully!'),
+                                ),
+                              );
+                            }
+                            Navigator.of(context).pop();
+                          } catch (e) {
+                            debugPrint('Error updating task: $e');
+                            dialogSetState(() {
+                              dialogError = 'Failed to update task: $e';
+                              isSubmitting = false;
+                            });
+                          }
+                        },
+                  child: const Text('Save'),
                 ),
               ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (titleController.text.isNotEmpty &&
-                    descriptionController.text.isNotEmpty &&
-                    dueDate != null) {
-                  final updatedTask = task.copyWith(
-                    title: titleController.text,
-                    description: descriptionController.text,
-                    type: taskType,
-                    difficulty: taskDifficulty,
-                    dueDate: dueDate!,
-                  );
-                  try {
-                    await _taskService.updateTask(updatedTask);
-                    _fetchTasks();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Task updated successfully!'),
-                      ),
-                    );
-                    Navigator.of(context).pop();
-                  } catch (e) {
-                    debugPrint('Error updating task: $e');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to update task: $e')),
-                    );
-                  }
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
+            );
+          },
         );
       },
     );

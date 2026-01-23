@@ -252,7 +252,7 @@ class _AdminEmployeeHistoryScreenState
   }
 
   Widget _buildRecordTile(AttendanceRecord record) {
-    final dt = record.timestamp.toLocal();
+    final dt = toManilaTime(record.timestamp);
     final dateStr = DateFormat('yyyy-MM-dd').format(dt);
     final timeStr = TimeOfDay.fromDateTime(dt).format(context);
     final locationName = record.geofenceName ?? 'Unknown location';
@@ -404,7 +404,7 @@ class _AdminEmployeeHistoryScreenState
     if (showSummary) {
       final Map<String, List<AttendanceRecord>> byDay = {};
       for (final record in filtered) {
-        final dt = record.timestamp.toLocal();
+        final dt = toManilaTime(record.timestamp);
         final key = DateFormat('yyyy-MM-dd').format(dt);
         byDay.putIfAbsent(key, () => <AttendanceRecord>[]).add(record);
       }

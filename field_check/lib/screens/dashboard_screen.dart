@@ -16,6 +16,7 @@ import 'package:field_check/services/checkout_notification_service.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/logger.dart';
+import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -213,12 +214,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _formatTime(DateTime time) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    final local = time.toLocal();
-    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-    final minute = local.minute;
-    final suffix = local.hour >= 12 ? 'PM' : 'AM';
-    return '${two(hour)}:${two(minute)} $suffix';
+    return formatManilaTimeOfDay(context, time);
   }
 
   void _handleCheckoutWarning(CheckoutWarning warning) {
@@ -304,6 +300,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildBadge({required Widget child, required int count}) {
     if (count <= 0) return child;
     final text = count > 99 ? '99+' : '$count';
+    final theme = Theme.of(context);
+    final badgeColor = theme.colorScheme.error;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -314,20 +312,91 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.red,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white, width: 1),
+              color: badgeColor,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: theme.colorScheme.surface, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: badgeColor.withValues(alpha: 0.3),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Text(
               text,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Colors.white,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onError,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAppBarIconButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback onPressed,
+    Color? color,
+  }) {
+    final theme = Theme.of(context);
+    final foreground =
+        color ??
+        (theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary);
+    return Container(
+      margin: const EdgeInsets.only(right: 6),
+      decoration: BoxDecoration(
+        color: foreground.withValues(alpha: 0.12),
+        shape: BoxShape.circle,
+        border: Border.all(color: foreground.withValues(alpha: 0.35)),
+      ),
+      child: IconButton(
+        tooltip: tooltip,
+        icon: Icon(icon, color: foreground),
+        onPressed: onPressed,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 38, height: 38),
+      ),
+    );
+  }
+
+  Widget _buildAppBarPill({
+    required IconData icon,
+    required String label,
+    Color? color,
+  }) {
+    final theme = Theme.of(context);
+    final foreground =
+        color ??
+        (theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: foreground.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foreground.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: foreground),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: foreground,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -343,6 +412,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final appBarForeground =
+        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary;
     final List<Widget> screens = [
       const EnhancedAttendanceScreen(),
       const MapScreen(),
@@ -378,18 +450,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               )
             : null,
-        title: Text(_navLabels[_selectedIndex], style: AppTheme.headingSm),
+        title: Text(
+          _navLabels[_selectedIndex],
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: appBarForeground,
+          ),
+        ),
         actions: [
-          IconButton(
+          _buildAppBarIconButton(
             tooltip: _isTrackingLocation
                 ? 'Share live location with admin: ON'
                 : 'Share live location with admin: OFF',
-            icon: Icon(
-              _isTrackingLocation
-                  ? Icons.location_searching
-                  : Icons.location_disabled,
-            ),
+            icon: _isTrackingLocation
+                ? Icons.location_searching
+                : Icons.location_disabled,
             onPressed: _toggleLocationTracking,
+            color: _isTrackingLocation
+                ? appBarForeground
+                : appBarForeground.withValues(alpha: 0.7),
           ),
           ValueListenableBuilder<DateTime?>(
             valueListenable: _locationSyncService.lastSharedListenable,
@@ -399,18 +478,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   : 'Last shared: ${_formatTime(value)}';
               return Padding(
                 padding: const EdgeInsets.only(right: AppTheme.sm),
-                child: Center(
-                  child: Text(
-                    text,
-                    style: AppTheme.labelMd.copyWith(
-                      color:
-                          (Theme.of(context).appBarTheme.foregroundColor ??
-                                  Theme.of(context).colorScheme.onPrimary)
-                              .withValues(alpha: 0.75),
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                child: _buildAppBarPill(icon: Icons.schedule, label: text),
               );
             },
           ),
@@ -418,24 +486,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Tooltip(
               message: 'Offline mode - changes will sync when online',
               child: Padding(
-                padding: const EdgeInsets.only(right: AppTheme.lg),
-                child: Center(
-                  child: Row(
-                    children: [
-                      const Icon(Icons.cloud_off, size: 20),
-                      const SizedBox(width: AppTheme.sm),
-                      Text(
-                        'Offline',
-                        style: AppTheme.labelMd.copyWith(color: Colors.white),
-                      ),
-                    ],
-                  ),
+                padding: const EdgeInsets.only(right: AppTheme.sm),
+                child: _buildAppBarPill(
+                  icon: Icons.cloud_off,
+                  label: 'Offline',
+                  color: Colors.orange.shade200,
                 ),
               ),
             ),
-          IconButton(
+          _buildAppBarIconButton(
             tooltip: 'Logout',
-            icon: const Icon(Icons.logout),
+            icon: Icons.logout,
             onPressed: () async {
               AppLogger.info(AppLogger.tagAuth, 'User logout initiated');
               try {

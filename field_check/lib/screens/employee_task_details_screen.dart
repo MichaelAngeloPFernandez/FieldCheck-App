@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/screens/task_report_screen.dart';
+import 'package:field_check/utils/manila_time.dart';
 
 class EmployeeTaskDetailsScreen extends StatelessWidget {
   final Task task;
@@ -59,7 +60,7 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
                 ),
                 Chip(
                   label: Text(
-                    'Due: ${task.dueDate.toLocal().toString().split(' ')[0]}',
+                    'Due: ${formatManila(task.dueDate, 'yyyy-MM-dd')}',
                   ),
                 ),
                 if (task.rawStatus == 'blocked')
@@ -99,7 +100,7 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
                   title: Text(c.label),
                   subtitle: c.completedAt != null
                       ? Text(
-                          'Completed at: ${c.completedAt!.toLocal().toString().split('.')[0]}',
+                          'Completed at: ${formatManila(c.completedAt, 'yyyy-MM-dd HH:mm:ss')}',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: Theme.of(

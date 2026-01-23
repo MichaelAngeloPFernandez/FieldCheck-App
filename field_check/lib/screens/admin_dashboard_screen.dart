@@ -9,6 +9,7 @@ import 'package:field_check/screens/admin_geofence_screen.dart';
 import 'package:field_check/screens/admin_reports_hub_screen.dart';
 import 'package:field_check/screens/admin_settings_screen.dart';
 import 'package:field_check/screens/admin_task_management_screen.dart';
+import 'package:field_check/screens/admin_world_map_screen.dart';
 import 'package:field_check/screens/manage_employees_screen.dart';
 import 'package:field_check/screens/manage_admins_screen.dart';
 import 'package:field_check/screens/login_screen.dart';
@@ -246,6 +247,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final loc = _employeeLocations[userId];
     if (loc != null) {
       return loc.isOnline;
+    }
+    final user = _employees[userId];
+    if (user?.isOnline == true) {
+      return true;
     }
     return _isGpsOnline(userId);
   }
@@ -636,12 +641,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildNotificationItem(DashboardNotification notif) {
+    final theme = Theme.of(context);
     final color = _notificationTypeColor(notif.type);
     final ts = formatManila(notif.timestamp, 'MMM d, HH:mm');
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: theme.colorScheme.surface,
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         onTap: () async {
           setState(() {
             notif.isRead = true;
@@ -649,10 +658,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           await _showNotificationDetails(notif);
         },
         leading: Container(
-          width: 36,
-          height: 36,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
+            color: color.withValues(alpha: 0.15),
             shape: BoxShape.circle,
             border: Border.all(color: color.withValues(alpha: 0.35)),
           ),
@@ -668,22 +677,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         title: Text(
           notif.title,
-          style: TextStyle(
-            fontWeight: notif.isRead ? FontWeight.w500 : FontWeight.w700,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
+            color: theme.colorScheme.onSurface,
           ),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            Text(notif.message),
-            const SizedBox(height: 4),
             Text(
-              ts,
-              style: const TextStyle(
-                fontSize: AppTheme.fontSizeSm,
-                color: AppTheme.textSecondaryColor,
+              notif.message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
               ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  Icons.schedule,
+                  size: 12,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  ts,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -692,8 +716,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             : Container(
                 width: 10,
                 height: 10,
-                decoration: const BoxDecoration(
-                  color: Colors.red,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade400,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -849,40 +873,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          'Notifications',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (unread > 0) ...[
-                        const SizedBox(width: 8),
-                        _buildNotificationBadge(unread),
-                      ],
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: _showNotificationsInbox,
-                  child: const Text('Open'),
-                ),
-              ],
+            _buildSectionHeader(
+              title: 'Notifications',
+              subtitle: 'Latest admin alerts and updates',
+              badge: unread > 0
+                  ? _buildNotificationBadge(unread)
+                  : const SizedBox(),
+              action: TextButton(
+                onPressed: _showNotificationsInbox,
+                child: const Text('Open'),
+              ),
             ),
             const SizedBox(height: 12),
             if (items.isEmpty)
@@ -985,6 +992,109 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       _mapController.move(center, zoom);
     } catch (_) {}
+  }
+
+  LatLngBounds? _boundsForLiveLocations() {
+    if (_liveLocations.isEmpty) return null;
+    final points = _liveLocations.values.toList();
+    final bounds = LatLngBounds(points.first, points.first);
+    for (final p in points.skip(1)) {
+      bounds.extend(p);
+    }
+    return bounds;
+  }
+
+  void _fitMapToEmployees() {
+    final bounds = _boundsForLiveLocations();
+    if (bounds == null) return;
+    try {
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(48)),
+      );
+    } catch (_) {
+      _panTo(bounds.center, zoom: 4);
+    }
+  }
+
+  void _focusOnSelectedEmployee() {
+    final selectedId = _inspectedEmployeeId ?? _selectedEmployeeId;
+    LatLng? target;
+    if (selectedId != null) {
+      target = _liveLocations[selectedId];
+    }
+    target ??= _liveLocations.isNotEmpty ? _liveLocations.values.first : null;
+    if (target != null) {
+      _panTo(target, zoom: 15);
+    }
+  }
+
+  Widget _buildLegendItem({
+    required Color color,
+    required IconData icon,
+    required String label,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 6),
+            ],
+          ),
+          child: Icon(icon, size: 11, color: Colors.white),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMapLegend() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Status legend',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          _buildLegendItem(
+            color: Colors.green,
+            icon: Icons.check_circle,
+            label: 'Available',
+          ),
+          const SizedBox(height: 6),
+          _buildLegendItem(
+            color: Colors.blue,
+            icon: Icons.directions_run,
+            label: 'Moving',
+          ),
+          const SizedBox(height: 6),
+          _buildLegendItem(
+            color: Colors.red,
+            icon: Icons.schedule,
+            label: 'Busy',
+          ),
+        ],
+      ),
+    );
   }
 
   void _onEmployeeSearchChanged() {
@@ -1429,6 +1539,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               );
 
+            for (final loc in locations) {
+              final id = _canonicalUserId(loc.employeeId);
+              if (id.isEmpty) continue;
+              if (!loc.isOnline) continue;
+
+              _liveLocations[id] = LatLng(loc.latitude, loc.longitude);
+              _lastGpsUpdate[id] = loc.timestamp;
+            }
+
             final onlineIds = <String>{
               for (final loc in locations)
                 if (loc.isOnline) _canonicalUserId(loc.employeeId),
@@ -1486,6 +1605,55 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 duration: const Duration(seconds: 2),
               ),
             );
+          });
+
+          if (mounted) {
+            setState(() {});
+          }
+          return;
+        }
+
+        if ((data['type'] == 'attendance') &&
+            (action == 'check-in' || action == 'check-out')) {
+          final userId = (data['userId'] ?? '').toString();
+          final tsRaw = data['timestamp']?.toString() ?? '';
+          final key = 'attendance:$action:$userId:$tsRaw';
+          if (_snackDedupKeys.contains(key)) return;
+          _snackDedupKeys.add(key);
+
+          final message = (data['message'] ?? 'Attendance update').toString();
+          final title = action == 'check-in'
+              ? 'Employee check-in'
+              : 'Employee check-out';
+
+          final parsedTs = DateTime.tryParse(tsRaw);
+          final notifTs = parsedTs ?? DateTime.now();
+
+          setState(() {
+            _notifications.insert(
+              0,
+              DashboardNotification(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                title: title,
+                message: message,
+                type: 'attendance',
+                timestamp: notifTs,
+                payload: data,
+              ),
+            );
+
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(message),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          });
+
+          Future<void>.delayed(const Duration(seconds: 6)).then((_) {
+            if (!mounted) return;
+            _snackDedupKeys.remove(key);
           });
 
           if (mounted) {
@@ -2378,6 +2546,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final theme = Theme.of(context);
         final isWide = constraints.maxWidth >= 900;
         return RefreshIndicator(
           onRefresh: _loadDashboardData,
@@ -2391,20 +2560,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green.shade200),
+                      color: Colors.green.withValues(
+                        alpha: theme.brightness == Brightness.dark
+                            ? 0.22
+                            : 0.12,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.green.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.wifi, color: Colors.green.shade600),
-                        const SizedBox(width: 8),
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.wifi,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             'Live Updates Active • $_gpsOnlineCount Online',
-                            style: TextStyle(
-                              color: Colors.green.shade700,
-                              fontWeight: FontWeight.w500,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -2509,6 +2696,52 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  Widget _buildSectionHeader({
+    required String title,
+    String? subtitle,
+    Widget? action,
+    Widget? badge,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  if (badge != null) ...[const SizedBox(width: 8), badge],
+                ],
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (action != null) action,
+      ],
+    );
+  }
+
   Widget _buildStatCard({
     required String title,
     required String value,
@@ -2519,79 +2752,81 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
+    final surface = theme.colorScheme.surface;
+    final tint = color.withValues(
+      alpha: theme.brightness == Brightness.dark ? 0.18 : 0.08,
+    );
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: Card(
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: theme.colorScheme.outlineVariant),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: color.withValues(alpha: 0.25),
-                        ),
-                      ),
-                      child: Icon(icon, color: color, size: 18),
-                    ),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          value,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            color: onSurface,
+          clipBehavior: Clip.antiAlias,
+          child: Container(
+            decoration: BoxDecoration(color: Color.alphaBlend(tint, surface)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.14),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.3),
                           ),
-                          maxLines: 1,
+                        ),
+                        child: Icon(icon, color: color, size: 18),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: onSurface.withValues(alpha: 0.9),
+                          ),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: onSurface.withValues(alpha: 0.9),
+                    ],
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 12),
                   Text(
-                    subtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: onSurface.withValues(alpha: 0.7),
+                    value,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: onSurface,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: onSurface.withValues(alpha: 0.7),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -2602,15 +2837,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildRecentActivities() {
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Recent Activities',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            _buildSectionHeader(title: 'Recent Activities'),
             const SizedBox(height: 16),
             if (_dashboardStats!.recentActivities.attendances.isNotEmpty) ...[
               const Text(
@@ -2675,15 +2909,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildQuickActions() {
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Quick Actions',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            _buildSectionHeader(title: 'Quick Actions'),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -2786,32 +3019,49 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w700,
+    final theme = Theme.of(context);
+    final surface = theme.colorScheme.surface;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Color.alphaBlend(
+                    color.withValues(alpha: 0.14),
+                    surface,
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withValues(alpha: 0.35)),
+                ),
+                child: Icon(icon, color: color, size: 20),
               ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2821,7 +3071,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Card(
       elevation: 4,
       color: Theme.of(context).colorScheme.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2834,44 +3084,83 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: _panelBorderBlue, width: 1.5),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Map Controls',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.9),
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: _panelBorderBlue.withValues(alpha: 0.18),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.tune,
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Map Controls',
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.9),
+                                      ),
+                                ),
+                                Text(
+                                  'Search, filter, and nearby modes',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.65),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
                       _buildMapControls(),
                     ],
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  'Live Employee Tracking',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.9),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Online: $_gpsOnlineCount employees',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.75),
+                _buildSectionHeader(
+                  title: 'Live Employee Tracking',
+                  subtitle: 'Online: $_gpsOnlineCount employees',
+                  action: TextButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AdminWorldMapScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.map, size: 16),
+                    label: const Text('Full Map'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
                 ),
               ],
@@ -2894,7 +3183,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   margin: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: _panelBorderBlue, width: 1.5),
                   ),
                   clipBehavior: Clip.antiAlias,
@@ -3041,6 +3330,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ],
                   ),
                 ),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Column(
+                    children: [
+                      FloatingActionButton.small(
+                        heroTag: 'dashboardFitEmployees',
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black87,
+                        onPressed: _fitMapToEmployees,
+                        child: const Icon(Icons.center_focus_strong),
+                      ),
+                      const SizedBox(height: 8),
+                      FloatingActionButton.small(
+                        heroTag: 'dashboardFocusSelected',
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black87,
+                        onPressed: _focusOnSelectedEmployee,
+                        child: const Icon(Icons.my_location),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(left: 12, bottom: 12, child: _buildMapLegend()),
                 // Floating employee indicators at map edges
                 if (_liveLocations.isNotEmpty)
                   Positioned.fill(
@@ -3061,10 +3374,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(24),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.98),
-                          borderRadius: BorderRadius.circular(12),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surface.withValues(alpha: 0.98),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: _panelBorderBlue,
+                            color: _panelBorderBlue.withValues(alpha: 0.7),
                             width: 1.5,
                           ),
                           boxShadow: [
@@ -3078,12 +3393,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              Icons.location_off,
-                              size: 48,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.35),
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: _panelBorderBlue.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.location_off,
+                                size: 30,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.45),
+                              ),
                             ),
                             const SizedBox(height: 12),
                             Text(
@@ -3102,6 +3425,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                         .withValues(alpha: 0.75),
                                   ),
                               textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Tap to dismiss',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.6),
+                                    fontWeight: FontWeight.w600,
+                                  ),
                             ),
                           ],
                         ),
@@ -3128,21 +3463,56 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Drag to pan • Scroll to zoom',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.75),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.pan_tool_alt_outlined,
+                        size: 14,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Drag to pan • Scroll to zoom',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.75),
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 if (_liveLocations.isNotEmpty)
-                  Text(
-                    '${_trails.length} trails',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
                       color: Theme.of(
                         context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.75),
+                      ).colorScheme.surface.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.outlineVariant.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    child: Text(
+                      '${_trails.length} trails',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.75),
+                      ),
                     ),
                   ),
               ],

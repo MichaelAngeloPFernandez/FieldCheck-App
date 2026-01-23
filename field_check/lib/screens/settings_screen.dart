@@ -9,8 +9,8 @@ import 'package:field_check/models/user_model.dart';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/screens/map_screen.dart';
-import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/config/api_config.dart';
+import 'package:field_check/utils/manila_time.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -47,12 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _formatTime(DateTime time) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    final local = time.toLocal();
-    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-    final minute = local.minute;
-    final suffix = local.hour >= 12 ? 'PM' : 'AM';
-    return '${two(hour)}:${two(minute)} $suffix';
+    return formatManilaTimeOfDay(context, time);
   }
 
   Future<void> _loadUserPreferences() async {
@@ -86,6 +81,171 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _profileError = 'Failed to load profile: $e';
       });
     }
+  }
+
+  Widget _buildSectionHeader(
+    String title, {
+    String? subtitle,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+
+  Widget _buildSurfaceCard({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildStatusPill({
+    required String label,
+    required Color color,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingTile({
+    required String title,
+    String? subtitle,
+    Widget? subtitleWidget,
+    required Widget trailing,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (icon != null) ...[
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (subtitleWidget != null) ...[
+                  const SizedBox(height: 6),
+                  DefaultTextStyle(
+                    style:
+                        theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.75,
+                          ),
+                          fontWeight: FontWeight.w600,
+                        ) ??
+                        const TextStyle(),
+                    child: subtitleWidget,
+                  ),
+                ] else if (subtitle != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.75,
+                      ),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Align(alignment: Alignment.centerRight, child: trailing),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveUserPreference(String key, bool value) async {
@@ -325,250 +485,337 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final profileRole = _profile?.role.toUpperCase();
+    final profileId = _profile?.role == 'admin'
+        ? (_profile?.id ?? '—')
+        : (_profile?.employeeId ?? _profile?.id ?? '—');
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Settings',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
-            const SizedBox(height: 24),
-
-            // User profile card
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundColor: const Color(0xFF2688d4),
-                      backgroundImage: _pickedAvatarBytes != null
-                          ? MemoryImage(_pickedAvatarBytes!)
-                          : (_profile?.avatarUrl?.isNotEmpty == true
-                                ? NetworkImage(
-                                        _normalizeAvatarUrl(
-                                          _profile!.avatarUrl!,
-                                        ),
-                                      )
-                                      as ImageProvider
-                                : null),
-                      child:
-                          _pickedAvatarBytes == null &&
-                              (_profile?.avatarUrl?.isEmpty ?? true)
-                          ? const Icon(
-                              Icons.person,
-                              size: 30,
-                              color: Colors.white,
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _loadingProfile
-                                ? 'Loading...'
-                                : (_profile?.name ?? '—'),
-                            style: AppTheme.headingSm,
+            const SizedBox(height: 4),
+            Text(
+              'Manage your profile, preferences, and sync.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildSurfaceCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(
+                    'Profile',
+                    subtitle: 'Your account details and access status.',
+                    trailing: profileRole == null
+                        ? null
+                        : _buildStatusPill(
+                            label: profileRole,
+                            color: theme.colorScheme.primary,
+                            icon: Icons.badge_outlined,
                           ),
-                          if (_profileError != null) ...[
-                            const SizedBox(height: 6),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 32,
+                        backgroundColor: theme.colorScheme.primary,
+                        backgroundImage: _pickedAvatarBytes != null
+                            ? MemoryImage(_pickedAvatarBytes!)
+                            : (_profile?.avatarUrl?.isNotEmpty == true
+                                  ? NetworkImage(
+                                          _normalizeAvatarUrl(
+                                            _profile!.avatarUrl!,
+                                          ),
+                                        )
+                                        as ImageProvider
+                                  : null),
+                        child:
+                            _pickedAvatarBytes == null &&
+                                (_profile?.avatarUrl?.isEmpty ?? true)
+                            ? const Icon(
+                                Icons.person,
+                                size: 32,
+                                color: Colors.white,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                              _profileError!,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontWeight: FontWeight.w700,
+                              _loadingProfile
+                                  ? 'Loading...'
+                                  : (_profile?.name ?? '—'),
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (_profileError != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                _profileError!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.error,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                onPressed: _loadProfile,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Retry'),
+                              ),
+                            ],
+                            if (_profileError == null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                _loadingProfile ? '' : (_profile?.email ?? ''),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.75,
                                   ),
-                            ),
-                            const SizedBox(height: 8),
-                            OutlinedButton.icon(
-                              onPressed: _loadProfile,
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Retry'),
-                            ),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _loadingProfile ? '' : 'ID: $profileId',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
-                          const SizedBox(height: 4),
-                          Text(
-                            _loadingProfile ? '' : (_profile?.role ?? ''),
-                            style: AppTheme.bodySm.copyWith(
-                              color: AppTheme.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _loadingProfile
-                                ? ''
-                                : 'ID: ${(_profile?.role == 'admin') ? (_profile?.id ?? '—') : (_profile?.employeeId ?? _profile?.id ?? '—')}',
-                            style: AppTheme.bodySm.copyWith(
-                              color: AppTheme.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _loadingProfile ? '' : (_profile?.email ?? ''),
-                            style: AppTheme.bodySm.copyWith(
-                              color: AppTheme.textSecondary,
-                            ),
-                          ),
-                        ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _showEditProfileDialog,
+                      icon: const Icon(Icons.edit),
+                      label: const Text('Edit profile'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        textStyle: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _showEditProfileDialog,
-                icon: const Icon(Icons.edit),
-                label: const Text('Edit Profile'),
-              ),
-            ),
-
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MapScreen()),
-                  );
-                },
-                icon: const Icon(Icons.map),
-                label: const Text('Open Map'),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Appearance
-            const Text('Appearance', style: AppTheme.labelLg),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Expanded(child: Text('Theme Mode')),
-                DropdownButton<ThemeMode>(
-                  value: MyApp.of(context)?.themeMode ?? ThemeMode.light,
-                  items: const [
-                    DropdownMenuItem(
-                      value: ThemeMode.system,
-                      child: Text('System'),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const MapScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.map),
+                      label: const Text('Open map'),
                     ),
-                    DropdownMenuItem(
-                      value: ThemeMode.light,
-                      child: Text('Light'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildSurfaceCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(
+                    'Appearance',
+                    subtitle: 'Customize how the app looks.',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSettingTile(
+                    title: 'Theme mode',
+                    subtitle: 'Choose light, dark, or system default.',
+                    icon: Icons.brightness_6_outlined,
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.12,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.35,
+                          ),
+                        ),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<ThemeMode>(
+                          value:
+                              MyApp.of(context)?.themeMode ?? ThemeMode.light,
+                          items: const [
+                            DropdownMenuItem(
+                              value: ThemeMode.system,
+                              child: Text('System'),
+                            ),
+                            DropdownMenuItem(
+                              value: ThemeMode.light,
+                              child: Text('Light'),
+                            ),
+                            DropdownMenuItem(
+                              value: ThemeMode.dark,
+                              child: Text('Dark'),
+                            ),
+                          ],
+                          onChanged: (mode) async {
+                            if (mode == null) return;
+                            await MyApp.of(context)?.setThemeMode(mode);
+                            setState(() {});
+                          },
+                        ),
+                      ),
                     ),
-                    DropdownMenuItem(
-                      value: ThemeMode.dark,
-                      child: Text('Dark'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildSurfaceCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(
+                    'App Settings',
+                    subtitle: 'Control tracking, offline, and device options.',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSettingTile(
+                    title: 'Offline mode',
+                    subtitle: 'Store attendance data locally when offline.',
+                    icon: Icons.cloud_off_outlined,
+                    trailing: Switch.adaptive(
+                      value: _offlineMode,
+                      onChanged: (value) async {
+                        setState(() {
+                          _offlineMode = value;
+                        });
+                        await _saveUserPreference('user.offlineMode', value);
+                      },
                     ),
-                  ],
-                  onChanged: (mode) async {
-                    if (mode == null) return;
-                    await MyApp.of(context)?.setThemeMode(mode);
-                    setState(() {});
-                  },
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // App Settings
-            const Text('App Settings', style: AppTheme.labelLg),
-            const SizedBox(height: 8),
-
-            SwitchListTile(
-              title: const Text('Offline Mode'),
-              subtitle: const Text(
-                'Store attendance data locally when offline',
-              ),
-              value: _offlineMode,
-              onChanged: (value) async {
-                setState(() {
-                  _offlineMode = value;
-                });
-                await _saveUserPreference('user.offlineMode', value);
-              },
-            ),
-
-            SwitchListTile(
-              title: const Text('Share live location with admin'),
-              subtitle: ValueListenableBuilder<DateTime?>(
-                valueListenable: LocationSyncService().lastSharedListenable,
-                builder: (context, value, _) {
-                  final last = value == null
-                      ? 'Last shared: Never'
-                      : 'Last shared: ${_formatTime(value)}';
-                  return Text(
-                    'Allow admin to see your live location during work hours\n$last',
-                  );
-                },
-              ),
-              value: _locationTracking,
-              onChanged: (value) async {
-                setState(() {
-                  _locationTracking = value;
-                });
-                await _saveUserPreference(
-                  'user.locationTrackingEnabled',
-                  value,
-                );
-              },
-            ),
-
-            SwitchListTile(
-              title: const Text('Use Bluetooth Beacons'),
-              subtitle: const Text(
-                'Enhance location accuracy with Bluetooth beacons',
-              ),
-              value: _useBluetoothBeacons,
-              onChanged: (value) async {
-                setState(() {
-                  _useBluetoothBeacons = value;
-                });
-                await _saveUserPreference('user.useBluetoothBeacons', value);
-              },
-            ),
-
-            const SizedBox(height: 24),
-
-            // Action buttons
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isSyncing ? null : _syncData,
-                icon: _isSyncing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.sync),
-                label: const Text('Sync Data'),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildSettingTile(
+                    title: 'Live location sharing',
+                    subtitleWidget: ValueListenableBuilder<DateTime?>(
+                      valueListenable:
+                          LocationSyncService().lastSharedListenable,
+                      builder: (context, value, _) {
+                        final last = value == null
+                            ? 'Last shared: Never'
+                            : 'Last shared: ${_formatTime(value)}';
+                        return Text(
+                          'Allow admin to see your live location during work hours\n$last',
+                        );
+                      },
+                    ),
+                    icon: Icons.location_searching,
+                    trailing: Switch.adaptive(
+                      value: _locationTracking,
+                      onChanged: (value) async {
+                        setState(() {
+                          _locationTracking = value;
+                        });
+                        await _saveUserPreference(
+                          'user.locationTrackingEnabled',
+                          value,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildSettingTile(
+                    title: 'Bluetooth beacons',
+                    subtitle:
+                        'Enhance location accuracy with Bluetooth beacons.',
+                    icon: Icons.bluetooth_searching,
+                    trailing: Switch.adaptive(
+                      value: _useBluetoothBeacons,
+                      onChanged: (value) async {
+                        setState(() {
+                          _useBluetoothBeacons = value;
+                        });
+                        await _saveUserPreference(
+                          'user.useBluetoothBeacons',
+                          value,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
-
-            const SizedBox(height: 12),
-
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _logout,
-                icon: const Icon(Icons.logout),
-                label: const Text('Logout'),
-                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+            const SizedBox(height: 20),
+            _buildSurfaceCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(
+                    'Sync & Account',
+                    subtitle: 'Keep your data updated and secure.',
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isSyncing ? null : _syncData,
+                      icon: _isSyncing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sync),
+                      label: const Text('Sync data'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        textStyle: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _logout,
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Logout'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

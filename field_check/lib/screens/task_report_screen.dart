@@ -8,6 +8,7 @@ import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/utils/manila_time.dart';
 
 class TaskReportScreen extends StatefulWidget {
   final Task task;
@@ -863,7 +864,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Due: ${_task.dueDate.toLocal().toString().split(' ')[0]}',
+                      'Due: ${formatManila(_task.dueDate, 'yyyy-MM-dd')}',
                       style: AppTheme.bodySm.copyWith(
                         color: AppTheme.textSecondary,
                       ),
@@ -983,7 +984,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                             title: Text(item.label),
                             subtitle: item.completedAt != null
                                 ? Text(
-                                    'Completed at: ${item.completedAt!.toLocal().toString().split('.')[0]}',
+                                    'Completed at: ${formatManila(item.completedAt, 'yyyy-MM-dd HH:mm:ss')}',
                                     style: AppTheme.bodySm,
                                   )
                                 : null,

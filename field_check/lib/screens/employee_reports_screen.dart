@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:field_check/services/report_service.dart';
-import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:field_check/theme/app_theme.dart';
+import 'package:field_check/utils/manila_time.dart';
 
 class EmployeeReportsScreen extends StatefulWidget {
   final String employeeId;
@@ -34,20 +34,30 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
 
   String _formatDateRangeLabel(DateTimeRange? range) {
     if (range == null) return 'Any date';
-    final s = DateFormat('MMM d, yyyy').format(range.start.toLocal());
-    final e = DateFormat('MMM d, yyyy').format(range.end.toLocal());
+    final start = DateTime.utc(
+      range.start.year,
+      range.start.month,
+      range.start.day,
+    );
+    final end = DateTime.utc(range.end.year, range.end.month, range.end.day);
+    final s = formatManila(start, 'MMM d, yyyy');
+    final e = formatManila(end, 'MMM d, yyyy');
     if (s == e) return s;
     return '$s - $e';
   }
 
   bool _matchesDateRange(DateTime dt, DateTimeRange range) {
-    final local = dt.toLocal();
-    final start = DateTime(
+    final manila = toManilaTime(dt);
+    final start = DateTime.utc(
       range.start.year,
       range.start.month,
       range.start.day,
+      0,
+      0,
+      0,
+      0,
     );
-    final end = DateTime(
+    final end = DateTime.utc(
       range.end.year,
       range.end.month,
       range.end.day,
@@ -56,7 +66,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
       59,
       999,
     );
-    return !local.isBefore(start) && !local.isAfter(end);
+    return !manila.isBefore(start) && !manila.isAfter(end);
   }
 
   List<ReportModel> get _filteredReports {
@@ -355,7 +365,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
               _buildDetailRow('Status:', r.status),
               _buildDetailRow(
                 'Submitted:',
-                DateFormat('yyyy-MM-dd HH:mm').format(r.submittedAt.toLocal()),
+                formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
               ),
               if (r.content.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -498,9 +508,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
   }
 
   Widget _buildReportCard(ReportModel r) {
-    final submitted = DateFormat(
-      'yyyy-MM-dd HH:mm',
-    ).format(r.submittedAt.toLocal());
+    final submitted = formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm');
     final attachments = r.attachments.length;
     final canArchive = r.type == 'task';
     final isArchivedTab = _tab == 'archived';

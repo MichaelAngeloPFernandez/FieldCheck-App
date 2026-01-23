@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/attendance_service.dart';
 import 'package:field_check/models/user_model.dart';
+import 'package:field_check/utils/manila_time.dart';
 
 class EmployeeProfileScreen extends StatefulWidget {
   const EmployeeProfileScreen({super.key});
@@ -121,8 +122,281 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     }
   }
 
+  Widget _buildSectionHeader(
+    String title, {
+    String? subtitle,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+
+  Widget _buildSurfaceCard({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildStatusPill({
+    required String label,
+    required Color color,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderPill({required IconData icon, required String label}) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusTile({
+    required IconData icon,
+    required String title,
+    required String message,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader(UserModel profile) {
+    final theme = Theme.of(context);
+    final initials = profile.name.trim().isNotEmpty
+        ? profile.name
+              .trim()
+              .split(RegExp(r'\s+'))
+              .where((part) => part.isNotEmpty)
+              .take(2)
+              .map((part) => part.characters.first.toUpperCase())
+              .join()
+        : '?';
+    final hasAvatar =
+        profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primary,
+            theme.colorScheme.primaryContainer,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.primary.withValues(alpha: 0.28),
+            blurRadius: 20,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 38,
+                backgroundColor: Colors.white,
+                backgroundImage: hasAvatar
+                    ? NetworkImage(profile.avatarUrl!)
+                    : null,
+                child: hasAvatar
+                    ? null
+                    : Text(
+                        initials,
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      profile.name,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      profile.email,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildHeaderPill(
+                icon: Icons.badge,
+                label: profile.role.toUpperCase(),
+              ),
+              _buildHeaderPill(
+                icon: profile.isVerified ? Icons.verified : Icons.pending,
+                label: profile.isVerified
+                    ? 'Verified account'
+                    : 'Pending verification',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -134,12 +408,22 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     }
 
     final employeeCode = (_userProfile!.employeeId ?? '').trim();
+    final statusLabel = _userProfile!.isVerified ? 'Active' : 'Pending';
+    final statusColor = _getStatusColorValue(
+      _userProfile!.isVerified ? 'active' : 'pending',
+    );
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Employee Profile'),
+        title: Text(
+          'Employee Profile',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         actions: [
           IconButton(
+            tooltip: _isEditing ? 'Discard changes' : 'Edit profile',
             icon: Icon(_isEditing ? Icons.close : Icons.edit),
             onPressed: () {
               setState(() {
@@ -157,302 +441,179 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Profile Header
-              Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.blue.shade400, Colors.blue.shade600],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                padding: const EdgeInsets.all(24),
+              _buildProfileHeader(_userProfile!),
+              const SizedBox(height: 16),
+              _buildSurfaceCard(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Text(
-                          _userProfile!.name.isNotEmpty
-                              ? _userProfile!.name[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(
-                            fontSize: 40,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
-                          ),
-                        ),
+                    _buildSectionHeader(
+                      'Account Status',
+                      subtitle: 'Verification and access state',
+                      trailing: _buildStatusPill(
+                        label: statusLabel,
+                        color: statusColor,
+                        icon: _userProfile!.isVerified
+                            ? Icons.verified
+                            : Icons.pending,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _userProfile!.name,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        _userProfile!.role.toUpperCase(),
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
+                    const SizedBox(height: 12),
+                    _buildStatusTile(
+                      icon: _userProfile!.isVerified
+                          ? Icons.check_circle
+                          : Icons.pending_actions,
+                      title: _userProfile!.isVerified
+                          ? 'Active and verified'
+                          : 'Pending verification',
+                      message: _userProfile!.isVerified
+                          ? 'Your account is active and ready to use.'
+                          : 'Please verify your email to activate your account.',
+                      color: statusColor,
                     ),
                   ],
                 ),
               ),
-
-              // Account Status
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Account Status',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _getStatusColorValue(
-                              _userProfile!.isVerified ? 'active' : 'pending',
-                            ).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _getStatusColorValue(
-                                _userProfile!.isVerified ? 'active' : 'pending',
-                              ),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                _userProfile!.isVerified
-                                    ? Icons.check_circle
-                                    : Icons.pending,
-                                color: _getStatusColorValue(
-                                  _userProfile!.isVerified
-                                      ? 'active'
-                                      : 'pending',
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _userProfile!.isVerified
-                                        ? 'Active ✓'
-                                        : 'Pending Verification',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: _getStatusColorValue(
-                                        _userProfile!.isVerified
-                                            ? 'active'
-                                            : 'pending',
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _userProfile!.isVerified
-                                        ? 'Your account is active'
-                                        : 'Please verify your email to activate',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withValues(alpha: 0.75),
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // Profile Information
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Personal Information',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            if (!_isEditing)
-                              Text(
-                                employeeCode.isNotEmpty
-                                    ? 'ID: $employeeCode'
-                                    : 'ID: ${_userProfile!.id.substring(0, 8)}...',
-                                style: Theme.of(context).textTheme.labelMedium
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(alpha: 0.75),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _buildProfileField(
-                          'Full Name',
-                          _nameController,
-                          Icons.person,
-                          _isEditing,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildProfileField(
-                          'Email',
-                          _emailController,
-                          Icons.email,
-                          _isEditing,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildProfileField(
-                          'Username',
-                          _usernameController,
-                          Icons.account_box,
-                          _isEditing,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildProfileField(
-                          'Phone (SMS)',
-                          _phoneController,
-                          Icons.phone,
-                          _isEditing,
-                        ),
-                        if (_isEditing) ...[
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _saveProfile,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                              ),
-                              child: const Text('Save Changes'),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
               const SizedBox(height: 16),
-
-              // Attendance History
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Recent Attendance',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+              _buildSurfaceCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionHeader(
+                      'Personal Information',
+                      subtitle: 'Keep your contact details up to date.',
+                      trailing: !_isEditing
+                          ? _buildStatusPill(
+                              label: employeeCode.isNotEmpty
+                                  ? 'ID: $employeeCode'
+                                  : 'ID: ${_userProfile!.id.substring(0, 8)}...'
+                                        '',
+                              color: theme.colorScheme.primary,
+                              icon: Icons.badge_outlined,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildProfileField(
+                      'Full Name',
+                      _nameController,
+                      Icons.person,
+                      _isEditing,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildProfileField(
+                      'Email',
+                      _emailController,
+                      Icons.email,
+                      _isEditing,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildProfileField(
+                      'Username',
+                      _usernameController,
+                      Icons.account_box,
+                      _isEditing,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildProfileField(
+                      'Phone (SMS)',
+                      _phoneController,
+                      Icons.phone,
+                      _isEditing,
+                    ),
+                    if (_isEditing) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _saveProfile,
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Save changes'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            textStyle: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        if (_attendanceHistory.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            child: Text(
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildSurfaceCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionHeader(
+                      'Recent Attendance',
+                      subtitle: 'Latest check-ins and check-outs.',
+                      trailing: _attendanceHistory.isEmpty
+                          ? null
+                          : _buildStatusPill(
+                              label:
+                                  '${_attendanceHistory.take(10).length} entries',
+                              color: theme.colorScheme.primary,
+                              icon: Icons.history,
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_attendanceHistory.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 18,
+                          horizontal: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: theme.dividerColor.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.event_busy,
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
                               'No attendance records yet',
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
                               ),
                               textAlign: TextAlign.center,
                             ),
-                          )
-                        else
-                          ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _attendanceHistory.take(10).length,
-                            itemBuilder: (context, index) {
-                              final record = _attendanceHistory[index];
-                              return _buildAttendanceRecord(record);
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
+                          ],
+                        ),
+                      )
+                    else
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _attendanceHistory.take(10).length,
+                        itemBuilder: (context, index) {
+                          final record = _attendanceHistory[index];
+                          return _buildAttendanceRecord(record);
+                        },
+                      ),
+                  ],
                 ),
               ),
-
-              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -466,16 +627,19 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     IconData icon,
     bool isEditing,
   ) {
+    final theme = Theme.of(context);
+    final baseBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: theme.dividerColor.withValues(alpha: 0.35)),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          style: theme.textTheme.bodySmall?.copyWith(
             fontWeight: FontWeight.w700,
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.75),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
           ),
         ),
         const SizedBox(height: 6),
@@ -484,13 +648,18 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             controller: controller,
             decoration: InputDecoration(
               prefixIcon: Icon(icon, size: 18),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+              border: baseBorder,
+              enabledBorder: baseBorder,
+              focusedBorder: baseBorder.copyWith(
+                borderSide: BorderSide(color: theme.colorScheme.primary),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
-                vertical: 10,
+                vertical: 12,
               ),
+            ),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
           )
         else
@@ -498,10 +667,10 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(8),
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                color: theme.dividerColor.withValues(alpha: 0.35),
               ),
             ),
             child: Row(
@@ -509,16 +678,17 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 Icon(
                   icon,
                   size: 18,
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.75),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     controller.text.isNotEmpty ? controller.text : 'Not set',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: controller.text.isNotEmpty
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -530,23 +700,34 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   }
 
   Widget _buildAttendanceRecord(AttendanceRecord record) {
+    final theme = Theme.of(context);
+    final isCheckIn = record.isCheckIn;
+    final accentColor = isCheckIn
+        ? Colors.green.shade600
+        : theme.colorScheme.primary;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
-          ),
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
         ),
         child: Row(
           children: [
-            Icon(
-              record.isCheckIn ? Icons.login : Icons.logout,
-              color: record.isCheckIn ? Colors.green : Colors.blue,
-              size: 20,
+            Container(
+              height: 40,
+              width: 40,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isCheckIn ? Icons.login : Icons.logout,
+                color: accentColor,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -554,31 +735,34 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    record.isCheckIn ? 'Checked In' : 'Checked Out',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                    isCheckIn ? 'Checked In' : 'Checked Out',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   Text(
-                    record.timestamp.toLocal().toString().split('.')[0],
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    formatManila(record.timestamp, 'yyyy-MM-dd HH:mm:ss'),
+                    style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.75),
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.75,
+                      ),
                     ),
                   ),
                   if (record.geofenceName != null)
                     Text(
                       'Location: ${record.geofenceName}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.blue,
-                        fontWeight: FontWeight.w600,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                 ],
               ),
+            ),
+            _buildStatusPill(
+              label: isCheckIn ? 'IN' : 'OUT',
+              color: accentColor,
             ),
           ],
         ),

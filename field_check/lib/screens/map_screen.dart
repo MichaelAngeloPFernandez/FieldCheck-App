@@ -127,6 +127,198 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Widget _buildSectionHeader(
+    String title, {
+    String? subtitle,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+
+  Widget _buildSurfaceCard({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildStatusPill({
+    required String label,
+    required Color color,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    final theme = Theme.of(context);
+    final activeColor = theme.colorScheme.primary;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (value) {
+        if (!value) return;
+        onSelected();
+      },
+      labelStyle: theme.textTheme.labelMedium?.copyWith(
+        fontWeight: FontWeight.w700,
+        color: selected
+            ? activeColor
+            : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+      ),
+      selectedColor: activeColor.withValues(alpha: 0.16),
+      backgroundColor: theme.colorScheme.surface,
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: selected
+              ? activeColor.withValues(alpha: 0.45)
+              : theme.dividerColor.withValues(alpha: 0.35),
+        ),
+      ),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  Widget _buildStatusBanner({
+    required IconData icon,
+    required String message,
+    required Color background,
+    required Color foreground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: background),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: foreground, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: foreground, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStateCard({
+    required IconData icon,
+    required String title,
+    required String message,
+  }) {
+    final theme = Theme.of(context);
+    return _buildSurfaceCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: theme.colorScheme.primary),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -234,6 +426,44 @@ class _MapScreenState extends State<MapScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
+    }
+  }
+
+  void _fitToVisibleBounds() {
+    LatLngBounds? bounds;
+    void extendBounds(LatLng point) {
+      if (bounds == null) {
+        bounds = LatLngBounds(point, point);
+      } else {
+        bounds!.extend(point);
+      }
+    }
+
+    if (_showTasks) {
+      for (final task in _visibleTasks) {
+        final lat = task.latitude;
+        final lng = task.longitude;
+        if (lat != null && lng != null) {
+          extendBounds(LatLng(lat, lng));
+        }
+      }
+    } else {
+      for (final geofence in _geofences) {
+        extendBounds(LatLng(geofence.latitude, geofence.longitude));
+      }
+    }
+
+    if (_userLatLng != null) {
+      extendBounds(_userLatLng!);
+    }
+
+    if (bounds == null) return;
+    try {
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: bounds!, padding: const EdgeInsets.all(48)),
+      );
+    } catch (_) {
+      _mapController.move(bounds!.center, 14);
     }
   }
 
@@ -469,7 +699,12 @@ class _MapScreenState extends State<MapScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('FieldCheck Map'),
+        title: Text(
+          'FieldCheck Map',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
         leading: Builder(
           builder: (context) => IconButton(
             icon: const Icon(Icons.menu),
@@ -477,7 +712,11 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ),
         actions: [
-          IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh)),
+          IconButton(
+            tooltip: 'Refresh map data',
+            onPressed: _loadData,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       drawer: Drawer(
@@ -485,13 +724,29 @@ class _MapScreenState extends State<MapScreen> {
           padding: EdgeInsets.zero,
           children: [
             DrawerHeader(
-              decoration: const BoxDecoration(color: Color(0xFF2688d4)),
-              child: Text(
-                'FieldCheck',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onPrimary,
-                  fontSize: 20,
-                ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'FieldCheck',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Employee Map',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onPrimary.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
               ),
             ),
             ListTile(
@@ -666,19 +921,10 @@ class _MapScreenState extends State<MapScreen> {
                     right: 16,
                     child: Column(
                       children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.12),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
+                        _buildSurfaceCard(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
                           ),
                           child: Row(
                             children: [
@@ -698,7 +944,9 @@ class _MapScreenState extends State<MapScreen> {
                                     ),
                                     isDense: true,
                                   ),
-                                  style: const TextStyle(fontSize: 14),
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall?.copyWith(fontSize: 14),
                                   onChanged: _searchLocation,
                                 ),
                               ),
@@ -718,101 +966,90 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                         if (_isSearchingLocation)
-                          Container(
-                            margin: const EdgeInsets.only(top: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surface,
-                              borderRadius: BorderRadius.circular(8),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.12),
-                                  blurRadius: 4,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _buildSurfaceCard(
+                              padding: const EdgeInsets.all(12),
+                              child: const SizedBox(
+                                height: 30,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
                                 ),
-                              ],
-                            ),
-                            child: const SizedBox(
-                              height: 30,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
                             ),
                           ),
                         if (_locationSearchResults.isNotEmpty)
                           Container(
                             margin: const EdgeInsets.only(top: 8),
                             constraints: const BoxConstraints(maxHeight: 300),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surface,
-                              borderRadius: BorderRadius.circular(8),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.16),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: ListView.separated(
-                              shrinkWrap: true,
-                              itemCount: _locationSearchResults.length > 5
-                                  ? 5
-                                  : _locationSearchResults.length,
-                              separatorBuilder: (context, index) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (context, index) {
-                                final location = _locationSearchResults[index];
-                                return Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: () => _onLocationSelected(location),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 12,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.location_on,
-                                            size: 20,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  '${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  'Tap to navigate',
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurface
-                                                        .withValues(alpha: 0.7),
-                                                  ),
-                                                ),
-                                              ],
+                            child: _buildSurfaceCard(
+                              padding: EdgeInsets.zero,
+                              child: ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: _locationSearchResults.length > 5
+                                    ? 5
+                                    : _locationSearchResults.length,
+                                separatorBuilder: (context, index) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final location =
+                                      _locationSearchResults[index];
+                                  return Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: () =>
+                                          _onLocationSelected(location),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 12,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.location_on,
+                                              size: 20,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    '${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}',
+                                                    style: const TextStyle(
+                                                      fontSize: 13,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    'Tap to navigate',
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurface
+                                                          .withValues(
+                                                            alpha: 0.7,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
+                                  );
+                                },
+                              ),
                             ),
                           ),
                       ],
@@ -824,9 +1061,30 @@ class _MapScreenState extends State<MapScreen> {
                   child: Column(
                     children: [
                       Tooltip(
+                        message: 'Fit map to visible items',
+                        child: FloatingActionButton.small(
+                          heroTag: 'fitView',
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.surface,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary,
+                          onPressed: _fitToVisibleBounds,
+                          child: const Icon(Icons.center_focus_strong),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Tooltip(
                         message: 'Search map location',
                         child: FloatingActionButton.small(
                           heroTag: 'mapSearch',
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.surface,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary,
                           onPressed: () {
                             setState(() {
                               _showLocationSearchBar = !_showLocationSearchBar;
@@ -846,6 +1104,12 @@ class _MapScreenState extends State<MapScreen> {
                         message: 'Center map on your current location',
                         child: FloatingActionButton.small(
                           heroTag: 'center',
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.surface,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary,
                           onPressed: () => _loadData(),
                           child: const Icon(Icons.my_location),
                         ),
@@ -857,6 +1121,12 @@ class _MapScreenState extends State<MapScreen> {
                             : 'Show GEO TASKS',
                         child: FloatingActionButton.small(
                           heroTag: 'toggleView',
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.surface,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary,
                           onPressed: () {
                             setState(() {
                               _showTasks = !_showTasks;
@@ -877,6 +1147,12 @@ class _MapScreenState extends State<MapScreen> {
                             : 'Show assigned only',
                         child: FloatingActionButton.small(
                           heroTag: 'toggleAssigned',
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.surface,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary,
                           onPressed: () {
                             setState(() {
                               _showAssignedOnly = !_showAssignedOnly;
@@ -910,102 +1186,81 @@ class _MapScreenState extends State<MapScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (!_showTasks && _outsideAnyGeofence)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.error,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.error,
-                                color: Theme.of(context).colorScheme.onError,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'You are outside the geofence area',
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onError,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                        _buildStatusBanner(
+                          icon: Icons.error,
+                          message: 'You are outside the geofence area',
+                          background: Theme.of(context).colorScheme.error,
+                          foreground: Theme.of(context).colorScheme.onError,
                         ),
                       if (!_showTasks && _outsideAnyGeofence)
                         const SizedBox(height: 8),
-                      Container(
+                      _buildStatusBanner(
+                        icon: _gpsConnected
+                            ? Icons.gps_fixed
+                            : Icons.gps_not_fixed,
+                        message: _gpsConnected
+                            ? 'GPS Active • Accuracy: ${_currentAccuracy?.toStringAsFixed(1) ?? '?'}m'
+                            : 'GPS Connecting...',
+                        background: _gpsConnected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.tertiary,
+                        foreground: _gpsConnected
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : Theme.of(context).colorScheme.onTertiary,
+                      ),
+                      if (_showAssignedOnly && _assignedGeofences.isEmpty)
+                        const SizedBox(height: 8),
+                      _buildSurfaceCard(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _gpsConnected
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.tertiary,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _gpsConnected
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.tertiary,
-                          ),
+                          vertical: 10,
                         ),
                         child: Row(
                           children: [
                             Icon(
-                              _gpsConnected
-                                  ? Icons.gps_fixed
-                                  : Icons.gps_not_fixed,
-                              color: _gpsConnected
-                                  ? Theme.of(context).colorScheme.onPrimary
-                                  : Theme.of(context).colorScheme.onTertiary,
-                              size: 18,
+                              _showTasks ? Icons.assignment : Icons.location_on,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                _gpsConnected
-                                    ? 'GPS Active • Accuracy: ${_currentAccuracy?.toStringAsFixed(1) ?? '?'}m'
-                                    : 'GPS Connecting...',
-                                style: TextStyle(
-                                  color: _gpsConnected
-                                      ? Theme.of(context).colorScheme.onPrimary
-                                      : Theme.of(
-                                          context,
-                                        ).colorScheme.onTertiary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                                _showTasks
+                                    ? 'View: GEO TASKS'
+                                    : 'View: Geofences',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.8),
+                                    ),
                               ),
+                            ),
+                            _buildStatusPill(
+                              label:
+                                  '${_showTasks ? _visibleTasks.length : _geofences.length} shown',
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ],
                         ),
                       ),
                       if (_showAssignedOnly && _assignedGeofences.isEmpty)
-                        const SizedBox(height: 8),
-                      if (_showAssignedOnly && _assignedGeofences.isEmpty)
-                        Container(
+                        _buildSurfaceCard(
                           padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.orange[50],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.orange),
-                          ),
                           child: Row(
                             children: [
-                              const Icon(Icons.info, color: Colors.orange),
+                              Icon(Icons.info, color: Colors.orange.shade700),
                               const SizedBox(width: 8),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Not assigned to any geofence',
-                                  style: TextStyle(color: Colors.orange),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Colors.orange.shade700,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
                               ),
                               TextButton(
@@ -1046,14 +1301,20 @@ class _MapScreenState extends State<MapScreen> {
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.surface,
                       borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(16),
+                        top: Radius.circular(20),
+                      ),
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).dividerColor.withValues(alpha: 0.35),
                       ),
                       boxShadow: [
                         BoxShadow(
                           color: Theme.of(
                             context,
                           ).colorScheme.onSurface.withValues(alpha: 0.2),
-                          blurRadius: 12,
+                          blurRadius: 16,
+                          offset: const Offset(0, -4),
                         ),
                       ],
                     ),
@@ -1110,129 +1371,125 @@ class _MapScreenState extends State<MapScreen> {
                             padding: const EdgeInsets.all(16),
                             children: [
                               // Search Bar
-                              TextField(
-                                controller: _searchController,
-                                style: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
+                              _buildSurfaceCard(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
                                 ),
-                                decoration: InputDecoration(
-                                  hintText: _showTasks
-                                      ? 'Search tasks...'
-                                      : 'Search geofences...',
-                                  hintStyle: TextStyle(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.6),
-                                  ),
-                                  prefixIcon: Icon(
-                                    Icons.search,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.7),
-                                  ),
-                                  suffixIcon: _searchQuery.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear),
-                                          onPressed: () {
-                                            _searchController.clear();
-                                            setState(() {
-                                              _searchQuery = '';
-                                            });
-                                          },
-                                        )
-                                      : null,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(
-                                      color: Theme.of(
-                                        context,
-                                      ).dividerColor.withValues(alpha: 0.35),
+                                child: TextField(
+                                  controller: _searchController,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
+                                  decoration: InputDecoration(
+                                    hintText: _showTasks
+                                        ? 'Search tasks...'
+                                        : 'Search geofences...',
+                                    hintStyle: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.6),
+                                    ),
+                                    prefixIcon: Icon(
+                                      Icons.search,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.7),
+                                    ),
+                                    suffixIcon: _searchQuery.isNotEmpty
+                                        ? IconButton(
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              setState(() {
+                                                _searchQuery = '';
+                                              });
+                                            },
+                                          )
+                                        : null,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).dividerColor.withValues(alpha: 0.35),
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).dividerColor.withValues(alpha: 0.35),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    filled: true,
+                                    fillColor: Theme.of(
+                                      context,
+                                    ).colorScheme.surface,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
                                     ),
                                   ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(
-                                      color: Theme.of(
-                                        context,
-                                      ).dividerColor.withValues(alpha: 0.35),
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  filled: true,
-                                  fillColor: Theme.of(
-                                    context,
-                                  ).colorScheme.surface,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _searchQuery = value.toLowerCase();
+                                    });
+                                  },
                                 ),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _searchQuery = value.toLowerCase();
-                                  });
-                                },
+                              ),
+                              const SizedBox(height: 16),
+                              _buildSectionHeader(
+                                _showTasks ? 'GEO TASKS' : 'Nearby Geofences',
+                                subtitle: _showTasks
+                                    ? 'Tasks with coordinates or assigned areas.'
+                                    : 'Tap a geofence to focus the map view.',
+                                trailing: Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    _buildFilterChip(
+                                      label: 'Geofences',
+                                      selected: !_showTasks,
+                                      onSelected: () => setState(() {
+                                        _showTasks = false;
+                                      }),
+                                    ),
+                                    _buildFilterChip(
+                                      label: 'Tasks',
+                                      selected: _showTasks,
+                                      onSelected: () => setState(() {
+                                        _showTasks = true;
+                                        _visibleTasks = _computeGeoTasks();
+                                      }),
+                                    ),
+                                  ],
+                                ),
                               ),
                               const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      _showTasks
-                                          ? 'GEO TASKS'
-                                          : 'Nearby Geofences',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      ChoiceChip(
-                                        selected: !_showTasks,
-                                        label: const Text('Geofences'),
-                                        onSelected: (_) => setState(() {
-                                          _showTasks = false;
-                                        }),
-                                      ),
-                                      ChoiceChip(
-                                        selected: _showTasks,
-                                        label: const Text('Tasks'),
-                                        onSelected: (_) => setState(() {
-                                          _showTasks = true;
-                                          _visibleTasks = _computeGeoTasks();
-                                        }),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
                               if (_showTasks)
                                 SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
                                   child: Row(
                                     children: [
-                                      ChoiceChip(
+                                      _buildFilterChip(
+                                        label: 'All',
                                         selected: _taskFilter == 'all',
-                                        label: const Text('All'),
-                                        onSelected: (_) => setState(() {
+                                        onSelected: () => setState(() {
                                           _taskFilter = 'all';
                                           if (_showTasks) {
                                             _visibleTasks = _computeGeoTasks();
@@ -1240,10 +1497,10 @@ class _MapScreenState extends State<MapScreen> {
                                         }),
                                       ),
                                       const SizedBox(width: 8),
-                                      ChoiceChip(
+                                      _buildFilterChip(
+                                        label: 'Pending',
                                         selected: _taskFilter == 'pending',
-                                        label: const Text('Pending'),
-                                        onSelected: (_) => setState(() {
+                                        onSelected: () => setState(() {
                                           _taskFilter = 'pending';
                                           if (_showTasks) {
                                             _visibleTasks = _computeGeoTasks();
@@ -1251,10 +1508,10 @@ class _MapScreenState extends State<MapScreen> {
                                         }),
                                       ),
                                       const SizedBox(width: 8),
-                                      ChoiceChip(
+                                      _buildFilterChip(
+                                        label: 'In Progress',
                                         selected: _taskFilter == 'in_progress',
-                                        label: const Text('In Progress'),
-                                        onSelected: (_) => setState(() {
+                                        onSelected: () => setState(() {
                                           _taskFilter = 'in_progress';
                                           if (_showTasks) {
                                             _visibleTasks = _computeGeoTasks();
@@ -1262,10 +1519,10 @@ class _MapScreenState extends State<MapScreen> {
                                         }),
                                       ),
                                       const SizedBox(width: 8),
-                                      ChoiceChip(
+                                      _buildFilterChip(
+                                        label: 'Completed',
                                         selected: _taskFilter == 'completed',
-                                        label: const Text('Completed'),
-                                        onSelected: (_) => setState(() {
+                                        onSelected: () => setState(() {
                                           _taskFilter = 'completed';
                                           if (_showTasks) {
                                             _visibleTasks = _computeGeoTasks();
@@ -1275,7 +1532,7 @@ class _MapScreenState extends State<MapScreen> {
                                     ],
                                   ),
                                 ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 12),
                               if (_showTasks && _visibleTasks.isNotEmpty)
                                 ..._visibleTasks.map((task) {
                                   final geofence = _allGeofences.firstWhere(
@@ -1288,97 +1545,99 @@ class _MapScreenState extends State<MapScreen> {
                                       radius: 50,
                                     ),
                                   );
-                                  return Card(
-                                    margin: const EdgeInsets.symmetric(
+                                  final statusLabel = task.status.replaceAll(
+                                    '_',
+                                    ' ',
+                                  );
+                                  final statusColor = task.status == 'completed'
+                                      ? Colors.green
+                                      : (task.status == 'in_progress'
+                                            ? Colors.orange
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.primary);
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
                                       vertical: 6,
                                     ),
-                                    child: ListTile(
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 8,
+                                    child: _buildSurfaceCard(
+                                      padding: EdgeInsets.zero,
+                                      child: ListTile(
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 8,
+                                            ),
+                                        title: Text(
+                                          task.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
                                           ),
-                                      title: Text(
-                                        task.title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
                                         ),
-                                      ),
-                                      subtitle: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            task.description,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
+                                        subtitle: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              task.description,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurface
+                                                        .withValues(
+                                                          alpha: 0.75,
+                                                        ),
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.place,
+                                                  size: 14,
                                                   color: Theme.of(context)
                                                       .colorScheme
                                                       .onSurface
-                                                      .withValues(alpha: 0.75),
+                                                      .withValues(alpha: 0.65),
                                                 ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.place,
-                                                size: 14,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .onSurface
-                                                    .withValues(alpha: 0.65),
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Expanded(
-                                                child: Text(
-                                                  geofence.name,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodySmall
-                                                      ?.copyWith(
-                                                        color: Theme.of(context)
-                                                            .colorScheme
-                                                            .onSurface
-                                                            .withValues(
-                                                              alpha: 0.75,
-                                                            ),
-                                                      ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    geofence.name,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.copyWith(
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .onSurface
+                                                                  .withValues(
+                                                                    alpha: 0.75,
+                                                                  ),
+                                                        ),
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      trailing: Chip(
-                                        label: Text(
-                                          task.status,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .labelMedium
-                                              ?.copyWith(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w700,
-                                              ),
+                                              ],
+                                            ),
+                                          ],
                                         ),
-                                        backgroundColor:
-                                            task.status == 'completed'
-                                            ? Colors.green
-                                            : (task.status == 'in_progress'
-                                                  ? Colors.orange
-                                                  : Colors.deepPurple),
-                                        padding: EdgeInsets.zero,
+                                        trailing: _buildStatusPill(
+                                          label: statusLabel.toUpperCase(),
+                                          color: statusColor,
+                                        ),
                                       ),
                                     ),
                                   );
@@ -1396,86 +1655,104 @@ class _MapScreenState extends State<MapScreen> {
                                           ),
                                     )
                                     .map((g) {
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(
+                                      final statusColor = g.isActive
+                                          ? Colors.green
+                                          : Theme.of(
+                                              context,
+                                            ).colorScheme.tertiary;
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(
                                           vertical: 6,
                                         ),
-                                        child: ListTile(
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 8,
+                                        child: _buildSurfaceCard(
+                                          padding: EdgeInsets.zero,
+                                          child: ListTile(
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8,
+                                                ),
+                                            title: Text(
+                                              g.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
                                               ),
-                                          title: Text(
-                                            g.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
                                             ),
+                                            subtitle: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  g.address,
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurface
+                                                            .withValues(
+                                                              alpha: 0.75,
+                                                            ),
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  'Radius: ${g.radius.toStringAsFixed(0)} m',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurface
+                                                            .withValues(
+                                                              alpha: 0.75,
+                                                            ),
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                            trailing: _buildStatusPill(
+                                              label: g.isActive
+                                                  ? 'ACTIVE'
+                                                  : 'OFF',
+                                              color: statusColor,
+                                              icon: g.isActive
+                                                  ? Icons.check_circle
+                                                  : Icons.pause_circle,
+                                            ),
+                                            onTap: () {
+                                              _mapController.move(
+                                                LatLng(g.latitude, g.longitude),
+                                                17,
+                                              );
+                                            },
                                           ),
-                                          subtitle: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                g.address,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodyMedium
-                                                    ?.copyWith(
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .onSurface
-                                                          .withValues(
-                                                            alpha: 0.75,
-                                                          ),
-                                                    ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                'Radius: ${g.radius.toStringAsFixed(0)} m',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodyMedium
-                                                    ?.copyWith(
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .onSurface
-                                                          .withValues(
-                                                            alpha: 0.75,
-                                                          ),
-                                                    ),
-                                              ),
-                                            ],
-                                          ),
-                                          onTap: () {
-                                            _mapController.move(
-                                              LatLng(g.latitude, g.longitude),
-                                              17,
-                                            );
-                                          },
                                         ),
                                       );
                                     }),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 16),
                               if (_showTasks && _visibleTasks.isEmpty)
-                                const Center(
-                                  child: Text(
-                                    'No GEO TASKS found.',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
+                                _buildStateCard(
+                                  icon: Icons.assignment_outlined,
+                                  title: 'No GEO TASKS found',
+                                  message:
+                                      'Try adjusting filters or check assigned areas.',
                                 ),
                               if (!_showTasks && _geofences.isEmpty)
-                                const Center(
-                                  child: Text(
-                                    'No geofences available.',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
+                                _buildStateCard(
+                                  icon: Icons.location_off,
+                                  title: 'No geofences available',
+                                  message:
+                                      'You will see assigned geofences here once available.',
                                 ),
                               const SizedBox(height: 24),
                             ],

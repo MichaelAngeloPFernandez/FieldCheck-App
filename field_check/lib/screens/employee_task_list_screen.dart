@@ -9,6 +9,7 @@ import 'package:field_check/screens/task_report_screen.dart';
 import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
+import 'package:field_check/utils/manila_time.dart';
 
 class EmployeeTaskListScreen extends StatefulWidget {
   final String userModelId;
@@ -160,6 +161,206 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
     }
   }
 
+  Widget _buildSectionHeader(
+    String title, {
+    String? subtitle,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+
+  Widget _buildSurfaceCard({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildStatusPill({
+    required String label,
+    required Color color,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    final theme = Theme.of(context);
+    final activeColor = theme.colorScheme.primary;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (value) {
+        if (!value) return;
+        onSelected();
+      },
+      labelStyle: theme.textTheme.labelMedium?.copyWith(
+        fontWeight: FontWeight.w700,
+        color: selected
+            ? activeColor
+            : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+      ),
+      selectedColor: activeColor.withValues(alpha: 0.16),
+      backgroundColor: theme.colorScheme.surface,
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: selected
+              ? activeColor.withValues(alpha: 0.45)
+              : theme.dividerColor.withValues(alpha: 0.35),
+        ),
+      ),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  Widget _buildMetaChip(String label, {IconData? icon}) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurface.withValues(alpha: 0.7);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStateCard({
+    required IconData icon,
+    required String title,
+    required String message,
+    Widget? action,
+  }) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: _buildSurfaceCard(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: theme.colorScheme.primary),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              if (action != null) ...[const SizedBox(height: 12), action],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openTaskDetails(Task task) async {
     final isCompleted = task.status == 'completed';
 
@@ -268,7 +469,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   children: [
                     Chip(
                       label: Text(
-                        'Due: ${task.dueDate.toLocal().toString().split(' ')[0]}',
+                        'Due: ${formatManila(task.dueDate, 'yyyy-MM-dd')}',
                       ),
                       visualDensity: VisualDensity.compact,
                     ),
@@ -330,7 +531,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                       title: Text(c.label),
                       subtitle: c.completedAt != null
                           ? Text(
-                              'Completed at: ${c.completedAt!.toLocal().toString().split('.')[0]}',
+                              'Completed at: ${formatManila(c.completedAt, 'yyyy-MM-dd HH:mm:ss')}',
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
                                     color: Theme.of(context)
@@ -481,13 +682,180 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
     }
   }
 
+  Widget _buildTaskCard(Task task) {
+    final theme = Theme.of(context);
+    final statusColor = _statusColor(task.status);
+    final isCompleted = task.status == 'completed';
+    final isNew = _isTaskNew(task);
+    final hasMeta =
+        (task.type != null && task.type!.isNotEmpty) ||
+        (task.difficulty != null && task.difficulty!.isNotEmpty);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: GestureDetector(
+        onTap: () => _openTaskDetails(task),
+        child: _buildSurfaceCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      task.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        decoration: isCompleted
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (isNew) ...[
+                    _buildStatusPill(
+                      label: 'NEW',
+                      color: Colors.red,
+                      icon: Icons.fiber_new,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  IconButton(
+                    tooltip: _isOverdueTab
+                        ? 'Delete'
+                        : (_isArchivedTab ? 'Restore' : 'Archive'),
+                    icon: Icon(
+                      _isOverdueTab
+                          ? Icons.delete_outline
+                          : (_isArchivedTab
+                                ? Icons.unarchive_outlined
+                                : Icons.archive_outlined),
+                    ),
+                    onPressed: () {
+                      if (_isOverdueTab) {
+                        _deleteOverdue(task);
+                        return;
+                      }
+                      _toggleArchive(task);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                task.description,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildMetaChip(
+                    'Due ${formatManila(task.dueDate, 'yyyy-MM-dd')}',
+                    icon: Icons.event,
+                  ),
+                  if (task.type != null && task.type!.isNotEmpty)
+                    _buildMetaChip(task.type!, icon: Icons.category),
+                  if (task.difficulty != null && task.difficulty!.isNotEmpty)
+                    _buildMetaChip(task.difficulty!, icon: Icons.speed),
+                  if (hasMeta == false)
+                    _buildMetaChip('Task details', icon: Icons.info_outline),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildStatusPill(
+                    label: task.status.replaceAll('_', ' '),
+                    color: statusColor,
+                  ),
+                  if (task.isOverdue)
+                    _buildStatusPill(
+                      label: 'Overdue',
+                      color: theme.colorScheme.error,
+                      icon: Icons.warning_amber_rounded,
+                    ),
+                  if (task.rawStatus == 'blocked')
+                    _buildStatusPill(
+                      label: 'Blocked',
+                      color: Colors.red.shade700,
+                      icon: Icons.block,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: LinearProgressIndicator(
+                      value: _taskProgressValue(task),
+                      backgroundColor: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.12,
+                      ),
+                      valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _taskProgressLabel(task),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+              if (task.assignedToMultiple.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Assigned to:',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: task.assignedToMultiple
+                      .map((user) => _buildMetaChip(user.name))
+                      .toList(),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Tasks'),
+        title: Text(
+          'My Tasks',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         bottom: TabBar(
           controller: _tabController,
+          labelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+          unselectedLabelStyle: theme.textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
           tabs: const [
             Tab(text: 'Current'),
             Tab(text: 'Overdue'),
@@ -533,16 +901,26 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return Center(
-                child: Text(
-                  _isArchivedTab
-                      ? 'No archived tasks.'
-                      : (_isOverdueTab
-                            ? 'No overdue tasks.'
-                            : 'No tasks assigned.'),
+              return _buildStateCard(
+                icon: Icons.error_outline,
+                title: 'Unable to load tasks',
+                message: snapshot.error.toString(),
+                action: FilledButton.icon(
+                  onPressed: _refreshTasks,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
                 ),
+              );
+            } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              final message = _isArchivedTab
+                  ? 'No archived tasks yet.'
+                  : (_isOverdueTab
+                        ? 'No overdue tasks. Great job staying on track!'
+                        : 'No tasks assigned yet.');
+              return _buildStateCard(
+                icon: Icons.task_alt,
+                title: 'All clear',
+                message: message,
               );
             }
 
@@ -575,273 +953,77 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
               return a.title.compareTo(b.title);
             });
 
+            final activeLabel = _statusFilter == 'all'
+                ? 'All'
+                : _statusFilter.replaceAll('_', ' ');
+
             return Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('All'),
-                        selected: _statusFilter == 'all',
-                        onSelected: (sel) {
-                          if (!sel) return;
-                          setState(() => _statusFilter = 'all');
-                        },
-                      ),
-                      ChoiceChip(
-                        label: const Text('Pending'),
-                        selected: _statusFilter == 'pending',
-                        onSelected: (sel) {
-                          if (!sel) return;
-                          setState(() => _statusFilter = 'pending');
-                        },
-                      ),
-                      ChoiceChip(
-                        label: const Text('In Progress'),
-                        selected: _statusFilter == 'in_progress',
-                        onSelected: (sel) {
-                          if (!sel) return;
-                          setState(() => _statusFilter = 'in_progress');
-                        },
-                      ),
-                      ChoiceChip(
-                        label: const Text('Completed'),
-                        selected: _statusFilter == 'completed',
-                        onSelected: (sel) {
-                          if (!sel) return;
-                          setState(() => _statusFilter = 'completed');
-                        },
-                      ),
-                    ],
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: _buildSurfaceCard(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionHeader(
+                          'Filter tasks',
+                          subtitle: 'Showing $activeLabel tasks',
+                          trailing: _buildStatusPill(
+                            label: '${tasks.length} tasks',
+                            color: theme.colorScheme.primary,
+                            icon: Icons.list_alt,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _buildFilterChip(
+                              label: 'All',
+                              selected: _statusFilter == 'all',
+                              onSelected: () =>
+                                  setState(() => _statusFilter = 'all'),
+                            ),
+                            _buildFilterChip(
+                              label: 'Pending',
+                              selected: _statusFilter == 'pending',
+                              onSelected: () =>
+                                  setState(() => _statusFilter = 'pending'),
+                            ),
+                            _buildFilterChip(
+                              label: 'In Progress',
+                              selected: _statusFilter == 'in_progress',
+                              onSelected: () =>
+                                  setState(() => _statusFilter = 'in_progress'),
+                            ),
+                            _buildFilterChip(
+                              label: 'Completed',
+                              selected: _statusFilter == 'completed',
+                              onSelected: () =>
+                                  setState(() => _statusFilter = 'completed'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 if (tasks.isEmpty)
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'No tasks match this filter.\nPull down to refresh.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
+                  _buildStateCard(
+                    icon: Icons.filter_alt_off,
+                    title: 'No matching tasks',
+                    message: 'Try adjusting your filter or pull to refresh.',
                   )
                 else
                   Expanded(
                     child: ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 16),
                       itemCount: tasks.length,
                       itemBuilder: (context, index) {
                         final task = tasks[index];
-                        final isCompleted = task.status == 'completed';
-                        final isNew = _isTaskNew(task);
-                        return GestureDetector(
-                          onTap: () => _openTaskDetails(task),
-                          child: Card(
-                            margin: const EdgeInsets.all(8.0),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          task.title,
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            decoration: isCompleted
-                                                ? TextDecoration.lineThrough
-                                                : null,
-                                          ),
-                                        ),
-                                      ),
-                                      if (isNew) ...[
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.red.withValues(
-                                              alpha: 0.12,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.red.withValues(
-                                                alpha: 0.35,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'NEW',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelMedium
-                                                ?.copyWith(
-                                                  color: Colors.red,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                      IconButton(
-                                        tooltip: _isOverdueTab
-                                            ? 'Delete'
-                                            : (_isArchivedTab
-                                                  ? 'Restore'
-                                                  : 'Archive'),
-                                        icon: Icon(
-                                          _isOverdueTab
-                                              ? Icons.delete_outline
-                                              : (_isArchivedTab
-                                                    ? Icons.unarchive_outlined
-                                                    : Icons.archive_outlined),
-                                        ),
-                                        onPressed: () {
-                                          if (_isOverdueTab) {
-                                            _deleteOverdue(task);
-                                            return;
-                                          }
-                                          _toggleArchive(task);
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(task.description),
-                                  const SizedBox(height: 8),
-                                  if ((task.type != null &&
-                                          task.type!.isNotEmpty) ||
-                                      (task.difficulty != null &&
-                                          task.difficulty!.isNotEmpty))
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 8.0,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          if (task.type != null &&
-                                              task.type!.isNotEmpty)
-                                            Chip(
-                                              label: Text(task.type!),
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                            ),
-                                          if (task.difficulty != null &&
-                                              task.difficulty!.isNotEmpty) ...[
-                                            const SizedBox(width: 4),
-                                            Chip(
-                                              label: Text(task.difficulty!),
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  Text(
-                                    'Due Date: ${task.dueDate.toLocal().toString().split(' ')[0]}',
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      const Text(
-                                        'Status: ',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      Chip(
-                                        label: Text(task.status),
-                                        backgroundColor:
-                                            task.status == 'completed'
-                                            ? Colors.green[100]
-                                            : (task.status == 'in_progress'
-                                                  ? Colors.orange[100]
-                                                  : Colors.blue[100]),
-                                        labelStyle: TextStyle(
-                                          color: task.status == 'completed'
-                                              ? Colors.green[900]
-                                              : (task.status == 'in_progress'
-                                                    ? Colors.orange[900]
-                                                    : Colors.blue[900]),
-                                        ),
-                                      ),
-                                      if (task.isOverdue) ...[
-                                        const SizedBox(width: 8),
-                                        Chip(
-                                          label: const Text('Overdue'),
-                                          backgroundColor: Colors.red[100],
-                                          labelStyle: TextStyle(
-                                            color: Colors.red[900],
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                      if (task.rawStatus == 'blocked') ...[
-                                        const SizedBox(width: 8),
-                                        Chip(
-                                          label: const Text('Blocked'),
-                                          backgroundColor: Colors.red[100],
-                                          labelStyle: TextStyle(
-                                            color: Colors.red[900],
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  LinearProgressIndicator(
-                                    value: _taskProgressValue(task),
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.12),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Progress: ${_taskProgressLabel(task)}',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withValues(alpha: 0.75),
-                                        ),
-                                  ),
-                                  if (task.assignedToMultiple.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    const Text(
-                                      'Assigned to:',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Wrap(
-                                      spacing: 4,
-                                      children: task.assignedToMultiple
-                                          .map(
-                                            (user) => Chip(
-                                              label: Text(user.name),
-                                              padding: EdgeInsets.zero,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                            ),
-                                          )
-                                          .toList(),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
+                        return _buildTaskCard(task);
                       },
                     ),
                   ),

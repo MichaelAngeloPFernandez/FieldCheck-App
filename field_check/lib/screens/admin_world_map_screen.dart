@@ -25,6 +25,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   final TaskService _taskService = TaskService();
   final AvailabilityService _availabilityService = AvailabilityService();
   final EmployeeLocationService _locationService = EmployeeLocationService();
+  final MapController _mapController = MapController();
 
   final Map<String, UserModel> _employees = {};
   final Map<String, LatLng> _liveLocations = {};
@@ -77,6 +78,116 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     }
   }
 
+  LatLngBounds? _boundsForEmployees() {
+    if (_liveLocations.isEmpty) return null;
+    final points = _liveLocations.values.toList();
+    final bounds = LatLngBounds(points.first, points.first);
+    for (final p in points.skip(1)) {
+      bounds.extend(p);
+    }
+    return bounds;
+  }
+
+  void _fitToEmployees() {
+    final bounds = _boundsForEmployees();
+    if (bounds == null) return;
+    try {
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(48)),
+      );
+    } catch (_) {
+      _mapController.move(bounds.center, 4);
+    }
+  }
+
+  void _focusOnSelection() {
+    LatLng? target;
+    if (_selectedUserId != null) {
+      target = _liveLocations[_selectedUserId!];
+    }
+    target ??= _liveLocations.values.isNotEmpty
+        ? _liveLocations.values.first
+        : null;
+    if (target != null) {
+      _mapController.move(target, 15);
+    }
+  }
+
+  Widget _buildLegendItem({
+    required Color color,
+    required IconData icon,
+    required String label,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 6),
+            ],
+          ),
+          child: Icon(icon, size: 12, color: Colors.white),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLegend() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Status legend',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          _buildLegendItem(
+            color: Colors.green,
+            icon: Icons.check_circle,
+            label: 'Available',
+          ),
+          const SizedBox(height: 6),
+          _buildLegendItem(
+            color: Colors.blue,
+            icon: Icons.directions_run,
+            label: 'Moving',
+          ),
+          const SizedBox(height: 6),
+          _buildLegendItem(
+            color: Colors.red,
+            icon: Icons.schedule,
+            label: 'Busy',
+          ),
+          const SizedBox(height: 6),
+          _buildLegendItem(
+            color: Colors.grey,
+            icon: Icons.cloud_off,
+            label: 'Offline',
+          ),
+        ],
+      ),
+    );
+  }
+
   void _subscribeToLocations() {
     // Subscribe to employee locations from EmployeeLocationService for consistency
     _employeeLocationSub = _locationService.employeeLocationsStream.listen((
@@ -84,6 +195,9 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     ) {
       if (mounted) {
         setState(() {
+          _employeeLocations
+            ..clear()
+            ..addAll(locations);
           for (final empLoc in locations) {
             final pos = LatLng(empLoc.latitude, empLoc.longitude);
             _liveLocations[empLoc.employeeId] = pos;
@@ -213,135 +327,167 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
         children: [
           Expanded(
             flex: 3,
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: center,
-                initialZoom: 3,
-                maxZoom: 18,
-                minZoom: 2,
-              ),
+            child: Stack(
               children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  subdomains: const ['a', 'b', 'c'],
-                ),
-                PolylineLayer(
-                  polylines: _trails.entries.map((e) {
-                    return Polyline(
-                      points: e.value,
-                      strokeWidth: 2,
-                      color: Colors.green.withValues(alpha: 0.5),
-                    );
-                  }).toList(),
-                ),
-                MarkerLayer(
-                  markers: _liveLocations.entries.map((entry) {
-                    final user = _employees[entry.key];
-                    final empLocation = _employeeLocations.firstWhere(
-                      (e) => e.employeeId == entry.key,
-                      orElse: () => _employeeLocations.isNotEmpty
-                          ? _employeeLocations.first
-                          : EmployeeLocation(
-                              employeeId: entry.key,
-                              name: user?.name ?? 'Unknown',
-                              latitude: entry.value.latitude,
-                              longitude: entry.value.longitude,
-                              accuracy: 0,
-                              status: EmployeeStatus.offline,
-                              timestamp: DateTime.now(),
-                              activeTaskCount: 0,
-                              workloadScore: 0,
-                              isOnline: false,
-                            ),
-                    );
-
-                    // Get color based on EmployeeStatus: green (checked in), blue (outside geofence), red (busy)
-                    Color markerColor;
-                    IconData markerIcon;
-                    switch (empLocation.status) {
-                      case EmployeeStatus.available:
-                        markerColor = Colors.green;
-                        markerIcon = Icons.check_circle;
-                        break;
-                      case EmployeeStatus.moving:
-                        markerColor = Colors.blue;
-                        markerIcon = Icons.directions_run;
-                        break;
-                      case EmployeeStatus.busy:
-                        markerColor = Colors.red;
-                        markerIcon = Icons.schedule;
-                        break;
-                      case EmployeeStatus.offline:
-                        markerColor = Colors.grey;
-                        markerIcon = Icons.cloud_off;
-                        break;
-                    }
-
-                    return Marker(
-                      point: entry.value,
-                      width: 50,
-                      height: 50,
-                      child: GestureDetector(
-                        onTap: () => _onEmployeeTap(entry.key),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: markerColor,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: center,
+                    initialZoom: 3,
+                    maxZoom: 18,
+                    minZoom: 2,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      subdomains: const ['a', 'b', 'c'],
+                    ),
+                    PolylineLayer(
+                      polylines: _trails.entries.map((e) {
+                        return Polyline(
+                          points: e.value,
+                          strokeWidth: 2,
+                          color: Colors.green.withValues(alpha: 0.5),
+                        );
+                      }).toList(),
+                    ),
+                    MarkerLayer(
+                      markers: _liveLocations.entries.map((entry) {
+                        final user = _employees[entry.key];
+                        final empLocation = _employeeLocations.firstWhere(
+                          (e) => e.employeeId == entry.key,
+                          orElse: () => _employeeLocations.isNotEmpty
+                              ? _employeeLocations.first
+                              : EmployeeLocation(
+                                  employeeId: entry.key,
+                                  name: user?.name ?? 'Unknown',
+                                  latitude: entry.value.latitude,
+                                  longitude: entry.value.longitude,
+                                  accuracy: 0,
+                                  status: EmployeeStatus.offline,
+                                  timestamp: DateTime.now(),
+                                  activeTaskCount: 0,
+                                  workloadScore: 0,
+                                  isOnline: false,
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: markerColor.withValues(alpha: 0.5),
-                                    blurRadius: 8,
-                                    spreadRadius: 2,
+                        );
+
+                        Color markerColor;
+                        IconData markerIcon;
+                        switch (empLocation.status) {
+                          case EmployeeStatus.available:
+                            markerColor = Colors.green;
+                            markerIcon = Icons.check_circle;
+                            break;
+                          case EmployeeStatus.moving:
+                            markerColor = Colors.blue;
+                            markerIcon = Icons.directions_run;
+                            break;
+                          case EmployeeStatus.busy:
+                            markerColor = Colors.red;
+                            markerIcon = Icons.schedule;
+                            break;
+                          case EmployeeStatus.offline:
+                            markerColor = Colors.grey;
+                            markerIcon = Icons.cloud_off;
+                            break;
+                        }
+
+                        return Marker(
+                          point: entry.value,
+                          width: 50,
+                          height: 50,
+                          child: GestureDetector(
+                            onTap: () => _onEmployeeTap(entry.key),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: markerColor,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: markerColor.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                        blurRadius: 8,
+                                        spreadRadius: 2,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              padding: const EdgeInsets.all(6),
-                              child: Icon(
-                                markerIcon,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(3),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                    blurRadius: 2,
+                                  padding: const EdgeInsets.all(6),
+                                  child: Icon(
+                                    markerIcon,
+                                    color: Colors.white,
+                                    size: 20,
                                   ),
-                                ],
-                              ),
-                              child: Text(
-                                user?.name.split(' ').first ?? 'Emp',
-                                style: const TextStyle(
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w600,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(3),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        blurRadius: 2,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    user?.name.split(' ').first ?? 'Emp',
+                                    style: const TextStyle(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Column(
+                    children: [
+                      FloatingActionButton.small(
+                        heroTag: 'fitEmployees',
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black87,
+                        onPressed: _fitToEmployees,
+                        child: const Icon(Icons.center_focus_strong),
                       ),
-                    );
-                  }).toList(),
+                      const SizedBox(height: 8),
+                      FloatingActionButton.small(
+                        heroTag: 'focusSelected',
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black87,
+                        onPressed: _focusOnSelection,
+                        child: const Icon(Icons.my_location),
+                      ),
+                    ],
+                  ),
                 ),
+                Positioned(left: 12, bottom: 12, child: _buildLegend()),
               ],
             ),
           ),
