@@ -22,9 +22,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
   /// Check authentication status and route accordingly
   Future<void> _checkAuthStatus() async {
-    // Give the UI time to render the splash screen
-    await Future.delayed(const Duration(milliseconds: 500));
-
     if (!mounted) return;
 
     final authProvider = context.read<AuthProvider>();

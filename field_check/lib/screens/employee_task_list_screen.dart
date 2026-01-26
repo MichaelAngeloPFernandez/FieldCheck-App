@@ -6,7 +6,6 @@ import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/screens/task_report_screen.dart';
-import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
@@ -31,7 +30,8 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
   StreamSubscription<Map<String, dynamic>>? _taskSub;
   Timer? _taskRefreshDebounce;
 
-  String _statusFilter = 'all'; // all, pending, in_progress, completed
+  String _statusFilter =
+      'all'; // all, pending, accepted, in_progress, completed
 
   @override
   void initState() {
@@ -70,6 +70,49 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
   bool get _isArchivedTab => _tabController.index == 2;
 
   bool get _fetchArchived => _isArchivedTab;
+
+  String _effectiveStatus(Task task) {
+    final s = task.userTaskStatus;
+    if (s == null || s.trim().isEmpty) return task.status;
+    return s;
+  }
+
+  bool _needsAcceptance(Task task) {
+    final s = _effectiveStatus(task);
+    return s == 'pending_acceptance' || s == 'pending';
+  }
+
+  bool _isDueSoon(Task task) {
+    if (task.isOverdue) return false;
+    final effectiveStatus = _effectiveStatus(task);
+    if (effectiveStatus == 'completed') return false;
+    if (task.isArchived) return false;
+    final now = DateTime.now();
+    final diff = task.dueDate.difference(now);
+    return diff.inSeconds >= 0 && diff.inHours < 24;
+  }
+
+  Future<void> _acceptTask(Task task) async {
+    final userTaskId = task.userTaskId;
+    if (userTaskId == null || userTaskId.trim().isEmpty) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(context, 'Unable to accept task');
+      return;
+    }
+
+    try {
+      await TaskService().acceptUserTask(userTaskId);
+      if (!mounted) return;
+      AppWidgets.showSuccessSnackbar(context, 'Task accepted');
+      await _refreshTasks();
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to accept task'),
+      );
+    }
+  }
 
   Future<void> _deleteOverdue(Task task) async {
     final userTaskId = task.userTaskId;
@@ -154,6 +197,10 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
         return Colors.green;
       case 'in_progress':
         return Colors.orange;
+      case 'accepted':
+        return Colors.blue;
+      case 'pending_acceptance':
+        return Colors.purple;
       case 'pending':
         return Colors.blue;
       default:
@@ -362,7 +409,9 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
   }
 
   Future<void> _openTaskDetails(Task task) async {
-    final isCompleted = task.status == 'completed';
+    final effectiveStatus = _effectiveStatus(task);
+    final isCompleted = effectiveStatus == 'completed';
+    final needsAcceptance = _needsAcceptance(task);
 
     final userTaskId = task.userTaskId;
     if (userTaskId != null && userTaskId.trim().isNotEmpty) {
@@ -440,20 +489,20 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                       ),
                       decoration: BoxDecoration(
                         color: _statusColor(
-                          task.status,
+                          effectiveStatus,
                         ).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
                           color: _statusColor(
-                            task.status,
+                            effectiveStatus,
                           ).withValues(alpha: 0.35),
                         ),
                       ),
                       child: Text(
-                        task.status,
+                        effectiveStatus,
                         style: Theme.of(context).textTheme.labelMedium
                             ?.copyWith(
-                              color: _statusColor(task.status),
+                              color: _statusColor(effectiveStatus),
                               fontWeight: FontWeight.w800,
                             ),
                       ),
@@ -473,6 +522,16 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                       ),
                       visualDensity: VisualDensity.compact,
                     ),
+                    if (_isDueSoon(task))
+                      Chip(
+                        label: const Text('Due soon'),
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: Colors.orange.withValues(alpha: 0.12),
+                        labelStyle: const TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     if (task.type != null && task.type!.isNotEmpty)
                       Chip(
                         label: Text(task.type!),
@@ -545,12 +604,35 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   ),
                 ],
                 const SizedBox(height: 16),
+                if (needsAcceptance && !_isArchivedTab) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        await _acceptTask(task);
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx, true);
+                        }
+                      },
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('Accept Task'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: isCompleted
                         ? null
                         : () async {
+                            if (needsAcceptance) {
+                              AppWidgets.showErrorSnackbar(
+                                context,
+                                'Accept this task first to begin',
+                              );
+                              return;
+                            }
                             final ok = await Navigator.push<bool>(
                               context,
                               MaterialPageRoute(
@@ -654,11 +736,13 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
       return clamped / 100.0;
     }
 
-    switch (task.status) {
+    switch (_effectiveStatus(task)) {
       case 'completed':
         return 1.0;
       case 'in_progress':
         return 0.5;
+      case 'accepted':
+      case 'pending_acceptance':
       case 'pending':
       default:
         return 0.0;
@@ -671,11 +755,13 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
       return '$clamped%';
     }
 
-    switch (task.status) {
+    switch (_effectiveStatus(task)) {
       case 'completed':
         return '100%';
       case 'in_progress':
         return '50%';
+      case 'accepted':
+      case 'pending_acceptance':
       case 'pending':
       default:
         return '0%';
@@ -684,8 +770,10 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
 
   Widget _buildTaskCard(Task task) {
     final theme = Theme.of(context);
-    final statusColor = _statusColor(task.status);
-    final isCompleted = task.status == 'completed';
+    final effectiveStatus = _effectiveStatus(task);
+    final statusColor = _statusColor(effectiveStatus);
+    final isCompleted = effectiveStatus == 'completed';
+    final needsAcceptance = _needsAcceptance(task);
     final isNew = _isTaskNew(task);
     final hasMeta =
         (task.type != null && task.type!.isNotEmpty) ||
@@ -773,7 +861,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                 runSpacing: 8,
                 children: [
                   _buildStatusPill(
-                    label: task.status.replaceAll('_', ' '),
+                    label: effectiveStatus.replaceAll('_', ' '),
                     color: statusColor,
                   ),
                   if (task.isOverdue)
@@ -781,6 +869,12 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                       label: 'Overdue',
                       color: theme.colorScheme.error,
                       icon: Icons.warning_amber_rounded,
+                    ),
+                  if (_isDueSoon(task))
+                    _buildStatusPill(
+                      label: 'Due soon',
+                      color: Colors.orange,
+                      icon: Icons.schedule,
                     ),
                   if (task.rawStatus == 'blocked')
                     _buildStatusPill(
@@ -812,6 +906,17 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   ),
                 ],
               ),
+              if (needsAcceptance && !_isArchivedTab) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _acceptTask(task),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Accept Task'),
+                  ),
+                ),
+              ],
               if (task.assignedToMultiple.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -885,9 +990,10 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
             tooltip: 'Open Map',
             icon: const Icon(Icons.map),
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MapScreen()),
+              Navigator.of(context).pushNamedAndRemoveUntil(
+                '/dashboard',
+                (route) => false,
+                arguments: 1,
               );
             },
           ),
@@ -931,16 +1037,20 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   if (_isCurrentTab) return !t.isOverdue;
                   return true;
                 })
-                .where(
-                  (t) =>
-                      _statusFilter == 'all' ? true : t.status == _statusFilter,
-                )
+                .where((t) {
+                  if (_statusFilter == 'all') return true;
+                  final s = _effectiveStatus(t);
+                  if (_statusFilter == 'pending') {
+                    return s == 'pending' || s == 'pending_acceptance';
+                  }
+                  return s == _statusFilter;
+                })
                 .toList();
 
             tasks.sort((a, b) {
               // In-progress first
-              final aInProgress = a.status == 'in_progress';
-              final bInProgress = b.status == 'in_progress';
+              final aInProgress = _effectiveStatus(a) == 'in_progress';
+              final bInProgress = _effectiveStatus(b) == 'in_progress';
               if (aInProgress != bInProgress) {
                 return aInProgress ? -1 : 1;
               }
@@ -991,6 +1101,12 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                               selected: _statusFilter == 'pending',
                               onSelected: () =>
                                   setState(() => _statusFilter = 'pending'),
+                            ),
+                            _buildFilterChip(
+                              label: 'Accepted',
+                              selected: _statusFilter == 'accepted',
+                              onSelected: () =>
+                                  setState(() => _statusFilter = 'accepted'),
                             ),
                             _buildFilterChip(
                               label: 'In Progress',

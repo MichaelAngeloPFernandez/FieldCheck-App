@@ -8,7 +8,6 @@ import 'package:field_check/main.dart';
 import 'package:field_check/models/user_model.dart';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
-import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
 
@@ -626,9 +625,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const MapScreen()),
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          '/dashboard',
+                          (route) => false,
+                          arguments: 1,
                         );
                       },
                       icon: const Icon(Icons.map),

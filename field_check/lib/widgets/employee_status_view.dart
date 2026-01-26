@@ -25,6 +25,21 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
   late List<EmployeeLocation> _filteredEmployees;
   String _selectedFilter = 'all'; // all, online, offline, busy, available
 
+  String _formatLastSeen(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+
+    if (diff.inSeconds < 60) {
+      return 'now';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    } else {
+      return '${diff.inDays}d ago';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -205,6 +220,18 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
                               ),
                             ),
                         ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Last seen: ${_formatLastSeen(employee.timestamp)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.65),
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),

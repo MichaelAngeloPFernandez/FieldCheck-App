@@ -361,6 +361,44 @@ class _MapScreenState extends State<MapScreen> {
 
   Timer? _searchDebounce;
 
+  Future<void> _performLocationSearch(String query) async {
+    if (query.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _locationSearchResults = [];
+        _isSearchingLocation = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isSearchingLocation = true;
+    });
+
+    try {
+      final locations = await locationFromAddress(query);
+      if (mounted) {
+        setState(() {
+          _locationSearchResults = locations;
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) print('Error searching location: $e');
+      if (mounted) {
+        setState(() {
+          _locationSearchResults = [];
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSearchingLocation = false;
+        });
+      }
+    }
+  }
+
   Future<void> _searchLocation(String query) async {
     // Cancel previous search if any
     _searchDebounce?.cancel();
@@ -374,32 +412,8 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     // Debounce search by 500ms
-    _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
-      setState(() {
-        _isSearchingLocation = true;
-      });
-
-      try {
-        final locations = await locationFromAddress(query);
-        if (mounted) {
-          setState(() {
-            _locationSearchResults = locations;
-          });
-        }
-      } catch (e) {
-        if (kDebugMode) print('Error searching location: $e');
-        if (mounted) {
-          setState(() {
-            _locationSearchResults = [];
-          });
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isSearchingLocation = false;
-          });
-        }
-      }
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+      _performLocationSearch(query);
     });
   }
 
@@ -697,6 +711,11 @@ class _MapScreenState extends State<MapScreen> {
             ? LatLng(_geofences.first.latitude, _geofences.first.longitude)
             : const LatLng(14.5995, 120.9842));
 
+    final minSheetSize = kIsWeb ? 0.10 : 0.02;
+    final initialSheetSize = kIsWeb ? 0.22 : 0.18;
+    final midSheetSize = kIsWeb ? 0.45 : 0.4;
+    final maxSheetSize = kIsWeb ? 0.90 : 0.98;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -705,12 +724,6 @@ class _MapScreenState extends State<MapScreen> {
             context,
           ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
         actions: [
           IconButton(
             tooltip: 'Refresh map data',
@@ -718,86 +731,6 @@ class _MapScreenState extends State<MapScreen> {
             icon: const Icon(Icons.refresh),
           ),
         ],
-      ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'FieldCheck',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Employee Map',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onPrimary.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.dashboard),
-              title: const Text('Dashboard'),
-              onTap: () {
-                Navigator.pop(context); // Close drawer
-                // Navigate to attendance page (index 0 in dashboard)
-                Navigator.of(context).pushNamedAndRemoveUntil(
-                  '/dashboard',
-                  (route) => false,
-                  arguments: 0, // Attendance page index
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.task),
-              title: const Text('My Tasks'),
-              onTap: () {
-                Navigator.pop(context); // Close drawer
-                // Navigate to tasks page (index 5 in dashboard)
-                Navigator.of(context).pushNamedAndRemoveUntil(
-                  '/dashboard',
-                  (route) => false,
-                  arguments: 5, // Tasks page index
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.map),
-              title: const Text('Map'),
-              onTap: () {
-                Navigator.pop(context); // Close drawer
-                // Already on map - just close drawer
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Settings'),
-              onTap: () {
-                Navigator.pop(context); // Close drawer
-                // Navigate to settings page (index 4 in dashboard)
-                Navigator.of(context).pushNamedAndRemoveUntil(
-                  '/dashboard',
-                  (route) => false,
-                  arguments: 4, // Settings page index
-                );
-              },
-            ),
-          ],
-        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -948,7 +881,24 @@ class _MapScreenState extends State<MapScreen> {
                                     context,
                                   ).textTheme.bodySmall?.copyWith(fontSize: 14),
                                   onChanged: _searchLocation,
+                                  textInputAction: TextInputAction.search,
+                                  onSubmitted: (value) {
+                                    _searchDebounce?.cancel();
+                                    _performLocationSearch(value.trim());
+                                  },
                                 ),
+                              ),
+                              IconButton(
+                                tooltip: 'Search',
+                                icon: const Icon(Icons.search, size: 18),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  final query = _locationSearchController.text
+                                      .trim();
+                                  _searchDebounce?.cancel();
+                                  _performLocationSearch(query);
+                                },
                               ),
                               if (_locationSearchController.text.isNotEmpty)
                                 IconButton(
@@ -1292,11 +1242,11 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 DraggableScrollableSheet(
                   controller: _sheetController,
-                  initialChildSize: 0.18,
-                  minChildSize: 0.02,
-                  maxChildSize: 0.98,
+                  initialChildSize: initialSheetSize,
+                  minChildSize: minSheetSize,
+                  maxChildSize: maxSheetSize,
                   snap: true,
-                  snapSizes: const [0.02, 0.4, 0.98],
+                  snapSizes: [minSheetSize, midSheetSize, maxSheetSize],
                   builder: (context, controller) => Container(
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.surface,
@@ -1324,33 +1274,6 @@ class _MapScreenState extends State<MapScreen> {
                         const SizedBox(height: 8),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onVerticalDragUpdate: (details) {
-                            final current = _sheetController.size;
-                            final height = MediaQuery.of(
-                              context,
-                            ).size.height.clamp(1, 1e9);
-                            final delta = details.delta.dy / height;
-                            final next = (current - delta).clamp(0.02, 0.98);
-                            _sheetController.jumpTo(next);
-                          },
-                          onVerticalDragEnd: (_) {
-                            final current = _sheetController.size;
-                            const targets = [0.02, 0.4, 0.98];
-                            double best = targets.first;
-                            double bestDist = (current - best).abs();
-                            for (final t in targets.skip(1)) {
-                              final d = (current - t).abs();
-                              if (d < bestDist) {
-                                bestDist = d;
-                                best = t;
-                              }
-                            }
-                            _sheetController.animateTo(
-                              best,
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
-                            );
-                          },
                           child: Center(
                             child: Container(
                               width: 44,

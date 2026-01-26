@@ -449,6 +449,30 @@ class TaskService {
     }
   }
 
+  Future<void> acceptUserTask(String userTaskId) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/accept'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to accept task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          } else {
+            message = response.body;
+          }
+        } catch (_) {
+          message = response.body;
+        }
+      }
+      throw Exception(message);
+    }
+  }
+
   Future<void> markTasksScopeRead() async {
     final response = await http.post(
       Uri.parse('$_appNotificationsBaseUrl/mark-read-scope'),

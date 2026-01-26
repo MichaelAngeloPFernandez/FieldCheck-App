@@ -8,8 +8,8 @@ const userTaskSchema = new mongoose.Schema(
     lastViewedAt: { type: Date, required: false },
     status: {
       type: String,
-      enum: ['pending', 'in_progress', 'completed'],
-      default: 'pending',
+      enum: ['pending', 'pending_acceptance', 'accepted', 'in_progress', 'completed'],
+      default: 'pending_acceptance',
     },
     assignedAt: { type: Date, default: Date.now },
     completedAt: { type: Date, required: false },

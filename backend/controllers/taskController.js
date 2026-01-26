@@ -425,10 +425,21 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
   });
   const taskIds = assignments.map((a) => a.taskId);
   const tasks = await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } });
-  const userTaskIdMap = Object.fromEntries(
-    assignments.map((a) => [a.taskId.toString(), a._id.toString()]),
+  const assignmentByTaskId = new Map(
+    assignments.map((a) => [a.taskId.toString(), a]),
   );
-  res.json(tasks.map((t) => toTaskJson(t, userTaskIdMap[t._id.toString()])));
+  res.json(
+    tasks.map((t) => {
+      const a = assignmentByTaskId.get(t._id.toString());
+      return {
+        ...toTaskJson(t, a ? a._id.toString() : undefined),
+        userTaskStatus: a ? a.status : undefined,
+        userTaskAssignedAt: a && a.assignedAt ? a.assignedAt.toISOString() : undefined,
+        userTaskCompletedAt:
+          a && a.completedAt ? a.completedAt.toISOString() : undefined,
+      };
+    }),
+  );
 });
 
 // @route POST /api/tasks/:taskId/assign/:userId
@@ -706,29 +717,53 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
     );
   }
 
+  // Enforce per-assignee acceptance gate
+  const currentAssignmentStatus = String(ut.status || '').toLowerCase();
+  const requested = String(nextStatus || '').toLowerCase();
+  if (
+    ['pending', 'pending_acceptance'].includes(currentAssignmentStatus) &&
+    ['in_progress', 'completed'].includes(requested)
+  ) {
+    res.status(403);
+    throw new Error('Task must be accepted before starting');
+  }
+
   ut.status = nextStatus;
   if (nextStatus === 'completed') {
     ut.completedAt = new Date();
-  } else if (!nextStatus || nextStatus === 'pending') {
+  } else if (!nextStatus || nextStatus === 'pending' || nextStatus === 'pending_acceptance') {
     ut.completedAt = undefined;
   }
   await ut.save();
 
-  // IMPORTANT: Also update the Task status and basic progress so frontend sees the change
+  // IMPORTANT: Do not overwrite global Task.status from per-assignee status.
+  // Keep Task.status as an aggregate state for admin/UI convenience.
   if (taskForStatusUpdate) {
-    taskForStatusUpdate.status = nextStatus;
-
-    // Simple default progress mapping; can be overridden manually via progressPercent API
-    if (nextStatus === 'in_progress' &&
-        (typeof taskForStatusUpdate.progressPercent !== 'number' || taskForStatusUpdate.progressPercent < 1)) {
-      taskForStatusUpdate.progressPercent = 50;
-    } else if (nextStatus === 'completed') {
-      taskForStatusUpdate.progressPercent = 100;
-    }
-
     try {
+      const allAssignments = await UserTask.find({
+        taskId: taskForStatusUpdate._id,
+        isArchived: { $ne: true },
+      }).select('status');
+
+      const statuses = allAssignments.map((a) => String(a.status || '').toLowerCase());
+      const anyInProgress = statuses.some((s) => s === 'in_progress');
+      const allCompleted = statuses.length > 0 && statuses.every((s) => s === 'completed');
+
+      if (allCompleted) {
+        taskForStatusUpdate.status = 'completed';
+        taskForStatusUpdate.progressPercent = 100;
+      } else if (anyInProgress) {
+        taskForStatusUpdate.status = 'in_progress';
+        if (
+          typeof taskForStatusUpdate.progressPercent !== 'number' ||
+          taskForStatusUpdate.progressPercent < 1
+        ) {
+          taskForStatusUpdate.progressPercent = 50;
+        }
+      }
+
       await taskForStatusUpdate.save();
-      console.log(`✓ Updated Task ${ut.taskId} status to ${nextStatus}`);
+      console.log(`✓ Updated Task ${ut.taskId} aggregate status`);
     } catch (e) {
       console.warn(`⚠️ Failed to update Task status: ${e.message}`);
     }
@@ -842,41 +877,58 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
   });
 });
 
-const escalateTask = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const task = await Task.findById(id);
-  if (!task) {
+// @route POST /api/tasks/user-task/:userTaskId/accept
+// @access Private
+const acceptUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
     res.status(404);
-    throw new Error('Task not found');
+    throw new Error('UserTask not found');
   }
 
-  const assignments = await UserTask.find({
-    taskId: task._id,
-    status: { $ne: 'completed' },
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authenticated');
+  }
+
+  if (req.user.role !== 'admin' && ut.userId.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error('Not authorized to accept this task assignment');
+  }
+
+  const current = String(ut.status || '').toLowerCase();
+  if (['accepted', 'in_progress', 'completed'].includes(current)) {
+    return res.status(200).json({
+      id: ut._id.toString(),
+      userId: ut.userId.toString(),
+      taskId: ut.taskId.toString(),
+      status: ut.status,
+      assignedAt: ut.assignedAt.toISOString(),
+      completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
+    });
+  }
+
+  ut.status = 'accepted';
+  ut.completedAt = undefined;
+  await ut.save();
+
+  io.emit('updatedUserTaskStatus', {
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+    status: ut.status,
+    assignedAt: ut.assignedAt.toISOString(),
+    completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
   });
 
-  if (!assignments.length) {
-    return res.status(200).json({ sent: 0, targets: [] });
-  }
-
-  const userIds = assignments.map((a) => a.userId);
-  const users = await User.find({
-    _id: { $in: userIds },
-    phone: { $exists: true, $ne: '' },
-    isActive: true,
-  }).select('phone');
-
-  if (!users.length) {
-    return res.status(200).json({ sent: 0, targets: [] });
-  }
-
-  await Promise.all(
-    users.map((u) => notificationService.notifyTaskEscalated(u, task))
-  );
-
   res.status(200).json({
-    sent: users.length,
-    targets: users.map((u) => u._id.toString()),
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+    status: ut.status,
+    assignedAt: ut.assignedAt.toISOString(),
+    completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
   });
 });
 
@@ -1167,6 +1219,44 @@ const markUserTaskViewed = asyncHandler(async (req, res) => {
   });
 });
 
+const escalateTask = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const task = await Task.findById(id);
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  const assignments = await UserTask.find({
+    taskId: task._id,
+    status: { $ne: 'completed' },
+  });
+
+  if (!assignments.length) {
+    return res.status(200).json({ sent: 0, targets: [] });
+  }
+
+  const userIds = assignments.map((a) => a.userId);
+  const users = await User.find({
+    _id: { $in: userIds },
+    phone: { $exists: true, $ne: '' },
+    isActive: true,
+  }).select('phone');
+
+  if (!users.length) {
+    return res.status(200).json({ sent: 0, targets: [] });
+  }
+
+  await Promise.all(
+    users.map((u) => notificationService.notifyTaskEscalated(u, task))
+  );
+
+  res.status(200).json({
+    sent: users.length,
+    targets: users.map((u) => u._id.toString()),
+  });
+});
+
 module.exports = {
   getTask,
   getTasks,
@@ -1183,6 +1273,7 @@ module.exports = {
   assignTaskToMultipleUsers,
   unassignTaskFromUser,
   updateUserTaskStatus,
+  acceptUserTask,
   markUserTaskViewed,
   updateTaskChecklistItem,
   blockTask,

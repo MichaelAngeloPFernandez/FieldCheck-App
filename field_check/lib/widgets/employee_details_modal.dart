@@ -30,6 +30,21 @@ class EmployeeDetailsModal extends StatefulWidget {
 class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
   late EmployeeStatus _selectedStatus;
 
+  String _formatLastSeen(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+
+    if (diff.inSeconds < 60) {
+      return 'now';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    } else {
+      return '${diff.inDays}d ago';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -168,6 +183,11 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
                       employee.isOnline ? 'Online' : 'Offline',
                       employee.isOnline ? Icons.cloud_done : Icons.cloud_off,
                       color: employee.isOnline ? Colors.green : Colors.red,
+                    ),
+                    _buildInfoRow(
+                      'Last Seen',
+                      _formatLastSeen(employee.timestamp),
+                      Icons.access_time,
                     ),
                     _buildInfoRow(
                       'Active Tasks',

@@ -215,7 +215,7 @@ exports.updateLocation = async (req, res) => {
       const userTaskDocs = await UserTask.find({
         userId: employeeId,
         isArchived: { $ne: true },
-        status: { $in: ['pending', 'in_progress'] },
+        status: { $in: ['pending', 'pending_acceptance', 'accepted', 'in_progress'] },
       }).select('taskId status');
 
       const taskIds = Array.isArray(userTaskDocs)
@@ -318,7 +318,7 @@ exports.updateLocation = async (req, res) => {
       try {
         const userTaskDocs = await UserTask.find({
           userId: employeeId,
-          status: { $in: ['pending', 'in_progress'] },
+          status: { $in: ['pending', 'pending_acceptance', 'accepted', 'in_progress'] },
         }).select('taskId');
         const taskIds = Array.isArray(userTaskDocs)
           ? userTaskDocs.map((d) => d.taskId).filter(Boolean)

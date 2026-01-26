@@ -51,6 +51,38 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     _startAutosave();
   }
 
+  bool get _needsAcceptance {
+    final s = _task.userTaskStatus;
+    return s == null || s == 'pending' || s == 'pending_acceptance';
+  }
+
+  Future<void> _acceptTask() async {
+    final userTaskId = _task.userTaskId;
+    if (userTaskId == null || userTaskId.trim().isEmpty) return;
+    try {
+      await TaskService().acceptUserTask(userTaskId);
+      if (!mounted) return;
+      setState(() {
+        _task = _task.copyWith(userTaskStatus: 'accepted');
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Task accepted'),
+          duration: Duration(seconds: 1),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to accept task: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _textController.dispose();
@@ -66,7 +98,8 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
       // Mark task as in_progress on first keystroke (if not already marked)
       if (!_statusMarkedInProgress &&
-          _task.status == 'pending' &&
+          (_task.userTaskStatus == 'accepted' ||
+              _task.userTaskStatus == 'in_progress') &&
           _task.userTaskId != null) {
         _statusMarkedInProgress = true;
         _markTaskInProgress();
@@ -85,6 +118,11 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         _task.userTaskId!,
         'in_progress',
       );
+      if (mounted) {
+        setState(() {
+          _task = _task.copyWith(userTaskStatus: 'in_progress');
+        });
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -548,15 +586,15 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     }
   }
 
-  Future<void> _submitReport() async {
-    if (_isSubmitting) return;
+  Future<bool> _submitReport() async {
+    if (_isSubmitting) return false;
     if (_textController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please write a report before submitting'),
         ),
       );
-      return;
+      return false;
     }
 
     setState(() {
@@ -679,6 +717,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         attachments: attachmentPaths,
       );
 
+      if (_needsAcceptance) {
+        throw Exception('Accept this task first to begin');
+      }
+
       // Update task status
       await TaskService().updateUserTaskStatus(_task.userTaskId!, 'completed');
 
@@ -701,6 +743,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         );
         Navigator.pop(context, true);
       }
+      return true;
     } catch (e) {
       if (mounted) {
         final phase = _submitPhase;
@@ -722,6 +765,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           );
         }
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -792,10 +836,21 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       appBar: AppBar(
         title: const Text('Task Report'),
         actions: [
+          if (_needsAcceptance)
+            TextButton.icon(
+              onPressed: _acceptTask,
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Accept'),
+            ),
           if (_hasUnsavedChanges)
             const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Icon(Icons.save, color: Colors.orange),
+              padding: EdgeInsets.only(right: 12),
+              child: Center(
+                child: Text(
+                  'Unsaved changes',
+                  style: TextStyle(color: Colors.orange),
+                ),
+              ),
             ),
           IconButton(
             icon: const Icon(Icons.attach_file),

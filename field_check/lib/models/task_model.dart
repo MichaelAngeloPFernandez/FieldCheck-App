@@ -45,6 +45,10 @@ class Task {
   final String rawStatus;
   final int progressPercent;
   final String? userTaskId; // ID of the UserTask if assigned
+  final String?
+  userTaskStatus; // Per-assignee status (pending_acceptance/accepted/in_progress/completed)
+  final DateTime? userTaskAssignedAt;
+  final DateTime? userTaskCompletedAt;
   final UserModel? assignedTo; // Single assignee (for backward compatibility)
   final List<UserModel> assignedToMultiple; // Multiple assignees
   final String? geofenceId; // Auto-populated from assigned geofence
@@ -72,6 +76,9 @@ class Task {
     required this.rawStatus,
     required this.progressPercent,
     this.userTaskId,
+    this.userTaskStatus,
+    this.userTaskAssignedAt,
+    this.userTaskCompletedAt,
     this.assignedTo,
     this.assignedToMultiple = const [],
     this.geofenceId,
@@ -148,6 +155,15 @@ class Task {
         ? DateTime.tryParse(lastViewedAtRaw)
         : null;
 
+    final userTaskAssignedAtRaw = json['userTaskAssignedAt']?.toString();
+    final userTaskCompletedAtRaw = json['userTaskCompletedAt']?.toString();
+    final userTaskAssignedAt = userTaskAssignedAtRaw != null
+        ? DateTime.tryParse(userTaskAssignedAtRaw)
+        : null;
+    final userTaskCompletedAt = userTaskCompletedAtRaw != null
+        ? DateTime.tryParse(userTaskCompletedAtRaw)
+        : null;
+
     return Task(
       id: json['_id'] ?? json['id'] ?? '',
       title: json['title'] ?? '',
@@ -163,6 +179,9 @@ class Task {
       rawStatus: json['rawStatus'] ?? (json['status'] ?? 'pending'),
       progressPercent: progress,
       userTaskId: json['userTaskId'],
+      userTaskStatus: json['userTaskStatus'],
+      userTaskAssignedAt: userTaskAssignedAt,
+      userTaskCompletedAt: userTaskCompletedAt,
       assignedTo: json['assignedTo'] != null
           ? UserModel.fromJson(json['assignedTo'])
           : null,
@@ -195,6 +214,9 @@ class Task {
       'rawStatus': rawStatus,
       'progressPercent': progressPercent,
       'userTaskId': userTaskId,
+      'userTaskStatus': userTaskStatus,
+      'userTaskAssignedAt': userTaskAssignedAt?.toIso8601String(),
+      'userTaskCompletedAt': userTaskCompletedAt?.toIso8601String(),
       'assignedTo': assignedTo?.toJson(),
       'assignedToMultiple': assignedToMultiple.map((u) => u.toJson()).toList(),
       'geofenceId': geofenceId,
@@ -224,6 +246,9 @@ class Task {
     String? rawStatus,
     int? progressPercent,
     String? userTaskId,
+    String? userTaskStatus,
+    DateTime? userTaskAssignedAt,
+    DateTime? userTaskCompletedAt,
     UserModel? assignedTo,
     List<UserModel>? assignedToMultiple,
     String? geofenceId,
@@ -251,6 +276,9 @@ class Task {
       rawStatus: rawStatus ?? this.rawStatus,
       progressPercent: progressPercent ?? this.progressPercent,
       userTaskId: userTaskId ?? this.userTaskId,
+      userTaskStatus: userTaskStatus ?? this.userTaskStatus,
+      userTaskAssignedAt: userTaskAssignedAt ?? this.userTaskAssignedAt,
+      userTaskCompletedAt: userTaskCompletedAt ?? this.userTaskCompletedAt,
       assignedTo: assignedTo ?? this.assignedTo,
       assignedToMultiple: assignedToMultiple ?? this.assignedToMultiple,
       geofenceId: geofenceId ?? this.geofenceId,

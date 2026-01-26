@@ -16,6 +16,7 @@ const {
   assignTaskToMultipleUsers,
   unassignTaskFromUser,
   updateUserTaskStatus,
+  acceptUserTask,
   markUserTaskViewed,
   archiveUserTask,
   restoreUserTask,
@@ -42,6 +43,7 @@ router.get('/:taskId/assignees', protect, admin, getTaskAssignees);
 router.post('/:taskId/assign/:userId', protect, admin, assignTaskToUser);
 router.post('/:taskId/assign-multiple', protect, admin, assignTaskToMultipleUsers);
 router.delete('/:taskId/unassign/:userId', protect, admin, unassignTaskFromUser);
+router.post('/user-task/:userTaskId/accept', protect, acceptUserTask);
 router.put('/user-task/:userTaskId/status', protect, updateUserTaskStatus);
 router.put('/user-task/:userTaskId/view', protect, markUserTaskViewed);
 router.put('/user-task/:userTaskId/archive', protect, archiveUserTask);
