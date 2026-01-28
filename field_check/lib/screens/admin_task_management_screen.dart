@@ -10,9 +10,13 @@ import 'package:field_check/services/settings_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
+import 'package:field_check/widgets/app_page.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class AdminTaskManagementScreen extends StatefulWidget {
-  const AdminTaskManagementScreen({super.key});
+  final bool embedded;
+
+  const AdminTaskManagementScreen({super.key, this.embedded = false});
 
   @override
   State<AdminTaskManagementScreen> createState() =>
@@ -111,15 +115,17 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
         message = 'Escalation request completed.';
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      AppWidgets.showSuccessSnackbar(context, message);
     } catch (e) {
       debugPrint('Error escalating task: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to escalate task: $e')));
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to escalate task',
+          ),
+        );
       }
     }
   }
@@ -129,16 +135,18 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       await _taskService.archiveTask(task.id);
       await _fetchTasks();
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Task archived')));
+        AppWidgets.showSuccessSnackbar(context, 'Task archived');
       }
     } catch (e) {
       debugPrint('Error archiving task: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to archive task: $e')));
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to archive task',
+          ),
+        );
       }
     }
   }
@@ -148,16 +156,18 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       await _taskService.restoreTask(task.id);
       await _fetchTasks();
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Task restored')));
+        AppWidgets.showSuccessSnackbar(context, 'Task restored');
       }
     } catch (e) {
       debugPrint('Error restoring task: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to restore task: $e')));
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to restore task',
+          ),
+        );
       }
     }
   }
@@ -563,10 +573,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                             await _taskService.createTask(newTask);
                             _fetchTasks();
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Task added successfully!'),
-                                ),
+                              AppWidgets.showSuccessSnackbar(
+                                context,
+                                'Task added successfully!',
                               );
                             }
                             Navigator.of(context).pop();
@@ -734,10 +743,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                             await _taskService.updateTask(updatedTask);
                             _fetchTasks();
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Task updated successfully!'),
-                                ),
+                              AppWidgets.showSuccessSnackbar(
+                                context,
+                                'Task updated successfully!',
                               );
                             }
                             Navigator.of(context).pop();
@@ -786,14 +794,13 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       try {
         await _taskService.deleteTask(taskId);
         _fetchTasks(); // Refresh the task list
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Task deleted successfully!')),
-        );
+        AppWidgets.showSuccessSnackbar(context, 'Task deleted successfully!');
       } catch (e) {
         debugPrint('Error deleting task: $e');
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to delete task: $e')));
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete task'),
+        );
       }
     }
   }
@@ -804,26 +811,26 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       employees = await _userService.fetchEmployees();
       if (employees.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No employees available')),
-          );
+          AppWidgets.showWarningSnackbar(context, 'No employees available');
         }
         return;
       }
       employees = employees.where((e) => e.id.isNotEmpty).toList();
       if (employees.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No valid employees found')),
-          );
+          AppWidgets.showWarningSnackbar(context, 'No valid employees found');
         }
         return;
       }
     } catch (e) {
       debugPrint('Error fetching employees: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to fetch employees: $e')),
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to fetch employees',
+          ),
         );
       }
       return;
@@ -1065,7 +1072,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                 info?.activeTasksCount ?? 0,
                                 _employeeActiveTaskCount[employee.id] ?? 0,
                                 employee.activeTaskCount ?? 0,
-                              ].reduce((a, b) => a > b ? a : b);
+                              ].cast<int>().reduce((a, b) => a > b ? a : b);
                               final atLimit =
                                   activeCount >= _taskLimitPerEmployee;
                               final isOverridden = overrideEmployeeIds.contains(
@@ -1242,10 +1249,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
                           if (!mounted) return;
                           Navigator.of(ctx).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('All assignees unassigned.'),
-                            ),
+                          AppWidgets.showSuccessSnackbar(
+                            context,
+                            'All assignees unassigned.',
                           );
                         } catch (e) {
                           debugPrint('Error unassigning all: $e');
@@ -1295,7 +1301,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           info?.activeTasksCount ?? 0,
                           _employeeActiveTaskCount[id] ?? 0,
                           employee?.activeTaskCount ?? 0,
-                        ].reduce((a, b) => a > b ? a : b);
+                        ].cast<int>().reduce((a, b) => a > b ? a : b);
                         return activeCount >= _taskLimitPerEmployee &&
                             !overrideEmployeeIds.contains(id);
                       }).toList();
@@ -1380,9 +1386,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       Navigator.of(ctx).pop();
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (!mounted) return;
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text(message)));
+                        AppWidgets.showSuccessSnackbar(context, message);
                       });
                     } catch (e) {
                       debugPrint('Error assigning task: $e');
@@ -1403,12 +1407,434 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     );
   }
 
+  void _showTaskDetailsDialog(Task task) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final due = task.dueDate;
+
+        return AlertDialog(
+          title: Text(task.title),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (task.description.isNotEmpty) Text(task.description),
+                const SizedBox(height: 12),
+                if (due != null)
+                  Text('Due: ${formatManila(due, 'yyyy-MM-dd HH:mm')}'),
+                if (task.status != null && task.status!.isNotEmpty)
+                  Text('Status: ${task.status}'),
+                if (task.type != null && task.type!.isNotEmpty)
+                  Text('Type: ${task.type}'),
+                if (task.difficulty != null && task.difficulty!.isNotEmpty)
+                  Text('Difficulty: ${task.difficulty}'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _editTask(task);
+              },
+              child: const Text('Edit'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _assignTask(task);
+              },
+              child: const Text('Assign'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    const brandColor = Color(0xFF2688d4);
+
+    final body = Column(
+      children: [
+        if (widget.embedded)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: PopupMenuButton<String>(
+                    onSelected: (value) {
+                      setState(() => _sortBy = value);
+                    },
+                    itemBuilder: (BuildContext context) => [
+                      const PopupMenuItem(
+                        value: 'dueDate',
+                        child: Text('Sort by Due Date'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'difficulty',
+                        child: Text('Sort by Difficulty'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'status',
+                        child: Text('Sort by Status'),
+                      ),
+                    ],
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.sort),
+                            const SizedBox(width: 8),
+                            const Text('Sort'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _addTask,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Create Task'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: brandColor,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ChoiceChip(
+                label: const Text('Current Tasks'),
+                selected: _tab == 'current',
+                onSelected: (sel) {
+                  if (!sel) return;
+                  setState(() {
+                    _tab = 'current';
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Overdue Tasks'),
+                selected: _tab == 'expired',
+                onSelected: (sel) {
+                  if (!sel) return;
+                  setState(() {
+                    _tab = 'expired';
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Archived Tasks'),
+                selected: _tab == 'archived',
+                onSelected: (sel) {
+                  if (!sel) return;
+                  setState(() {
+                    _tab = 'archived';
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: Wrap(
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('All difficulties'),
+                selected: _difficultyFilter == 'all',
+                onSelected: (sel) {
+                  if (!sel) return;
+                  setState(() => _difficultyFilter = 'all');
+                },
+              ),
+              ChoiceChip(
+                label: const Text('Easy'),
+                selected: _difficultyFilter == 'easy',
+                onSelected: (sel) {
+                  if (!sel) return;
+                  setState(() => _difficultyFilter = 'easy');
+                },
+              ),
+              ChoiceChip(
+                label: const Text('Medium'),
+                selected: _difficultyFilter == 'medium',
+                onSelected: (sel) {
+                  if (!sel) return;
+                  setState(() => _difficultyFilter = 'medium');
+                },
+              ),
+              ChoiceChip(
+                label: const Text('Hard'),
+                selected: _difficultyFilter == 'hard',
+                onSelected: (sel) {
+                  if (!sel) return;
+                  setState(() => _difficultyFilter = 'hard');
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : () {
+                  final List<Task> source;
+                  if (_tab == 'archived') {
+                    source = _archivedTasks;
+                  } else {
+                    source = _tasks;
+                  }
+
+                  final filtered = source.where((task) {
+                    // Tab filtering
+                    if (_tab == 'current' && task.isOverdue) {
+                      return false;
+                    }
+                    if (_tab == 'expired' && !task.isOverdue) {
+                      return false;
+                    }
+
+                    // Difficulty filtering
+                    if (_difficultyFilter == 'all') return true;
+                    final d = (task.difficulty ?? '').toLowerCase();
+                    return d == _difficultyFilter;
+                  }).toList();
+
+                  _sortTasks(filtered);
+
+                  if (filtered.isEmpty) {
+                    return Center(
+                      child: Text(
+                        _tab == 'archived'
+                            ? 'No archived tasks.'
+                            : _tab == 'expired'
+                            ? 'No expired tasks.'
+                            : 'No tasks available.',
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final task = filtered[index];
+                      final isOverdue = task.isOverdue;
+                      return Card(
+                        margin: const EdgeInsets.all(8.0),
+                        child: ListTile(
+                          title: Text(
+                            task.title,
+                            style: TextStyle(
+                              color: isOverdue
+                                  ? Colors.redAccent
+                                  : Colors.black,
+                              fontWeight: isOverdue
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(task.description),
+                              if ((task.type != null &&
+                                      task.type!.isNotEmpty) ||
+                                  (task.difficulty != null &&
+                                      task.difficulty!.isNotEmpty))
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Row(
+                                    children: [
+                                      if (task.type != null &&
+                                          task.type!.isNotEmpty)
+                                        Chip(
+                                          label: Text(task.type!),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      if (task.difficulty != null &&
+                                          task.difficulty!.isNotEmpty) ...[
+                                        const SizedBox(width: 4),
+                                        Chip(
+                                          label: Text(task.difficulty!),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_tab == 'current') ...[
+                                IconButton(
+                                  icon: const Icon(Icons.edit),
+                                  onPressed: () => _editTask(task),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.assignment_ind),
+                                  onPressed: () => _assignTask(task),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.redAccent,
+                                  ),
+                                  tooltip: 'Delete task',
+                                  onPressed: () => _deleteTask(task.id),
+                                ),
+                                PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_vert),
+                                  onSelected: (value) {
+                                    switch (value) {
+                                      case 'escalate':
+                                        _escalateTask(task);
+                                        break;
+                                      case 'archive':
+                                        _archiveTask(task);
+                                        break;
+                                    }
+                                  },
+                                  itemBuilder: (context) {
+                                    final items = <PopupMenuEntry<String>>[];
+
+                                    if (isOverdue &&
+                                        task.status != 'completed') {
+                                      items.add(
+                                        const PopupMenuItem<String>(
+                                          value: 'escalate',
+                                          child: Text('Escalate (SMS)'),
+                                        ),
+                                      );
+                                    }
+
+                                    items.add(
+                                      const PopupMenuItem<String>(
+                                        value: 'archive',
+                                        child: Text('Archive task'),
+                                      ),
+                                    );
+
+                                    return items;
+                                  },
+                                ),
+                              ] else if (_tab == 'expired') ...[
+                                IconButton(
+                                  icon: const Icon(Icons.edit),
+                                  onPressed: () => _editTask(task),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.assignment_ind),
+                                  onPressed: () => _assignTask(task),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.redAccent,
+                                  ),
+                                  tooltip: 'Delete task',
+                                  onPressed: () => _deleteTask(task.id),
+                                ),
+                                PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_vert),
+                                  onSelected: (value) {
+                                    switch (value) {
+                                      case 'escalate':
+                                        _escalateTask(task);
+                                        break;
+                                      case 'archive':
+                                        _archiveTask(task);
+                                        break;
+                                    }
+                                  },
+                                  itemBuilder: (context) {
+                                    final items = <PopupMenuEntry<String>>[];
+
+                                    if (isOverdue &&
+                                        task.status != 'completed') {
+                                      items.add(
+                                        const PopupMenuItem<String>(
+                                          value: 'escalate',
+                                          child: Text('Escalate (SMS)'),
+                                        ),
+                                      );
+                                    }
+
+                                    items.add(
+                                      const PopupMenuItem<String>(
+                                        value: 'archive',
+                                        child: Text('Archive task'),
+                                      ),
+                                    );
+
+                                    return items;
+                                  },
+                                ),
+                              ] else ...[
+                                IconButton(
+                                  icon: const Icon(Icons.restore),
+                                  tooltip: 'Restore task',
+                                  onPressed: () => _restoreTask(task),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.redAccent,
+                                  ),
+                                  tooltip: 'Delete task',
+                                  onPressed: () => _deleteTask(task.id),
+                                ),
+                              ],
+                            ],
+                          ),
+                          onTap: () => _showTaskDetailsDialog(task),
+                        ),
+                      );
+                    },
+                  );
+                }(),
+        ),
+      ],
+    );
+
+    if (widget.embedded) {
+      return AppPage(
+        useScaffold: false,
+        useSafeArea: false,
+        showAppBar: false,
+        scroll: false,
+        padding: EdgeInsets.zero,
+        child: body,
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin Task Management'),
-        backgroundColor: const Color(0xFF2688d4),
+        backgroundColor: brandColor,
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) {
@@ -1446,310 +1872,13 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
               label: const Text('Create Task'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF2688d4),
+                foregroundColor: brandColor,
               ),
             ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ChoiceChip(
-                  label: const Text('Current Tasks'),
-                  selected: _tab == 'current',
-                  onSelected: (sel) {
-                    if (!sel) return;
-                    setState(() {
-                      _tab = 'current';
-                    });
-                  },
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Overdue Tasks'),
-                  selected: _tab == 'expired',
-                  onSelected: (sel) {
-                    if (!sel) return;
-                    setState(() {
-                      _tab = 'expired';
-                    });
-                  },
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Archived Tasks'),
-                  selected: _tab == 'archived',
-                  onSelected: (sel) {
-                    if (!sel) return;
-                    setState(() {
-                      _tab = 'archived';
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Wrap(
-              spacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('All difficulties'),
-                  selected: _difficultyFilter == 'all',
-                  onSelected: (sel) {
-                    if (!sel) return;
-                    setState(() => _difficultyFilter = 'all');
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Easy'),
-                  selected: _difficultyFilter == 'easy',
-                  onSelected: (sel) {
-                    if (!sel) return;
-                    setState(() => _difficultyFilter = 'easy');
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Medium'),
-                  selected: _difficultyFilter == 'medium',
-                  onSelected: (sel) {
-                    if (!sel) return;
-                    setState(() => _difficultyFilter = 'medium');
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Hard'),
-                  selected: _difficultyFilter == 'hard',
-                  onSelected: (sel) {
-                    if (!sel) return;
-                    setState(() => _difficultyFilter = 'hard');
-                  },
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : () {
-                    final List<Task> source;
-                    if (_tab == 'archived') {
-                      source = _archivedTasks;
-                    } else {
-                      source = _tasks;
-                    }
-
-                    final filtered = source.where((task) {
-                      // Tab filtering
-                      if (_tab == 'current' && task.isOverdue) {
-                        return false;
-                      }
-                      if (_tab == 'expired' && !task.isOverdue) {
-                        return false;
-                      }
-
-                      // Difficulty filtering
-                      if (_difficultyFilter == 'all') return true;
-                      final d = (task.difficulty ?? '').toLowerCase();
-                      return d == _difficultyFilter;
-                    }).toList();
-
-                    _sortTasks(filtered);
-
-                    if (filtered.isEmpty) {
-                      return Center(
-                        child: Text(
-                          _tab == 'archived'
-                              ? 'No archived tasks.'
-                              : _tab == 'expired'
-                              ? 'No expired tasks.'
-                              : 'No tasks available.',
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final task = filtered[index];
-                        final isOverdue = task.isOverdue;
-                        return Card(
-                          margin: const EdgeInsets.all(8.0),
-                          child: ListTile(
-                            title: Text(
-                              task.title,
-                              style: TextStyle(
-                                color: isOverdue
-                                    ? Colors.redAccent
-                                    : Colors.black,
-                                fontWeight: isOverdue
-                                    ? FontWeight.w600
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(task.description),
-                                if ((task.type != null &&
-                                        task.type!.isNotEmpty) ||
-                                    (task.difficulty != null &&
-                                        task.difficulty!.isNotEmpty))
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4.0),
-                                    child: Row(
-                                      children: [
-                                        if (task.type != null &&
-                                            task.type!.isNotEmpty)
-                                          Chip(
-                                            label: Text(task.type!),
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                          ),
-                                        if (task.difficulty != null &&
-                                            task.difficulty!.isNotEmpty) ...[
-                                          const SizedBox(width: 4),
-                                          Chip(
-                                            label: Text(task.difficulty!),
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_tab == 'current') ...[
-                                  IconButton(
-                                    icon: const Icon(Icons.edit),
-                                    onPressed: () => _editTask(task),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.assignment_ind),
-                                    onPressed: () => _assignTask(task),
-                                  ),
-                                  PopupMenuButton<String>(
-                                    icon: const Icon(Icons.more_vert),
-                                    onSelected: (value) {
-                                      switch (value) {
-                                        case 'escalate':
-                                          _escalateTask(task);
-                                          break;
-                                        case 'archive':
-                                          _archiveTask(task);
-                                          break;
-                                      }
-                                    },
-                                    itemBuilder: (context) {
-                                      final items = <PopupMenuEntry<String>>[];
-
-                                      if (isOverdue &&
-                                          task.status != 'completed') {
-                                        items.add(
-                                          const PopupMenuItem<String>(
-                                            value: 'escalate',
-                                            child: Text('Escalate (SMS)'),
-                                          ),
-                                        );
-                                      }
-
-                                      items.add(
-                                        const PopupMenuItem<String>(
-                                          value: 'archive',
-                                          child: Text('Archive task'),
-                                        ),
-                                      );
-
-                                      return items;
-                                    },
-                                  ),
-                                ] else if (_tab == 'expired') ...[
-                                  IconButton(
-                                    icon: const Icon(Icons.edit),
-                                    onPressed: () => _editTask(task),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.assignment_ind),
-                                    onPressed: () => _assignTask(task),
-                                  ),
-                                  IconButton(
-                                    icon: Icon(
-                                      Icons.delete,
-                                      color: Colors.redAccent,
-                                    ),
-                                    tooltip: 'Delete task',
-                                    onPressed: () => _deleteTask(task.id),
-                                  ),
-                                  PopupMenuButton<String>(
-                                    icon: const Icon(Icons.more_vert),
-                                    onSelected: (value) {
-                                      switch (value) {
-                                        case 'escalate':
-                                          _escalateTask(task);
-                                          break;
-                                        case 'archive':
-                                          _archiveTask(task);
-                                          break;
-                                      }
-                                    },
-                                    itemBuilder: (context) {
-                                      final items = <PopupMenuEntry<String>>[];
-
-                                      if (isOverdue &&
-                                          task.status != 'completed') {
-                                        items.add(
-                                          const PopupMenuItem<String>(
-                                            value: 'escalate',
-                                            child: Text('Escalate (SMS)'),
-                                          ),
-                                        );
-                                      }
-
-                                      items.add(
-                                        const PopupMenuItem<String>(
-                                          value: 'archive',
-                                          child: Text('Archive task'),
-                                        ),
-                                      );
-
-                                      return items;
-                                    },
-                                  ),
-                                ] else ...[
-                                  IconButton(
-                                    icon: const Icon(Icons.restore),
-                                    tooltip: 'Restore task',
-                                    onPressed: () => _restoreTask(task),
-                                  ),
-                                  IconButton(
-                                    icon: Icon(
-                                      Icons.delete,
-                                      color: Colors.redAccent,
-                                    ),
-                                    tooltip: 'Delete task',
-                                    onPressed: () => _deleteTask(task.id),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  }(),
-          ),
-        ],
-      ),
+      body: body,
     );
   }
 }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class ReportUploadWidget extends StatefulWidget {
   final Function(String fileName, List<int> fileBytes)? onFileSelected;
@@ -23,11 +25,12 @@ class _ReportUploadWidgetState extends State<ReportUploadWidget> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
+    final primary = theme.colorScheme.primary;
     return Card(
       elevation: 2,
-      margin: const EdgeInsets.all(12),
+      margin: const EdgeInsets.all(AppTheme.md),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppTheme.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -39,47 +42,46 @@ class _ReportUploadWidgetState extends State<ReportUploadWidget> {
             ),
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppTheme.lg),
               decoration: BoxDecoration(
                 border: Border.all(
                   color: theme.dividerColor.withValues(alpha: 0.5),
                 ),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                 color: theme.colorScheme.surface,
               ),
               child: Column(
                 children: [
-                  Icon(
-                    Icons.cloud_upload,
-                    size: 48,
-                    color: Colors.blue.shade300,
-                  ),
+                  Icon(Icons.cloud_upload, size: 48, color: primary),
                   const SizedBox(height: 12),
                   Text(
                     _selectedFileName ?? 'Select a file to upload',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: _selectedFileName != null
-                          ? Colors.green
+                          ? primary
                           : onSurface.withValues(alpha: 0.75),
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 12),
-                  ElevatedButton.icon(
+                  AppWidgets.primaryButton(
+                    label: 'Choose File',
                     onPressed: _selectFile,
-                    icon: const Icon(Icons.attach_file),
-                    label: const Text('Choose File'),
+                    icon: Icons.attach_file,
+                    width: double.infinity,
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(AppTheme.md),
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
+                color: theme.colorScheme.primaryContainer.withValues(
+                  alpha: 0.35,
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,12 +111,13 @@ class _ReportUploadWidgetState extends State<ReportUploadWidget> {
   Widget _buildRequirement(String text) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
+    final primary = theme.colorScheme.primary;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.xs),
       child: Row(
         children: [
-          const Icon(Icons.check_circle, size: 16, color: Colors.green),
-          const SizedBox(width: 8),
+          Icon(Icons.check_circle, size: 16, color: primary),
+          const SizedBox(width: AppTheme.sm),
           Expanded(
             child: Text(
               text,

@@ -10,8 +10,13 @@ class AdminReportsHubScreen extends StatefulWidget {
   }
 
   final int initialTab;
+  final bool embedded;
 
-  const AdminReportsHubScreen({super.key, this.initialTab = 0});
+  const AdminReportsHubScreen({
+    super.key,
+    this.initialTab = 0,
+    this.embedded = false,
+  });
 
   @override
   State<AdminReportsHubScreen> createState() => _AdminReportsHubScreenState();
@@ -53,27 +58,49 @@ class _AdminReportsHubScreenState extends State<AdminReportsHubScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reports'),
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Theme.of(context).colorScheme.onPrimary,
-          unselectedLabelColor: Theme.of(
-            context,
-          ).colorScheme.onPrimary.withValues(alpha: 0.75),
-          indicatorColor: Colors.white,
-          indicatorWeight: 3,
-          tabs: const [
-            Tab(icon: Icon(Icons.table_chart), text: 'Manage'),
-            Tab(icon: Icon(Icons.insights), text: 'Analytics'),
-          ],
+    final tabs = TabBar(
+      controller: _tabController,
+      labelColor: widget.embedded
+          ? Theme.of(context).colorScheme.primary
+          : Theme.of(context).colorScheme.onPrimary,
+      unselectedLabelColor: widget.embedded
+          ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75)
+          : Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.75),
+      indicatorColor: widget.embedded
+          ? Theme.of(context).colorScheme.primary
+          : Colors.white,
+      indicatorWeight: 3,
+      tabs: const [
+        Tab(icon: Icon(Icons.table_chart), text: 'Manage'),
+        Tab(icon: Icon(Icons.insights), text: 'Analytics'),
+      ],
+    );
+
+    final body = TabBarView(
+      controller: _tabController,
+      children: const [_AdminReportsEmbedded(), _EnhancedReportsEmbedded()],
+    );
+
+    if (!widget.embedded) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Reports'), bottom: tabs),
+        body: body,
+      );
+    }
+
+    return Column(
+      children: [
+        Material(
+          color: Theme.of(context).colorScheme.surface,
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: tabs,
+          ),
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [_AdminReportsEmbedded(), _EnhancedReportsEmbedded()],
-      ),
+        const Divider(height: 1),
+        Expanded(child: body),
+      ],
     );
   }
 }
@@ -83,7 +110,7 @@ class _AdminReportsEmbedded extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const AdminReportsScreen();
+    return const AdminReportsScreen(embedded: true);
   }
 }
 

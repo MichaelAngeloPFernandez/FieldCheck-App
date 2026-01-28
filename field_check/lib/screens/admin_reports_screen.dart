@@ -15,14 +15,16 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
+import 'package:field_check/widgets/app_page.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 
 class AdminReportsScreen extends StatefulWidget {
   final String? employeeId;
+  final bool embedded;
 
-  const AdminReportsScreen({super.key, this.employeeId});
+  const AdminReportsScreen({super.key, this.employeeId, this.embedded = false});
 
   @override
   State<AdminReportsScreen> createState() => _AdminReportsScreenState();
@@ -1666,6 +1668,514 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     String formatTime(DateTime? dt) =>
         dt == null ? '-' : formatManila(dt, 'HH:mm');
 
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // View toggle
+                Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Attendance'),
+                      selected: _viewMode == 'attendance',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() {
+                          _viewMode = 'attendance';
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Task Reports'),
+                          if (_hasNewTaskReports)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6.0),
+                              child: SizedBox(
+                                width: 8,
+                                height: 8,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.error,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      selected: _viewMode == 'task',
+                      onSelected: (sel) async {
+                        if (!sel) return;
+                        setState(() {
+                          _viewMode = 'task';
+                          _hasNewTaskReports = false;
+                        });
+                        await _fetchTaskReports();
+                      },
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Current'),
+                      selected: _viewMode == 'attendance'
+                          ? !_showArchivedAttendance
+                          : !_showArchivedReports,
+                      onSelected: (sel) async {
+                        if (!sel) return;
+                        if (_viewMode == 'attendance') {
+                          setState(() {
+                            _showArchivedAttendance = false;
+                          });
+                          await _fetchAttendanceRecords();
+                          return;
+                        }
+                        setState(() {
+                          _showArchivedReports = false;
+                        });
+                        await _fetchTaskReports();
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Archived'),
+                      selected: _viewMode == 'attendance'
+                          ? _showArchivedAttendance
+                          : _showArchivedReports,
+                      onSelected: (sel) async {
+                        if (!sel) return;
+                        if (_viewMode == 'attendance') {
+                          setState(() {
+                            _showArchivedAttendance = true;
+                          });
+                          await _fetchAttendanceRecords();
+                          return;
+                        }
+                        setState(() {
+                          _showArchivedReports = true;
+                          _taskOverdueOnly = false;
+                        });
+                        await _fetchTaskReports();
+                      },
+                    ),
+                  ],
+                ),
+
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _openFiltersSheet,
+                        icon: const Icon(Icons.tune),
+                        label: const Text('Filters'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _viewMode == 'attendance'
+                              ? 'Showing: ${_showArchivedAttendance ? 'Archived' : 'Current'} • $_filterDate • $_filterLocationLabel • $_attendanceStatusFilter'
+                              : 'Showing: ${_showArchivedReports ? 'Archived' : 'Current'} • $_taskDifficultyFilter • $_reportStatusFilter',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                Container(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                  ),
+                  child: Theme(
+                    data: theme.copyWith(
+                      dividerColor: Colors.transparent,
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                    ),
+                    child: ExpansionTile(
+                      tilePadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 2,
+                      ),
+                      childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      leading: Icon(
+                        Icons.filter_alt_outlined,
+                        color: theme.colorScheme.primary,
+                      ),
+                      title: Text(
+                        'Quick filters',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      subtitle: Text(
+                        _viewMode == 'attendance'
+                            ? 'Jump to common date ranges'
+                            : 'Common report statuses',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.7,
+                          ),
+                        ),
+                      ),
+                      children: [
+                        if (_viewMode == 'attendance')
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _buildFilterChip(
+                                label: 'All time',
+                                selected: _attendanceDateFilter == 'all',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  _setAttendanceQuickDateFilter('all');
+                                },
+                              ),
+                              _buildFilterChip(
+                                label: 'Today',
+                                selected: _attendanceDateFilter == 'today',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  _setAttendanceQuickDateFilter('today');
+                                },
+                              ),
+                              _buildFilterChip(
+                                label: 'This week',
+                                selected: _attendanceDateFilter == 'week',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  _setAttendanceQuickDateFilter('week');
+                                },
+                              ),
+                              _buildFilterChip(
+                                label: 'This month',
+                                selected: _attendanceDateFilter == 'month',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  _setAttendanceQuickDateFilter('month');
+                                },
+                              ),
+                            ],
+                          )
+                        else
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _buildFilterChip(
+                                label: 'Submitted',
+                                selected: _reportStatusFilter == 'submitted',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  setState(() {
+                                    _reportStatusFilter = 'submitted';
+                                  });
+                                },
+                              ),
+                              _buildFilterChip(
+                                label: 'Reviewed',
+                                selected: _reportStatusFilter == 'reviewed',
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  setState(() {
+                                    _reportStatusFilter = 'reviewed';
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                if (_viewMode == 'attendance')
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          title: 'Sessions',
+                          value: _attendanceRecords.length.toString(),
+                          icon: Icons.list_alt,
+                          color: brandColor,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildStatCard(
+                          title: 'Open check-ins',
+                          value: _getOpenCheckInsCount().toString(),
+                          icon: Icons.login,
+                          color: Colors.teal,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                if (_viewMode == 'attendance') const SizedBox(height: 12),
+
+                if (_viewMode == 'attendance')
+                  (!_showArchivedAttendance
+                          ? _attendanceRecords.isEmpty
+                          : _archivedAttendanceRecords.isEmpty)
+                      ? Center(
+                          child: Text(
+                            _showArchivedAttendance
+                                ? 'No archived attendance records'
+                                : 'No attendance records',
+                          ),
+                        )
+                      : Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                return SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: DataTable(
+                                    columns: const [
+                                      DataColumn(label: Text('Employee')),
+                                      DataColumn(label: Text('Location')),
+                                      DataColumn(label: Text('Date')),
+                                      DataColumn(label: Text('In')),
+                                      DataColumn(label: Text('Out')),
+                                      DataColumn(label: Text('Status')),
+                                      DataColumn(label: Text('Actions')),
+                                    ],
+                                    rows: _filteredAttendanceRecords.map((
+                                      record,
+                                    ) {
+                                      String status;
+                                      Color? chipBg;
+                                      Color? chipFg;
+
+                                      if (record.isVoid &&
+                                          record.autoCheckout) {
+                                        status = 'Auto Checkout (Void)';
+                                        chipBg = Theme.of(context)
+                                            .colorScheme
+                                            .error
+                                            .withValues(alpha: 0.12);
+                                        chipFg = Theme.of(
+                                          context,
+                                        ).colorScheme.error;
+                                      } else if (record.isVoid) {
+                                        status = 'Void';
+                                        chipBg = Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.12);
+                                        chipFg = Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.85);
+                                      } else if (record.checkOutTime == null) {
+                                        status = 'Open';
+                                        chipBg = Theme.of(context)
+                                            .colorScheme
+                                            .primary
+                                            .withValues(alpha: 0.12);
+                                        chipFg = Theme.of(
+                                          context,
+                                        ).colorScheme.primary;
+                                      } else {
+                                        status = 'Completed';
+                                        chipBg = Theme.of(context)
+                                            .colorScheme
+                                            .secondary
+                                            .withValues(alpha: 0.12);
+                                        chipFg = Theme.of(
+                                          context,
+                                        ).colorScheme.secondary;
+                                      }
+
+                                      final date = formatManila(
+                                        record.checkInTime,
+                                        'yyyy-MM-dd',
+                                      );
+
+                                      final timeIn = formatTime(
+                                        record.checkInTime,
+                                      );
+                                      final timeOut = formatTime(
+                                        record.checkOutTime,
+                                      );
+
+                                      return DataRow(
+                                        cells: [
+                                          DataCell(
+                                            Text(
+                                              record.employeeName ?? 'Unknown',
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(record.geofenceName ?? 'N/A'),
+                                          ),
+                                          DataCell(Text(date)),
+                                          DataCell(Text(timeIn)),
+                                          DataCell(Text(timeOut)),
+                                          DataCell(
+                                            Chip(
+                                              label: Text(status),
+                                              backgroundColor: chipBg,
+                                              labelStyle: TextStyle(
+                                                color: chipFg,
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            PopupMenuButton<String>(
+                                              tooltip: 'Actions',
+                                              onSelected: (value) async {
+                                                switch (value) {
+                                                  case 'view':
+                                                    _showAttendanceDetails(
+                                                      record,
+                                                    );
+                                                    return;
+                                                  case 'history':
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) =>
+                                                            AdminEmployeeHistoryScreen(
+                                                              employeeId:
+                                                                  record.userId,
+                                                              employeeName:
+                                                                  record
+                                                                      .employeeName ??
+                                                                  'Unknown',
+                                                            ),
+                                                      ),
+                                                    );
+                                                    return;
+                                                  case 'archive':
+                                                    await _toggleArchiveAttendanceRecord(
+                                                      record,
+                                                    );
+                                                    return;
+                                                  case 'delete':
+                                                    await _confirmAndDeleteAttendanceRecord(
+                                                      record,
+                                                    );
+                                                    return;
+                                                }
+                                              },
+                                              itemBuilder: (ctx) =>
+                                                  <PopupMenuEntry<String>>[
+                                                    const PopupMenuItem(
+                                                      value: 'view',
+                                                      child: Text(
+                                                        'View details',
+                                                      ),
+                                                    ),
+                                                    const PopupMenuItem(
+                                                      value: 'history',
+                                                      child: Text(
+                                                        'View history',
+                                                      ),
+                                                    ),
+                                                    PopupMenuItem(
+                                                      value: 'archive',
+                                                      child: Text(
+                                                        _showArchivedAttendance
+                                                            ? 'Restore'
+                                                            : 'Archive',
+                                                      ),
+                                                    ),
+                                                    const PopupMenuDivider(),
+                                                    const PopupMenuItem(
+                                                      value: 'delete',
+                                                      child: Text('Delete'),
+                                                    ),
+                                                  ],
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }).toList(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+
+                if (_viewMode == 'task') _buildTaskReportsView(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (widget.embedded) {
+      return AppPage(
+        useScaffold: false,
+        useSafeArea: false,
+        showAppBar: false,
+        scroll: false,
+        padding: EdgeInsets.zero,
+        child: content,
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 16,
@@ -1738,519 +2248,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // View toggle
-                    Row(
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Attendance'),
-                          selected: _viewMode == 'attendance',
-                          onSelected: (sel) {
-                            if (!sel) return;
-                            setState(() {
-                              _viewMode = 'attendance';
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text('Task Reports'),
-                              if (_hasNewTaskReports)
-                                Padding(
-                                  padding: EdgeInsets.only(left: 6.0),
-                                  child: SizedBox(
-                                    width: 8,
-                                    height: 8,
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          selected: _viewMode == 'task',
-                          onSelected: (sel) async {
-                            if (!sel) return;
-                            setState(() {
-                              _viewMode = 'task';
-                              _hasNewTaskReports = false;
-                            });
-                            await _fetchTaskReports();
-                          },
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Current'),
-                          selected: _viewMode == 'attendance'
-                              ? !_showArchivedAttendance
-                              : !_showArchivedReports,
-                          onSelected: (sel) async {
-                            if (!sel) return;
-                            if (_viewMode == 'attendance') {
-                              setState(() {
-                                _showArchivedAttendance = false;
-                              });
-                              await _fetchAttendanceRecords();
-                              return;
-                            }
-                            setState(() {
-                              _showArchivedReports = false;
-                            });
-                            await _fetchTaskReports();
-                          },
-                        ),
-                        ChoiceChip(
-                          label: const Text('Archived'),
-                          selected: _viewMode == 'attendance'
-                              ? _showArchivedAttendance
-                              : _showArchivedReports,
-                          onSelected: (sel) async {
-                            if (!sel) return;
-                            if (_viewMode == 'attendance') {
-                              setState(() {
-                                _showArchivedAttendance = true;
-                              });
-                              await _fetchAttendanceRecords();
-                              return;
-                            }
-                            setState(() {
-                              _showArchivedReports = true;
-                              _taskOverdueOnly = false;
-                            });
-                            await _fetchTaskReports();
-                          },
-                        ),
-                      ],
-                    ),
-
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _openFiltersSheet,
-                            icon: const Icon(Icons.tune),
-                            label: const Text('Filters'),
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              textStyle: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _viewMode == 'attendance'
-                                  ? 'Showing: ${_showArchivedAttendance ? 'Archived' : 'Current'} • $_filterDate • $_filterLocationLabel • $_attendanceStatusFilter'
-                                  : 'Showing: ${_showArchivedReports ? 'Archived' : 'Current'} • $_taskDifficultyFilter • $_reportStatusFilter',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.7),
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    Container(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: theme.colorScheme.outlineVariant,
-                        ),
-                      ),
-                      child: Theme(
-                        data: theme.copyWith(
-                          dividerColor: Colors.transparent,
-                          splashColor: Colors.transparent,
-                          highlightColor: Colors.transparent,
-                        ),
-                        child: ExpansionTile(
-                          tilePadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 2,
-                          ),
-                          childrenPadding: const EdgeInsets.fromLTRB(
-                            12,
-                            0,
-                            12,
-                            12,
-                          ),
-                          leading: Icon(
-                            Icons.filter_alt_outlined,
-                            color: theme.colorScheme.primary,
-                          ),
-                          title: Text(
-                            'Quick filters',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          subtitle: Text(
-                            _viewMode == 'attendance'
-                                ? 'Jump to common date ranges'
-                                : 'Common report statuses',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(
-                                alpha: 0.7,
-                              ),
-                            ),
-                          ),
-                          children: [
-                            if (_viewMode == 'attendance')
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  _buildFilterChip(
-                                    label: 'All time',
-                                    selected: _attendanceDateFilter == 'all',
-                                    onSelected: (sel) {
-                                      if (!sel) return;
-                                      _setAttendanceQuickDateFilter('all');
-                                    },
-                                  ),
-                                  _buildFilterChip(
-                                    label: 'Today',
-                                    selected: _attendanceDateFilter == 'today',
-                                    onSelected: (sel) {
-                                      if (!sel) return;
-                                      _setAttendanceQuickDateFilter('today');
-                                    },
-                                  ),
-                                  _buildFilterChip(
-                                    label: 'This week',
-                                    selected: _attendanceDateFilter == 'week',
-                                    onSelected: (sel) {
-                                      if (!sel) return;
-                                      _setAttendanceQuickDateFilter('week');
-                                    },
-                                  ),
-                                  _buildFilterChip(
-                                    label: 'This month',
-                                    selected: _attendanceDateFilter == 'month',
-                                    onSelected: (sel) {
-                                      if (!sel) return;
-                                      _setAttendanceQuickDateFilter('month');
-                                    },
-                                  ),
-                                ],
-                              )
-                            else
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  _buildFilterChip(
-                                    label: 'Submitted',
-                                    selected:
-                                        _reportStatusFilter == 'submitted',
-                                    onSelected: (sel) {
-                                      if (!sel) return;
-                                      setState(() {
-                                        _reportStatusFilter = 'submitted';
-                                      });
-                                    },
-                                  ),
-                                  _buildFilterChip(
-                                    label: 'Reviewed',
-                                    selected: _reportStatusFilter == 'reviewed',
-                                    onSelected: (sel) {
-                                      if (!sel) return;
-                                      setState(() {
-                                        _reportStatusFilter = 'reviewed';
-                                      });
-                                    },
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    if (_viewMode == 'attendance')
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildStatCard(
-                              title: 'Sessions',
-                              value: _attendanceRecords.length.toString(),
-                              icon: Icons.list_alt,
-                              color: brandColor,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildStatCard(
-                              title: 'Open check-ins',
-                              value: _getOpenCheckInsCount().toString(),
-                              icon: Icons.login,
-                              color: Colors.teal,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                    if (_viewMode == 'attendance') const SizedBox(height: 12),
-
-                    if (_viewMode == 'attendance')
-                      (!_showArchivedAttendance
-                              ? _attendanceRecords.isEmpty
-                              : _archivedAttendanceRecords.isEmpty)
-                          ? Center(
-                              child: Text(
-                                _showArchivedAttendance
-                                    ? 'No archived attendance records'
-                                    : 'No attendance records',
-                              ),
-                            )
-                          : Card(
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                side: BorderSide(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outlineVariant,
-                                ),
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    return SingleChildScrollView(
-                                      scrollDirection: Axis.horizontal,
-                                      child: DataTable(
-                                        columns: const [
-                                          DataColumn(label: Text('Employee')),
-                                          DataColumn(label: Text('Location')),
-                                          DataColumn(label: Text('Date')),
-                                          DataColumn(label: Text('In')),
-                                          DataColumn(label: Text('Out')),
-                                          DataColumn(label: Text('Status')),
-                                          DataColumn(label: Text('Actions')),
-                                        ],
-                                        rows: _filteredAttendanceRecords.map((
-                                          record,
-                                        ) {
-                                          String status;
-                                          Color? chipBg;
-                                          Color? chipFg;
-
-                                          if (record.isVoid &&
-                                              record.autoCheckout) {
-                                            status = 'Auto Checkout (Void)';
-                                            chipBg = Theme.of(context)
-                                                .colorScheme
-                                                .error
-                                                .withValues(alpha: 0.12);
-                                            chipFg = Theme.of(
-                                              context,
-                                            ).colorScheme.error;
-                                          } else if (record.isVoid) {
-                                            status = 'Void';
-                                            chipBg = Theme.of(context)
-                                                .colorScheme
-                                                .onSurface
-                                                .withValues(alpha: 0.12);
-                                            chipFg = Theme.of(context)
-                                                .colorScheme
-                                                .onSurface
-                                                .withValues(alpha: 0.85);
-                                          } else if (record.checkOutTime ==
-                                              null) {
-                                            status = 'Open';
-                                            chipBg = Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                                .withValues(alpha: 0.12);
-                                            chipFg = Theme.of(
-                                              context,
-                                            ).colorScheme.primary;
-                                          } else {
-                                            status = 'Completed';
-                                            chipBg = Theme.of(context)
-                                                .colorScheme
-                                                .secondary
-                                                .withValues(alpha: 0.12);
-                                            chipFg = Theme.of(
-                                              context,
-                                            ).colorScheme.secondary;
-                                          }
-                                          final date = formatManila(
-                                            record.checkInTime,
-                                            'yyyy-MM-dd',
-                                          );
-
-                                          final timeIn = formatTime(
-                                            record.checkInTime,
-                                          );
-                                          final timeOut = formatTime(
-                                            record.checkOutTime,
-                                          );
-
-                                          return DataRow(
-                                            cells: [
-                                              DataCell(
-                                                Text(
-                                                  record.employeeName ??
-                                                      'Unknown',
-                                                ),
-                                              ),
-                                              DataCell(
-                                                Text(
-                                                  record.geofenceName ?? 'N/A',
-                                                ),
-                                              ),
-                                              DataCell(Text(date)),
-                                              DataCell(Text(timeIn)),
-                                              DataCell(Text(timeOut)),
-                                              DataCell(
-                                                Chip(
-                                                  label: Text(status),
-                                                  backgroundColor: chipBg,
-                                                  labelStyle: TextStyle(
-                                                    color: chipFg,
-                                                  ),
-                                                ),
-                                              ),
-                                              DataCell(
-                                                PopupMenuButton<String>(
-                                                  tooltip: 'Actions',
-                                                  onSelected: (value) async {
-                                                    switch (value) {
-                                                      case 'view':
-                                                        _showAttendanceDetails(
-                                                          record,
-                                                        );
-                                                        return;
-                                                      case 'history':
-                                                        Navigator.push(
-                                                          context,
-                                                          MaterialPageRoute(
-                                                            builder: (context) =>
-                                                                AdminEmployeeHistoryScreen(
-                                                                  employeeId:
-                                                                      record
-                                                                          .userId,
-                                                                  employeeName:
-                                                                      record
-                                                                          .employeeName ??
-                                                                      'Unknown',
-                                                                ),
-                                                          ),
-                                                        );
-                                                        return;
-                                                      case 'archive':
-                                                        await _toggleArchiveAttendanceRecord(
-                                                          record,
-                                                        );
-                                                        return;
-                                                      case 'delete':
-                                                        await _confirmAndDeleteAttendanceRecord(
-                                                          record,
-                                                        );
-                                                        return;
-                                                    }
-                                                  },
-                                                  itemBuilder: (ctx) =>
-                                                      <PopupMenuEntry<String>>[
-                                                        const PopupMenuItem(
-                                                          value: 'view',
-                                                          child: Text(
-                                                            'View details',
-                                                          ),
-                                                        ),
-                                                        const PopupMenuItem(
-                                                          value: 'history',
-                                                          child: Text(
-                                                            'View history',
-                                                          ),
-                                                        ),
-                                                        PopupMenuItem(
-                                                          value: 'archive',
-                                                          child: Text(
-                                                            _showArchivedAttendance
-                                                                ? 'Restore'
-                                                                : 'Archive',
-                                                          ),
-                                                        ),
-                                                        const PopupMenuDivider(),
-                                                        const PopupMenuItem(
-                                                          value: 'delete',
-                                                          child: Text('Delete'),
-                                                        ),
-                                                      ],
-                                                ),
-                                              ),
-                                            ],
-                                          );
-                                        }).toList(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-
-                    if (_viewMode == 'task') _buildTaskReportsView(),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: SafeArea(child: content),
     );
   }
 

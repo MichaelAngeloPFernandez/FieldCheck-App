@@ -619,11 +619,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 3:
         return const AdminGeofenceScreen();
       case 4:
-        return const AdminReportsHubScreen();
+        return const AdminReportsHubScreen(embedded: true);
       case 5:
         return const AdminSettingsScreen();
       case 6:
-        return const AdminTaskManagementScreen();
+        return const AdminTaskManagementScreen(embedded: true);
       default:
         return _buildDashboardOverview();
     }
