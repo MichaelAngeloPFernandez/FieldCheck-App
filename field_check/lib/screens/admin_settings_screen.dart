@@ -17,6 +17,8 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/settings_service.dart';
 import '../services/notification_service.dart';
 import 'package:field_check/config/api_config.dart';
+import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/widgets/app_page.dart';
 
 class AdminSettingsScreen extends StatefulWidget {
   const AdminSettingsScreen({super.key});
@@ -328,427 +330,420 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            24 + kBottomNavigationBarHeight,
+    final theme = Theme.of(context);
+
+    return AppPage(
+      useScaffold: false,
+      useSafeArea: false,
+      scroll: false,
+      padding: EdgeInsets.zero,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          AppTheme.lg,
+          AppTheme.lg,
+          AppTheme.lg,
+          AppTheme.xl,
+        ),
+        children: [
+          Text(
+            'System Settings',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
-          children: [
-            const Text(
-              'System Settings',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            if (!_settingsLoadedFromBackend) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.orange.withValues(alpha: 0.35),
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.cloud_off, color: Colors.orange),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Backend sync unavailable',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'You are viewing local settings. Try again when the backend is reachable.',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed: _loadSettings,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+          if (!_settingsLoadedFromBackend) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.orange.withValues(alpha: 0.35),
                 ),
               ),
-            ],
-            const SizedBox(height: 24),
-
-            // Geofence Settings
-            _buildSectionHeader('Geofence Settings'),
-            _buildSliderSetting(
-              title: 'Default Geofence Radius',
-              value: _geofenceRadius.toDouble(),
-              min: 50,
-              max: 500,
-              divisions: 9,
-              unit: 'm',
-              onChanged: (value) {
-                setState(() {
-                  _geofenceRadius = value.round();
-                });
-              },
-            ),
-            ListTile(
-              title: const Text('Manage Geofences'),
-              subtitle: const Text('Add, edit, enable/disable geofence areas'),
-              leading: const Icon(Icons.map),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AdminGeofenceScreen(),
-                  ),
-                );
-              },
-            ),
-
-            // Verification Settings
-            _buildSectionHeader('Verification Settings'),
-            _buildSwitchSetting(
-              title: 'Allow Offline Mode',
-              subtitle:
-                  'Employees can check in/out without internet connection',
-              value: _allowOfflineMode,
-              onChanged: (value) {
-                setState(() {
-                  _allowOfflineMode = value;
-                  // Coupling: enabling offline mode ensures location tracking is enabled
-                  if (value) {
-                    _enableLocationTracking = true;
-                  }
-                });
-              },
-            ),
-            _buildSwitchSetting(
-              title: 'Require Beacon Verification',
-              subtitle:
-                  'Use Bluetooth beacons for additional location verification',
-              value: _requireBeaconVerification,
-              onChanged: (value) {
-                setState(() {
-                  _requireBeaconVerification = value;
-                });
-              },
-            ),
-            _buildSwitchSetting(
-              title: 'Enable Location Tracking',
-              subtitle: 'Track employee location during work hours',
-              value: _enableLocationTracking,
-              onChanged: (value) {
-                setState(() {
-                  _enableLocationTracking = value;
-                });
-              },
-            ),
-
-            // Synchronization Settings
-            _buildSectionHeader('Synchronization Settings'),
-            _buildDropdownSetting(
-              title: 'Sync Frequency',
-              value: _syncFrequency,
-              items: const [
-                'Every 5 minutes',
-                'Every 15 minutes',
-                'Every 30 minutes',
-                'Every hour',
-                'Manual only',
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _syncFrequency = value!;
-                });
-              },
-            ),
-
-            _buildSectionHeader('Task Settings'),
-            ListTile(
-              title: const Text('Max Active Tasks Per Employee'),
-              subtitle: const Text(
-                'Controls assignment limits and warnings in Admin Task Management',
-              ),
-              trailing: SizedBox(
-                width: 84,
-                child: TextField(
-                  controller: _taskMaxActivePerEmployeeController,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) {
-                    final parsed = int.tryParse(value);
-                    if (parsed == null) return;
-                    setState(() {
-                      _taskMaxActivePerEmployee = parsed;
-                    });
-                  },
-                  onSubmitted: (value) {
-                    final parsed = int.tryParse(value);
-                    final normalized = _normalizeTaskMaxActivePerEmployee(
-                      parsed,
-                    );
-                    if (!mounted) return;
-                    setState(() {
-                      _taskMaxActivePerEmployee = normalized;
-                    });
-                    _taskMaxActivePerEmployeeController.text = normalized
-                        .toString();
-                    if (parsed != null && parsed != normalized) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Adjusted to $normalized (allowed: $_taskMaxActivePerEmployeeMin-$_taskMaxActivePerEmployeeMax).',
-                          ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.cloud_off, color: Colors.orange),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Backend sync unavailable',
+                          style: TextStyle(fontWeight: FontWeight.w700),
                         ),
-                      );
-                    }
-                  },
-                ),
-              ),
-            ),
-
-            // User Management
-            _buildSectionHeader('User Management'),
-            ListTile(
-              title: const Text('Manage Employees'),
-              subtitle: const Text('Add, edit, or remove employee accounts'),
-              leading: const Icon(Icons.people),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ManageEmployeesScreen(),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              title: const Text('Manage Administrators'),
-              subtitle: const Text(
-                'Add, edit, or remove administrator accounts',
-              ),
-              leading: const Icon(Icons.admin_panel_settings),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ManageAdminsScreen()),
-                );
-              },
-            ),
-            ListTile(
-              title: const Text('Reactivate Account'),
-              subtitle: const Text('Enable a previously deactivated account'),
-              leading: const Icon(Icons.person),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () => _openRoleChooserAndNavigate('reactivate'),
-            ),
-            ListTile(
-              title: const Text('Delete Account'),
-              subtitle: const Text(
-                'Permanently remove a user account and all associated data',
-              ),
-              leading: const Icon(Icons.delete_forever),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () => _openRoleChooserAndNavigate('delete'),
-            ),
-
-            // Urgent Notifications
-            _buildSectionHeader('Urgent Notifications'),
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Send urgent SMS to all active employees',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _urgentMessageController,
-                      maxLines: 3,
-                      maxLength: 320,
-                      decoration: const InputDecoration(
-                        hintText:
-                            'Enter urgent message (e.g., system outage, safety alert)...',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: ElevatedButton.icon(
-                        onPressed:
-                            _isSendingUrgent ||
-                                _urgentMessageController.text.trim().isEmpty
-                            ? null
-                            : () async {
-                                final text = _urgentMessageController.text
-                                    .trim();
-                                final ok =
-                                    await showDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Send Urgent SMS'),
-                                        content: Text(
-                                          'Send this message to all active employees with a phone number?\n\n$text',
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, false),
-                                            child: const Text('Cancel'),
-                                          ),
-                                          ElevatedButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, true),
-                                            child: const Text('Send'),
-                                          ),
-                                        ],
-                                      ),
-                                    ) ??
-                                    false;
-                                if (!ok) return;
-
-                                setState(() {
-                                  _isSendingUrgent = true;
-                                });
-                                try {
-                                  await _notificationService
-                                      .sendUrgentSmsToEmployees(text);
-                                  if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Urgent SMS sent: "${text.length > 40 ? '${text.substring(0, 40)}...' : text}"',
-                                      ),
-                                    ),
-                                  );
-                                  _urgentMessageController.clear();
-                                } catch (e) {
-                                  if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Failed to send urgent SMS: $e',
-                                      ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                } finally {
-                                  if (mounted) {
-                                    setState(() {
-                                      _isSendingUrgent = false;
-                                    });
-                                  }
-                                }
-                              },
-                        icon: _isSendingUrgent
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.sms_failed_outlined),
-                        label: const Text('Send Urgent SMS'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent,
-                          foregroundColor: Colors.white,
+                        const SizedBox(height: 4),
+                        Text(
+                          'You are viewing local settings. Try again when the backend is reachable.',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _loadSettings,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
-
-            // System Settings
-            _buildSectionHeader('System'),
-            ListTile(
-              title: const Text('Backup Data'),
-              subtitle: const Text('Export users to JSON (web)'),
-              leading: const Icon(Icons.backup),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: _exportUsersWebJson,
-            ),
-            ListTile(
-              title: const Text('Restore Data'),
-              subtitle: const Text('Import users from JSON'),
-              leading: const Icon(Icons.restore),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: _importUsersJsonPicker,
-            ),
-            ListTile(
-              title: const Text('Export to Excel'),
-              subtitle: const Text('Export users to Excel file'),
-              leading: const Icon(Icons.table_chart),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: _exportUsersExcel,
-            ),
-
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _isSavingSettings ? null : _saveSettings,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2688d4),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: _isSavingSettings
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Text('Save Settings'),
             ),
           ],
-        ),
+          const SizedBox(height: 24),
+
+          // Geofence Settings
+          _buildSectionHeader('Geofence Settings'),
+          _buildSliderSetting(
+            title: 'Default Geofence Radius',
+            value: _geofenceRadius.toDouble(),
+            min: 50,
+            max: 500,
+            divisions: 9,
+            unit: 'm',
+            onChanged: (value) {
+              setState(() {
+                _geofenceRadius = value.round();
+              });
+            },
+          ),
+          ListTile(
+            title: const Text('Manage Geofences'),
+            subtitle: const Text('Add, edit, enable/disable geofence areas'),
+            leading: const Icon(Icons.map),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdminGeofenceScreen()),
+              );
+            },
+          ),
+
+          // Verification Settings
+          _buildSectionHeader('Verification Settings'),
+          _buildSwitchSetting(
+            title: 'Allow Offline Mode',
+            subtitle: 'Employees can check in/out without internet connection',
+            value: _allowOfflineMode,
+            onChanged: (value) {
+              setState(() {
+                _allowOfflineMode = value;
+                // Coupling: enabling offline mode ensures location tracking is enabled
+                if (value) {
+                  _enableLocationTracking = true;
+                }
+              });
+            },
+          ),
+          _buildSwitchSetting(
+            title: 'Require Beacon Verification',
+            subtitle:
+                'Use Bluetooth beacons for additional location verification',
+            value: _requireBeaconVerification,
+            onChanged: (value) {
+              setState(() {
+                _requireBeaconVerification = value;
+              });
+            },
+          ),
+          _buildSwitchSetting(
+            title: 'Enable Location Tracking',
+            subtitle: 'Track employee location during work hours',
+            value: _enableLocationTracking,
+            onChanged: (value) {
+              setState(() {
+                _enableLocationTracking = value;
+              });
+            },
+          ),
+
+          // Synchronization Settings
+          _buildSectionHeader('Synchronization Settings'),
+          _buildDropdownSetting(
+            title: 'Sync Frequency',
+            value: _syncFrequency,
+            items: const [
+              'Every 5 minutes',
+              'Every 15 minutes',
+              'Every 30 minutes',
+              'Every hour',
+              'Manual only',
+            ],
+            onChanged: (value) {
+              setState(() {
+                _syncFrequency = value!;
+              });
+            },
+          ),
+
+          _buildSectionHeader('Task Settings'),
+          ListTile(
+            title: const Text('Max Active Tasks Per Employee'),
+            subtitle: const Text(
+              'Controls assignment limits and warnings in Admin Task Management',
+            ),
+            trailing: SizedBox(
+              width: 84,
+              child: TextField(
+                controller: _taskMaxActivePerEmployeeController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                textAlign: TextAlign.center,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  final parsed = int.tryParse(value);
+                  if (parsed == null) return;
+                  setState(() {
+                    _taskMaxActivePerEmployee = parsed;
+                  });
+                },
+                onSubmitted: (value) {
+                  final parsed = int.tryParse(value);
+                  final normalized = _normalizeTaskMaxActivePerEmployee(parsed);
+                  if (!mounted) return;
+                  setState(() {
+                    _taskMaxActivePerEmployee = normalized;
+                  });
+                  _taskMaxActivePerEmployeeController.text = normalized
+                      .toString();
+                  if (parsed != null && parsed != normalized) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Adjusted to $normalized (allowed: $_taskMaxActivePerEmployeeMin-$_taskMaxActivePerEmployeeMax).',
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          ),
+
+          // User Management
+          _buildSectionHeader('User Management'),
+          ListTile(
+            title: const Text('Manage Employees'),
+            subtitle: const Text('Add, edit, or remove employee accounts'),
+            leading: const Icon(Icons.people),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ManageEmployeesScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            title: const Text('Manage Administrators'),
+            subtitle: const Text('Add, edit, or remove administrator accounts'),
+            leading: const Icon(Icons.admin_panel_settings),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ManageAdminsScreen()),
+              );
+            },
+          ),
+          ListTile(
+            title: const Text('Reactivate Account'),
+            subtitle: const Text('Enable a previously deactivated account'),
+            leading: const Icon(Icons.person),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => _openRoleChooserAndNavigate('reactivate'),
+          ),
+          ListTile(
+            title: const Text('Delete Account'),
+            subtitle: const Text(
+              'Permanently remove a user account and all associated data',
+            ),
+            leading: const Icon(Icons.delete_forever),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => _openRoleChooserAndNavigate('delete'),
+          ),
+
+          // Urgent Notifications
+          _buildSectionHeader('Urgent Notifications'),
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Send urgent SMS to all active employees',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _urgentMessageController,
+                    maxLines: 3,
+                    maxLength: 320,
+                    decoration: const InputDecoration(
+                      hintText:
+                          'Enter urgent message (e.g., system outage, safety alert)...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          _isSendingUrgent ||
+                              _urgentMessageController.text.trim().isEmpty
+                          ? null
+                          : () async {
+                              final text = _urgentMessageController.text.trim();
+                              final ok =
+                                  await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Send Urgent SMS'),
+                                      content: Text(
+                                        'Send this message to all active employees with a phone number?\n\n$text',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        ElevatedButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, true),
+                                          child: const Text('Send'),
+                                        ),
+                                      ],
+                                    ),
+                                  ) ??
+                                  false;
+                              if (!ok) return;
+
+                              setState(() {
+                                _isSendingUrgent = true;
+                              });
+                              try {
+                                await _notificationService
+                                    .sendUrgentSmsToEmployees(text);
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Urgent SMS sent: "${text.length > 40 ? '${text.substring(0, 40)}...' : text}"',
+                                    ),
+                                  ),
+                                );
+                                _urgentMessageController.clear();
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Failed to send urgent SMS: $e',
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              } finally {
+                                if (mounted) {
+                                  setState(() {
+                                    _isSendingUrgent = false;
+                                  });
+                                }
+                              }
+                            },
+                      icon: _isSendingUrgent
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sms_failed_outlined),
+                      label: const Text('Send Urgent SMS'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // System Settings
+          _buildSectionHeader('System'),
+          ListTile(
+            title: const Text('Backup Data'),
+            subtitle: const Text('Export users to JSON (web)'),
+            leading: const Icon(Icons.backup),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: _exportUsersWebJson,
+          ),
+          ListTile(
+            title: const Text('Restore Data'),
+            subtitle: const Text('Import users from JSON'),
+            leading: const Icon(Icons.restore),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: _importUsersJsonPicker,
+          ),
+          ListTile(
+            title: const Text('Export to Excel'),
+            subtitle: const Text('Export users to Excel file'),
+            leading: const Icon(Icons.table_chart),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: _exportUsersExcel,
+          ),
+
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _isSavingSettings ? null : _saveSettings,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            child: _isSavingSettings
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Save Settings'),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildSectionHeader(String title) {
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2688d4),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: theme.colorScheme.primary,
             ),
           ),
           const Divider(),
@@ -769,7 +764,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeThumbColor: const Color(0xFF2688d4),
+        activeThumbColor: Theme.of(context).colorScheme.primary,
       ),
     );
   }
@@ -797,7 +792,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   min: min,
                   max: max,
                   divisions: divisions,
-                  activeColor: const Color(0xFF2688d4),
+                  activeColor: Theme.of(context).colorScheme.primary,
                   onChanged: onChanged,
                 ),
               ),
@@ -834,7 +829,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     context,
                   ).colorScheme.onSurface.withValues(alpha: 0.25),
                 ),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
               ),
               child: DropdownButton<String>(
                 value: value,

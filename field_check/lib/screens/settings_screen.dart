@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/main.dart';
 import 'package:field_check/models/user_model.dart';
+import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/widgets/app_page.dart';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/config/api_config.dart';
@@ -124,10 +126,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) {
     final theme = Theme.of(context);
     return Container(
-      padding: padding ?? const EdgeInsets.all(16),
+      padding: padding ?? const EdgeInsets.all(AppTheme.lg),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
         boxShadow: [
           BoxShadow(
@@ -182,10 +184,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.md,
+        vertical: AppTheme.md,
+      ),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
       ),
       child: Row(
@@ -193,14 +198,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           if (icon != null) ...[
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(AppTheme.sm),
               decoration: BoxDecoration(
                 color: theme.colorScheme.primary.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 18, color: theme.colorScheme.primary),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppTheme.md),
           ],
           Expanded(
             child: Column(
@@ -213,7 +218,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 if (subtitleWidget != null) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppTheme.sm),
                   DefaultTextStyle(
                     style:
                         theme.textTheme.bodySmall?.copyWith(
@@ -226,7 +231,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: subtitleWidget,
                   ),
                 ] else if (subtitle != null) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppTheme.sm),
                   Text(
                     subtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -240,7 +245,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppTheme.md),
           Align(alignment: Alignment.centerRight, child: trailing),
         ],
       ),
@@ -489,337 +494,323 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final profileId = _profile?.role == 'admin'
         ? (_profile?.id ?? '—')
         : (_profile?.employeeId ?? _profile?.id ?? '—');
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Settings',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Manage your profile, preferences, and sync.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildSurfaceCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader(
-                    'Profile',
-                    subtitle: 'Your account details and access status.',
-                    trailing: profileRole == null
-                        ? null
-                        : _buildStatusPill(
-                            label: profileRole,
-                            color: theme.colorScheme.primary,
-                            icon: Icons.badge_outlined,
+    return AppPage(
+      useScaffold: false,
+      useSafeArea: false,
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.lg,
+        AppTheme.lg,
+        AppTheme.lg,
+        AppTheme.xl,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  'Profile',
+                  subtitle: 'Your account details and access status.',
+                  trailing: profileRole == null
+                      ? null
+                      : _buildStatusPill(
+                          label: profileRole,
+                          color: theme.colorScheme.primary,
+                          icon: Icons.badge_outlined,
+                        ),
+                ),
+                const SizedBox(height: AppTheme.lg),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 32,
+                      backgroundColor: theme.colorScheme.primary,
+                      backgroundImage: _pickedAvatarBytes != null
+                          ? MemoryImage(_pickedAvatarBytes!)
+                          : (_profile?.avatarUrl?.isNotEmpty == true
+                                ? NetworkImage(
+                                        _normalizeAvatarUrl(
+                                          _profile!.avatarUrl!,
+                                        ),
+                                      )
+                                      as ImageProvider
+                                : null),
+                      child:
+                          _pickedAvatarBytes == null &&
+                              (_profile?.avatarUrl?.isEmpty ?? true)
+                          ? const Icon(
+                              Icons.person,
+                              size: 32,
+                              color: Colors.white,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _loadingProfile
+                                ? 'Loading...'
+                                : (_profile?.name ?? '—'),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 32,
-                        backgroundColor: theme.colorScheme.primary,
-                        backgroundImage: _pickedAvatarBytes != null
-                            ? MemoryImage(_pickedAvatarBytes!)
-                            : (_profile?.avatarUrl?.isNotEmpty == true
-                                  ? NetworkImage(
-                                          _normalizeAvatarUrl(
-                                            _profile!.avatarUrl!,
-                                          ),
-                                        )
-                                        as ImageProvider
-                                  : null),
-                        child:
-                            _pickedAvatarBytes == null &&
-                                (_profile?.avatarUrl?.isEmpty ?? true)
-                            ? const Icon(
-                                Icons.person,
-                                size: 32,
-                                color: Colors.white,
-                              )
-                            : null,
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                          if (_profileError != null) ...[
+                            const SizedBox(height: 6),
                             Text(
-                              _loadingProfile
-                                  ? 'Loading...'
-                                  : (_profile?.name ?? '—'),
-                              style: theme.textTheme.titleMedium?.copyWith(
+                              _profileError!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.error,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            if (_profileError != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                _profileError!,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.error,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: _loadProfile,
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('Retry'),
-                              ),
-                            ],
-                            if (_profileError == null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                _loadingProfile ? '' : (_profile?.email ?? ''),
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurface.withValues(
-                                    alpha: 0.75,
-                                  ),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _loadingProfile ? '' : 'ID: $profileId',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurface.withValues(
-                                    alpha: 0.7,
-                                  ),
-                                ),
-                              ),
-                            ],
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              onPressed: _loadProfile,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry'),
+                            ),
                           ],
-                        ),
+                          if (_profileError == null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              _loadingProfile ? '' : (_profile?.email ?? ''),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.75,
+                                ),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _loadingProfile ? '' : 'ID: $profileId',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _showEditProfileDialog,
-                      icon: const Icon(Icons.edit),
-                      label: const Text('Edit profile'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        textStyle: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.lg),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _showEditProfileDialog,
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Edit profile'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      textStyle: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.of(context).pushNamedAndRemoveUntil(
-                          '/dashboard',
-                          (route) => false,
-                          arguments: 1,
-                        );
-                      },
-                      icon: const Icon(Icons.map),
-                      label: const Text('Open map'),
-                    ),
+                ),
+                const SizedBox(height: AppTheme.md),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pushNamedAndRemoveUntil(
+                        '/dashboard',
+                        (route) => false,
+                        arguments: 1,
+                      );
+                    },
+                    icon: const Icon(Icons.map),
+                    label: const Text('Open map'),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            _buildSurfaceCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader(
-                    'Appearance',
-                    subtitle: 'Customize how the app looks.',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildSettingTile(
-                    title: 'Theme mode',
-                    subtitle: 'Choose light, dark, or system default.',
-                    icon: Icons.brightness_6_outlined,
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
+          ),
+          const SizedBox(height: AppTheme.lg),
+          _buildSurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  'Appearance',
+                  subtitle: 'Customize how the app looks.',
+                ),
+                const SizedBox(height: AppTheme.md),
+                _buildSettingTile(
+                  title: 'Theme mode',
+                  subtitle: 'Choose light, dark, or system default.',
+                  icon: Icons.brightness_6_outlined,
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.md,
+                      vertical: AppTheme.sm,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      border: Border.all(
                         color: theme.colorScheme.primary.withValues(
-                          alpha: 0.12,
+                          alpha: 0.35,
                         ),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: theme.colorScheme.primary.withValues(
-                            alpha: 0.35,
+                      ),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<ThemeMode>(
+                        value: MyApp.of(context)?.themeMode ?? ThemeMode.light,
+                        items: const [
+                          DropdownMenuItem(
+                            value: ThemeMode.system,
+                            child: Text('System'),
                           ),
-                        ),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<ThemeMode>(
-                          value:
-                              MyApp.of(context)?.themeMode ?? ThemeMode.light,
-                          items: const [
-                            DropdownMenuItem(
-                              value: ThemeMode.system,
-                              child: Text('System'),
-                            ),
-                            DropdownMenuItem(
-                              value: ThemeMode.light,
-                              child: Text('Light'),
-                            ),
-                            DropdownMenuItem(
-                              value: ThemeMode.dark,
-                              child: Text('Dark'),
-                            ),
-                          ],
-                          onChanged: (mode) async {
-                            if (mode == null) return;
-                            await MyApp.of(context)?.setThemeMode(mode);
-                            setState(() {});
-                          },
-                        ),
+                          DropdownMenuItem(
+                            value: ThemeMode.light,
+                            child: Text('Light'),
+                          ),
+                          DropdownMenuItem(
+                            value: ThemeMode.dark,
+                            child: Text('Dark'),
+                          ),
+                        ],
+                        onChanged: (mode) async {
+                          if (mode == null) return;
+                          await MyApp.of(context)?.setThemeMode(mode);
+                          setState(() {});
+                        },
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            _buildSurfaceCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader(
-                    'App Settings',
-                    subtitle: 'Control tracking, offline, and device options.',
+          ),
+          const SizedBox(height: AppTheme.lg),
+          _buildSurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  'App Settings',
+                  subtitle: 'Control tracking, offline, and device options.',
+                ),
+                const SizedBox(height: AppTheme.md),
+                _buildSettingTile(
+                  title: 'Offline mode',
+                  subtitle: 'Store attendance data locally when offline.',
+                  icon: Icons.cloud_off_outlined,
+                  trailing: Switch.adaptive(
+                    value: _offlineMode,
+                    onChanged: (value) async {
+                      setState(() {
+                        _offlineMode = value;
+                      });
+                      await _saveUserPreference('user.offlineMode', value);
+                    },
                   ),
-                  const SizedBox(height: 12),
-                  _buildSettingTile(
-                    title: 'Offline mode',
-                    subtitle: 'Store attendance data locally when offline.',
-                    icon: Icons.cloud_off_outlined,
-                    trailing: Switch.adaptive(
-                      value: _offlineMode,
-                      onChanged: (value) async {
-                        setState(() {
-                          _offlineMode = value;
-                        });
-                        await _saveUserPreference('user.offlineMode', value);
-                      },
-                    ),
+                ),
+                const SizedBox(height: AppTheme.md),
+                _buildSettingTile(
+                  title: 'Live location sharing',
+                  subtitleWidget: ValueListenableBuilder<DateTime?>(
+                    valueListenable: LocationSyncService().lastSharedListenable,
+                    builder: (context, value, _) {
+                      final last = value == null
+                          ? 'Last shared: Never'
+                          : 'Last shared: ${_formatTime(value)}';
+                      return Text(
+                        'Allow admin to see your live location during work hours\n$last',
+                      );
+                    },
                   ),
-                  const SizedBox(height: 10),
-                  _buildSettingTile(
-                    title: 'Live location sharing',
-                    subtitleWidget: ValueListenableBuilder<DateTime?>(
-                      valueListenable:
-                          LocationSyncService().lastSharedListenable,
-                      builder: (context, value, _) {
-                        final last = value == null
-                            ? 'Last shared: Never'
-                            : 'Last shared: ${_formatTime(value)}';
-                        return Text(
-                          'Allow admin to see your live location during work hours\n$last',
-                        );
-                      },
-                    ),
-                    icon: Icons.location_searching,
-                    trailing: Switch.adaptive(
-                      value: _locationTracking,
-                      onChanged: (value) async {
-                        setState(() {
-                          _locationTracking = value;
-                        });
-                        await _saveUserPreference(
-                          'user.locationTrackingEnabled',
-                          value,
-                        );
-                      },
-                    ),
+                  icon: Icons.location_searching,
+                  trailing: Switch.adaptive(
+                    value: _locationTracking,
+                    onChanged: (value) async {
+                      setState(() {
+                        _locationTracking = value;
+                      });
+                      await _saveUserPreference(
+                        'user.locationTrackingEnabled',
+                        value,
+                      );
+                    },
                   ),
-                  const SizedBox(height: 10),
-                  _buildSettingTile(
-                    title: 'Bluetooth beacons',
-                    subtitle:
-                        'Enhance location accuracy with Bluetooth beacons.',
-                    icon: Icons.bluetooth_searching,
-                    trailing: Switch.adaptive(
-                      value: _useBluetoothBeacons,
-                      onChanged: (value) async {
-                        setState(() {
-                          _useBluetoothBeacons = value;
-                        });
-                        await _saveUserPreference(
-                          'user.useBluetoothBeacons',
-                          value,
-                        );
-                      },
-                    ),
+                ),
+                const SizedBox(height: AppTheme.md),
+                _buildSettingTile(
+                  title: 'Bluetooth beacons',
+                  subtitle: 'Enhance location accuracy with Bluetooth beacons.',
+                  icon: Icons.bluetooth_searching,
+                  trailing: Switch.adaptive(
+                    value: _useBluetoothBeacons,
+                    onChanged: (value) async {
+                      setState(() {
+                        _useBluetoothBeacons = value;
+                      });
+                      await _saveUserPreference(
+                        'user.useBluetoothBeacons',
+                        value,
+                      );
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            _buildSurfaceCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader(
-                    'Sync & Account',
-                    subtitle: 'Keep your data updated and secure.',
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _isSyncing ? null : _syncData,
-                      icon: _isSyncing
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.sync),
-                      label: const Text('Sync data'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        textStyle: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+          ),
+          const SizedBox(height: AppTheme.lg),
+          _buildSurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  'Sync & Account',
+                  subtitle: 'Keep your data updated and secure.',
+                ),
+                const SizedBox(height: AppTheme.md),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _isSyncing ? null : _syncData,
+                    icon: _isSyncing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.sync),
+                    label: const Text('Sync data'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      textStyle: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _logout,
-                      icon: const Icon(Icons.logout),
-                      label: const Text('Logout'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: theme.colorScheme.error,
-                      ),
+                ),
+                const SizedBox(height: AppTheme.md),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _logout,
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Logout'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

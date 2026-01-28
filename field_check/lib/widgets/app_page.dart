@@ -5,6 +5,8 @@ class AppPage extends StatelessWidget {
   final String? appBarTitle;
   final bool showAppBar;
   final bool showBack;
+  final bool useScaffold;
+  final bool useSafeArea;
   final List<Widget>? actions;
   final EdgeInsetsGeometry? padding;
   final bool scroll;
@@ -17,6 +19,8 @@ class AppPage extends StatelessWidget {
     this.appBarTitle,
     this.showAppBar = true,
     this.showBack = false,
+    this.useScaffold = true,
+    this.useSafeArea = true,
     this.actions,
     this.padding,
     this.scroll = true,
@@ -30,11 +34,20 @@ class AppPage extends StatelessWidget {
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxContentWidth),
         child: Padding(
-          padding: padding ?? const EdgeInsets.symmetric(horizontal: AppTheme.lg),
+          padding:
+              padding ?? const EdgeInsets.symmetric(horizontal: AppTheme.lg),
           child: child,
         ),
       ),
     );
+
+    final inner = scroll ? SingleChildScrollView(child: body) : body;
+
+    final content = useSafeArea ? SafeArea(child: inner) : inner;
+
+    if (!useScaffold) {
+      return content;
+    }
 
     return Scaffold(
       appBar: showAppBar
@@ -49,9 +62,7 @@ class AppPage extends StatelessWidget {
               actions: actions,
             )
           : null,
-      body: SafeArea(
-        child: scroll ? SingleChildScrollView(child: body) : body,
-      ),
+      body: content,
     );
   }
 }
