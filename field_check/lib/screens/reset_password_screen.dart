@@ -1,6 +1,9 @@
 // ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
 import 'package:field_check/services/user_service.dart';
+import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/widgets/app_page.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
   final String? token;
@@ -185,359 +188,234 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create New Password'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 24),
-
-              // Header
-              Center(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.green.shade100,
-                      ),
-                      child: Icon(
-                        Icons.lock_outline,
-                        size: 40,
-                        color: Colors.green.shade600,
+    return AppPage(
+      appBarTitle: 'Create New Password',
+      showBack: true,
+      child: Column(
+        children: [
+          const SizedBox(height: AppTheme.xl),
+          Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              color: AppTheme.accentColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+            ),
+            child: const Icon(
+              Icons.lock_outline,
+              size: 56,
+              color: AppTheme.accentColor,
+            ),
+          ),
+          const SizedBox(height: AppTheme.xl),
+          Text(
+            'Create a New Password',
+            style: AppTheme.headingMd,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppTheme.md),
+          Text(
+            'Enter the reset token from your email and create a strong new password.',
+            style: AppTheme.bodySm,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppTheme.xl),
+          AppWidgets.roundedContainer(
+            padding: const EdgeInsets.all(AppTheme.xl),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_errorMessage != null)
+                  Container(
+                    padding: const EdgeInsets.all(AppTheme.md),
+                    margin: const EdgeInsets.only(bottom: AppTheme.lg),
+                    decoration: BoxDecoration(
+                      color: AppTheme.errorColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      border: Border.all(
+                        color: AppTheme.errorColor.withValues(alpha: 0.3),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Create a New Password',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // Description
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: const Text(
-                  'Enter the reset token from your email and create a strong new password. '
-                  'Your password should be at least 8 characters with mixed case, numbers, and symbols.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.black87,
-                    height: 1.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Error Message
-              if (_errorMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade300),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.error_outline, color: Colors.red.shade600),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              if (_errorMessage != null) const SizedBox(height: 16),
-
-              // Success Message
-              if (_successMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green.shade300),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        color: Colors.green.shade600,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _successMessage!,
-                          style: TextStyle(
-                            color: Colors.green.shade700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              if (_successMessage != null) const SizedBox(height: 16),
-
-              // Reset Token
-              const Text(
-                'Reset Token',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _tokenController,
-                enabled: !_isLoading && _successMessage == null,
-                decoration: InputDecoration(
-                  hintText: 'Paste the token from your email',
-                  prefixIcon: const Icon(Icons.vpn_key_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-                maxLines: 2,
-              ),
-
-              const SizedBox(height: 24),
-
-              // New Password
-              const Text(
-                'New Password',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _passwordController,
-                enabled: !_isLoading && _successMessage == null,
-                obscureText: !_showPassword,
-                onChanged: (_) => _updatePasswordStrength(),
-                decoration: InputDecoration(
-                  hintText: 'Create a strong password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _showPassword ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _showPassword = !_showPassword;
-                      });
-                    },
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Password Strength Indicator
-              if (_passwordController.text.isNotEmpty)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Row(
                       children: [
-                        Text(
-                          'Password Strength:',
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                        const Icon(
+                          Icons.error_outline,
+                          color: AppTheme.errorColor,
+                          size: 20,
                         ),
-                        Text(
-                          _getStrengthText(),
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: _getStrengthColor(),
-                              ),
+                        const SizedBox(width: AppTheme.md),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: AppTheme.bodySm.copyWith(
+                              color: AppTheme.errorColor,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: _passwordStrength / 5,
-                        minHeight: 6,
-                        backgroundColor: Theme.of(
-                          context,
-                        ).dividerColor.withValues(alpha: 0.35),
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          _getStrengthColor(),
+                  ),
+                if (_successMessage != null)
+                  Container(
+                    padding: const EdgeInsets.all(AppTheme.md),
+                    margin: const EdgeInsets.only(bottom: AppTheme.lg),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      border: Border.all(
+                        color: AppTheme.accentColor.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.check_circle_outline,
+                          color: AppTheme.accentColor,
+                          size: 20,
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildPasswordRequirement(
-                      'At least 8 characters',
-                      _passwordController.text.length >= 8,
-                    ),
-                    _buildPasswordRequirement(
-                      'Uppercase and lowercase letters',
-                      _passwordController.text.contains(RegExp(r'[a-z]')) &&
-                          _passwordController.text.contains(RegExp(r'[A-Z]')),
-                    ),
-                    _buildPasswordRequirement(
-                      'Number (0-9)',
-                      _passwordController.text.contains(RegExp(r'[0-9]')),
-                    ),
-                    _buildPasswordRequirement(
-                      'Special character required',
-                      _passwordController.text.contains(
-                        RegExp(r'[!@#$%^&*(),.?":{}|<>]'),
-                      ),
-                    ),
-                  ],
-                ),
-
-              const SizedBox(height: 24),
-
-              // Confirm Password
-              Text(
-                'Confirm Password',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.9),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _confirmPasswordController,
-                enabled: !_isLoading && _successMessage == null,
-                obscureText: !_showConfirmPassword,
-                decoration: InputDecoration(
-                  hintText: 'Re-enter your password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _showConfirmPassword
-                          ? Icons.visibility
-                          : Icons.visibility_off,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _showConfirmPassword = !_showConfirmPassword;
-                      });
-                    },
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Reset Password Button
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _isLoading || _successMessage != null
-                      ? null
-                      : _resetPassword,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade600,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 24,
-                          width: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
+                        const SizedBox(width: AppTheme.md),
+                        Expanded(
+                          child: Text(
+                            _successMessage!,
+                            style: AppTheme.bodySm.copyWith(
+                              color: AppTheme.accentColor,
                             ),
                           ),
-                        )
-                      : const Text(
-                          'Reset Password',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
                         ),
+                      ],
+                    ),
+                  ),
+                Text('Reset Token', style: AppTheme.labelLg),
+                const SizedBox(height: AppTheme.sm),
+                TextField(
+                  controller: _tokenController,
+                  enabled: !_isLoading && _successMessage == null,
+                  decoration: const InputDecoration(
+                    hintText: 'Paste the token from your email',
+                    prefixIcon: Icon(Icons.vpn_key_outlined),
+                  ),
+                  maxLines: 2,
                 ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Back Button
-              Center(
-                child: TextButton(
-                  onPressed: _isLoading ? null : () => Navigator.pop(context),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                const SizedBox(height: AppTheme.lg),
+                Text('New Password', style: AppTheme.labelLg),
+                const SizedBox(height: AppTheme.sm),
+                TextField(
+                  controller: _passwordController,
+                  enabled: !_isLoading && _successMessage == null,
+                  obscureText: !_showPassword,
+                  onChanged: (_) => _updatePasswordStrength(),
+                  decoration: InputDecoration(
+                    hintText: 'Create a strong password',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showPassword ? Icons.visibility : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _showPassword = !_showPassword;
+                        });
+                      },
+                    ),
                   ),
                 ),
-              ),
-            ],
+                if (_passwordController.text.isNotEmpty) ...[
+                  const SizedBox(height: AppTheme.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Password Strength', style: AppTheme.labelLg),
+                      Text(
+                        _getStrengthText(),
+                        style: AppTheme.labelLg.copyWith(
+                          color: _getStrengthColor(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppTheme.sm),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    child: LinearProgressIndicator(
+                      value: _passwordStrength / 5,
+                      minHeight: 6,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).dividerColor.withValues(alpha: 0.35),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _getStrengthColor(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.sm),
+                  _buildPasswordRequirement(
+                    'At least 8 characters',
+                    _passwordController.text.length >= 8,
+                  ),
+                  _buildPasswordRequirement(
+                    'Uppercase and lowercase letters',
+                    _passwordController.text.contains(RegExp(r'[a-z]')) &&
+                        _passwordController.text.contains(RegExp(r'[A-Z]')),
+                  ),
+                  _buildPasswordRequirement(
+                    'Number (0-9)',
+                    _passwordController.text.contains(RegExp(r'[0-9]')),
+                  ),
+                  _buildPasswordRequirement(
+                    'Special character required',
+                    _passwordController.text.contains(
+                      RegExp(r'[!@#$%^&*(),.?":{}|<>]'),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppTheme.lg),
+                Text('Confirm Password', style: AppTheme.labelLg),
+                const SizedBox(height: AppTheme.sm),
+                TextField(
+                  controller: _confirmPasswordController,
+                  enabled: !_isLoading && _successMessage == null,
+                  obscureText: !_showConfirmPassword,
+                  decoration: InputDecoration(
+                    hintText: 'Re-enter your password',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showConfirmPassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _showConfirmPassword = !_showConfirmPassword;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppTheme.xl),
+                AppWidgets.primaryButton(
+                  label: 'Reset Password',
+                  onPressed: _resetPassword,
+                  isLoading: _isLoading,
+                  isEnabled: !_isLoading && _successMessage == null,
+                  icon: Icons.lock_reset,
+                  width: double.infinity,
+                ),
+                const SizedBox(height: AppTheme.lg),
+                Center(
+                  child: AppWidgets.textButton(
+                    label: 'Cancel',
+                    onPressed: _isLoading
+                        ? () {}
+                        : () => Navigator.pop(context),
+                    icon: Icons.close,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(height: AppTheme.xl),
+        ],
       ),
     );
   }

@@ -1,0 +1,57 @@
+import 'package:flutter/material.dart';
+import 'package:field_check/utils/app_theme.dart';
+
+class AppPage extends StatelessWidget {
+  final String? appBarTitle;
+  final bool showAppBar;
+  final bool showBack;
+  final List<Widget>? actions;
+  final EdgeInsetsGeometry? padding;
+  final bool scroll;
+  final double maxContentWidth;
+  final Widget child;
+
+  const AppPage({
+    super.key,
+    required this.child,
+    this.appBarTitle,
+    this.showAppBar = true,
+    this.showBack = false,
+    this.actions,
+    this.padding,
+    this.scroll = true,
+    this.maxContentWidth = 520,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final body = Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxContentWidth),
+        child: Padding(
+          padding: padding ?? const EdgeInsets.symmetric(horizontal: AppTheme.lg),
+          child: child,
+        ),
+      ),
+    );
+
+    return Scaffold(
+      appBar: showAppBar
+          ? AppBar(
+              title: appBarTitle != null ? Text(appBarTitle!) : null,
+              leading: showBack
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: () => Navigator.maybePop(context),
+                    )
+                  : null,
+              actions: actions,
+            )
+          : null,
+      body: SafeArea(
+        child: scroll ? SingleChildScrollView(child: body) : body,
+      ),
+    );
+  }
+}

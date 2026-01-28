@@ -47,6 +47,31 @@ class AppTheme {
   // ============================================================================
   static const String fontFamily = 'Roboto';
 
+  static const Color textPrimaryColor = textPrimary;
+  static const Color textSecondaryColor = textSecondary;
+
+  static const double spacingXs = xs;
+  static const double spacingSm = sm;
+  static const double spacingMd = md;
+  static const double spacingLg = lg;
+  static const double spacingXl = xl;
+  static const double spacingXxl = xxl;
+
+  static const double elevationSm = 1.0;
+  static const double elevationMd = 2.0;
+  static const double elevationLg = 4.0;
+  static const double elevationXl = 8.0;
+
+  static const double fontSizeXs = 10.0;
+  static const double fontSizeSm = 12.0;
+  static const double fontSizeMd = 14.0;
+  static const double fontSizeLg = 16.0;
+  static const double fontSizeXl = 18.0;
+  static const double fontSizeXxl = 20.0;
+  static const double fontSizeH1 = 32.0;
+  static const double fontSizeH2 = 28.0;
+  static const double fontSizeH3 = 24.0;
+
   static const TextStyle headingXl = TextStyle(
     fontSize: 32,
     fontWeight: FontWeight.bold,
@@ -331,6 +356,8 @@ class AppTheme {
     ),
   );
 
+  static ThemeData getLightTheme() => lightTheme;
+
   // ============================================================================
   // DARK THEME
   // ============================================================================
@@ -589,4 +616,6 @@ class AppTheme {
       ),
     ),
   );
+
+  static ThemeData getDarkTheme() => darkTheme;
 }

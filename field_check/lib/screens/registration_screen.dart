@@ -3,6 +3,8 @@ import 'package:field_check/main.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/utils/logger.dart';
 import 'package:field_check/widgets/app_widgets.dart';
+import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/widgets/app_page.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -88,157 +90,178 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create Account'),
-        actions: [
-          IconButton(
-            tooltip: 'Toggle theme',
-            icon: Icon(
-              Theme.of(context).brightness == Brightness.dark
-                  ? Icons.dark_mode
-                  : Icons.light_mode,
-            ),
-            onPressed: () => MyApp.of(context)?.toggleTheme(),
+    return AppPage(
+      appBarTitle: 'Create Account',
+      showBack: true,
+      actions: [
+        IconButton(
+          tooltip: 'Toggle theme',
+          icon: Icon(
+            Theme.of(context).brightness == Brightness.dark
+                ? Icons.light_mode
+                : Icons.dark_mode,
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Card(
-            elevation: 8,
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.red),
+          onPressed: () => MyApp.of(context)?.toggleTheme(),
+        ),
+      ],
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.lg),
+      child: Column(
+        children: [
+          const SizedBox(height: AppTheme.xl),
+          AppWidgets.roundedContainer(
+            padding: const EdgeInsets.all(AppTheme.xl),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_error != null)
+                    Container(
+                      padding: const EdgeInsets.all(AppTheme.md),
+                      margin: const EdgeInsets.only(bottom: AppTheme.lg),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                        border: Border.all(
+                          color: AppTheme.errorColor.withValues(alpha: 0.3),
                         ),
                       ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: AppTheme.errorColor,
+                            size: 20,
+                          ),
+                          const SizedBox(width: AppTheme.md),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: AppTheme.bodySm.copyWith(
+                                color: AppTheme.errorColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Text('Full Name', style: AppTheme.labelLg),
+                  const SizedBox(height: AppTheme.sm),
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                      hintText: 'Enter your full name',
+                      prefixIcon: Icon(Icons.badge_outlined),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your full name';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: AppTheme.lg),
+                  Text('Username (optional)', style: AppTheme.labelLg),
+                  const SizedBox(height: AppTheme.sm),
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: const InputDecoration(
+                      hintText: 'e.g. employee1',
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                    validator: (value) {
+                      if (value != null &&
+                          value.isNotEmpty &&
+                          value.length < 3) {
+                        return 'Username must be at least 3 characters';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: AppTheme.lg),
+                  Text('Email', style: AppTheme.labelLg),
+                  const SizedBox(height: AppTheme.sm),
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      hintText: 'Enter your email',
+                      prefixIcon: Icon(Icons.email_outlined),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your email';
+                      }
+                      if (!value.contains('@')) {
+                        return 'Enter a valid email';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: AppTheme.lg),
+                  Text('Password', style: AppTheme.labelLg),
+                  const SizedBox(height: AppTheme.sm),
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: const InputDecoration(
+                      hintText: 'Create a password',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                    obscureText: true,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a password';
+                      }
+                      if (value.length < 6) {
+                        return 'Password must be at least 6 characters';
+                      }
+                      return null;
+                    },
+                  ),
+                  if (!_isAdmin) ...[
+                    const SizedBox(height: AppTheme.lg),
+                    Text('Employee ID', style: AppTheme.labelLg),
+                    const SizedBox(height: AppTheme.sm),
                     TextFormField(
-                      controller: _nameController,
+                      controller: _employeeIdController,
                       decoration: const InputDecoration(
-                        labelText: 'Full Name',
-                        prefixIcon: Icon(Icons.badge),
+                        hintText: 'Enter your employee ID',
+                        prefixIcon: Icon(Icons.badge_outlined),
                       ),
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your full name';
+                        if (_isAdmin) return null;
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Employee ID is required';
                         }
                         return null;
                       },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _usernameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Username (optional)',
-                        hintText: 'e.g. employee1',
-                        prefixIcon: Icon(Icons.person),
-                      ),
-                      validator: (value) {
-                        // optional; if provided, enforce minimum length
-                        if (value != null &&
-                            value.isNotEmpty &&
-                            value.length < 3) {
-                          return 'Username must be at least 3 characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email),
-                      ),
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your email';
-                        }
-                        if (!value.contains('@')) {
-                          return 'Enter a valid email';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: Icon(Icons.lock),
-                      ),
-                      obscureText: true,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter a password';
-                        }
-                        if (value.length < 6) {
-                          return 'Password must be at least 6 characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    if (!_isAdmin) ...[
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _employeeIdController,
-                        decoration: const InputDecoration(
-                          labelText: 'Employee ID',
-                          prefixIcon: Icon(Icons.badge_outlined),
-                        ),
-                        validator: (value) {
-                          if (_isAdmin) return null;
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Employee ID is required';
-                          }
-                          return null;
-                        },
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    SwitchListTile(
-                      value: _isAdmin,
-                      title: const Text('Register as Admin'),
-                      subtitle: const Text(
-                        'Toggle to register admin vs employee',
-                      ),
-                      onChanged: (val) => setState(() => _isAdmin = val),
-                    ),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _register,
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('Create Account'),
-                      ),
                     ),
                   ],
-                ),
+                  const SizedBox(height: AppTheme.lg),
+                  SwitchListTile(
+                    value: _isAdmin,
+                    title: const Text('Register as Admin'),
+                    subtitle: const Text(
+                      'Toggle to register admin vs employee',
+                    ),
+                    onChanged: (val) => setState(() => _isAdmin = val),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const SizedBox(height: AppTheme.xl),
+                  AppWidgets.primaryButton(
+                    label: 'Create Account',
+                    onPressed: _register,
+                    isLoading: _isLoading,
+                    isEnabled: !_isLoading,
+                    icon: Icons.person_add_alt_1,
+                    width: double.infinity,
+                  ),
+                ],
               ),
             ),
           ),
-        ),
+          const SizedBox(height: AppTheme.xl),
+        ],
       ),
     );
   }
