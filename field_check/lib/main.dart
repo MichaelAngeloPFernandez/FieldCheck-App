@@ -13,25 +13,27 @@ import 'package:field_check/screens/dashboard_screen.dart';
 import 'package:field_check/screens/registration_screen.dart';
 import 'package:field_check/screens/forgot_password_screen.dart';
 import 'package:field_check/screens/reset_password_screen.dart';
-import 'package:field_check/screens/admin_dashboard_screen.dart';
+import 'package:field_check/screens/enhanced_admin_dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize only essential services immediately
   final syncService = SyncService();
   final autosaveService = AutosaveService();
-  
+
   // Initialize essential services only
   await autosaveService.initialize();
-  
-  runApp(MyApp(
-    syncService: syncService,
-    realtimeService: RealtimeService(), // Don't initialize yet
-    autosaveService: autosaveService,
-  ));
+
+  runApp(
+    MyApp(
+      syncService: syncService,
+      realtimeService: RealtimeService(), // Don't initialize yet
+      autosaveService: autosaveService,
+    ),
+  );
 }
 
 class MyApp extends StatefulWidget {
@@ -39,7 +41,7 @@ class MyApp extends StatefulWidget {
   final RealtimeService realtimeService;
   final AutosaveService autosaveService;
   const MyApp({
-    super.key, 
+    super.key,
     required this.syncService,
     required this.realtimeService,
     required this.autosaveService,
@@ -91,7 +93,9 @@ class MyAppState extends State<MyApp> {
   }
 
   void toggleTheme() {
-    final next = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    final next = _themeMode == ThemeMode.dark
+        ? ThemeMode.light
+        : ThemeMode.dark;
     setThemeMode(next);
   }
 
@@ -100,12 +104,15 @@ class MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(_updateConnectionStatus);
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
+      _updateConnectionStatus,
+    );
     _loadThemeMode();
   }
 
   Future<void> _updateConnectionStatus(List<ConnectivityResult> results) async {
-    final isOnline = results.isNotEmpty && !results.contains(ConnectivityResult.none);
+    final isOnline =
+        results.isNotEmpty && !results.contains(ConnectivityResult.none);
     if (isOnline) {
       // Initialize realtime service only when online and needed
       if (!widget.realtimeService.isConnected) {
@@ -126,9 +133,7 @@ class MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => AuthProvider())],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'FieldCheck',
@@ -141,7 +146,7 @@ class MyAppState extends State<MyApp> {
           '/register': (context) => const RegistrationScreen(),
           '/forgot-password': (context) => const ForgotPasswordScreen(),
           '/reset-password': (context) => const ResetPasswordScreen(),
-          '/admin-dashboard': (context) => const AdminDashboardScreen(),
+          '/admin-dashboard': (context) => const EnhancedAdminDashboardScreen(),
         },
         onGenerateRoute: (settings) {
           if (settings.name == '/dashboard') {
