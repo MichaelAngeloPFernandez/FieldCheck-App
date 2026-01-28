@@ -9,6 +9,8 @@ import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/manila_time.dart';
+import 'package:field_check/widgets/app_page.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class TaskReportScreen extends StatefulWidget {
   final Task task;
@@ -65,20 +67,12 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       setState(() {
         _task = _task.copyWith(userTaskStatus: 'accepted');
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Task accepted'),
-          duration: Duration(seconds: 1),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppWidgets.showSuccessSnackbar(context, 'Task accepted');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to accept task: $e'),
-          backgroundColor: Colors.red,
-        ),
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to accept task'),
       );
     }
   }
@@ -124,13 +118,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         });
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Task marked as in progress'),
-            duration: Duration(seconds: 1),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        AppWidgets.showWarningSnackbar(context, 'Task marked as in progress');
       }
     } catch (e) {
       debugPrint('Error marking task as in_progress: $e');
@@ -223,13 +211,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
       _hasUnsavedChanges = false;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Progress saved automatically'),
-            duration: Duration(seconds: 1),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppWidgets.showSuccessSnackbar(context, 'Progress saved automatically');
       }
     } catch (e) {
       debugPrint('Error saving to autosave: $e');
@@ -259,13 +241,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
         if (!mounted) return;
         if (rejected > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$rejected file(s) were skipped because they exceed 10MB.',
-              ),
-              backgroundColor: Colors.orange,
-            ),
+          AppWidgets.showWarningSnackbar(
+            context,
+            '$rejected file(s) were skipped because they exceed 10MB.',
           );
         }
 
@@ -276,8 +254,12 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking before photos: $e')),
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Error picking before photos',
+        ),
       );
     }
   }
@@ -305,13 +287,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
         if (!mounted) return;
         if (rejected > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$rejected file(s) were skipped because they exceed 10MB.',
-              ),
-              backgroundColor: Colors.orange,
-            ),
+          AppWidgets.showWarningSnackbar(
+            context,
+            '$rejected file(s) were skipped because they exceed 10MB.',
           );
         }
 
@@ -322,9 +300,13 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppWidgets.showErrorSnackbar(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error picking after photos: $e')));
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Error picking after photos',
+        ),
+      );
     }
   }
 
@@ -351,13 +333,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
         if (!mounted) return;
         if (rejected > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$rejected file(s) were skipped because they exceed 10MB.',
-              ),
-              backgroundColor: Colors.orange,
-            ),
+          AppWidgets.showWarningSnackbar(
+            context,
+            '$rejected file(s) were skipped because they exceed 10MB.',
           );
         }
 
@@ -368,9 +346,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppWidgets.showErrorSnackbar(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error picking documents: $e')));
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Error picking documents'),
+      );
     }
   }
 
@@ -448,21 +427,21 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       setState(() {
         _task = updated;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isCompleted
-                ? 'Checklist item marked as completed'
-                : 'Checklist item marked as incomplete',
-          ),
-          duration: const Duration(seconds: 1),
-        ),
+      AppWidgets.showSuccessSnackbar(
+        context,
+        isCompleted
+            ? 'Checklist item marked as completed'
+            : 'Checklist item marked as incomplete',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppWidgets.showErrorSnackbar(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed to update checklist: $e')));
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to update checklist',
+        ),
+      );
     }
   }
 
@@ -564,19 +543,15 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         _task = updated;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Task has been marked as blocked'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      AppWidgets.showErrorSnackbar(context, 'Task has been marked as blocked');
 
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppWidgets.showErrorSnackbar(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed to block task: $e')));
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to block task'),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -589,10 +564,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   Future<bool> _submitReport() async {
     if (_isSubmitting) return false;
     if (_textController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please write a report before submitting'),
-        ),
+      AppWidgets.showWarningSnackbar(
+        context,
+        'Please write a report before submitting',
       );
       return false;
     }
@@ -622,11 +596,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         for (final file in files) {
           if (file.size > _maxUploadBytes) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Skipped ${file.name}: exceeds 10MB limit.'),
-                backgroundColor: Colors.orange,
-              ),
+            AppWidgets.showWarningSnackbar(
+              context,
+              'Skipped ${file.name}: exceeds 10MB limit.',
             );
             if (mounted) {
               setState(() {
@@ -666,13 +638,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           final filePath = file.path;
           if (filePath == null || filePath.isEmpty) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Skipped ${file.name}: could not read file data.',
-                ),
-                backgroundColor: Colors.orange,
-              ),
+            AppWidgets.showWarningSnackbar(
+              context,
+              'Skipped ${file.name}: could not read file data.',
             );
             if (mounted) {
               setState(() {
@@ -735,11 +703,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Report submitted successfully!'),
-            backgroundColor: Colors.green,
-          ),
+        AppWidgets.showSuccessSnackbar(
+          context,
+          'Report submitted successfully!',
         );
         Navigator.pop(context, true);
       }
@@ -752,17 +718,16 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           if (phase != null && phase.isNotEmpty) phase,
           if (f != null && f.isNotEmpty) 'File: $f',
         ].join(' • ');
-        ScaffoldMessenger.of(
+        AppWidgets.showErrorSnackbar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error submitting report: $e')));
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Error submitting report',
+          ),
+        );
 
         if (contextLabel.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(contextLabel),
-              backgroundColor: Colors.orange,
-            ),
-          );
+          AppWidgets.showWarningSnackbar(context, contextLabel);
         }
       }
       return false;
@@ -789,17 +754,16 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   Future<void> _previewSelectedFile(PlatformFile file) async {
     if (file.bytes == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Preview not available for ${file.name}')),
+      AppWidgets.showWarningSnackbar(
+        context,
+        'Preview not available for ${file.name}',
       );
       return;
     }
 
     if (!_isLikelyImage(file.name)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('No preview for ${file.name}.')));
+      AppWidgets.showWarningSnackbar(context, 'No preview for ${file.name}.');
       return;
     }
 
@@ -832,39 +796,45 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Task Report'),
-        actions: [
-          if (_needsAcceptance)
-            TextButton.icon(
-              onPressed: _acceptTask,
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('Accept'),
-            ),
-          if (_hasUnsavedChanges)
-            const Padding(
-              padding: EdgeInsets.only(right: 12),
-              child: Center(
-                child: Text(
-                  'Unsaved changes',
-                  style: TextStyle(color: Colors.orange),
-                ),
+    return AppPage(
+      appBarTitle: 'Task Report',
+      showBack: true,
+      scroll: false,
+      actions: [
+        if (_needsAcceptance)
+          TextButton.icon(
+            onPressed: _acceptTask,
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text('Accept'),
+          ),
+        if (_hasUnsavedChanges)
+          const Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: Center(
+              child: Text(
+                'Unsaved changes',
+                style: TextStyle(color: Colors.orange),
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.attach_file),
-            onPressed: _isSubmitting ? null : _showAttachmentTypePicker,
-            tooltip: 'Attach Files',
           ),
-        ],
-      ),
-      body: Column(
+        IconButton(
+          icon: const Icon(Icons.attach_file),
+          onPressed: _isSubmitting ? null : _showAttachmentTypePicker,
+          tooltip: 'Attach Files',
+        ),
+      ],
+      padding: EdgeInsets.zero,
+      child: Column(
         children: [
           if (_isSubmitting)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.lg,
+                AppTheme.md,
+                AppTheme.lg,
+                AppTheme.md,
+              ),
               color: AppTheme.backgroundColor,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -896,7 +866,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           // Task info header
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppTheme.lg),
             color: AppTheme.backgroundColor,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -995,7 +965,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           // Rich text editor
           Expanded(
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppTheme.lg),
               child: Column(
                 children: [
                   if (_task.checklist.isNotEmpty) ...[
@@ -1014,7 +984,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     Container(
                       decoration: BoxDecoration(
                         border: Border.all(color: AppTheme.dividerColor),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                       ),
                       child: ListView.separated(
                         shrinkWrap: true,
@@ -1055,7 +1025,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     child: Container(
                       decoration: BoxDecoration(
                         border: Border.all(color: AppTheme.dividerColor),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                       ),
                       child: TextField(
                         controller: _textController,
@@ -1083,7 +1053,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
               _documentFiles.isNotEmpty)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppTheme.lg),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1236,7 +1206,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
           // Submit button
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppTheme.lg),
             child: Row(
               children: [
                 Expanded(
@@ -1250,7 +1220,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
                       side: const BorderSide(color: Colors.red),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.lg,
+                      ),
                     ),
                     child: _isBlocking
                         ? const SizedBox(
@@ -1272,13 +1244,15 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                           ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppTheme.md),
                 Expanded(
                   child: ElevatedButton(
                     onPressed: _isSubmitting ? null : _submitReport,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.lg,
+                      ),
                     ),
                     child: _isSubmitting
                         ? const Row(

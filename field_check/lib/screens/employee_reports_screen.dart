@@ -5,6 +5,8 @@ import 'package:field_check/models/report_model.dart';
 import 'package:field_check/services/report_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/widgets/app_page.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
 
 class EmployeeReportsScreen extends StatefulWidget {
@@ -152,12 +154,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invalid attachment URL'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppWidgets.showErrorSnackbar(context, 'Invalid attachment URL');
       }
       return;
     }
@@ -167,11 +164,9 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
     final can = await canLaunchUrl(uri);
     if (!can) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No app found to open attachment'),
-            backgroundColor: Colors.red,
-          ),
+        AppWidgets.showErrorSnackbar(
+          context,
+          'No app found to open attachment',
         );
       }
       return;
@@ -183,12 +178,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
       webOnlyWindowName: '_blank',
     );
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to open attachment'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      AppWidgets.showErrorSnackbar(context, 'Unable to open attachment');
     }
   }
 
@@ -327,20 +317,16 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(doArchive ? 'Report archived' : 'Report restored'),
-          backgroundColor: Colors.green,
-        ),
+      AppWidgets.showSuccessSnackbar(
+        context,
+        doArchive ? 'Report archived' : 'Report restored',
       );
       await _loadReports();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to update report: $e'),
-          backgroundColor: Colors.red,
-        ),
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to update report'),
       );
     } finally {
       if (mounted) {
@@ -630,194 +616,186 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredReports;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Reports'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadReports,
-          ),
-        ],
+
+    return AppPage(
+      appBarTitle: 'My Reports',
+      scroll: false,
+      actions: [
+        IconButton(
+          tooltip: 'Refresh',
+          icon: const Icon(Icons.refresh),
+          onPressed: _loadReports,
+        ),
+      ],
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.lg,
+        AppTheme.lg,
+        AppTheme.lg,
+        AppTheme.xl,
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(AppTheme.md),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Current'),
+                      selected: _tab == 'current',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() {
+                          _tab = 'current';
+                        });
+                        _loadReports();
+                      },
+                    ),
+                    const SizedBox(width: AppTheme.sm),
+                    ChoiceChip(
+                      label: const Text('Archived'),
+                      selected: _tab == 'archived',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() {
+                          _tab = 'archived';
+                        });
+                        _loadReports();
+                      },
+                    ),
+                    const Spacer(),
+                    ChoiceChip(
+                      label: const Text('Task'),
+                      selected: _typeFilter == 'task',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() {
+                          _typeFilter = 'task';
+                        });
+                        _loadReports();
+                      },
+                    ),
+                    const SizedBox(width: AppTheme.sm),
+                    ChoiceChip(
+                      label: const Text('All'),
+                      selected: _typeFilter == 'all',
+                      onSelected: (sel) {
+                        if (!sel) return;
+                        setState(() {
+                          _typeFilter = 'all';
+                        });
+                        _loadReports();
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.sm),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
                     children: [
                       ChoiceChip(
-                        label: const Text('Current'),
-                        selected: _tab == 'current',
-                        onSelected: (sel) {
-                          if (!sel) return;
+                        label: Text(_formatDateRangeLabel(_dateRange)),
+                        selected: _dateRange != null,
+                        onSelected: (_) async {
+                          final picked = await showDateRangePicker(
+                            context: context,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                            initialDateRange: _dateRange,
+                          );
+                          if (picked == null) return;
+                          if (!mounted) return;
                           setState(() {
-                            _tab = 'current';
+                            _dateRange = picked;
                           });
-                          _loadReports();
                         },
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppTheme.sm),
                       ChoiceChip(
-                        label: const Text('Archived'),
-                        selected: _tab == 'archived',
+                        label: const Text('Attachments'),
+                        selected: _attachmentsOnly,
                         onSelected: (sel) {
-                          if (!sel) return;
                           setState(() {
-                            _tab = 'archived';
+                            _attachmentsOnly = sel;
                           });
-                          _loadReports();
                         },
                       ),
-                      const Spacer(),
+                      const SizedBox(width: AppTheme.sm),
                       ChoiceChip(
-                        label: const Text('Task'),
-                        selected: _typeFilter == 'task',
+                        label: const Text('Submitted'),
+                        selected: _statusFilter == 'submitted',
                         onSelected: (sel) {
-                          if (!sel) return;
                           setState(() {
-                            _typeFilter = 'task';
+                            _statusFilter = sel ? 'submitted' : 'all';
                           });
-                          _loadReports();
                         },
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppTheme.sm),
                       ChoiceChip(
-                        label: const Text('All'),
-                        selected: _typeFilter == 'all',
+                        label: const Text('Reviewed'),
+                        selected: _statusFilter == 'reviewed',
                         onSelected: (sel) {
-                          if (!sel) return;
                           setState(() {
-                            _typeFilter = 'all';
+                            _statusFilter = sel ? 'reviewed' : 'all';
                           });
-                          _loadReports();
                         },
+                      ),
+                      const SizedBox(width: AppTheme.sm),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _dateRange = null;
+                            _attachmentsOnly = false;
+                            _statusFilter = 'all';
+                          });
+                        },
+                        child: const Text('Clear'),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        ChoiceChip(
-                          label: Text(_formatDateRangeLabel(_dateRange)),
-                          selected: _dateRange != null,
-                          onSelected: (_) async {
-                            final picked = await showDateRangePicker(
-                              context: context,
-                              firstDate: DateTime(2000),
-                              lastDate: DateTime(2100),
-                              initialDateRange: _dateRange,
-                            );
-                            if (picked == null) return;
-                            if (!mounted) return;
-                            setState(() {
-                              _dateRange = picked;
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('Attachments'),
-                          selected: _attachmentsOnly,
-                          onSelected: (sel) {
-                            setState(() {
-                              _attachmentsOnly = sel;
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('Submitted'),
-                          selected: _statusFilter == 'submitted',
-                          onSelected: (sel) {
-                            setState(() {
-                              _statusFilter = sel ? 'submitted' : 'all';
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('Reviewed'),
-                          selected: _statusFilter == 'reviewed',
-                          onSelected: (sel) {
-                            setState(() {
-                              _statusFilter = sel ? 'reviewed' : 'all';
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _dateRange = null;
-                              _attachmentsOnly = false;
-                              _statusFilter = 'all';
-                            });
-                          },
-                          child: const Text('Clear'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : (_error != null)
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.error_outline,
-                              size: 48,
-                              color: Colors.red,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(_error!, textAlign: TextAlign.center),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: _loadReports,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : (filtered.isEmpty)
-                  ? Center(
-                      child: Text(
-                        _tab == 'archived'
-                            ? 'No archived reports.'
-                            : 'No current reports yet.',
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _loadReports,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) {
-                          final r = filtered[index];
-                          return _buildReportCard(r);
-                        },
-                      ),
-                    ),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppTheme.md),
+          Expanded(
+            child: _isLoading
+                ? AppWidgets.loadingIndicator(message: 'Loading reports...')
+                : (_error != null
+                      ? AppWidgets.errorMessage(
+                          message: _error!,
+                          onRetry: _loadReports,
+                        )
+                      : (filtered.isEmpty
+                            ? AppWidgets.emptyState(
+                                title: 'No reports',
+                                message: _tab == 'archived'
+                                    ? 'No archived reports.'
+                                    : 'No current reports yet.',
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _loadReports,
+                                child: ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  itemCount: filtered.length,
+                                  itemBuilder: (context, index) {
+                                    final r = filtered[index];
+                                    return _buildReportCard(r);
+                                  },
+                                ),
+                              ))),
+          ),
+        ],
       ),
     );
   }

@@ -29,19 +29,34 @@ class AppPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final body = Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxContentWidth),
-        child: Padding(
-          padding:
-              padding ?? const EdgeInsets.symmetric(horizontal: AppTheme.lg),
-          child: child,
-        ),
-      ),
-    );
+    final inner = LayoutBuilder(
+      builder: (context, constraints) {
+        final centered = Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxContentWidth),
+            child: Padding(
+              padding:
+                  padding ??
+                  const EdgeInsets.symmetric(horizontal: AppTheme.lg),
+              child: child,
+            ),
+          ),
+        );
 
-    final inner = scroll ? SingleChildScrollView(child: body) : body;
+        final body = scroll
+            ? SingleChildScrollView(child: centered)
+            : (constraints.hasBoundedHeight && constraints.hasBoundedWidth
+                  ? SizedBox(
+                      width: constraints.maxWidth,
+                      height: constraints.maxHeight,
+                      child: centered,
+                    )
+                  : centered);
+
+        return body;
+      },
+    );
 
     final content = useSafeArea ? SafeArea(child: inner) : inner;
 
