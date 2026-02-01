@@ -389,7 +389,22 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   String _normalizeAttachmentUrl(String rawPath) {
     final p = rawPath.trim();
     if (p.isEmpty) return p;
-    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    if (p.startsWith('http://') || p.startsWith('https://')) {
+      try {
+        final uri = Uri.parse(p);
+        if (uri.host == 'fieldcheck-app.onrender.com') {
+          final backend = Uri.parse(ApiConfig.baseUrl);
+          return uri
+              .replace(
+                scheme: backend.scheme,
+                host: backend.host,
+                port: backend.hasPort ? backend.port : null,
+              )
+              .toString();
+        }
+      } catch (_) {}
+      return p;
+    }
     if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
     return '${ApiConfig.baseUrl}/$p';
   }
@@ -652,7 +667,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     } else if (record.isVoid) {
       status = 'Void';
     } else if (record.checkOutTime == null) {
-      status = 'Open';
+      status = 'Incomplete';
     } else {
       status = 'Completed';
     }
@@ -661,7 +676,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ? theme.colorScheme.error
         : status == 'Void'
         ? theme.colorScheme.onSurface
-        : status == 'Open'
+        : status == 'Incomplete'
         ? theme.colorScheme.primary
         : theme.colorScheme.secondary;
 
@@ -963,7 +978,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   const SizedBox(height: 12),
                   buildSheetSection(
                     title: 'Status',
-                    subtitle: 'Filter by open or void sessions',
+                    subtitle: 'Filter by incomplete or void sessions',
                     child: Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -1533,7 +1548,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   int _getOpenCheckInsCount() {
     // Open session = no checkout time and not voided.
     return _attendanceRecords
-        .where((r) => r.checkOutTime == null && !r.isVoid)
+        .where((r) => r.isVoid || r.checkOutTime == null)
         .length;
   }
 
@@ -1948,7 +1963,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildStatCard(
-                          title: 'Open check-ins',
+                          title: 'Void/Incomplete check-ins',
                           value: _getOpenCheckInsCount().toString(),
                           icon: Icons.login,
                           color: Colors.teal,
@@ -1985,170 +2000,183 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             padding: const EdgeInsets.all(12.0),
                             child: LayoutBuilder(
                               builder: (context, constraints) {
-                                return SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: DataTable(
-                                    columns: const [
-                                      DataColumn(label: Text('Employee')),
-                                      DataColumn(label: Text('Location')),
-                                      DataColumn(label: Text('Date')),
-                                      DataColumn(label: Text('In')),
-                                      DataColumn(label: Text('Out')),
-                                      DataColumn(label: Text('Status')),
-                                      DataColumn(label: Text('Actions')),
-                                    ],
-                                    rows: _filteredAttendanceRecords.map((
-                                      record,
-                                    ) {
-                                      String status;
-                                      Color? chipBg;
-                                      Color? chipFg;
-
-                                      if (record.isVoid &&
-                                          record.autoCheckout) {
-                                        status = 'Auto Checkout (Void)';
-                                        chipBg = Theme.of(context)
-                                            .colorScheme
-                                            .error
-                                            .withValues(alpha: 0.12);
-                                        chipFg = Theme.of(
-                                          context,
-                                        ).colorScheme.error;
-                                      } else if (record.isVoid) {
-                                        status = 'Void';
-                                        chipBg = Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withValues(alpha: 0.12);
-                                        chipFg = Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withValues(alpha: 0.85);
-                                      } else if (record.checkOutTime == null) {
-                                        status = 'Open';
-                                        chipBg = Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withValues(alpha: 0.12);
-                                        chipFg = Theme.of(
-                                          context,
-                                        ).colorScheme.primary;
-                                      } else {
-                                        status = 'Completed';
-                                        chipBg = Theme.of(context)
-                                            .colorScheme
-                                            .secondary
-                                            .withValues(alpha: 0.12);
-                                        chipFg = Theme.of(
-                                          context,
-                                        ).colorScheme.secondary;
-                                      }
-
-                                      final date = formatManila(
-                                        record.checkInTime,
-                                        'yyyy-MM-dd',
-                                      );
-
-                                      final timeIn = formatTime(
-                                        record.checkInTime,
-                                      );
-                                      final timeOut = formatTime(
-                                        record.checkOutTime,
-                                      );
-
-                                      return DataRow(
-                                        cells: [
-                                          DataCell(
-                                            Text(
-                                              record.employeeName ?? 'Unknown',
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(record.geofenceName ?? 'N/A'),
-                                          ),
-                                          DataCell(Text(date)),
-                                          DataCell(Text(timeIn)),
-                                          DataCell(Text(timeOut)),
-                                          DataCell(
-                                            Chip(
-                                              label: Text(status),
-                                              backgroundColor: chipBg,
-                                              labelStyle: TextStyle(
-                                                color: chipFg,
-                                              ),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            PopupMenuButton<String>(
-                                              tooltip: 'Actions',
-                                              onSelected: (value) async {
-                                                switch (value) {
-                                                  case 'view':
-                                                    _showAttendanceDetails(
-                                                      record,
-                                                    );
-                                                    return;
-                                                  case 'history':
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (context) =>
-                                                            AdminEmployeeHistoryScreen(
-                                                              employeeId:
-                                                                  record.userId,
-                                                              employeeName:
-                                                                  record
-                                                                      .employeeName ??
-                                                                  'Unknown',
-                                                            ),
-                                                      ),
-                                                    );
-                                                    return;
-                                                  case 'archive':
-                                                    await _toggleArchiveAttendanceRecord(
-                                                      record,
-                                                    );
-                                                    return;
-                                                  case 'delete':
-                                                    await _confirmAndDeleteAttendanceRecord(
-                                                      record,
-                                                    );
-                                                    return;
-                                                }
-                                              },
-                                              itemBuilder: (ctx) =>
-                                                  <PopupMenuEntry<String>>[
-                                                    const PopupMenuItem(
-                                                      value: 'view',
-                                                      child: Text(
-                                                        'View details',
-                                                      ),
-                                                    ),
-                                                    const PopupMenuItem(
-                                                      value: 'history',
-                                                      child: Text(
-                                                        'View history',
-                                                      ),
-                                                    ),
-                                                    PopupMenuItem(
-                                                      value: 'archive',
-                                                      child: Text(
-                                                        _showArchivedAttendance
-                                                            ? 'Restore'
-                                                            : 'Archive',
-                                                      ),
-                                                    ),
-                                                    const PopupMenuDivider(),
-                                                    const PopupMenuItem(
-                                                      value: 'delete',
-                                                      child: Text('Delete'),
-                                                    ),
-                                                  ],
-                                            ),
-                                          ),
+                                return SizedBox(
+                                  width: constraints.maxWidth,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        minWidth: constraints.maxWidth,
+                                      ),
+                                      child: DataTable(
+                                        columns: const [
+                                          DataColumn(label: Text('Employee')),
+                                          DataColumn(label: Text('Location')),
+                                          DataColumn(label: Text('Date')),
+                                          DataColumn(label: Text('In')),
+                                          DataColumn(label: Text('Out')),
+                                          DataColumn(label: Text('Status')),
+                                          DataColumn(label: Text('Actions')),
                                         ],
-                                      );
-                                    }).toList(),
+                                        rows: _filteredAttendanceRecords.map((
+                                          record,
+                                        ) {
+                                          String status;
+                                          Color? chipBg;
+                                          Color? chipFg;
+
+                                          if (record.isVoid &&
+                                              record.autoCheckout) {
+                                            status = 'Auto Checkout (Void)';
+                                            chipBg = Theme.of(context)
+                                                .colorScheme
+                                                .error
+                                                .withValues(alpha: 0.12);
+                                            chipFg = Theme.of(
+                                              context,
+                                            ).colorScheme.error;
+                                          } else if (record.isVoid) {
+                                            status = 'Void';
+                                            chipBg = Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.12);
+                                            chipFg = Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.85);
+                                          } else if (record.checkOutTime ==
+                                              null) {
+                                            status = 'Incomplete';
+                                            chipBg = Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                                .withValues(alpha: 0.12);
+                                            chipFg = Theme.of(
+                                              context,
+                                            ).colorScheme.primary;
+                                          } else {
+                                            status = 'Completed';
+                                            chipBg = Theme.of(context)
+                                                .colorScheme
+                                                .secondary
+                                                .withValues(alpha: 0.12);
+                                            chipFg = Theme.of(
+                                              context,
+                                            ).colorScheme.secondary;
+                                          }
+
+                                          final date = formatManila(
+                                            record.checkInTime,
+                                            'yyyy-MM-dd',
+                                          );
+
+                                          final timeIn = formatTime(
+                                            record.checkInTime,
+                                          );
+                                          final timeOut = formatTime(
+                                            record.checkOutTime,
+                                          );
+
+                                          return DataRow(
+                                            cells: [
+                                              DataCell(
+                                                Text(
+                                                  record.employeeName ??
+                                                      'Unknown',
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  record.geofenceName ?? 'N/A',
+                                                ),
+                                              ),
+                                              DataCell(Text(date)),
+                                              DataCell(Text(timeIn)),
+                                              DataCell(Text(timeOut)),
+                                              DataCell(
+                                                Chip(
+                                                  label: Text(status),
+                                                  backgroundColor: chipBg,
+                                                  labelStyle: TextStyle(
+                                                    color: chipFg,
+                                                  ),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                PopupMenuButton<String>(
+                                                  tooltip: 'Actions',
+                                                  onSelected: (value) async {
+                                                    switch (value) {
+                                                      case 'view':
+                                                        _showAttendanceDetails(
+                                                          record,
+                                                        );
+                                                        return;
+                                                      case 'history':
+                                                        Navigator.push(
+                                                          context,
+                                                          MaterialPageRoute(
+                                                            builder: (context) =>
+                                                                AdminEmployeeHistoryScreen(
+                                                                  employeeId:
+                                                                      record
+                                                                          .userId,
+                                                                  employeeName:
+                                                                      record
+                                                                          .employeeName ??
+                                                                      'Unknown',
+                                                                ),
+                                                          ),
+                                                        );
+                                                        return;
+                                                      case 'archive':
+                                                        await _toggleArchiveAttendanceRecord(
+                                                          record,
+                                                        );
+                                                        return;
+                                                      case 'delete':
+                                                        await _confirmAndDeleteAttendanceRecord(
+                                                          record,
+                                                        );
+                                                        return;
+                                                    }
+                                                  },
+                                                  itemBuilder: (ctx) =>
+                                                      <PopupMenuEntry<String>>[
+                                                        const PopupMenuItem(
+                                                          value: 'view',
+                                                          child: Text(
+                                                            'View details',
+                                                          ),
+                                                        ),
+                                                        const PopupMenuItem(
+                                                          value: 'history',
+                                                          child: Text(
+                                                            'View history',
+                                                          ),
+                                                        ),
+                                                        PopupMenuItem(
+                                                          value: 'archive',
+                                                          child: Text(
+                                                            _showArchivedAttendance
+                                                                ? 'Restore'
+                                                                : 'Archive',
+                                                          ),
+                                                        ),
+                                                        const PopupMenuDivider(),
+                                                        const PopupMenuItem(
+                                                          value: 'delete',
+                                                          child: Text('Delete'),
+                                                        ),
+                                                      ],
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ),
                                   ),
                                 );
                               },
@@ -2613,6 +2641,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       context: context,
       builder: (ctx) {
         final theme = Theme.of(ctx);
+        final isWide = MediaQuery.sizeOf(ctx).width >= 900;
+        final actionSize = isWide ? 44.0 : 36.0;
         return AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -2688,9 +2718,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               _toggleArchiveReport(r);
                             },
                             visualDensity: VisualDensity.compact,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 36,
-                              height: 36,
+                            constraints: BoxConstraints.tightFor(
+                              width: actionSize,
+                              height: actionSize,
                             ),
                           ),
                         ),
@@ -2699,9 +2729,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           child: PopupMenuButton<String>(
                             tooltip: 'Actions',
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 36,
-                              height: 36,
+                            constraints: BoxConstraints.tightFor(
+                              width: actionSize,
+                              height: actionSize,
                             ),
                             icon: Icon(
                               Icons.more_horiz,
@@ -3010,6 +3040,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   Widget _buildTaskReportCard(ReportModel r) {
     final theme = Theme.of(context);
+    final isWide = MediaQuery.sizeOf(context).width >= 900;
+    final actionSize = isWide ? 44.0 : 36.0;
     final submitted = DateFormat(
       'yyyy-MM-dd HH:mm',
     ).format(toManilaTime(r.submittedAt));
@@ -3074,9 +3106,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       ),
                       onPressed: () => _toggleArchiveReport(r),
                       visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 36,
-                        height: 36,
+                      constraints: BoxConstraints.tightFor(
+                        width: actionSize,
+                        height: actionSize,
                       ),
                     ),
                   ),
@@ -3085,9 +3117,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     child: PopupMenuButton<String>(
                       tooltip: 'Actions',
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 36,
-                        height: 36,
+                      constraints: BoxConstraints.tightFor(
+                        width: actionSize,
+                        height: actionSize,
                       ),
                       icon: Icon(
                         Icons.more_horiz,
