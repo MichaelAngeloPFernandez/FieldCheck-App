@@ -13,6 +13,7 @@ import 'package:field_check/screens/dashboard_screen.dart';
 import 'package:field_check/screens/registration_screen.dart';
 import 'package:field_check/screens/forgot_password_screen.dart';
 import 'package:field_check/screens/reset_password_screen.dart';
+import 'package:field_check/screens/admin_dashboard_screen.dart';
 import 'package:field_check/screens/enhanced_admin_dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/app_theme.dart';
@@ -146,7 +147,8 @@ class MyAppState extends State<MyApp> {
           '/register': (context) => const RegistrationScreen(),
           '/forgot-password': (context) => const ForgotPasswordScreen(),
           '/reset-password': (context) => const ResetPasswordScreen(),
-          '/admin-dashboard': (context) => const EnhancedAdminDashboardScreen(),
+          '/admin-dashboard': (context) => const AdminDashboardScreen(),
+          '/admin-overview': (context) => const EnhancedAdminDashboardScreen(),
         },
         onGenerateRoute: (settings) {
           if (settings.name == '/dashboard') {

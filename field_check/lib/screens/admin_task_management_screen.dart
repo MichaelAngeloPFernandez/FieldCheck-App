@@ -10,7 +10,6 @@ import 'package:field_check/services/settings_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
-import 'package:field_check/widgets/app_page.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 
 class AdminTaskManagementScreen extends StatefulWidget {
@@ -1821,13 +1820,33 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     );
 
     if (widget.embedded) {
-      return AppPage(
-        useScaffold: false,
-        useSafeArea: false,
-        showAppBar: false,
-        scroll: false,
-        padding: EdgeInsets.zero,
-        child: body,
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          const maxDesktopWidth = 1280.0;
+          final maxWidth = constraints.hasBoundedWidth
+              ? (constraints.maxWidth < maxDesktopWidth
+                    ? constraints.maxWidth
+                    : maxDesktopWidth)
+              : maxDesktopWidth;
+
+          final centered = Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxWidth),
+              child: body,
+            ),
+          );
+
+          if (constraints.hasBoundedHeight && constraints.hasBoundedWidth) {
+            return SizedBox(
+              width: constraints.maxWidth,
+              height: constraints.maxHeight,
+              child: centered,
+            );
+          }
+
+          return centered;
+        },
       );
     }
 

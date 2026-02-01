@@ -15,7 +15,6 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
-import 'package:field_check/widgets/app_page.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
@@ -2166,13 +2165,33 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
 
     if (widget.embedded) {
-      return AppPage(
-        useScaffold: false,
-        useSafeArea: false,
-        showAppBar: false,
-        scroll: false,
-        padding: EdgeInsets.zero,
-        child: content,
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          const maxDesktopWidth = 1280.0;
+          final maxWidth = constraints.hasBoundedWidth
+              ? (constraints.maxWidth < maxDesktopWidth
+                    ? constraints.maxWidth
+                    : maxDesktopWidth)
+              : maxDesktopWidth;
+
+          final centered = Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxWidth),
+              child: content,
+            ),
+          );
+
+          if (constraints.hasBoundedHeight && constraints.hasBoundedWidth) {
+            return SizedBox(
+              width: constraints.maxWidth,
+              height: constraints.maxHeight,
+              child: centered,
+            );
+          }
+
+          return centered;
+        },
       );
     }
 
@@ -2316,230 +2335,262 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
+  double _dialogWidthFor(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context).width;
+    final available = screen - 32;
+    return available.clamp(320, 860).toDouble();
+  }
+
   void _showReportDetails(ReportModel r) {
-    final theme = Theme.of(context);
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          r.taskTitle ?? 'Report Details',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final dialogWidth = _dialogWidthFor(ctx);
+        return AlertDialog(
+          insetPadding: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+          title: Text(
+            r.taskTitle ?? 'Report Details',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: SizedBox(
+            width: dialogWidth,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildReportStatusChip(r.status),
-                  if (r.taskIsOverdue)
-                    _buildMetaChip('Overdue', color: theme.colorScheme.error),
-                  _buildMetaChip(
-                    formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildReportStatusChip(r.status),
+                      if (r.taskIsOverdue)
+                        _buildMetaChip(
+                          'Overdue',
+                          color: theme.colorScheme.error,
+                        ),
+                      _buildMetaChip(
+                        formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
+                      ),
+                      _buildMetaChip('Attachments: ${r.attachments.length}'),
+                    ],
                   ),
-                  _buildMetaChip('Attachments: ${r.attachments.length}'),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildDetailRow(
-                      'Employee:',
-                      r.employeeName ?? r.employeeId,
-                    ),
-                    _buildDetailRow('Task:', r.taskTitle ?? (r.taskId ?? '-')),
-                    _buildDetailRow('Status:', r.status),
-                    _buildDetailRow(
-                      'Submitted:',
-                      formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
-                    ),
-                  ],
-                ),
-              ),
-              if (r.content.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  'Content',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                  ),
-                  child: SelectableText(
-                    r.content,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      height: 1.35,
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: 0.85,
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant,
                       ),
                     ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildDetailRow(
+                          'Employee:',
+                          r.employeeName ?? r.employeeId,
+                        ),
+                        _buildDetailRow(
+                          'Task:',
+                          r.taskTitle ?? (r.taskId ?? '-'),
+                        ),
+                        _buildDetailRow('Status:', r.status),
+                        _buildDetailRow(
+                          'Submitted:',
+                          formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-              if (r.attachments.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  'Attachments',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: r.attachments.map((rawPath) {
-                    final normalized = _normalizeAttachmentUrl(rawPath);
-                    final url = _ensureUrlEncoded(normalized);
-                    final filename = _filenameFromUrl(url);
-                    final isImage = _isImagePath(url);
-
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: InkWell(
-                        onTap: () {
-                          if (isImage) {
-                            _showImagePreview(filename, url);
-                          } else {
-                            _openUrlExternal(url);
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: theme.colorScheme.outlineVariant,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                isImage ? Icons.image : Icons.insert_drive_file,
-                                color: isImage
-                                    ? theme.colorScheme.primary
-                                    : theme.colorScheme.onSurface.withValues(
-                                        alpha: 0.8,
-                                      ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      filename,
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      url,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: theme.colorScheme.onSurface
-                                                .withValues(alpha: 0.7),
-                                          ),
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              if (isImage)
-                                _buildCardAction(
-                                  child: IconButton(
-                                    tooltip: 'Preview',
-                                    onPressed: () =>
-                                        _showImagePreview(filename, url),
-                                    icon: const Icon(Icons.visibility),
-                                    visualDensity: VisualDensity.compact,
-                                    constraints: const BoxConstraints.tightFor(
-                                      width: 36,
-                                      height: 36,
-                                    ),
-                                  ),
-                                ),
-                              if (isImage) const SizedBox(width: 6),
-                              _buildCardAction(
-                                child: IconButton(
-                                  tooltip: 'Copy link',
-                                  onPressed: () async {
-                                    await Clipboard.setData(
-                                      ClipboardData(text: url),
-                                    );
-                                    if (!mounted) return;
-                                    AppWidgets.showSuccessSnackbar(
-                                      context,
-                                      'Link copied',
-                                    );
-                                  },
-                                  icon: const Icon(Icons.copy),
-                                  visualDensity: VisualDensity.compact,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 36,
-                                    height: 36,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              _buildCardAction(
-                                child: IconButton(
-                                  tooltip: 'Open',
-                                  onPressed: () => _openUrlExternal(url),
-                                  icon: const Icon(Icons.open_in_new),
-                                  visualDensity: VisualDensity.compact,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 36,
-                                    height: 36,
-                                  ),
-                                ),
-                              ),
-                            ],
+                  if (r.content.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Content',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                      ),
+                      child: SelectableText(
+                        r.content,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          height: 1.35,
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.85,
                           ),
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ],
+                    ),
+                  ],
+                  if (r.attachments.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Attachments',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: r.attachments.map((rawPath) {
+                        final normalized = _normalizeAttachmentUrl(rawPath);
+                        final url = _ensureUrlEncoded(normalized);
+                        final filename = _filenameFromUrl(url);
+                        final isImage = _isImagePath(url);
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: InkWell(
+                            onTap: () {
+                              if (isImage) {
+                                _showImagePreview(filename, url);
+                              } else {
+                                _openUrlExternal(url);
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    isImage
+                                        ? Icons.image
+                                        : Icons.insert_drive_file,
+                                    color: isImage
+                                        ? theme.colorScheme.primary
+                                        : theme.colorScheme.onSurface
+                                              .withValues(alpha: 0.8),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          filename,
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          url,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSurface
+                                                    .withValues(alpha: 0.7),
+                                              ),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  if (isImage)
+                                    _buildCardAction(
+                                      child: IconButton(
+                                        tooltip: 'Preview',
+                                        onPressed: () =>
+                                            _showImagePreview(filename, url),
+                                        icon: const Icon(Icons.visibility),
+                                        visualDensity: VisualDensity.compact,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 36,
+                                              height: 36,
+                                            ),
+                                      ),
+                                    ),
+                                  if (isImage) const SizedBox(width: 6),
+                                  _buildCardAction(
+                                    child: IconButton(
+                                      tooltip: 'Copy link',
+                                      onPressed: () async {
+                                        await Clipboard.setData(
+                                          ClipboardData(text: url),
+                                        );
+                                        if (!mounted) return;
+                                        AppWidgets.showSuccessSnackbar(
+                                          context,
+                                          'Link copied',
+                                        );
+                                      },
+                                      icon: const Icon(Icons.copy),
+                                      visualDensity: VisualDensity.compact,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 36,
+                                            height: 36,
+                                          ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _buildCardAction(
+                                    child: IconButton(
+                                      tooltip: 'Open',
+                                      onPressed: () => _openUrlExternal(url),
+                                      icon: const Icon(Icons.open_in_new),
+                                      visualDensity: VisualDensity.compact,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 36,
+                                            height: 36,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2573,7 +2624,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             ),
           ),
           content: SizedBox(
-            width: 520,
+            width: _dialogWidthFor(ctx),
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: reports.length,

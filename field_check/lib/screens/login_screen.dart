@@ -2,8 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:field_check/main.dart';
+import 'package:field_check/screens/admin_dashboard_screen.dart';
 import 'package:field_check/screens/dashboard_screen.dart';
-import 'package:field_check/screens/enhanced_admin_dashboard_screen.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/logger.dart';
@@ -52,7 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => const EnhancedAdminDashboardScreen(),
+            builder: (context) => const AdminDashboardScreen(),
           ),
         );
       } else {
