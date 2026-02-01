@@ -9,6 +9,7 @@ import '../widgets/employee_status_view.dart';
 import '../widgets/live_employee_map.dart';
 import '../widgets/employee_management_modal.dart';
 import '../utils/app_theme.dart';
+import '../utils/http_util.dart';
 import '../widgets/app_page.dart';
 import '../widgets/app_widgets.dart';
 
@@ -27,6 +28,10 @@ class _EnhancedAdminDashboardScreenState
   List<EmployeeLocation> _employees = [];
   bool _isLoading = true;
   String? _loadError;
+  String? _coldStartHint;
+  bool _heavyWidgetsReady = false;
+  String? _backendCommit;
+  Timer? _coldStartTimer;
   Timer? _refreshTimer;
   StreamSubscription<List<EmployeeLocation>>? _locationsSub;
   final CheckoutNotificationService _checkoutService =
@@ -54,8 +59,16 @@ class _EnhancedAdminDashboardScreenState
     // ignore: unnecessary_statements
     _reportNotificationCount;
     _initializeLocationService();
+    _loadBackendBuildInfo();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _heavyWidgetsReady = true;
+      });
+    });
     // Auto-refresh every 5 seconds for real-time updates
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) {
         setState(() {});
       }
@@ -71,9 +84,22 @@ class _EnhancedAdminDashboardScreenState
       if (mounted) {
         setState(() {
           _loadError = null;
+          _coldStartHint = null;
         });
       }
-      await _locationService.initialize();
+
+      _coldStartTimer?.cancel();
+      _coldStartTimer = Timer(const Duration(seconds: 8), () {
+        if (!mounted) return;
+        if (_employees.isNotEmpty) return;
+        if (_loadError != null) return;
+        setState(() {
+          _coldStartHint =
+              'Backend may be waking up (Render cold start). Please wait…';
+        });
+      });
+
+      await _locationService.initialize().timeout(const Duration(seconds: 25));
       _locationsSub?.cancel();
       _locationsSub = _locationService.employeeLocationsStream.listen((
         locations,
@@ -81,7 +107,7 @@ class _EnhancedAdminDashboardScreenState
         if (mounted) {
           setState(() {
             _employees = locations;
-            _isLoading = false;
+            _coldStartHint = null;
           });
         }
       });
@@ -89,32 +115,41 @@ class _EnhancedAdminDashboardScreenState
       debugPrint('Error initializing location service: $e');
       if (mounted) {
         setState(() {
-          _isLoading = false;
           _loadError = 'Failed to initialize live employee tracking.';
         });
       }
     }
   }
 
+  Future<void> _loadBackendBuildInfo() async {
+    try {
+      final res = await HttpUtil().get('/api/health');
+      if (res.statusCode != 200) return;
+      final body = res.body;
+      final match = RegExp(r'"gitCommit"\s*:\s*"([^"]*)"').firstMatch(body);
+      final commit = match?.group(1);
+      if (!mounted) return;
+      setState(() {
+        _backendCommit = commit;
+      });
+    } catch (_) {}
+  }
+
   Future<void> _refreshAll() async {
     if (!mounted) return;
     setState(() {
-      _isLoading = true;
       _loadError = null;
+      _coldStartHint = null;
     });
 
     await _initializeLocationService();
     await _loadTaskStatistics();
-
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-    });
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _coldStartTimer?.cancel();
     _locationService.dispose();
     _locationsSub?.cancel();
     _warningSub?.cancel();
@@ -279,6 +314,19 @@ class _EnhancedAdminDashboardScreenState
     return AppPage(
       appBarTitle: 'Admin Dashboard',
       actions: [
+        if (_backendCommit != null && _backendCommit!.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(right: AppTheme.sm),
+            child: Center(
+              child: Text(
+                'v ${_backendCommit!.trim().length > 7 ? _backendCommit!.trim().substring(0, 7) : _backendCommit!.trim()}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
         Stack(
           children: [
             IconButton(
@@ -324,194 +372,203 @@ class _EnhancedAdminDashboardScreenState
         AppTheme.lg,
         AppTheme.xl,
       ),
-      child: _isLoading
-          ? AppWidgets.loadingIndicator(message: 'Loading admin dashboard...')
-          : (_loadError != null
-                ? AppWidgets.errorMessage(
-                    message: _loadError!,
-                    onRetry: _refreshAll,
+      child: (_loadError != null
+          ? AppWidgets.errorMessage(message: _loadError!, onRetry: _refreshAll)
+          : Column(
+              children: [
+                if (_isLoading)
+                  AppWidgets.loadingIndicator(
+                    message: 'Loading admin dashboard...',
                   )
-                : Column(
+                else
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildStatCard(
-                              'Employees',
-                              _employees.length.toString(),
-                              Icons.people,
-                              theme.colorScheme.primary,
-                              onTap: () => _showTotalEmployeesView(context),
-                              notificationCount: _attendanceNotificationCount,
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.md),
-                          Expanded(
-                            child: _buildStatCard(
-                              'Online',
-                              onlineCount.toString(),
-                              Icons.cloud_done,
-                              Colors.green,
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.md),
-                          Expanded(
-                            child: _buildStatCard(
-                              'Busy',
-                              _employees
-                                  .where((e) => e.status == EmployeeStatus.busy)
-                                  .length
-                                  .toString(),
-                              Icons.schedule,
-                              theme.colorScheme.error,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (_taskStatistics != null) ...[
-                        const SizedBox(height: AppTheme.md),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildStatCard(
-                                'Active Tasks',
-                                _taskStatistics!.activeTasks.toString(),
-                                Icons.task_alt,
-                                Colors.deepPurple,
-                                notificationCount: _taskNotificationCount,
-                              ),
-                            ),
-                            const SizedBox(width: AppTheme.md),
-                            Expanded(
-                              child: _buildStatCard(
-                                'Weighted Load',
-                                _taskStatistics!.totalDifficultyWeight
-                                    .toStringAsFixed(1),
-                                Icons.scale,
-                                Colors.orange,
-                              ),
-                            ),
-                          ],
+                      Expanded(
+                        child: _buildStatCard(
+                          'Employees',
+                          _employees.length.toString(),
+                          Icons.people,
+                          theme.colorScheme.primary,
+                          onTap: () => _showTotalEmployeesView(context),
+                          notificationCount: _attendanceNotificationCount,
                         ),
-                      ],
-                      const SizedBox(height: AppTheme.lg),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildStatusBadge(
-                            '🟢 Available',
-                            _employees
-                                .where(
-                                  (e) => e.status == EmployeeStatus.available,
-                                )
-                                .length,
-                            Colors.green,
-                          ),
-                          _buildStatusBadge(
-                            '🟢 Moving',
-                            _employees
-                                .where((e) => e.status == EmployeeStatus.moving)
-                                .length,
-                            Colors.green,
-                          ),
-                          _buildStatusBadge(
-                            '🔴 Busy',
-                            _employees
-                                .where((e) => e.status == EmployeeStatus.busy)
-                                .length,
-                            theme.colorScheme.error,
-                          ),
-                          _buildStatusBadge(
-                            '⚫ Offline',
-                            _employees
-                                .where(
-                                  (e) => e.status == EmployeeStatus.offline,
-                                )
-                                .length,
-                            theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                          ),
-                        ],
                       ),
-                      const SizedBox(height: AppTheme.lg),
+                      const SizedBox(width: AppTheme.md),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Online',
+                          onlineCount.toString(),
+                          Icons.cloud_done,
+                          Colors.green,
+                        ),
+                      ),
+                      const SizedBox(width: AppTheme.md),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Busy',
+                          _employees
+                              .where((e) => e.status == EmployeeStatus.busy)
+                              .length
+                              .toString(),
+                          Icons.schedule,
+                          theme.colorScheme.error,
+                        ),
+                      ),
+                    ],
+                  ),
+                if (_taskStatistics != null) ...[
+                  const SizedBox(height: AppTheme.md),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          'Active Tasks',
+                          _taskStatistics!.activeTasks.toString(),
+                          Icons.task_alt,
+                          Colors.deepPurple,
+                          notificationCount: _taskNotificationCount,
+                        ),
+                      ),
+                      const SizedBox(width: AppTheme.md),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Weighted Load',
+                          _taskStatistics!.totalDifficultyWeight
+                              .toStringAsFixed(1),
+                          Icons.scale,
+                          Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: AppTheme.lg),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildStatusBadge(
+                      '🟢 Available',
+                      _employees
+                          .where((e) => e.status == EmployeeStatus.available)
+                          .length,
+                      Colors.green,
+                    ),
+                    _buildStatusBadge(
+                      '🟢 Moving',
+                      _employees
+                          .where((e) => e.status == EmployeeStatus.moving)
+                          .length,
+                      Colors.green,
+                    ),
+                    _buildStatusBadge(
+                      '🔴 Busy',
+                      _employees
+                          .where((e) => e.status == EmployeeStatus.busy)
+                          .length,
+                      theme.colorScheme.error,
+                    ),
+                    _buildStatusBadge(
+                      '⚫ Offline',
+                      _employees
+                          .where((e) => e.status == EmployeeStatus.offline)
+                          .length,
+                      theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.lg),
+                Container(
+                  padding: const EdgeInsets.all(AppTheme.md),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
                       Container(
-                        padding: const EdgeInsets.all(AppTheme.md),
+                        width: 8,
+                        height: 8,
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(
-                            alpha: 0.08,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                            AppTheme.radiusMd,
-                          ),
-                          border: Border.all(
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.35,
-                            ),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: Colors.green,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: AppTheme.sm),
-                            Text(
-                              'Real-time location tracking active',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
-                            const Spacer(),
-                            Text(
-                              '$onlineCount online',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                          color: _employees.isNotEmpty
+                              ? Colors.green
+                              : (_loadError != null
+                                    ? theme.colorScheme.error
+                                    : Colors.orange),
+                          shape: BoxShape.circle,
                         ),
                       ),
-                      const SizedBox(height: AppTheme.lg),
-                      const Divider(),
-                      if (_employeeTaskLoad.isNotEmpty) ...[
-                        const SizedBox(height: AppTheme.lg),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Top Employees by Task Load',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                      const SizedBox(width: AppTheme.sm),
+                      Expanded(
+                        child: Text(
+                          _employees.isNotEmpty
+                              ? 'Real-time location tracking active'
+                              : (_coldStartHint ??
+                                    'Connecting to live tracking…'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: theme.colorScheme.primary,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: AppTheme.md),
-                        ..._buildTopEmployeesList(),
-                        const SizedBox(height: AppTheme.lg),
-                        const Divider(),
-                      ],
-                      const SizedBox(height: AppTheme.lg),
-                      LiveEmployeeMap(
-                        employees: _employees,
-                        height: 300,
-                        onStatusChange: (employeeId, newStatus) {
-                          _locationService.requestStatusUpdate(
-                            employeeId,
-                            newStatus,
-                          );
-                        },
-                        onRefresh: _refreshAll,
                       ),
-                      const SizedBox(height: AppTheme.lg),
-                      const Divider(),
-                      SizedBox(
-                        height: 420,
-                        child: EmployeeStatusView(
+                      const SizedBox(width: AppTheme.sm),
+                      Text(
+                        '$onlineCount online',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTheme.lg),
+                const Divider(),
+                if (_employeeTaskLoad.isNotEmpty) ...[
+                  const SizedBox(height: AppTheme.lg),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Top Employees by Task Load',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.md),
+                  ..._buildTopEmployeesList(),
+                  const SizedBox(height: AppTheme.lg),
+                  const Divider(),
+                ],
+                const SizedBox(height: AppTheme.lg),
+                if (_heavyWidgetsReady)
+                  LiveEmployeeMap(
+                    employees: _employees,
+                    height: 300,
+                    onStatusChange: (employeeId, newStatus) {
+                      _locationService.requestStatusUpdate(
+                        employeeId,
+                        newStatus,
+                      );
+                    },
+                    onRefresh: _refreshAll,
+                  )
+                else
+                  SizedBox(
+                    height: 300,
+                    child: AppWidgets.loadingIndicator(
+                      message: 'Preparing map…',
+                    ),
+                  ),
+                const SizedBox(height: AppTheme.lg),
+                const Divider(),
+                SizedBox(
+                  height: 420,
+                  child: _heavyWidgetsReady
+                      ? EmployeeStatusView(
                           employees: _employees,
                           onStatusChange: (employeeId, newStatus) {
                             _locationService.requestStatusUpdate(
@@ -523,10 +580,13 @@ class _EnhancedAdminDashboardScreenState
                               'Status updated for $employeeId',
                             );
                           },
+                        )
+                      : AppWidgets.loadingIndicator(
+                          message: 'Preparing employee list…',
                         ),
-                      ),
-                    ],
-                  )),
+                ),
+              ],
+            )),
     );
   }
 
