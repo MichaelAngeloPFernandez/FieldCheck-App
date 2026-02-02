@@ -392,21 +392,22 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     if (p.startsWith('http://') || p.startsWith('https://')) {
       try {
         final uri = Uri.parse(p);
-        if (uri.host == 'fieldcheck-app.onrender.com') {
-          final backend = Uri.parse(ApiConfig.baseUrl);
+        if (uri.path.startsWith('/uploads')) {
+          final uploads = Uri.parse(ApiConfig.uploadsBaseUrl);
           return uri
               .replace(
-                scheme: backend.scheme,
-                host: backend.host,
-                port: backend.hasPort ? backend.port : null,
+                scheme: uploads.scheme,
+                host: uploads.host,
+                port: uploads.hasPort ? uploads.port : null,
               )
               .toString();
         }
       } catch (_) {}
       return p;
     }
-    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
-    return '${ApiConfig.baseUrl}/$p';
+
+    if (p.startsWith('/')) return '${ApiConfig.uploadsBaseUrl}$p';
+    return '${ApiConfig.uploadsBaseUrl}/$p';
   }
 
   String _ensureUrlEncoded(String url) {
