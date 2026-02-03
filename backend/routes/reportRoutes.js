@@ -11,6 +11,7 @@ const {
   createReport,
   listReports,
   getReportById,
+  replaceReportAttachments,
   updateReportStatus,
   deleteReport,
   getCurrentReports,
@@ -193,6 +194,7 @@ router.put('/:id/restore', protect, admin, restoreReport);
 
 // Generic /:id routes (must be LAST)
 router.get('/:id', protect, admin, getReportById);
+router.patch('/:id/attachments', protect, admin, replaceReportAttachments);
 router.patch('/:id/status', protect, admin, updateReportStatus);
 router.delete('/:id', protect, admin, deleteReport);
 

@@ -181,6 +181,65 @@ const updateReportStatus = asyncHandler(async (req, res) => {
   res.json(updated);
 });
 
+const replaceReportAttachments = asyncHandler(async (req, res) => {
+  const { oldUrl, newUrl, index } = req.body || {};
+
+  if (!newUrl || typeof newUrl !== 'string') {
+    res.status(400);
+    throw new Error('newUrl is required');
+  }
+
+  if (!newUrl.includes('/api/reports/attachments/')) {
+    res.status(400);
+    throw new Error('newUrl must be a GridFS attachment URL');
+  }
+
+  const rep = await Report.findById(req.params.id);
+  if (!rep) {
+    res.status(404);
+    throw new Error('Report not found');
+  }
+
+  if (!Array.isArray(rep.attachments)) {
+    rep.attachments = [];
+  }
+
+  let idx = -1;
+  if (index !== undefined && index !== null && String(index).trim() !== '') {
+    idx = Number(index);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= rep.attachments.length) {
+      res.status(400);
+      throw new Error('Invalid attachment index');
+    }
+    if (oldUrl && typeof oldUrl === 'string' && rep.attachments[idx] !== oldUrl) {
+      res.status(409);
+      throw new Error('Attachment mismatch');
+    }
+  } else {
+    if (!oldUrl || typeof oldUrl !== 'string') {
+      res.status(400);
+      throw new Error('oldUrl is required');
+    }
+    idx = rep.attachments.indexOf(oldUrl);
+    if (idx === -1) {
+      res.status(404);
+      throw new Error('Attachment not found in report');
+    }
+  }
+
+  rep.attachments[idx] = newUrl;
+  const updated = await rep.save();
+  setImmediate(async () => {
+    try {
+      const populated = await populateReportById(updated._id);
+      io.emit('updatedReport', populated || updated);
+    } catch (_) {
+      io.emit('updatedReport', updated);
+    }
+  });
+  res.json(updated);
+});
+
 // @desc Delete a report
 // @route DELETE /api/reports/:id
 // @access Private/Admin
@@ -309,6 +368,7 @@ module.exports = {
   createReport,
   listReports,
   getReportById,
+  replaceReportAttachments,
   updateReportStatus,
   deleteReport,
   getCurrentReports,
