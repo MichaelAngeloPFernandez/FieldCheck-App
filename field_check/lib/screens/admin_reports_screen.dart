@@ -629,25 +629,25 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   void _showImagePreview(String title, String url) {
-    final theme = Theme.of(context);
     showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
         insetPadding: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
+                color: Theme.of(context).colorScheme.surface,
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(16),
                 ),
                 border: Border(
                   bottom: BorderSide(
-                    color: theme.dividerColor.withValues(alpha: 0.35),
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.35),
                   ),
                 ),
               ),
@@ -656,7 +656,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   Expanded(
                     child: Text(
                       title,
-                      style: theme.textTheme.titleSmall?.copyWith(
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -665,7 +665,26 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   _buildCardAction(
                     child: IconButton(
                       tooltip: 'Open',
-                      onPressed: () => _openUrlExternal(url),
+                      onPressed: () async {
+                        try {
+                          final uri = Uri.parse(url);
+                          final isProtected = uri.path.startsWith(
+                            '/api/reports/attachments/',
+                          );
+                          if (isProtected) {
+                            final dl = _resolveAttachmentAccessUrl(
+                              url,
+                              filename: title,
+                              forDownload: true,
+                            );
+                            await _downloadAttachment(dl, title);
+                          } else {
+                            await _openUrlExternal(url);
+                          }
+                        } catch (_) {
+                          await _openUrlExternal(url);
+                        }
+                      },
                       icon: const Icon(Icons.open_in_new),
                       visualDensity: VisualDensity.compact,
                       constraints: const BoxConstraints.tightFor(
@@ -2679,12 +2698,25 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 6),
                           child: InkWell(
-                            onTap: () {
+                            onTap: () async {
                               if (isImage) {
                                 _showImagePreview(filename, accessUrl);
-                              } else {
-                                _openUrlExternal(accessUrl);
+                                return;
                               }
+                              try {
+                                final uri = Uri.parse(accessUrl);
+                                final isProtected = uri.path.startsWith(
+                                  '/api/reports/attachments/',
+                                );
+                                if (isProtected) {
+                                  await _downloadAttachment(
+                                    downloadUrl,
+                                    filename,
+                                  );
+                                  return;
+                                }
+                              } catch (_) {}
+                              await _openUrlExternal(accessUrl);
                             },
                             child: Container(
                               padding: const EdgeInsets.all(12),
@@ -2760,7 +2792,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                               );
                                               return;
                                             case 'open':
-                                              _openUrlExternal(accessUrl);
+                                              try {
+                                                final uri = Uri.parse(
+                                                  accessUrl,
+                                                );
+                                                final isProtected = uri.path
+                                                    .startsWith(
+                                                      '/api/reports/attachments/',
+                                                    );
+                                                if (!isImage && isProtected) {
+                                                  await _downloadAttachment(
+                                                    downloadUrl,
+                                                    filename,
+                                                  );
+                                                  return;
+                                                }
+                                              } catch (_) {}
+                                              await _openUrlExternal(accessUrl);
                                               return;
                                             case 'download':
                                               await _downloadAttachment(

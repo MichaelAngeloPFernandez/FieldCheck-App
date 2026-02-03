@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:field_check/services/report_service.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_page.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/services/user_service.dart';
+import 'package:field_check/utils/file_download/file_download.dart';
 
 class EmployeeReportsScreen extends StatefulWidget {
   final String employeeId;
@@ -144,9 +146,84 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
       }
       final segs = uri.pathSegments;
       if (segs.isEmpty) return url;
-      return segs.last;
+      return Uri.decodeComponent(segs.last);
     } catch (_) {
       return url;
+    }
+  }
+
+  bool _isProtectedAttachmentUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return uri.path.startsWith('/api/reports/attachments/');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _withDownloadQuery(String url, String filename) {
+    try {
+      final uri = Uri.parse(url);
+      final qp = Map<String, String>.from(uri.queryParameters);
+      qp['download'] = '1';
+      if (filename.trim().isNotEmpty) {
+        qp['filename'] = filename.trim();
+      }
+      return uri.replace(queryParameters: qp).toString();
+    } catch (_) {
+      return url;
+    }
+  }
+
+  Future<void> _downloadAttachment(String url, String filename) async {
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+      if (uri.host.isEmpty) {
+        throw const FormatException('Invalid URL');
+      }
+    } catch (_) {
+      if (mounted) {
+        AppWidgets.showErrorSnackbar(context, 'Invalid attachment URL');
+      }
+      return;
+    }
+
+    try {
+      final token = await UserService().getToken();
+      final res = await http.get(
+        uri,
+        headers: {if (token != null) 'Authorization': 'Bearer $token'},
+      );
+      if (res.statusCode != 200) {
+        if (mounted) {
+          AppWidgets.showErrorSnackbar(
+            context,
+            'Failed to download file (${res.statusCode})',
+          );
+        }
+        return;
+      }
+
+      final mimeType = (res.headers['content-type'] ?? '').trim();
+      await FileDownload.downloadBytes(
+        bytes: res.bodyBytes,
+        filename: filename,
+        mimeType: mimeType.isNotEmpty ? mimeType : 'application/octet-stream',
+      );
+      if (mounted) {
+        AppWidgets.showSuccessSnackbar(context, 'Download started');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Unable to download attachment',
+          ),
+        );
+      }
     }
   }
 
@@ -218,7 +295,14 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                   ),
                   IconButton(
                     tooltip: 'Open',
-                    onPressed: () => _openUrlExternal(url),
+                    onPressed: () async {
+                      if (_isProtectedAttachmentUrl(url)) {
+                        final dl = _withDownloadQuery(url, title);
+                        await _downloadAttachment(dl, title);
+                        return;
+                      }
+                      await _openUrlExternal(url);
+                    },
                     icon: const Icon(Icons.open_in_new),
                   ),
                   IconButton(
@@ -409,15 +493,23 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                     final url = _normalizeAttachmentUrl(rawPath);
                     final filename = _filenameFromUrl(url);
                     final isImage = _isImagePath(url);
+                    final isProtected = _isProtectedAttachmentUrl(url);
+                    final downloadUrl = isProtected
+                        ? _withDownloadQuery(url, filename)
+                        : url;
 
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: InkWell(
-                        onTap: () {
+                        onTap: () async {
                           if (isImage) {
                             _showImagePreview(filename, url);
                           } else {
-                            _openUrlExternal(url);
+                            if (isProtected) {
+                              await _downloadAttachment(downloadUrl, filename);
+                            } else {
+                              await _openUrlExternal(url);
+                            }
                           }
                         },
                         child: Container(
@@ -464,7 +556,16 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                               const SizedBox(width: 8),
                               IconButton(
                                 tooltip: 'Open',
-                                onPressed: () => _openUrlExternal(url),
+                                onPressed: () async {
+                                  if (!isImage && isProtected) {
+                                    await _downloadAttachment(
+                                      downloadUrl,
+                                      filename,
+                                    );
+                                    return;
+                                  }
+                                  await _openUrlExternal(url);
+                                },
                                 icon: const Icon(Icons.open_in_new),
                               ),
                             ],
