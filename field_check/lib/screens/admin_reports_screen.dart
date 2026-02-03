@@ -20,7 +20,6 @@ import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/file_download/file_download.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
 
 class AdminReportsScreen extends StatefulWidget {
   final String? employeeId;
@@ -533,57 +532,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     }
   }
 
-  Future<void> _replaceLegacyAttachment({
-    required ReportModel report,
-    required String rawOldUrl,
-    required int index,
-  }) async {
-    try {
-      final picked = await FilePicker.platform.pickFiles(
-        withData: true,
-        allowMultiple: false,
-      );
-      if (picked == null || picked.files.isEmpty) return;
-
-      final file = picked.files.first;
-      final bytes = file.bytes;
-      if (bytes == null) {
-        if (mounted) {
-          AppWidgets.showErrorSnackbar(context, 'Unable to read selected file');
-        }
-        return;
-      }
-
-      final newPath = await ReportService().uploadAttachmentBytes(
-        bytes: bytes,
-        fileName: file.name,
-        taskId: report.taskId ?? '',
-        employeeId: report.employeeId,
-      );
-
-      await ReportService().replaceReportAttachment(
-        reportId: report.id,
-        oldUrl: rawOldUrl,
-        newUrl: newPath,
-        index: index,
-      );
-
-      await _fetchTaskReports();
-      if (mounted) {
-        AppWidgets.showSuccessSnackbar(context, 'Attachment replaced');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      AppWidgets.showErrorSnackbar(
-        context,
-        AppWidgets.friendlyErrorMessage(
-          e,
-          fallback: 'Failed to replace attachment',
-        ),
-      );
-    }
-  }
-
   String _filenameFromUrl(String url) {
     try {
       final uri = Uri.parse(url);
@@ -624,7 +572,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           if (res.statusCode == 404 && _isLegacyAttachmentUrl(url)) {
             AppWidgets.showErrorSnackbar(
               context,
-              'Legacy attachment missing (Render uploads are not persistent). Use Replace attachment in report details.',
+              'Legacy attachment missing (Render uploads are not persistent). Reopen the submission so the employee can resubmit and re-upload attachments.',
             );
             return;
           }
@@ -794,7 +742,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       errorBuilder: (context, error, stack) {
                         final isLegacy = _isLegacyAttachmentUrl(url);
                         final msg = isLegacy
-                            ? 'Legacy attachment missing (Render uploads are not persistent). Use Replace attachment in report details.'
+                            ? 'Legacy attachment missing (Render uploads are not persistent). Reopen the submission so the employee can resubmit and re-upload attachments.'
                             : 'Failed to load image: $error';
                         return Padding(
                           padding: const EdgeInsets.all(16),
@@ -2753,7 +2701,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: r.attachments.asMap().entries.map((entry) {
-                        final i = entry.key;
                         final rawPath = entry.value;
                         final normalized = _normalizeAttachmentUrl(rawPath);
                         final url = _ensureUrlEncoded(normalized);
@@ -2768,7 +2715,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           forDownload: true,
                         );
                         final isImage = _isImagePath(url);
-                        final isLegacy = _isLegacyAttachmentUrl(url);
 
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 6),
@@ -2891,13 +2837,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 filename,
                                               );
                                               return;
-                                            case 'replace':
-                                              await _replaceLegacyAttachment(
-                                                report: r,
-                                                rawOldUrl: rawPath,
-                                                index: i,
-                                              );
-                                              return;
                                             case 'copy':
                                               await Clipboard.setData(
                                                 ClipboardData(text: accessUrl),
@@ -2925,15 +2864,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 value: 'download',
                                                 child: Text('Download'),
                                               ),
-                                              if (isLegacy) ...[
-                                                const PopupMenuDivider(),
-                                                const PopupMenuItem(
-                                                  value: 'replace',
-                                                  child: Text(
-                                                    'Replace attachment',
-                                                  ),
-                                                ),
-                                              ],
                                               const PopupMenuDivider(),
                                               const PopupMenuItem(
                                                 value: 'copy',
