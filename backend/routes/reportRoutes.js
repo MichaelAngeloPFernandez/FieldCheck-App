@@ -106,7 +106,8 @@ router.post(
       });
 
       uploadStream.on('finish', (file) => {
-        const fileId = file && file._id ? String(file._id) : null;
+        const rawId = (file && file._id) || uploadStream.id;
+        const fileId = rawId ? String(rawId) : null;
         if (!fileId) {
           return res.status(500).json({ message: 'Upload succeeded but no file id returned' });
         }
