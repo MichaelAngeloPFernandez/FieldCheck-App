@@ -4,6 +4,9 @@ const { Server } = require('socket.io'); // Import Server from socket.io
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const cors = require('cors');
+const https = require('https');
+const { URL } = require('url');
+
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
@@ -16,7 +19,7 @@ const User = require('./models/User');
 const EmployeeLocation = require('./models/EmployeeLocation');
 const notificationService = require('./services/notificationService');
 
-console.log('🚀 Starting server initialization...');
+console.log(' Starting server initialization...');
 
 dotenv.config();
 
@@ -43,7 +46,7 @@ if (_isProdEnv) {
   }
 }
 
-console.log('📦 Modules loaded, environment configured');
+console.log(' Modules loaded, environment configured');
 
 const app = express();
 const server = http.createServer(app); // Create http server
@@ -61,7 +64,7 @@ module.exports.io = io;
 // Also expose via global.io so controllers and utilities can emit events
 global.io = io;
 
-console.log('🔌 Socket.io initialized');
+console.log(' Socket.io initialized');
 
 // Track employee locations for real-time dashboard updates
 const employeeLocations = new Map(); // { userId: { lat, lng, accuracy, timestamp } }
@@ -827,6 +830,102 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+app.get('/api/uploads/proxy', (req, res) => {
+  try {
+    const raw = (req.query && req.query.url ? String(req.query.url) : '').trim();
+    if (!raw) {
+      return res.status(400).json({ message: 'Missing url' });
+    }
+
+    let target;
+    try {
+      target = new URL(raw);
+    } catch (_) {
+      return res.status(400).json({ message: 'Invalid url' });
+    }
+
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      return res.status(400).json({ message: 'Unsupported protocol' });
+    }
+
+    const allowAll = (process.env.ALLOW_UPLOAD_PROXY_ALL || '').trim() === 'true';
+    const allowedHosts = new Set([
+      'fieldcheck-app.onrender.com',
+      'fieldcheck-backend.onrender.com',
+    ]);
+    if (!allowAll && !allowedHosts.has(target.hostname)) {
+      return res.status(403).json({ message: 'Host not allowed' });
+    }
+
+    const wantsDownload =
+      req.query && (req.query.download === '1' || req.query.download === 'true');
+    const filename =
+      req.query && req.query.filename ? String(req.query.filename) : null;
+
+    const fetchOnce = (urlObj, redirectsLeft) => {
+      const client = urlObj.protocol === 'https:' ? https : http;
+
+      const upstream = client.get(
+        urlObj,
+        {
+          headers: {
+            'User-Agent': 'FieldCheckUploadProxy',
+          },
+        },
+        (upstreamRes) => {
+          const code = upstreamRes.statusCode || 0;
+
+          if (
+            code >= 300 &&
+            code < 400 &&
+            upstreamRes.headers &&
+            upstreamRes.headers.location &&
+            redirectsLeft > 0
+          ) {
+            try {
+              const next = new URL(String(upstreamRes.headers.location), urlObj);
+              upstreamRes.resume();
+              return fetchOnce(next, redirectsLeft - 1);
+            } catch (_) {
+              upstreamRes.resume();
+              return res.status(502).json({ message: 'Bad redirect' });
+            }
+          }
+
+          res.status(code);
+
+          const contentType = upstreamRes.headers['content-type'];
+          if (contentType) {
+            res.setHeader('Content-Type', contentType);
+          }
+          const contentLength = upstreamRes.headers['content-length'];
+          if (contentLength) {
+            res.setHeader('Content-Length', contentLength);
+          }
+          res.setHeader('Cache-Control', 'no-store');
+
+          if (wantsDownload) {
+            const name = filename || urlObj.pathname.split('/').pop() || 'download';
+            res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+          }
+
+          upstreamRes.pipe(res);
+        },
+      );
+
+      upstream.on('error', () => {
+        try {
+          res.status(502).json({ message: 'Failed to fetch remote file' });
+        } catch (_) {}
+      });
+    };
+
+    return fetchOnce(target, 3);
+  } catch (_) {
+    return res.status(500).json({ message: 'Proxy error' });
+  }
+});
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

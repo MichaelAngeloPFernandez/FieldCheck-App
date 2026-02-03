@@ -11,7 +11,7 @@ class UserService {
   static final String _baseUrl = '${ApiConfig.baseUrl}/api';
   static final Uri _healthUri = Uri.parse('${ApiConfig.baseUrl}/api/health');
   // Add cached profile and getter
-  UserModel? _cachedProfile;
+  static UserModel? _cachedProfile;
   UserModel? get currentUser => _cachedProfile;
 
   Future<void> _warmUpBackend({

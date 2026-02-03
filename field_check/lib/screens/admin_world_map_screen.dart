@@ -41,6 +41,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   bool _loadingTasks = false;
   bool _loadingAvailability = false;
   DateTime? _availabilityUpdatedAt;
+  bool _didInitialFit = false;
 
   static const LatLng _defaultCenter = LatLng(14.5995, 120.9842); // Manila
 
@@ -52,9 +53,44 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
 
   Future<void> _init() async {
     await _locationService.initialize();
-    await _loadEmployees();
     _subscribeToLocations();
+    // Seed any cached snapshot immediately so the screen doesn't start empty
+    // while waiting for the next socket event.
+    _applyLocations(_locationService.getAllLocations());
+    await _loadEmployees();
     await _refreshAvailability();
+  }
+
+  void _applyLocations(List<EmployeeLocation> locations) {
+    if (!mounted) return;
+
+    setState(() {
+      _employeeLocations
+        ..clear()
+        ..addAll(locations);
+
+      for (final empLoc in locations) {
+        final pos = LatLng(empLoc.latitude, empLoc.longitude);
+        _liveLocations[empLoc.employeeId] = pos;
+
+        final trail = _trails[empLoc.employeeId] ?? <LatLng>[];
+        if (trail.isEmpty || trail.last != pos) {
+          trail.add(pos);
+          if (trail.length > 50) {
+            trail.removeRange(0, trail.length - 50);
+          }
+          _trails[empLoc.employeeId] = trail;
+        }
+      }
+    });
+
+    if (!_didInitialFit && _liveLocations.isNotEmpty) {
+      _didInitialFit = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _fitToEmployees();
+      });
+    }
   }
 
   Future<void> _loadEmployees() async {
@@ -193,27 +229,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     _employeeLocationSub = _locationService.employeeLocationsStream.listen((
       locations,
     ) {
-      if (mounted) {
-        setState(() {
-          _employeeLocations
-            ..clear()
-            ..addAll(locations);
-          for (final empLoc in locations) {
-            final pos = LatLng(empLoc.latitude, empLoc.longitude);
-            _liveLocations[empLoc.employeeId] = pos;
-
-            final trail = _trails[empLoc.employeeId] ?? <LatLng>[];
-            if (trail.isEmpty || trail.last != pos) {
-              trail.add(pos);
-              // Keep only last 50 points per employee to avoid memory bloat
-              if (trail.length > 50) {
-                trail.removeRange(0, trail.length - 50);
-              }
-              _trails[empLoc.employeeId] = trail;
-            }
-          }
-        });
-      }
+      _applyLocations(locations);
     });
   }
 
@@ -272,7 +288,6 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   @override
   void dispose() {
     _employeeLocationSub?.cancel();
-    _locationService.dispose();
     super.dispose();
   }
 

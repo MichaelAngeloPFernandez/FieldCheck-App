@@ -345,7 +345,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
 
     final id = _selectedEmployeeId;
-    if (id != null && _isGpsOnline(id)) {
+    if (id != null) {
       final pos = _liveLocations[id];
       if (pos != null) {
         _panTo(pos, zoom: 16);
@@ -366,7 +366,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
 
     final id = _selectedEmployeeId;
-    if (id != null && _isGpsOnline(id)) {
+    if (id != null) {
       final pos = _liveLocations[id];
       if (pos != null) {
         _panTo(pos, zoom: 16);
@@ -1006,7 +1006,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   void _fitMapToEmployees() {
     final bounds = _boundsForLiveLocations();
-    if (bounds == null) return;
+    if (bounds == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No employee locations to fit yet'),
+            duration: Duration(milliseconds: 1200),
+          ),
+        );
+      }
+      return;
+    }
     try {
       _mapController.fitCamera(
         CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(48)),
@@ -1023,9 +1034,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       target = _liveLocations[selectedId];
     }
     target ??= _liveLocations.isNotEmpty ? _liveLocations.values.first : null;
-    if (target != null) {
-      _panTo(target, zoom: 15);
+    if (target == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No employee selected to focus'),
+            duration: Duration(milliseconds: 1200),
+          ),
+        );
+      }
+      return;
     }
+    _panTo(target, zoom: 15);
   }
 
   Widget _buildLegendItem({
@@ -1346,84 +1367,383 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (ctx) {
-        final unreadCount = _notifications.where((n) => !n.isRead).length;
+        bool selectionMode = false;
+        final selectedIds = <String>{};
+
+        Future<bool> confirmDelete(int count) async {
+          final ok = await showDialog<bool>(
+            context: ctx,
+            builder: (dctx) => AlertDialog(
+              title: const Text('Delete notifications?'),
+              content: Text(
+                count == 1
+                    ? 'This will remove it from the inbox.'
+                    : 'This will remove $count notifications from the inbox.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dctx, false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dctx, true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            ),
+          );
+          return ok == true;
+        }
+
+        void markReadByIds(Set<String> ids, {required bool read}) {
+          if (ids.isEmpty) return;
+          if (!mounted) return;
+          setState(() {
+            for (final n in _notifications) {
+              if (ids.contains(n.id)) {
+                n.isRead = read;
+              }
+            }
+          });
+        }
+
+        void deleteByIds(Set<String> ids) {
+          if (ids.isEmpty) return;
+          if (!mounted) return;
+          setState(() {
+            _notifications.removeWhere((n) => ids.contains(n.id));
+          });
+        }
+
         return SafeArea(
           child: FractionallySizedBox(
             heightFactor: 0.85,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                'Notifications',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+            child: StatefulBuilder(
+              builder: (sheetCtx, setSheetState) {
+                final theme = Theme.of(context);
+                final unreadCount = _notifications
+                    .where((n) => !n.isRead)
+                    .length;
+                final selectedCount = selectedIds.length;
+                final allSelected =
+                    _notifications.isNotEmpty &&
+                    selectedCount == _notifications.length;
+                final canBulk = selectionMode && selectedCount > 0;
+
+                void toggleSelected(String id) {
+                  setSheetState(() {
+                    if (selectedIds.contains(id)) {
+                      selectedIds.remove(id);
+                    } else {
+                      selectedIds.add(id);
+                    }
+                  });
+                }
+
+                void toggleSelectAll() {
+                  setSheetState(() {
+                    if (allSelected) {
+                      selectedIds.clear();
+                    } else {
+                      selectedIds
+                        ..clear()
+                        ..addAll(_notifications.map((n) => n.id));
+                    }
+                  });
+                }
+
+                Widget buildInboxItem(DashboardNotification notif) {
+                  final color = _notificationTypeColor(notif.type);
+                  final ts = formatManila(notif.timestamp, 'MMM d, HH:mm');
+                  final isSelected = selectedIds.contains(notif.id);
+
+                  return Card(
+                    elevation: 0,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    color: theme.colorScheme.surface,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      onTap: () async {
+                        if (selectionMode) {
+                          toggleSelected(notif.id);
+                          return;
+                        }
+
+                        if (!mounted) return;
+                        setState(() {
+                          notif.isRead = true;
+                        });
+                        await _showNotificationDetails(notif);
+                      },
+                      leading: selectionMode
+                          ? Checkbox(
+                              value: isSelected,
+                              onChanged: (_) => toggleSelected(notif.id),
+                            )
+                          : Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: color.withValues(alpha: 0.35),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              ),
+                              child: Icon(
+                                notif.type == 'attendance'
+                                    ? Icons.access_time
+                                    : (notif.type == 'report'
+                                          ? Icons.description
+                                          : Icons.notifications),
+                                color: color,
+                                size: 18,
                               ),
                             ),
-                            if (unreadCount > 0) ...[
-                              const SizedBox(width: 8),
-                              _buildNotificationBadge(unreadCount),
-                            ],
-                          ],
+                      title: Text(
+                        notif.title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: notif.isRead
+                              ? FontWeight.w600
+                              : FontWeight.w800,
+                          color: theme.colorScheme.onSurface,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      TextButton.icon(
-                        onPressed: () {
-                          if (!mounted) return;
-                          setState(() {
-                            for (final n in _notifications) {
-                              n.isRead = true;
-                            }
-                          });
-                        },
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: const Size(0, 36),
-                        ),
-                        icon: const Icon(Icons.done_all, size: 18),
-                        label: const Text(
-                          'Mark all read',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text(
+                            notif.message,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.75,
+                              ),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.schedule,
+                                size: 12,
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.6,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  ts,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurface
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      trailing: selectionMode
+                          ? null
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (!notif.isRead)
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade400,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                PopupMenuButton<String>(
+                                  tooltip: 'Actions',
+                                  onSelected: (value) async {
+                                    switch (value) {
+                                      case 'markRead':
+                                        markReadByIds({notif.id}, read: true);
+                                        return;
+                                      case 'markUnread':
+                                        markReadByIds({notif.id}, read: false);
+                                        return;
+                                      case 'delete':
+                                        final ok = await confirmDelete(1);
+                                        if (!ok) return;
+                                        deleteByIds({notif.id});
+                                        setSheetState(() {
+                                          selectedIds.remove(notif.id);
+                                        });
+                                        return;
+                                    }
+                                  },
+                                  itemBuilder: (_) => <PopupMenuEntry<String>>[
+                                    PopupMenuItem(
+                                      value: notif.isRead
+                                          ? 'markUnread'
+                                          : 'markRead',
+                                      child: Text(
+                                        notif.isRead
+                                            ? 'Mark unread'
+                                            : 'Mark read',
+                                      ),
+                                    ),
+                                    const PopupMenuDivider(),
+                                    const PopupMenuItem(
+                                      value: 'delete',
+                                      child: Text('Delete'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                    ),
+                  );
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    selectionMode
+                                        ? 'Select notifications'
+                                        : 'Notifications',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (!selectionMode && unreadCount > 0) ...[
+                                  const SizedBox(width: 8),
+                                  _buildNotificationBadge(unreadCount),
+                                ],
+                                if (selectionMode && selectedCount > 0) ...[
+                                  const SizedBox(width: 8),
+                                  _buildNotificationBadge(selectedCount),
+                                ],
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setSheetState(() {
+                                selectionMode = !selectionMode;
+                                if (!selectionMode) {
+                                  selectedIds.clear();
+                                }
+                              });
+                            },
+                            child: Text(selectionMode ? 'Done' : 'Select'),
+                          ),
+                          if (selectionMode)
+                            IconButton(
+                              tooltip: allSelected
+                                  ? 'Clear selection'
+                                  : 'Select all',
+                              onPressed: _notifications.isEmpty
+                                  ? null
+                                  : toggleSelectAll,
+                              icon: const Icon(Icons.select_all),
+                            ),
+                          IconButton(
+                            tooltip: selectionMode
+                                ? 'Mark selected read'
+                                : 'Mark all read',
+                            onPressed: selectionMode
+                                ? (canBulk
+                                      ? () {
+                                          markReadByIds(
+                                            selectedIds,
+                                            read: true,
+                                          );
+                                          setSheetState(() {
+                                            selectedIds.clear();
+                                            selectionMode = false;
+                                          });
+                                        }
+                                      : null)
+                                : (unreadCount > 0
+                                      ? () {
+                                          markReadByIds(
+                                            _notifications
+                                                .map((n) => n.id)
+                                                .toSet(),
+                                            read: true,
+                                          );
+                                        }
+                                      : null),
+                            icon: const Icon(Icons.done_all),
+                          ),
+                          IconButton(
+                            tooltip: 'Delete selected',
+                            onPressed: canBulk
+                                ? () async {
+                                    final ok = await confirmDelete(
+                                      selectedCount,
+                                    );
+                                    if (!ok) return;
+                                    deleteByIds(selectedIds);
+                                    setSheetState(() {
+                                      selectedIds.clear();
+                                      selectionMode = false;
+                                    });
+                                  }
+                                : null,
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: _notifications.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No notifications',
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.7),
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: _notifications.length,
+                                itemBuilder: (context, index) {
+                                  final notif = _notifications[index];
+                                  return buildInboxItem(notif);
+                                },
+                              ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: _notifications.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No notifications',
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.7),
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            itemCount: _notifications.length,
-                            itemBuilder: (context, index) {
-                              final notif = _notifications[index];
-                              return _buildNotificationItem(notif);
-                            },
-                          ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         );
@@ -3335,20 +3655,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   right: 12,
                   child: Column(
                     children: [
-                      FloatingActionButton.small(
-                        heroTag: 'dashboardFitEmployees',
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        onPressed: _fitMapToEmployees,
-                        child: const Icon(Icons.center_focus_strong),
+                      Tooltip(
+                        message: 'Fit all employees',
+                        child: FloatingActionButton.small(
+                          heroTag: 'dashboardFitEmployees',
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black87,
+                          onPressed: _fitMapToEmployees,
+                          child: const Icon(Icons.center_focus_strong),
+                        ),
                       ),
                       const SizedBox(height: 8),
-                      FloatingActionButton.small(
-                        heroTag: 'dashboardFocusSelected',
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        onPressed: _focusOnSelectedEmployee,
-                        child: const Icon(Icons.my_location),
+                      Tooltip(
+                        message: 'Focus selected employee',
+                        child: FloatingActionButton.small(
+                          heroTag: 'dashboardFocusSelected',
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black87,
+                          onPressed: _focusOnSelectedEmployee,
+                          child: const Icon(Icons.my_location),
+                        ),
                       ),
                     ],
                   ),

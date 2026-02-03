@@ -540,6 +540,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 );
               },
             ),
+            ValueListenableBuilder<String?>(
+              valueListenable: _locationSyncService.lastErrorListenable,
+              builder: (context, value, _) {
+                final err = (value ?? '').trim();
+                if (err.isEmpty) return const SizedBox.shrink();
+                return ListTile(
+                  leading: const Icon(Icons.warning_amber_rounded),
+                  title: Text('Location sharing issue: $err'),
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text('Logout'),
@@ -645,12 +656,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     final text = value == null
                         ? 'Last shared: Never'
                         : 'Last shared: ${_formatTime(value)}';
-                    return Padding(
-                      padding: const EdgeInsets.only(right: AppTheme.sm),
-                      child: _buildAppBarPill(
-                        icon: Icons.schedule,
-                        label: text,
-                      ),
+                    return ValueListenableBuilder<String?>(
+                      valueListenable: _locationSyncService.lastErrorListenable,
+                      builder: (context, err, _) {
+                        final e = (err ?? '').trim();
+                        final tooltip = e.isEmpty ? text : '$text\nIssue: $e';
+                        return Padding(
+                          padding: const EdgeInsets.only(right: AppTheme.sm),
+                          child: Tooltip(
+                            message: tooltip,
+                            child: _buildAppBarPill(
+                              icon: Icons.schedule,
+                              label: text,
+                            ),
+                          ),
+                        );
+                      },
                     );
                   },
                 ),

@@ -1031,7 +1031,6 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
             }
 
             final tasks = snapshot.data!
-                .where((t) => _isArchivedTab ? t.isArchived : !t.isArchived)
                 .where((t) {
                   if (_isOverdueTab) return t.isOverdue;
                   if (_isCurrentTab) return !t.isOverdue;

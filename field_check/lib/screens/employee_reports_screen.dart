@@ -8,6 +8,7 @@ import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_page.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
+import 'package:field_check/services/user_service.dart';
 
 class EmployeeReportsScreen extends StatefulWidget {
   final String employeeId;
@@ -121,8 +122,8 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
     final p = rawPath.trim();
     if (p.isEmpty) return p;
     if (p.startsWith('http://') || p.startsWith('https://')) return p;
-    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
-    return '${ApiConfig.baseUrl}/$p';
+    if (p.startsWith('/')) return '${ApiConfig.uploadsBaseUrl}$p';
+    return '${ApiConfig.uploadsBaseUrl}/$p';
   }
 
   bool _isImagePath(String url) {
@@ -137,6 +138,10 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
   String _filenameFromUrl(String url) {
     try {
       final uri = Uri.parse(url);
+      final qName = uri.queryParameters['filename'];
+      if (qName != null && qName.trim().isNotEmpty) {
+        return qName;
+      }
       final segs = uri.pathSegments;
       if (segs.isEmpty) return url;
       return segs.last;
@@ -228,13 +233,22 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 5,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stack) {
-                    return Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text('Failed to load image: $error'),
+                child: FutureBuilder<String?>(
+                  future: UserService().getToken(),
+                  builder: (context, snap) {
+                    final token = snap.data;
+                    return Image.network(
+                      url,
+                      headers: token != null
+                          ? {'Authorization': 'Bearer $token'}
+                          : null,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stack) {
+                        return Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text('Failed to load image: $error'),
+                        );
+                      },
                     );
                   },
                 ),

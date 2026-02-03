@@ -1688,37 +1688,40 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (_tab == 'current') ...[
-                                IconButton(
-                                  icon: const Icon(Icons.edit),
-                                  onPressed: () => _editTask(task),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.assignment_ind),
-                                  onPressed: () => _assignTask(task),
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.redAccent,
-                                  ),
-                                  tooltip: 'Delete task',
-                                  onPressed: () => _deleteTask(task.id),
-                                ),
+                              if (_tab == 'current' || _tab == 'expired')
                                 PopupMenuButton<String>(
+                                  tooltip: 'Actions',
                                   icon: const Icon(Icons.more_vert),
                                   onSelected: (value) {
                                     switch (value) {
+                                      case 'edit':
+                                        _editTask(task);
+                                        return;
+                                      case 'assign':
+                                        _assignTask(task);
+                                        return;
                                       case 'escalate':
                                         _escalateTask(task);
-                                        break;
+                                        return;
                                       case 'archive':
                                         _archiveTask(task);
-                                        break;
+                                        return;
+                                      case 'delete':
+                                        _deleteTask(task.id);
+                                        return;
                                     }
                                   },
                                   itemBuilder: (context) {
-                                    final items = <PopupMenuEntry<String>>[];
+                                    final items = <PopupMenuEntry<String>>[
+                                      const PopupMenuItem<String>(
+                                        value: 'edit',
+                                        child: Text('Edit'),
+                                      ),
+                                      const PopupMenuItem<String>(
+                                        value: 'assign',
+                                        child: Text('Assign'),
+                                      ),
+                                    ];
 
                                     if (isOverdue &&
                                         task.status != 'completed') {
@@ -1730,83 +1733,48 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                       );
                                     }
 
-                                    items.add(
+                                    items.addAll([
                                       const PopupMenuItem<String>(
                                         value: 'archive',
-                                        child: Text('Archive task'),
+                                        child: Text('Archive'),
                                       ),
-                                    );
+                                      const PopupMenuDivider(),
+                                      const PopupMenuItem<String>(
+                                        value: 'delete',
+                                        child: Text('Delete'),
+                                      ),
+                                    ]);
 
                                     return items;
                                   },
-                                ),
-                              ] else if (_tab == 'expired') ...[
-                                IconButton(
-                                  icon: const Icon(Icons.edit),
-                                  onPressed: () => _editTask(task),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.assignment_ind),
-                                  onPressed: () => _assignTask(task),
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.redAccent,
-                                  ),
-                                  tooltip: 'Delete task',
-                                  onPressed: () => _deleteTask(task.id),
-                                ),
+                                )
+                              else
                                 PopupMenuButton<String>(
+                                  tooltip: 'Actions',
                                   icon: const Icon(Icons.more_vert),
                                   onSelected: (value) {
                                     switch (value) {
-                                      case 'escalate':
-                                        _escalateTask(task);
-                                        break;
-                                      case 'archive':
-                                        _archiveTask(task);
-                                        break;
+                                      case 'restore':
+                                        _restoreTask(task);
+                                        return;
+                                      case 'delete':
+                                        _deleteTask(task.id);
+                                        return;
                                     }
                                   },
-                                  itemBuilder: (context) {
-                                    final items = <PopupMenuEntry<String>>[];
-
-                                    if (isOverdue &&
-                                        task.status != 'completed') {
-                                      items.add(
-                                        const PopupMenuItem<String>(
-                                          value: 'escalate',
-                                          child: Text('Escalate (SMS)'),
+                                  itemBuilder: (context) =>
+                                      const <PopupMenuEntry<String>>[
+                                        PopupMenuItem<String>(
+                                          value: 'restore',
+                                          child: Text('Restore'),
                                         ),
-                                      );
-                                    }
-
-                                    items.add(
-                                      const PopupMenuItem<String>(
-                                        value: 'archive',
-                                        child: Text('Archive task'),
-                                      ),
-                                    );
-
-                                    return items;
-                                  },
+                                        PopupMenuDivider(),
+                                        PopupMenuItem<String>(
+                                          value: 'delete',
+                                          child: Text('Delete'),
+                                        ),
+                                      ],
                                 ),
-                              ] else ...[
-                                IconButton(
-                                  icon: const Icon(Icons.restore),
-                                  tooltip: 'Restore task',
-                                  onPressed: () => _restoreTask(task),
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.redAccent,
-                                  ),
-                                  tooltip: 'Delete task',
-                                  onPressed: () => _deleteTask(task.id),
-                                ),
-                              ],
                             ],
                           ),
                           onTap: () => _showTaskDetailsDialog(task),

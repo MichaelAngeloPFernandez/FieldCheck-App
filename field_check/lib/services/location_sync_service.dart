@@ -32,6 +32,9 @@ class LocationSyncService {
   DateTime? _lastSyncTime;
   final ValueNotifier<DateTime?> _lastSharedAt = ValueNotifier<DateTime?>(null);
 
+  String? _employeeId;
+  String? _employeeName;
+
   static const double _webAccuracyThresholdMeters = 1000.0;
   static const double _defaultAccuracyThresholdMeters = 100.0;
 
@@ -67,10 +70,12 @@ class LocationSyncService {
         _connected.value = true;
         _lastError.value = null;
         debugPrint('✅ LocationSyncService: Connected ($_socketUrl)');
-        try {
-          // Notify admins that this employee is online
-          _emitEmployeeOnline();
-        } catch (_) {}
+        _ensureIdentityLoaded().then((_) {
+          try {
+            // Notify admins that this employee is online
+            _emitEmployeeOnline();
+          } catch (_) {}
+        });
 
         // If sharing/tracking started before socket was connected, emit once now.
         if ((_sharingEnabled || _isCheckedIn) &&
@@ -112,6 +117,7 @@ class LocationSyncService {
       _isTracking = true;
       _startLocationStream();
     }
+    _ensureIdentityLoaded();
     if (!_initialized) {
       _lastError.value =
           'socket_not_initialized: call initializeSocket() first';
@@ -122,6 +128,9 @@ class LocationSyncService {
       _pendingEmitOnConnect = true;
       return;
     }
+    try {
+      _emitEmployeeOnline();
+    } catch (_) {}
     _emitCurrentOnce();
   }
 
@@ -133,6 +142,7 @@ class LocationSyncService {
       _isTracking = true;
       _startLocationStream();
     }
+    _ensureIdentityLoaded();
     if (!_initialized) {
       _lastError.value =
           'socket_not_initialized: call initializeSocket() first';
@@ -143,6 +153,9 @@ class LocationSyncService {
       _pendingEmitOnConnect = true;
       return;
     }
+    try {
+      _emitEmployeeOnline();
+    } catch (_) {}
     _emitCurrentOnce();
   }
 
@@ -153,15 +166,32 @@ class LocationSyncService {
           !_socket.connected) {
         return;
       }
+
+      final ok = await _ensureLocationPermission();
+      if (!ok) {
+        return;
+      }
+
+      await _ensureIdentityLoaded();
+
       final pos = await geolocator.Geolocator.getCurrentPosition(
         locationSettings: const geolocator.LocationSettings(
           accuracy: geolocator.LocationAccuracy.best,
-          timeLimit: Duration(seconds: 10),
+          timeLimit: Duration(seconds: 20),
         ),
       );
       _lastPosition.value = pos;
       _syncLocationToBackend(pos);
     } catch (e) {
+      try {
+        final last = await geolocator.Geolocator.getLastKnownPosition();
+        if (last != null) {
+          _lastPosition.value = last;
+          _syncLocationToBackend(last);
+          return;
+        }
+      } catch (_) {}
+
       _lastError.value = 'get_current_error: $e';
       debugPrint('❌ LocationSyncService getCurrentPosition failed: $e');
     }
@@ -191,8 +221,15 @@ class LocationSyncService {
   }
 
   /// Internal method to start position stream and sync
-  void _startLocationStream() {
+  Future<void> _startLocationStream() async {
     try {
+      final ok = await _ensureLocationPermission();
+      if (!ok) {
+        return;
+      }
+
+      await _ensureIdentityLoaded();
+
       _positionSubscription =
           geolocator.Geolocator.getPositionStream(
             locationSettings: const geolocator.LocationSettings(
@@ -244,9 +281,15 @@ class LocationSyncService {
 
     try {
       final profile = _userService.currentUser;
+      final employeeId = profile?.id ?? _employeeId;
+      final name = profile?.name ?? _employeeName;
+      if (employeeId == null || employeeId.trim().isEmpty) {
+        _ensureIdentityLoaded();
+        return;
+      }
       final locationData = {
-        'employeeId': profile?.id,
-        'name': profile?.name,
+        'employeeId': employeeId,
+        'name': name,
         'latitude': position.latitude,
         'longitude': position.longitude,
         'accuracy': position.accuracy,
@@ -273,12 +316,13 @@ class LocationSyncService {
   void dispose() {
     try {
       _positionSubscription?.cancel();
-      _socket.dispose();
-      _lastSharedAt.dispose();
-      _connected.dispose();
-      _lastError.dispose();
-      _lastEmitted.dispose();
-      _lastPosition.dispose();
+      if (_initialized) {
+        _socket.dispose();
+      }
+      _initialized = false;
+      _isTracking = false;
+      _isCheckedIn = false;
+      _pendingEmitOnConnect = false;
     } catch (e) {
       // Error disposing - ignored
     }
@@ -305,10 +349,56 @@ class LocationSyncService {
 
   void _emitEmployeeOnline() {
     final profile = _userService.currentUser;
+    final id = (profile?.id ?? _employeeId)?.trim();
+    if (id == null || id.isEmpty) return;
+    final name = (profile?.name ?? _employeeName)?.trim();
     _socket.emit('employeeOnline', {
-      'employeeId': profile?.id,
-      'name': profile?.name,
+      'employeeId': id,
+      'userId': id,
+      'name': name,
       'timestamp': DateTime.now().toIso8601String(),
     });
+  }
+
+  Future<void> _ensureIdentityLoaded() async {
+    if (_employeeId != null && _employeeId!.trim().isNotEmpty) return;
+    final profile = _userService.currentUser;
+    if (profile != null) {
+      _employeeId = profile.id;
+      _employeeName = profile.name;
+      return;
+    }
+    try {
+      final fetched = await _userService.getProfile();
+      _employeeId = fetched.id;
+      _employeeName = fetched.name;
+    } catch (_) {}
+  }
+
+  Future<bool> _ensureLocationPermission() async {
+    try {
+      final enabled = await geolocator.Geolocator.isLocationServiceEnabled();
+      if (!enabled) {
+        _lastError.value = 'location_service_disabled';
+        return false;
+      }
+
+      var perm = await geolocator.Geolocator.checkPermission();
+      if (perm == geolocator.LocationPermission.denied) {
+        perm = await geolocator.Geolocator.requestPermission();
+      }
+      if (perm == geolocator.LocationPermission.denied) {
+        _lastError.value = 'permission_denied';
+        return false;
+      }
+      if (perm == geolocator.LocationPermission.deniedForever) {
+        _lastError.value = 'permission_denied_forever';
+        return false;
+      }
+      return true;
+    } catch (e) {
+      _lastError.value = 'permission_error: $e';
+      return false;
+    }
   }
 }

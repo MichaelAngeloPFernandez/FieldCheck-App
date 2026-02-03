@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/services/report_service.dart';
@@ -16,6 +17,7 @@ import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
+import 'package:field_check/utils/file_download/file_download.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 
@@ -326,8 +328,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       ),
                     ),
                     onTap: hasReports ? () => _showReportsForTask(t) : null,
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                    trailing: Wrap(
+                      spacing: 10,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Chip(
                           label: Text(
@@ -342,37 +345,51 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
                         ),
-                        const SizedBox(width: 4),
-                        PopupMenuButton<String>(
-                          tooltip: 'Actions',
-                          onSelected: (value) {
-                            switch (value) {
-                              case 'viewReports':
-                                if (hasReports) {
-                                  _showReportsForTask(t);
-                                } else {
-                                  AppWidgets.showWarningSnackbar(
-                                    context,
-                                    'No reports yet for this task',
-                                  );
+                        _buildCardAction(
+                          child: SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: PopupMenuButton<String>(
+                              tooltip: 'Actions',
+                              padding: EdgeInsets.zero,
+                              child: Center(
+                                child: Icon(
+                                  Icons.more_horiz,
+                                  color: theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.8,
+                                  ),
+                                ),
+                              ),
+                              onSelected: (value) {
+                                switch (value) {
+                                  case 'viewReports':
+                                    if (hasReports) {
+                                      _showReportsForTask(t);
+                                    } else {
+                                      AppWidgets.showWarningSnackbar(
+                                        context,
+                                        'No reports yet for this task',
+                                      );
+                                    }
+                                    return;
+                                  case 'deleteTask':
+                                    _confirmAndDeleteTask(t);
+                                    return;
                                 }
-                                return;
-                              case 'deleteTask':
-                                _confirmAndDeleteTask(t);
-                                return;
-                            }
-                          },
-                          itemBuilder: (ctx) => [
-                            const PopupMenuItem(
-                              value: 'viewReports',
-                              child: Text('View reports'),
+                              },
+                              itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 'viewReports',
+                                  child: Text('View reports'),
+                                ),
+                                const PopupMenuDivider(),
+                                const PopupMenuItem(
+                                  value: 'deleteTask',
+                                  child: Text('Delete task'),
+                                ),
+                              ],
                             ),
-                            const PopupMenuDivider(),
-                            const PopupMenuItem(
-                              value: 'deleteTask',
-                              child: Text('Delete task'),
-                            ),
-                          ],
+                          ),
                         ),
                       ],
                     ),
@@ -390,24 +407,97 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final p = rawPath.trim();
     if (p.isEmpty) return p;
     if (p.startsWith('http://') || p.startsWith('https://')) {
-      try {
-        final uri = Uri.parse(p);
-        if (uri.path.startsWith('/uploads')) {
-          final uploads = Uri.parse(ApiConfig.uploadsBaseUrl);
-          return uri
-              .replace(
-                scheme: uploads.scheme,
-                host: uploads.host,
-                port: uploads.hasPort ? uploads.port : null,
-              )
-              .toString();
-        }
-      } catch (_) {}
       return p;
     }
 
     if (p.startsWith('/')) return '${ApiConfig.uploadsBaseUrl}$p';
     return '${ApiConfig.uploadsBaseUrl}/$p';
+  }
+
+  int _defaultPortForScheme(String scheme) {
+    final s = scheme.toLowerCase();
+    if (s == 'https') return 443;
+    if (s == 'http') return 80;
+    return 0;
+  }
+
+  String _proxyAttachmentUrl(
+    String remoteUrl, {
+    bool download = false,
+    String? filename,
+  }) {
+    final base = Uri.parse(ApiConfig.baseUrl);
+    final qp = <String, String>{'url': remoteUrl};
+    if (download) qp['download'] = '1';
+    if (filename != null && filename.trim().isNotEmpty) {
+      qp['filename'] = filename.trim();
+    }
+    return base
+        .replace(path: '/api/uploads/proxy', queryParameters: qp)
+        .toString();
+  }
+
+  String _resolveAttachmentAccessUrl(
+    String url, {
+    required String filename,
+    bool forDownload = false,
+  }) {
+    try {
+      final uri = Uri.parse(url);
+      if (uri.host.isEmpty) return url;
+
+      final uploadsBase = Uri.parse(ApiConfig.uploadsBaseUrl);
+      final baseHost = uploadsBase.host;
+      final basePort = uploadsBase.hasPort
+          ? uploadsBase.port
+          : _defaultPortForScheme(uploadsBase.scheme);
+      final uriPort = uri.hasPort
+          ? uri.port
+          : _defaultPortForScheme(uri.scheme);
+
+      final isUploads = uri.path.startsWith('/uploads');
+      final isReportAttachment = uri.path.startsWith(
+        '/api/reports/attachments/',
+      );
+      final isAppAttachment = isUploads || isReportAttachment;
+      final isSameHost =
+          uri.scheme == uploadsBase.scheme &&
+          uri.host == baseHost &&
+          uriPort == basePort;
+
+      if (isUploads &&
+          !isSameHost &&
+          (baseHost == 'localhost' || baseHost == '127.0.0.1')) {
+        return _proxyAttachmentUrl(
+          uri.toString(),
+          download: forDownload,
+          filename: filename,
+        );
+      }
+
+      Uri finalUri = uri;
+
+      if (isAppAttachment && !isSameHost) {
+        finalUri = uri.replace(
+          scheme: uploadsBase.scheme,
+          host: uploadsBase.host,
+          port: uploadsBase.hasPort ? uploadsBase.port : null,
+        );
+      }
+
+      if (forDownload && isAppAttachment) {
+        final qp = Map<String, String>.from(finalUri.queryParameters);
+        qp['download'] = '1';
+        if (filename.trim().isNotEmpty) {
+          qp['filename'] = filename.trim();
+        }
+        finalUri = finalUri.replace(queryParameters: qp);
+      }
+
+      return finalUri.toString();
+    } catch (_) {
+      return url;
+    }
   }
 
   String _ensureUrlEncoded(String url) {
@@ -436,11 +526,67 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   String _filenameFromUrl(String url) {
     try {
       final uri = Uri.parse(url);
+      final qName = uri.queryParameters['filename'];
+      if (qName != null && qName.trim().isNotEmpty) {
+        return qName;
+      }
       final segs = uri.pathSegments;
       if (segs.isEmpty) return url;
       return Uri.decodeComponent(segs.last);
     } catch (_) {
       return url;
+    }
+  }
+
+  Future<void> _downloadAttachment(String url, String filename) async {
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+      if (uri.host.isEmpty) {
+        throw const FormatException('Invalid URL');
+      }
+    } catch (_) {
+      if (mounted) {
+        AppWidgets.showErrorSnackbar(context, 'Invalid attachment URL');
+      }
+      return;
+    }
+
+    try {
+      final token = await UserService().getToken();
+      final res = await http.get(
+        uri,
+        headers: {if (token != null) 'Authorization': 'Bearer $token'},
+      );
+      if (res.statusCode != 200) {
+        if (mounted) {
+          AppWidgets.showErrorSnackbar(
+            context,
+            'Failed to download file (${res.statusCode})',
+          );
+        }
+        return;
+      }
+
+      final mimeType = (res.headers['content-type'] ?? '').trim();
+      await FileDownload.downloadBytes(
+        bytes: res.bodyBytes,
+        filename: filename,
+        mimeType: mimeType.isNotEmpty ? mimeType : 'application/octet-stream',
+      );
+      if (mounted) {
+        AppWidgets.showSuccessSnackbar(context, 'Download started');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Unable to download attachment',
+          ),
+        );
+      }
     }
   }
 
@@ -548,13 +694,22 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 5,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stack) {
-                    return Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text('Failed to load image: $error'),
+                child: FutureBuilder<String?>(
+                  future: UserService().getToken(),
+                  builder: (context, snap) {
+                    final token = snap.data;
+                    return Image.network(
+                      url,
+                      headers: token != null
+                          ? {'Authorization': 'Bearer $token'}
+                          : null,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stack) {
+                        return Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text('Failed to load image: $error'),
+                        );
+                      },
                     );
                   },
                 ),
@@ -2105,21 +2260,36 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 ),
                                               ),
                                               DataCell(
-                                                PopupMenuButton<String>(
-                                                  tooltip: 'Actions',
-                                                  onSelected: (value) async {
-                                                    switch (value) {
-                                                      case 'view':
-                                                        _showAttendanceDetails(
-                                                          record,
-                                                        );
-                                                        return;
-                                                      case 'history':
-                                                        Navigator.push(
-                                                          context,
-                                                          MaterialPageRoute(
-                                                            builder: (context) =>
-                                                                AdminEmployeeHistoryScreen(
+                                                _buildCardAction(
+                                                  child: SizedBox(
+                                                    width: 40,
+                                                    height: 40,
+                                                    child: PopupMenuButton<String>(
+                                                      tooltip: 'Actions',
+                                                      padding: EdgeInsets.zero,
+                                                      child: Center(
+                                                        child: Icon(
+                                                          Icons.more_horiz,
+                                                          color: theme
+                                                              .colorScheme
+                                                              .onSurface
+                                                              .withValues(
+                                                                alpha: 0.8,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      onSelected: (value) async {
+                                                        switch (value) {
+                                                          case 'view':
+                                                            _showAttendanceDetails(
+                                                              record,
+                                                            );
+                                                            return;
+                                                          case 'history':
+                                                            Navigator.push(
+                                                              context,
+                                                              MaterialPageRoute(
+                                                                builder: (context) => AdminEmployeeHistoryScreen(
                                                                   employeeId:
                                                                       record
                                                                           .userId,
@@ -2128,49 +2298,57 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                                           .employeeName ??
                                                                       'Unknown',
                                                                 ),
-                                                          ),
-                                                        );
-                                                        return;
-                                                      case 'archive':
-                                                        await _toggleArchiveAttendanceRecord(
-                                                          record,
-                                                        );
-                                                        return;
-                                                      case 'delete':
-                                                        await _confirmAndDeleteAttendanceRecord(
-                                                          record,
-                                                        );
-                                                        return;
-                                                    }
-                                                  },
-                                                  itemBuilder: (ctx) =>
-                                                      <PopupMenuEntry<String>>[
-                                                        const PopupMenuItem(
-                                                          value: 'view',
-                                                          child: Text(
-                                                            'View details',
-                                                          ),
-                                                        ),
-                                                        const PopupMenuItem(
-                                                          value: 'history',
-                                                          child: Text(
-                                                            'View history',
-                                                          ),
-                                                        ),
-                                                        PopupMenuItem(
-                                                          value: 'archive',
-                                                          child: Text(
-                                                            _showArchivedAttendance
-                                                                ? 'Restore'
-                                                                : 'Archive',
-                                                          ),
-                                                        ),
-                                                        const PopupMenuDivider(),
-                                                        const PopupMenuItem(
-                                                          value: 'delete',
-                                                          child: Text('Delete'),
-                                                        ),
-                                                      ],
+                                                              ),
+                                                            );
+                                                            return;
+                                                          case 'archive':
+                                                            await _toggleArchiveAttendanceRecord(
+                                                              record,
+                                                            );
+                                                            return;
+                                                          case 'delete':
+                                                            await _confirmAndDeleteAttendanceRecord(
+                                                              record,
+                                                            );
+                                                            return;
+                                                        }
+                                                      },
+                                                      itemBuilder: (ctx) =>
+                                                          <
+                                                            PopupMenuEntry<
+                                                              String
+                                                            >
+                                                          >[
+                                                            const PopupMenuItem(
+                                                              value: 'view',
+                                                              child: Text(
+                                                                'View details',
+                                                              ),
+                                                            ),
+                                                            const PopupMenuItem(
+                                                              value: 'history',
+                                                              child: Text(
+                                                                'View history',
+                                                              ),
+                                                            ),
+                                                            PopupMenuItem(
+                                                              value: 'archive',
+                                                              child: Text(
+                                                                _showArchivedAttendance
+                                                                    ? 'Restore'
+                                                                    : 'Archive',
+                                                              ),
+                                                            ),
+                                                            const PopupMenuDivider(),
+                                                            const PopupMenuItem(
+                                                              value: 'delete',
+                                                              child: Text(
+                                                                'Delete',
+                                                              ),
+                                                            ),
+                                                          ],
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ],
@@ -2376,6 +2554,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       builder: (ctx) {
         final theme = Theme.of(ctx);
         final dialogWidth = _dialogWidthFor(ctx);
+        final isWide = MediaQuery.sizeOf(ctx).width >= 900;
+        final actionSize = isWide ? 44.0 : 36.0;
         return AlertDialog(
           insetPadding: const EdgeInsets.all(16),
           shape: RoundedRectangleBorder(
@@ -2485,6 +2665,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         final normalized = _normalizeAttachmentUrl(rawPath);
                         final url = _ensureUrlEncoded(normalized);
                         final filename = _filenameFromUrl(url);
+                        final accessUrl = _resolveAttachmentAccessUrl(
+                          url,
+                          filename: filename,
+                        );
+                        final downloadUrl = _resolveAttachmentAccessUrl(
+                          url,
+                          filename: filename,
+                          forDownload: true,
+                        );
                         final isImage = _isImagePath(url);
 
                         return Padding(
@@ -2492,9 +2681,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           child: InkWell(
                             onTap: () {
                               if (isImage) {
-                                _showImagePreview(filename, url);
+                                _showImagePreview(filename, accessUrl);
                               } else {
-                                _openUrlExternal(url);
+                                _openUrlExternal(accessUrl);
                               }
                             },
                             child: Container(
@@ -2548,56 +2737,71 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  if (isImage)
-                                    _buildCardAction(
-                                      child: IconButton(
-                                        tooltip: 'Preview',
-                                        onPressed: () =>
-                                            _showImagePreview(filename, url),
-                                        icon: const Icon(Icons.visibility),
-                                        visualDensity: VisualDensity.compact,
-                                        constraints:
-                                            const BoxConstraints.tightFor(
-                                              width: 36,
-                                              height: 36,
-                                            ),
+                                  _buildCardAction(
+                                    child: SizedBox(
+                                      width: actionSize,
+                                      height: actionSize,
+                                      child: PopupMenuButton<String>(
+                                        tooltip: 'Attachment actions',
+                                        padding: EdgeInsets.zero,
+                                        child: Center(
+                                          child: Icon(
+                                            Icons.more_vert,
+                                            color: theme.colorScheme.onSurface
+                                                .withValues(alpha: 0.8),
+                                          ),
+                                        ),
+                                        onSelected: (value) async {
+                                          switch (value) {
+                                            case 'preview':
+                                              _showImagePreview(
+                                                filename,
+                                                accessUrl,
+                                              );
+                                              return;
+                                            case 'open':
+                                              _openUrlExternal(accessUrl);
+                                              return;
+                                            case 'download':
+                                              await _downloadAttachment(
+                                                downloadUrl,
+                                                filename,
+                                              );
+                                              return;
+                                            case 'copy':
+                                              await Clipboard.setData(
+                                                ClipboardData(text: accessUrl),
+                                              );
+                                              if (!mounted) return;
+                                              AppWidgets.showSuccessSnackbar(
+                                                context,
+                                                'Link copied',
+                                              );
+                                              return;
+                                          }
+                                        },
+                                        itemBuilder: (ctx) =>
+                                            <PopupMenuEntry<String>>[
+                                              if (isImage)
+                                                const PopupMenuItem(
+                                                  value: 'preview',
+                                                  child: Text('Preview'),
+                                                ),
+                                              const PopupMenuItem(
+                                                value: 'open',
+                                                child: Text('Open'),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'download',
+                                                child: Text('Download'),
+                                              ),
+                                              const PopupMenuDivider(),
+                                              const PopupMenuItem(
+                                                value: 'copy',
+                                                child: Text('Copy link'),
+                                              ),
+                                            ],
                                       ),
-                                    ),
-                                  if (isImage) const SizedBox(width: 6),
-                                  _buildCardAction(
-                                    child: IconButton(
-                                      tooltip: 'Copy link',
-                                      onPressed: () async {
-                                        await Clipboard.setData(
-                                          ClipboardData(text: url),
-                                        );
-                                        if (!mounted) return;
-                                        AppWidgets.showSuccessSnackbar(
-                                          context,
-                                          'Link copied',
-                                        );
-                                      },
-                                      icon: const Icon(Icons.copy),
-                                      visualDensity: VisualDensity.compact,
-                                      constraints:
-                                          const BoxConstraints.tightFor(
-                                            width: 36,
-                                            height: 36,
-                                          ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _buildCardAction(
-                                    child: IconButton(
-                                      tooltip: 'Open',
-                                      onPressed: () => _openUrlExternal(url),
-                                      icon: const Icon(Icons.open_in_new),
-                                      visualDensity: VisualDensity.compact,
-                                      constraints:
-                                          const BoxConstraints.tightFor(
-                                            width: 36,
-                                            height: 36,
-                                          ),
                                     ),
                                   ),
                                 ],
@@ -2643,7 +2847,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       builder: (ctx) {
         final theme = Theme.of(ctx);
         final isWide = MediaQuery.sizeOf(ctx).width >= 900;
-        final actionSize = isWide ? 44.0 : 36.0;
+        final actionSize = isWide ? 48.0 : 40.0;
         return AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -2702,87 +2906,76 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildCardAction(
-                          child: IconButton(
-                            tooltip: _showArchivedReports
-                                ? 'Restore'
-                                : 'Archive',
-                            icon: Icon(
-                              _showArchivedReports
-                                  ? Icons.unarchive_outlined
-                                  : Icons.archive_outlined,
-                              color: theme.colorScheme.onSurface.withValues(
-                                alpha: 0.8,
-                              ),
-                            ),
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              _toggleArchiveReport(r);
-                            },
-                            visualDensity: VisualDensity.compact,
-                            constraints: BoxConstraints.tightFor(
-                              width: actionSize,
-                              height: actionSize,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        _buildCardAction(
-                          child: PopupMenuButton<String>(
-                            tooltip: 'Actions',
-                            padding: EdgeInsets.zero,
-                            constraints: BoxConstraints.tightFor(
-                              width: actionSize,
-                              height: actionSize,
-                            ),
-                            icon: Icon(
-                              Icons.more_horiz,
-                              color: theme.colorScheme.onSurface.withValues(
-                                alpha: 0.8,
-                              ),
-                            ),
-                            onSelected: (value) {
-                              switch (value) {
-                                case 'view':
-                                  Navigator.pop(ctx);
-                                  _showReportDetails(r);
-                                  return;
-                                case 'history':
-                                  Navigator.pop(ctx);
-                                  _openEmployeeHistory(
-                                    r.employeeId,
-                                    r.employeeName ?? 'Unknown',
-                                  );
-                                  return;
-                                case 'review':
-                                  Navigator.pop(ctx);
-                                  _markReportReviewed(r);
-                                  return;
-                                case 'delete':
-                                  Navigator.pop(ctx);
-                                  _confirmAndDeleteReport(r);
-                                  return;
-                              }
-                            },
-                            itemBuilder: (ctx) => <PopupMenuEntry<String>>[
-                              const PopupMenuItem(
-                                value: 'view',
-                                child: Text('View details'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'history',
-                                child: Text('View history'),
-                              ),
-                              if (r.status.toLowerCase() != 'reviewed')
-                                const PopupMenuItem(
-                                  value: 'review',
-                                  child: Text('Mark as reviewed'),
+                          child: SizedBox(
+                            width: actionSize,
+                            height: actionSize,
+                            child: PopupMenuButton<String>(
+                              tooltip: 'Actions',
+                              padding: EdgeInsets.zero,
+                              child: Center(
+                                child: Icon(
+                                  Icons.more_horiz,
+                                  color: theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.8,
+                                  ),
                                 ),
-                              const PopupMenuDivider(),
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Text('Delete'),
                               ),
-                            ],
+                              onSelected: (value) {
+                                switch (value) {
+                                  case 'view':
+                                    Navigator.pop(ctx);
+                                    _showReportDetails(r);
+                                    return;
+                                  case 'history':
+                                    Navigator.pop(ctx);
+                                    _openEmployeeHistory(
+                                      r.employeeId,
+                                      r.employeeName ?? 'Unknown',
+                                    );
+                                    return;
+                                  case 'review':
+                                    Navigator.pop(ctx);
+                                    _markReportReviewed(r);
+                                    return;
+                                  case 'archive':
+                                    Navigator.pop(ctx);
+                                    _toggleArchiveReport(r);
+                                    return;
+                                  case 'delete':
+                                    Navigator.pop(ctx);
+                                    _confirmAndDeleteReport(r);
+                                    return;
+                                }
+                              },
+                              itemBuilder: (ctx) => <PopupMenuEntry<String>>[
+                                const PopupMenuItem(
+                                  value: 'view',
+                                  child: Text('View details'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'history',
+                                  child: Text('View history'),
+                                ),
+                                if (r.status.toLowerCase() != 'reviewed')
+                                  const PopupMenuItem(
+                                    value: 'review',
+                                    child: Text('Mark as reviewed'),
+                                  ),
+                                PopupMenuItem(
+                                  value: 'archive',
+                                  child: Text(
+                                    _showArchivedReports
+                                        ? 'Restore'
+                                        : 'Archive',
+                                  ),
+                                ),
+                                const PopupMenuDivider(),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('Delete'),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -3095,78 +3288,69 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   ),
                   const SizedBox(width: 8),
                   _buildCardAction(
-                    child: IconButton(
-                      tooltip: _showArchivedReports ? 'Restore' : 'Archive',
-                      icon: Icon(
-                        _showArchivedReports
-                            ? Icons.unarchive_outlined
-                            : Icons.archive_outlined,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.8,
-                        ),
-                      ),
-                      onPressed: () => _toggleArchiveReport(r),
-                      visualDensity: VisualDensity.compact,
-                      constraints: BoxConstraints.tightFor(
-                        width: actionSize,
-                        height: actionSize,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  _buildCardAction(
-                    child: PopupMenuButton<String>(
-                      tooltip: 'Actions',
-                      padding: EdgeInsets.zero,
-                      constraints: BoxConstraints.tightFor(
-                        width: actionSize,
-                        height: actionSize,
-                      ),
-                      icon: Icon(
-                        Icons.more_horiz,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.8,
-                        ),
-                      ),
-                      onSelected: (value) {
-                        switch (value) {
-                          case 'view':
-                            _showReportDetails(r);
-                            return;
-                          case 'history':
-                            _openEmployeeHistory(
-                              r.employeeId,
-                              r.employeeName ?? 'Unknown',
-                            );
-                            return;
-                          case 'review':
-                            _markReportReviewed(r);
-                            return;
-                          case 'delete':
-                            _confirmAndDeleteReport(r);
-                            return;
-                        }
-                      },
-                      itemBuilder: (ctx) => <PopupMenuEntry<String>>[
-                        const PopupMenuItem(
-                          value: 'view',
-                          child: Text('View details'),
-                        ),
-                        const PopupMenuItem(
-                          value: 'history',
-                          child: Text('View history'),
-                        ),
-                        if (r.status.toLowerCase() != 'reviewed')
-                          const PopupMenuItem(
-                            value: 'review',
-                            child: Text('Mark as reviewed'),
+                    child: SizedBox(
+                      width: actionSize,
+                      height: actionSize,
+                      child: PopupMenuButton<String>(
+                        tooltip: 'Actions',
+                        padding: EdgeInsets.zero,
+                        child: Center(
+                          child: Icon(
+                            Icons.more_horiz,
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.8,
+                            ),
                           ),
-                        const PopupMenuDivider(),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete'),
                         ),
-                      ],
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'view':
+                              _showReportDetails(r);
+                              return;
+                            case 'history':
+                              _openEmployeeHistory(
+                                r.employeeId,
+                                r.employeeName ?? 'Unknown',
+                              );
+                              return;
+                            case 'review':
+                              _markReportReviewed(r);
+                              return;
+                            case 'archive':
+                              _toggleArchiveReport(r);
+                              return;
+                            case 'delete':
+                              _confirmAndDeleteReport(r);
+                              return;
+                          }
+                        },
+                        itemBuilder: (ctx) => <PopupMenuEntry<String>>[
+                          const PopupMenuItem(
+                            value: 'view',
+                            child: Text('View details'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'history',
+                            child: Text('View history'),
+                          ),
+                          if (r.status.toLowerCase() != 'reviewed')
+                            const PopupMenuItem(
+                              value: 'review',
+                              child: Text('Mark as reviewed'),
+                            ),
+                          PopupMenuItem(
+                            value: 'archive',
+                            child: Text(
+                              _showArchivedReports ? 'Restore' : 'Archive',
+                            ),
+                          ),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('Delete'),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
