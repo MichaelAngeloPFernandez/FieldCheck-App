@@ -8,6 +8,7 @@ class ReportModel {
   final String content;
   final String status; // 'submitted' | 'reviewed'
   final DateTime submittedAt;
+  final DateTime? resubmitUntil;
   final String? employeeName;
   final String? employeeEmail;
   final String? taskTitle;
@@ -27,6 +28,7 @@ class ReportModel {
     required this.content,
     required this.status,
     required this.submittedAt,
+    this.resubmitUntil,
     this.employeeName,
     this.employeeEmail,
     this.taskTitle,
@@ -41,6 +43,9 @@ class ReportModel {
     final employee = json['employee'];
     final task = json['task'];
     final geofence = json['geofence'];
+    final resubmitRaw = json['resubmitUntil']?.toString();
+    final resubmitUntil =
+        resubmitRaw != null ? DateTime.tryParse(resubmitRaw) : null;
     return ReportModel(
       id: json['_id'] ?? json['id'] ?? '',
       type: json['type'] ?? 'task',
@@ -57,6 +62,7 @@ class ReportModel {
             json['createdAt'] ??
             DateTime.now().toIso8601String(),
       ),
+      resubmitUntil: resubmitUntil,
       employeeName: employee is Map ? employee['name'] : null,
       employeeEmail: employee is Map ? employee['email'] : null,
       taskTitle: task is Map ? task['title'] : null,

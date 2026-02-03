@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/models/report_model.dart';
 import 'package:field_check/services/report_service.dart';
+import 'package:field_check/services/task_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:field_check/utils/app_theme.dart';
@@ -11,6 +12,7 @@ import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/utils/file_download/file_download.dart';
+import 'package:field_check/screens/task_report_screen.dart';
 
 class EmployeeReportsScreen extends StatefulWidget {
   final String employeeId;
@@ -436,6 +438,9 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
   }
 
   void _showReportDetails(ReportModel r) {
+    final now = DateTime.now();
+    final allowResubmit =
+        r.resubmitUntil != null && r.resubmitUntil!.isAfter(now);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -580,6 +585,42 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
           ),
         ),
         actions: [
+          if (r.type == 'task' && r.taskId != null && allowResubmit)
+            FilledButton(
+              onPressed: () async {
+                final taskId = r.taskId;
+                if (taskId == null || taskId.trim().isEmpty) return;
+                Navigator.pop(ctx);
+                try {
+                  final task = await TaskService().getTaskById(taskId);
+                  if (!mounted) return;
+                  final ok = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => TaskReportScreen(
+                        task: task,
+                        employeeId: widget.employeeId,
+                        existingReportId: r.id,
+                        existingReportContent: r.content,
+                      ),
+                    ),
+                  );
+                  if (ok == true && mounted) {
+                    await _loadReports();
+                  }
+                } catch (e) {
+                  if (!mounted) return;
+                  AppWidgets.showErrorSnackbar(
+                    context,
+                    AppWidgets.friendlyErrorMessage(
+                      e,
+                      fallback: 'Unable to open resubmission',
+                    ),
+                  );
+                }
+              },
+              child: const Text('Resubmit'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Close'),

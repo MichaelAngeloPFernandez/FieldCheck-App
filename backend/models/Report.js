@@ -19,6 +19,7 @@ const reportSchema = new mongoose.Schema(
       default: 'submitted',
     },
     submittedAt: { type: Date, default: Date.now },
+    resubmitUntil: { type: Date },
     // Soft-archive flag for separating current vs archived reports
     isArchived: { type: Boolean, default: false },
   },

@@ -20,6 +20,7 @@ import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/file_download/file_download.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 
 class AdminReportsScreen extends StatefulWidget {
   final String? employeeId;
@@ -523,6 +524,66 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         lower.endsWith('.gif');
   }
 
+  bool _isLegacyAttachmentUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return uri.path.startsWith('/uploads/');
+    } catch (_) {
+      return url.contains('/uploads/');
+    }
+  }
+
+  Future<void> _replaceLegacyAttachment({
+    required ReportModel report,
+    required String rawOldUrl,
+    required int index,
+  }) async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        withData: true,
+        allowMultiple: false,
+      );
+      if (picked == null || picked.files.isEmpty) return;
+
+      final file = picked.files.first;
+      final bytes = file.bytes;
+      if (bytes == null) {
+        if (mounted) {
+          AppWidgets.showErrorSnackbar(context, 'Unable to read selected file');
+        }
+        return;
+      }
+
+      final newPath = await ReportService().uploadAttachmentBytes(
+        bytes: bytes,
+        fileName: file.name,
+        taskId: report.taskId ?? '',
+        employeeId: report.employeeId,
+      );
+
+      await ReportService().replaceReportAttachment(
+        reportId: report.id,
+        oldUrl: rawOldUrl,
+        newUrl: newPath,
+        index: index,
+      );
+
+      await _fetchTaskReports();
+      if (mounted) {
+        AppWidgets.showSuccessSnackbar(context, 'Attachment replaced');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to replace attachment',
+        ),
+      );
+    }
+  }
+
   String _filenameFromUrl(String url) {
     try {
       final uri = Uri.parse(url);
@@ -560,6 +621,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       );
       if (res.statusCode != 200) {
         if (mounted) {
+          if (res.statusCode == 404 && _isLegacyAttachmentUrl(url)) {
+            AppWidgets.showErrorSnackbar(
+              context,
+              'Legacy attachment missing (Render uploads are not persistent). Use Replace attachment in report details.',
+            );
+            return;
+          }
           AppWidgets.showErrorSnackbar(
             context,
             'Failed to download file (${res.statusCode})',
@@ -724,9 +792,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           : null,
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stack) {
+                        final isLegacy = _isLegacyAttachmentUrl(url);
+                        final msg = isLegacy
+                            ? 'Legacy attachment missing (Render uploads are not persistent). Use Replace attachment in report details.'
+                            : 'Failed to load image: $error';
                         return Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Text('Failed to load image: $error'),
+                          child: Text(msg),
                         );
                       },
                     );
@@ -2680,7 +2752,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     const SizedBox(height: 6),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: r.attachments.map((rawPath) {
+                      children: r.attachments.asMap().entries.map((entry) {
+                        final i = entry.key;
+                        final rawPath = entry.value;
                         final normalized = _normalizeAttachmentUrl(rawPath);
                         final url = _ensureUrlEncoded(normalized);
                         final filename = _filenameFromUrl(url);
@@ -2694,6 +2768,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           forDownload: true,
                         );
                         final isImage = _isImagePath(url);
+                        final isLegacy = _isLegacyAttachmentUrl(url);
 
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 6),
@@ -2816,6 +2891,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 filename,
                                               );
                                               return;
+                                            case 'replace':
+                                              await _replaceLegacyAttachment(
+                                                report: r,
+                                                rawOldUrl: rawPath,
+                                                index: i,
+                                              );
+                                              return;
                                             case 'copy':
                                               await Clipboard.setData(
                                                 ClipboardData(text: accessUrl),
@@ -2843,6 +2925,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 value: 'download',
                                                 child: Text('Download'),
                                               ),
+                                              if (isLegacy) ...[
+                                                const PopupMenuDivider(),
+                                                const PopupMenuItem(
+                                                  value: 'replace',
+                                                  child: Text(
+                                                    'Replace attachment',
+                                                  ),
+                                                ),
+                                              ],
                                               const PopupMenuDivider(),
                                               const PopupMenuItem(
                                                 value: 'copy',
@@ -2865,6 +2956,54 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             ),
           ),
           actions: [
+            if (r.type == 'task' && r.taskIsOverdue)
+              FilledButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (c) => AlertDialog(
+                      title: const Text('Reopen submission?'),
+                      content: const Text(
+                        'Allow this employee to resubmit their report for the next 24 hours?',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(c, false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(c, true),
+                          child: const Text('Reopen 24h'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (ok != true) return;
+                  try {
+                    await ReportService().reopenReportForResubmission(
+                      reportId: r.id,
+                      hours: 24,
+                    );
+                    await _fetchTaskReports();
+                    if (!mounted) return;
+                    AppWidgets.showSuccessSnackbar(
+                      context,
+                      'Submission reopened for 24 hours',
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    AppWidgets.showErrorSnackbar(
+                      context,
+                      AppWidgets.friendlyErrorMessage(
+                        e,
+                        fallback: 'Failed to reopen submission',
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Reopen 24h'),
+              ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Close'),

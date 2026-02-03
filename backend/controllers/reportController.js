@@ -2,7 +2,14 @@ const asyncHandler = require('express-async-handler');
 const Report = require('../models/Report');
 const Attendance = require('../models/Attendance');
 const Task = require('../models/Task');
-const { io } = require('../server');
+
+const getIo = () => {
+  const candidate = global.io;
+  if (candidate && typeof candidate.emit === 'function') {
+    return candidate;
+  }
+  return { emit: () => {} };
+};
 
 async function populateReportById(reportId) {
   return await Report.findById(reportId)
@@ -33,11 +40,12 @@ const createReport = asyncHandler(async (req, res) => {
     throw new Error('User not authenticated');
   }
 
+  const isAdmin = req.user && req.user.role === 'admin';
   const reportData = {
     type,
-    employee: employeeId || req.user._id,
+    employee: isAdmin ? (employeeId || req.user._id) : req.user._id,
     content: content || '',
-    attachments: attachments || [],
+    attachments: Array.isArray(attachments) ? attachments : [],
   };
 
   if (type === 'task') {
@@ -50,6 +58,52 @@ const createReport = asyncHandler(async (req, res) => {
       res.status(404);
       throw new Error('Task not found');
     }
+
+    const now = new Date();
+    const isOverdue =
+      !!task.dueDate &&
+      task.dueDate instanceof Date &&
+      !Number.isNaN(task.dueDate.getTime()) &&
+      task.dueDate < now &&
+      (task.status || '').toLowerCase() !== 'completed' &&
+      !task.isArchived;
+
+    if (isOverdue && !isAdmin) {
+      const existing = await Report.findOne({
+        type: 'task',
+        task: task._id,
+        employee: reportData.employee,
+      }).sort({ submittedAt: -1 });
+
+      const canResubmit =
+        existing &&
+        existing.resubmitUntil &&
+        existing.resubmitUntil instanceof Date &&
+        existing.resubmitUntil > now;
+
+      if (!canResubmit) {
+        res.status(403);
+        throw new Error('Task overdue. Admin must reopen submission to resubmit.');
+      }
+
+      existing.content = content || '';
+      existing.attachments = Array.isArray(attachments) ? attachments : [];
+      existing.status = 'submitted';
+      existing.submittedAt = now;
+      existing.resubmitUntil = undefined;
+      const updated = await existing.save();
+
+      setImmediate(async () => {
+        try {
+          const populated = await populateReportById(updated._id);
+          getIo().emit('updatedReport', populated || updated);
+        } catch (_) {
+          getIo().emit('updatedReport', updated);
+        }
+      });
+      return res.status(200).json(updated);
+    }
+
     reportData.task = task._id;
   } else if (type === 'attendance') {
     if (!attendanceId) {
@@ -69,9 +123,9 @@ const createReport = asyncHandler(async (req, res) => {
   setImmediate(async () => {
     try {
       const populated = await populateReportById(created._id);
-      io.emit('newReport', populated || created);
+      getIo().emit('newReport', populated || created);
     } catch (_) {
-      io.emit('newReport', created);
+      getIo().emit('newReport', created);
     }
   });
   res.status(201).json(created);
@@ -173,9 +227,9 @@ const updateReportStatus = asyncHandler(async (req, res) => {
   setImmediate(async () => {
     try {
       const populated = await populateReportById(updated._id);
-      io.emit('updatedReport', populated || updated);
+      getIo().emit('updatedReport', populated || updated);
     } catch (_) {
-      io.emit('updatedReport', updated);
+      getIo().emit('updatedReport', updated);
     }
   });
   res.json(updated);
@@ -232,9 +286,9 @@ const replaceReportAttachments = asyncHandler(async (req, res) => {
   setImmediate(async () => {
     try {
       const populated = await populateReportById(updated._id);
-      io.emit('updatedReport', populated || updated);
+      getIo().emit('updatedReport', populated || updated);
     } catch (_) {
-      io.emit('updatedReport', updated);
+      getIo().emit('updatedReport', updated);
     }
   });
   res.json(updated);
@@ -250,7 +304,7 @@ const deleteReport = asyncHandler(async (req, res) => {
     throw new Error('Report not found');
   }
   await rep.deleteOne();
-  io.emit('deletedReport', req.params.id);
+  getIo().emit('deletedReport', req.params.id);
   res.status(204).send();
 });
 
@@ -343,7 +397,7 @@ const archiveReport = asyncHandler(async (req, res) => {
 
   rep.isArchived = true;
   const updated = await rep.save();
-  io.emit('reportArchived', updated);
+  getIo().emit('reportArchived', updated);
   res.json(updated);
 });
 
@@ -360,7 +414,88 @@ const restoreReport = asyncHandler(async (req, res) => {
 
   rep.isArchived = false;
   const updated = await rep.save();
-  io.emit('reportRestored', updated);
+  getIo().emit('reportRestored', updated);
+  res.json(updated);
+});
+
+const reopenReportForResubmission = asyncHandler(async (req, res) => {
+  const rep = await Report.findById(req.params.id);
+  if (!rep) {
+    res.status(404);
+    throw new Error('Report not found');
+  }
+
+  const rawHours = req.body && req.body.hours !== undefined ? req.body.hours : 24;
+  const hours = Number(rawHours);
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 168) {
+    res.status(400);
+    throw new Error('Invalid reopen window');
+  }
+
+  rep.resubmitUntil = new Date(Date.now() + hours * 60 * 60 * 1000);
+  const updated = await rep.save();
+  setImmediate(async () => {
+    try {
+      const populated = await populateReportById(updated._id);
+      getIo().emit('updatedReport', populated || updated);
+    } catch (_) {
+      getIo().emit('updatedReport', updated);
+    }
+  });
+  res.json(updated);
+});
+
+const resubmitReport = asyncHandler(async (req, res) => {
+  const rep = await Report.findById(req.params.id);
+  if (!rep) {
+    res.status(404);
+    throw new Error('Report not found');
+  }
+
+  if (String(rep.type || '').toLowerCase() !== 'task') {
+    res.status(400);
+    throw new Error('Only task reports can be resubmitted');
+  }
+
+  const isAdmin = req.user && req.user.role === 'admin';
+  const isOwner = req.user && rep.employee && rep.employee.toString() === req.user._id.toString();
+  if (!isAdmin && !isOwner) {
+    res.status(403);
+    throw new Error('Not authorized to resubmit this report');
+  }
+
+  const now = new Date();
+  const allowUntil = rep.resubmitUntil;
+  const canResubmit =
+    allowUntil &&
+    allowUntil instanceof Date &&
+    !Number.isNaN(allowUntil.getTime()) &&
+    allowUntil > now;
+  if (!canResubmit && !isAdmin) {
+    res.status(403);
+    throw new Error('Resubmission window closed');
+  }
+
+  const { content, attachments } = req.body || {};
+  if (content && typeof content === 'string' && content.length > 10000) {
+    res.status(400);
+    throw new Error('Report content is too long (max 10000 characters)');
+  }
+
+  rep.content = typeof content === 'string' ? content : '';
+  rep.attachments = Array.isArray(attachments) ? attachments : [];
+  rep.status = 'submitted';
+  rep.submittedAt = now;
+  rep.resubmitUntil = undefined;
+  const updated = await rep.save();
+  setImmediate(async () => {
+    try {
+      const populated = await populateReportById(updated._id);
+      getIo().emit('updatedReport', populated || updated);
+    } catch (_) {
+      getIo().emit('updatedReport', updated);
+    }
+  });
   res.json(updated);
 });
 
@@ -370,6 +505,8 @@ module.exports = {
   getReportById,
   replaceReportAttachments,
   updateReportStatus,
+  reopenReportForResubmission,
+  resubmitReport,
   deleteReport,
   getCurrentReports,
   getArchivedReports,

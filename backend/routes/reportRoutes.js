@@ -6,6 +6,7 @@ const multer = require('multer');
 const { protect, admin } = require('../middleware/authMiddleware');
 
 const Report = require('../models/Report');
+const Task = require('../models/Task');
 
 const {
   createReport,
@@ -13,6 +14,8 @@ const {
   getReportById,
   replaceReportAttachments,
   updateReportStatus,
+  reopenReportForResubmission,
+  resubmitReport,
   deleteReport,
   getCurrentReports,
   getArchivedReports,
@@ -44,6 +47,41 @@ router.post(
       if (!mongoose.connection || !mongoose.connection.db) {
         return res.status(503).json({ message: 'Database not ready' });
       }
+
+      try {
+        const isAdmin = req.user && req.user.role === 'admin';
+        if (!isAdmin) {
+          const taskId = String(req.body?.taskId || req.query?.taskId || '').trim();
+          if (taskId) {
+            const task = await Task.findById(taskId).select('dueDate status isArchived');
+            if (task && task.dueDate) {
+              const now = new Date();
+              const due = new Date(task.dueDate);
+              const isOverdue =
+                due instanceof Date &&
+                !Number.isNaN(due.getTime()) &&
+                due < now &&
+                String(task.status || '').toLowerCase() !== 'completed' &&
+                !task.isArchived;
+
+              if (isOverdue) {
+                const rep = await Report.findOne({
+                  type: 'task',
+                  task: task._id,
+                  employee: req.user._id,
+                  resubmitUntil: { $gt: now },
+                }).select('_id');
+
+                if (!rep) {
+                  return res.status(403).json({
+                    message: 'Task overdue. Admin must reopen submission to upload attachments.',
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
 
       const originalName = req.file.originalname || 'attachment';
       const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -195,6 +233,8 @@ router.put('/:id/restore', protect, admin, restoreReport);
 // Generic /:id routes (must be LAST)
 router.get('/:id', protect, admin, getReportById);
 router.patch('/:id/attachments', protect, admin, replaceReportAttachments);
+router.patch('/:id/reopen', protect, admin, reopenReportForResubmission);
+router.patch('/:id/resubmit', protect, resubmitReport);
 router.patch('/:id/status', protect, admin, updateReportStatus);
 router.delete('/:id', protect, admin, deleteReport);
 

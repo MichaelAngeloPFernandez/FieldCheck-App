@@ -15,11 +15,15 @@ import 'package:field_check/widgets/app_widgets.dart';
 class TaskReportScreen extends StatefulWidget {
   final Task task;
   final String employeeId;
+  final String? existingReportId;
+  final String? existingReportContent;
 
   const TaskReportScreen({
     super.key,
     required this.task,
     required this.employeeId,
+    this.existingReportId,
+    this.existingReportContent,
   });
 
   @override
@@ -49,8 +53,20 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   void initState() {
     super.initState();
     _task = widget.task;
+    if (widget.existingReportId != null &&
+        widget.existingReportId!.trim().isNotEmpty) {
+      final initial = widget.existingReportContent;
+      if (initial != null && initial.trim().isNotEmpty) {
+        _textController.text = initial;
+      }
+    }
     _loadAutosavedData();
     _startAutosave();
+  }
+
+  bool get _isResubmission {
+    final id = widget.existingReportId;
+    return id != null && id.trim().isNotEmpty;
   }
 
   bool get _needsAcceptance {
@@ -678,34 +694,45 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       }
 
       // Create the report
-      await ReportService().createTaskReport(
-        taskId: _task.id,
-        employeeId: widget.employeeId,
-        content: content,
-        attachments: attachmentPaths,
-      );
+      if (_isResubmission) {
+        await ReportService().resubmitReport(
+          reportId: widget.existingReportId!,
+          content: content,
+          attachments: attachmentPaths,
+        );
+        await _autosaveService.clearData('task_report_${widget.task.id}');
+      } else {
+        await ReportService().createTaskReport(
+          taskId: _task.id,
+          employeeId: widget.employeeId,
+          content: content,
+          attachments: attachmentPaths,
+        );
 
-      if (_needsAcceptance) {
-        throw Exception('Accept this task first to begin');
+        if (_needsAcceptance) {
+          throw Exception('Accept this task first to begin');
+        }
+
+        await TaskService().updateUserTaskStatus(
+          _task.userTaskId!,
+          'completed',
+        );
+
+        await _autosaveService.clearData('task_report_${widget.task.id}');
+
+        _realtimeService.emit('taskCompleted', {
+          'taskId': widget.task.id,
+          'employeeId': widget.employeeId,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
       }
-
-      // Update task status
-      await TaskService().updateUserTaskStatus(_task.userTaskId!, 'completed');
-
-      // Clear autosaved data
-      await _autosaveService.clearData('task_report_${widget.task.id}');
-
-      // Emit real-time update
-      _realtimeService.emit('taskCompleted', {
-        'taskId': widget.task.id,
-        'employeeId': widget.employeeId,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
 
       if (mounted) {
         AppWidgets.showSuccessSnackbar(
           context,
-          'Report submitted successfully!',
+          _isResubmission
+              ? 'Report resubmitted successfully!'
+              : 'Report submitted successfully!',
         );
         Navigator.pop(context, true);
       }

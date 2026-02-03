@@ -202,7 +202,9 @@ class ReportService {
       throw Exception('Upload succeeded but response invalid');
     } else {
       final msg = _extractErrorMessage(response);
-      throw Exception('Failed to upload attachment (${response.statusCode}): $msg');
+      throw Exception(
+        'Failed to upload attachment (${response.statusCode}): $msg',
+      );
     }
   }
 
@@ -239,7 +241,72 @@ class ReportService {
       throw Exception('Upload succeeded but response invalid');
     } else {
       final msg = _extractErrorMessage(response);
-      throw Exception('Failed to upload attachment (${response.statusCode}): $msg');
+      throw Exception(
+        'Failed to upload attachment (${response.statusCode}): $msg',
+      );
     }
+  }
+
+  Future<ReportModel> replaceReportAttachment({
+    required String reportId,
+    required String oldUrl,
+    required String newUrl,
+    int? index,
+  }) async {
+    final response = await HttpUtil().patch(
+      '$_basePath/$reportId/attachments',
+      headers: await _headers(),
+      body: {
+        'oldUrl': oldUrl,
+        'newUrl': newUrl,
+        if (index != null) 'index': index,
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return ReportModel.fromJson(json.decode(response.body));
+    }
+
+    final msg = _extractErrorMessage(response);
+    throw Exception(
+      'Failed to replace attachment (${response.statusCode}): $msg',
+    );
+  }
+
+  Future<ReportModel> reopenReportForResubmission({
+    required String reportId,
+    int hours = 24,
+  }) async {
+    final response = await HttpUtil().patch(
+      '$_basePath/$reportId/reopen',
+      headers: await _headers(),
+      body: {'hours': hours},
+    );
+
+    if (response.statusCode == 200) {
+      return ReportModel.fromJson(json.decode(response.body));
+    }
+
+    final msg = _extractErrorMessage(response);
+    throw Exception('Failed to reopen report (${response.statusCode}): $msg');
+  }
+
+  Future<ReportModel> resubmitReport({
+    required String reportId,
+    required String content,
+    required List<String> attachments,
+  }) async {
+    final response = await HttpUtil().patch(
+      '$_basePath/$reportId/resubmit',
+      headers: await _headers(),
+      body: {'content': content, 'attachments': attachments},
+    );
+
+    if (response.statusCode == 200) {
+      return ReportModel.fromJson(json.decode(response.body));
+    }
+
+    final msg = _extractErrorMessage(response);
+    throw Exception('Failed to resubmit report (${response.statusCode}): $msg');
   }
 }
