@@ -5,7 +5,6 @@ import 'package:field_check/models/report_model.dart';
 import 'package:field_check/services/report_service.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_page.dart';
 import 'package:field_check/widgets/app_widgets.dart';
@@ -229,43 +228,6 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
     }
   }
 
-  Future<void> _openUrlExternal(String url) async {
-    Uri uri;
-    try {
-      uri = Uri.parse(url);
-      if (uri.host.isEmpty) {
-        throw const FormatException('Invalid URL');
-      }
-    } catch (_) {
-      if (mounted) {
-        AppWidgets.showErrorSnackbar(context, 'Invalid attachment URL');
-      }
-      return;
-    }
-
-    // Keep URL encoded; decoding path segments can break URLs with spaces.
-
-    final can = await canLaunchUrl(uri);
-    if (!can) {
-      if (mounted) {
-        AppWidgets.showErrorSnackbar(
-          context,
-          'No app found to open attachment',
-        );
-      }
-      return;
-    }
-
-    final ok = await launchUrl(
-      uri,
-      mode: LaunchMode.platformDefault,
-      webOnlyWindowName: '_blank',
-    );
-    if (!ok && mounted) {
-      AppWidgets.showErrorSnackbar(context, 'Unable to open attachment');
-    }
-  }
-
   void _showImagePreview(String title, String url) {
     showDialog<void>(
       context: context,
@@ -294,18 +256,6 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w700),
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  IconButton(
-                    tooltip: 'Open',
-                    onPressed: () async {
-                      if (_isProtectedAttachmentUrl(url)) {
-                        final dl = _withDownloadQuery(url, title);
-                        await _downloadAttachment(dl, title);
-                        return;
-                      }
-                      await _openUrlExternal(url);
-                    },
-                    icon: const Icon(Icons.open_in_new),
                   ),
                   IconButton(
                     tooltip: 'Close',
@@ -510,11 +460,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                           if (isImage) {
                             _showImagePreview(filename, url);
                           } else {
-                            if (isProtected) {
-                              await _downloadAttachment(downloadUrl, filename);
-                            } else {
-                              await _openUrlExternal(url);
-                            }
+                            await _downloadAttachment(downloadUrl, filename);
                           }
                         },
                         child: Container(
@@ -559,20 +505,6 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              IconButton(
-                                tooltip: 'Open',
-                                onPressed: () async {
-                                  if (!isImage && isProtected) {
-                                    await _downloadAttachment(
-                                      downloadUrl,
-                                      filename,
-                                    );
-                                    return;
-                                  }
-                                  await _openUrlExternal(url);
-                                },
-                                icon: const Icon(Icons.open_in_new),
-                              ),
                             ],
                           ),
                         ),

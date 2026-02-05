@@ -12,7 +12,10 @@ class UserService {
   static final Uri _healthUri = Uri.parse('${ApiConfig.baseUrl}/api/health');
   // Add cached profile and getter
   static UserModel? _cachedProfile;
+  static final StreamController<UserModel?> _profileController =
+      StreamController<UserModel?>.broadcast();
   UserModel? get currentUser => _cachedProfile;
+  Stream<UserModel?> get profileStream => _profileController.stream;
 
   Future<void> _warmUpBackend({
     Duration maxWait = const Duration(seconds: 70),
@@ -410,6 +413,7 @@ class UserService {
       final data = json.decode(response.body);
       final profile = UserModel.fromJson(data);
       _cachedProfile = profile;
+      _profileController.add(profile);
       return profile;
     } else if (response.statusCode == 401) {
       final refreshed = await refreshAccessToken();
@@ -428,6 +432,7 @@ class UserService {
         final data = json.decode(response2.body);
         final profile = UserModel.fromJson(data);
         _cachedProfile = profile;
+        _profileController.add(profile);
         return profile;
       }
       throw Exception('Failed to load profile: ${response2.body}');
@@ -463,7 +468,19 @@ class UserService {
     );
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      return UserModel.fromJson(data);
+      final profile = UserModel.fromJson(data);
+      _cachedProfile = profile;
+      _profileController.add(profile);
+      final prefs = await SharedPreferences.getInstance();
+      final token = data['token'];
+      if (token is String && token.isNotEmpty) {
+        await prefs.setString('auth_token', token);
+      }
+      final refreshToken = data['refreshToken'];
+      if (refreshToken is String && refreshToken.isNotEmpty) {
+        await prefs.setString('refresh_token', refreshToken);
+      }
+      return profile;
     } else if (response.statusCode == 401) {
       final refreshed = await refreshAccessToken();
       if (!refreshed) {
@@ -480,7 +497,19 @@ class UserService {
       );
       if (response2.statusCode == 200) {
         final data = json.decode(response2.body);
-        return UserModel.fromJson(data);
+        final profile = UserModel.fromJson(data);
+        _cachedProfile = profile;
+        _profileController.add(profile);
+        final prefs = await SharedPreferences.getInstance();
+        final token = data['token'];
+        if (token is String && token.isNotEmpty) {
+          await prefs.setString('auth_token', token);
+        }
+        final refreshToken = data['refreshToken'];
+        if (refreshToken is String && refreshToken.isNotEmpty) {
+          await prefs.setString('refresh_token', refreshToken);
+        }
+        return profile;
       }
       throw Exception('Failed to update profile: ${response2.body}');
     } else {

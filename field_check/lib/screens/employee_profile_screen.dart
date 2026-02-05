@@ -1,6 +1,10 @@
 // ignore_for_file: use_build_context_synchronously, deprecated_member_use
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:field_check/services/user_service.dart';
+import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/attendance_service.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/utils/manila_time.dart';
@@ -20,11 +24,49 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   List<AttendanceRecord> _attendanceHistory = [];
   bool _isLoading = true;
   bool _isEditing = false;
+  Uint8List? _pickedAvatarBytes;
+  String? _pickedAvatarFilename;
+  StreamSubscription<UserModel?>? _profileSub;
 
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _usernameController;
   late TextEditingController _phoneController;
+
+  String _normalizeAvatarUrl(String rawPath) {
+    final p = rawPath.trim();
+    if (p.isEmpty) return p;
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
+    return '${ApiConfig.baseUrl}/$p';
+  }
+
+  Future<void> _pickAvatar() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        type: FileType.image,
+        withData: true,
+      );
+      final file = result?.files.isNotEmpty == true
+          ? result!.files.first
+          : null;
+      if (file?.bytes == null) return;
+      if (!mounted) return;
+      setState(() {
+        _pickedAvatarBytes = file!.bytes;
+        _pickedAvatarFilename = file.name;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to select image: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -34,10 +76,23 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     _usernameController = TextEditingController();
     _phoneController = TextEditingController();
     _loadUserData();
+    _profileSub = _userService.profileStream.listen((profile) {
+      if (!mounted || profile == null) return;
+      setState(() {
+        _userProfile = profile;
+        if (!_isEditing) {
+          _nameController.text = profile.name;
+          _emailController.text = profile.email;
+          _usernameController.text = profile.username ?? '';
+          _phoneController.text = profile.phone ?? '';
+        }
+      });
+    });
   }
 
   @override
   void dispose() {
+    _profileSub?.cancel();
     _nameController.dispose();
     _emailController.dispose();
     _usernameController.dispose();
@@ -78,16 +133,44 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
 
   Future<void> _saveProfile() async {
     try {
-      await _userService.updateMyProfile(
+      String? newAvatarUrl;
+      if (_pickedAvatarBytes != null &&
+          (_pickedAvatarFilename ?? '').trim().isNotEmpty) {
+        try {
+          newAvatarUrl = await _userService.uploadAvatarBytes(
+            _pickedAvatarBytes!,
+            _pickedAvatarFilename!,
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to upload avatar: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+
+      final updated = await _userService.updateMyProfile(
         name: _nameController.text,
         email: _emailController.text,
         username: _usernameController.text,
         phone: _phoneController.text,
+        avatarUrl: newAvatarUrl,
       );
 
       if (mounted) {
         setState(() {
+          _userProfile = updated;
           _isEditing = false;
+          _nameController.text = updated.name;
+          _emailController.text = updated.email;
+          _usernameController.text = updated.username ?? '';
+          _phoneController.text = updated.phone ?? '';
+          _pickedAvatarBytes = null;
+          _pickedAvatarFilename = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -95,7 +178,6 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        _loadUserData();
       }
     } catch (e) {
       if (mounted) {
@@ -302,8 +384,13 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               .map((part) => part.characters.first.toUpperCase())
               .join()
         : '?';
-    final hasAvatar =
-        profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty;
+    final avatarUrl = profile.avatarUrl?.trim() ?? '';
+    final hasAvatar = _pickedAvatarBytes != null || avatarUrl.isNotEmpty;
+    final ImageProvider<Object>? avatarImage = _pickedAvatarBytes != null
+        ? MemoryImage(_pickedAvatarBytes!)
+        : (avatarUrl.isNotEmpty
+              ? NetworkImage(_normalizeAvatarUrl(avatarUrl))
+              : null);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -331,21 +418,47 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              CircleAvatar(
-                radius: 38,
-                backgroundColor: Colors.white,
-                backgroundImage: hasAvatar
-                    ? NetworkImage(profile.avatarUrl!)
-                    : null,
-                child: hasAvatar
-                    ? null
-                    : Text(
-                        initials,
-                        style: theme.textTheme.headlineMedium?.copyWith(
+              GestureDetector(
+                onTap: _isEditing ? _pickAvatar : null,
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    CircleAvatar(
+                      radius: 38,
+                      backgroundColor: Colors.white,
+                      backgroundImage: avatarImage,
+                      child: hasAvatar
+                          ? null
+                          : Text(
+                              initials,
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                    ),
+                    if (_isEditing)
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.photo_camera,
+                          size: 16,
                           color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w800,
                         ),
                       ),
+                  ],
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(

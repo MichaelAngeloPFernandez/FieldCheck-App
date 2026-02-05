@@ -11,6 +11,12 @@ const userTaskSchema = new mongoose.Schema(
       enum: ['pending', 'pending_acceptance', 'accepted', 'in_progress', 'completed'],
       default: 'pending_acceptance',
     },
+    progressPercent: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
     assignedAt: { type: Date, default: Date.now },
     completedAt: { type: Date, required: false },
   },

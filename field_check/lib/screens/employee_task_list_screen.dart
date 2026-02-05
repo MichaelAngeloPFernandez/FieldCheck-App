@@ -204,7 +204,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
       case 'pending':
         return Colors.blue;
       default:
-        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
+        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75);
     }
   }
 
@@ -232,7 +232,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                 Text(
                   subtitle,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.85),
                   ),
                 ),
               ],
@@ -317,7 +317,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
         fontWeight: FontWeight.w700,
         color: selected
             ? activeColor
-            : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+            : theme.colorScheme.onSurface.withValues(alpha: 0.85),
       ),
       selectedColor: activeColor.withValues(alpha: 0.16),
       backgroundColor: theme.colorScheme.surface,
@@ -335,7 +335,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
 
   Widget _buildMetaChip(String label, {IconData? icon}) {
     final theme = Theme.of(context);
-    final color = theme.colorScheme.onSurface.withValues(alpha: 0.7);
+    final color = theme.colorScheme.onSurface.withValues(alpha: 0.85);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -396,7 +396,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
               Text(
                 message,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.85),
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -731,41 +731,13 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
   }
 
   double _taskProgressValue(Task task) {
-    if (task.checklist.isNotEmpty) {
-      final clamped = task.progressPercent.clamp(0, 100);
-      return clamped / 100.0;
-    }
-
-    switch (_effectiveStatus(task)) {
-      case 'completed':
-        return 1.0;
-      case 'in_progress':
-        return 0.5;
-      case 'accepted':
-      case 'pending_acceptance':
-      case 'pending':
-      default:
-        return 0.0;
-    }
+    final clamped = task.progressPercent.clamp(0, 100);
+    return clamped / 100.0;
   }
 
   String _taskProgressLabel(Task task) {
-    if (task.checklist.isNotEmpty) {
-      final clamped = task.progressPercent.clamp(0, 100);
-      return '$clamped%';
-    }
-
-    switch (_effectiveStatus(task)) {
-      case 'completed':
-        return '100%';
-      case 'in_progress':
-        return '50%';
-      case 'accepted':
-      case 'pending_acceptance':
-      case 'pending':
-      default:
-        return '0%';
-    }
+    final clamped = task.progressPercent.clamp(0, 100);
+    return '$clamped%';
   }
 
   Widget _buildTaskCard(Task task) {
@@ -835,7 +807,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
               Text(
                 task.description,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
                 ),
               ),
               const SizedBox(height: 12),
@@ -901,7 +873,9 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                     _taskProgressLabel(task),
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.85,
+                      ),
                     ),
                   ),
                 ],
@@ -923,7 +897,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   'Assigned to:',
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.85),
                   ),
                 ),
                 const SizedBox(height: 6),

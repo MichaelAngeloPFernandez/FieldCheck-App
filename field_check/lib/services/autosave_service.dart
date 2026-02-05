@@ -34,18 +34,19 @@ class AutosaveService {
   }
 
   Future<void> saveData(String key, Map<String, dynamic> data) async {
-    _pendingData[key] = {
+    final entry = {
       'data': data,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
       'id': const Uuid().v4(),
     };
+    _pendingData[key] = entry;
     _dirtyKeys.add(key);
     _isDirty = true;
-    
+
     // Also save to SharedPreferences for immediate access
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('autosave_$key', jsonEncode(data));
-    
+    await prefs.setString('autosave_$key', jsonEncode(entry));
+
     // Start event-driven save timer
     _startAutoSave();
   }
@@ -61,7 +62,24 @@ class AutosaveService {
     final dataString = prefs.getString('autosave_$key');
     if (dataString != null) {
       try {
-        return jsonDecode(dataString);
+        final decoded = jsonDecode(dataString);
+        if (decoded is Map && decoded.containsKey('data')) {
+          final payload = decoded['data'];
+          if (payload is Map<String, dynamic>) {
+            return payload;
+          }
+          if (payload is Map) {
+            return Map<String, dynamic>.from(payload);
+          }
+          return null;
+        }
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+        return null;
       } catch (e) {
         print('Error parsing autosave data for key $key: $e');
       }
@@ -77,17 +95,19 @@ class AutosaveService {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      
+
       for (final key in _dirtyKeys) {
         if (_pendingData.containsKey(key)) {
           final data = _pendingData[key];
           await prefs.setString('autosave_$key', jsonEncode(data));
         }
       }
-      
+
       _dirtyKeys.clear();
       _isDirty = false;
-      print('AutosaveService: Saved ${_pendingData.length} items to SharedPreferences');
+      print(
+        'AutosaveService: Saved ${_pendingData.length} items to SharedPreferences',
+      );
     } catch (e) {
       print('AutosaveService: Error saving to SharedPreferences: $e');
     }
@@ -98,22 +118,37 @@ class AutosaveService {
       final prefs = await SharedPreferences.getInstance();
       final keys = prefs.getKeys();
       final unsyncedData = <Map<String, dynamic>>[];
-      
+
       for (final key in keys) {
         if (key.startsWith('autosave_') && !key.endsWith('_synced')) {
           final dataString = prefs.getString(key);
           if (dataString != null) {
-            final data = jsonDecode(dataString);
-            unsyncedData.add({
-              'id': data['id'],
-              'key': key.replaceFirst('autosave_', ''),
-              'data': data,
-              'timestamp': data['timestamp'],
-            });
+            final decoded = jsonDecode(dataString);
+            if (decoded is Map && decoded.containsKey('data')) {
+              unsyncedData.add({
+                'id': decoded['id'],
+                'key': key.replaceFirst('autosave_', ''),
+                'data': decoded['data'],
+                'timestamp': decoded['timestamp'],
+              });
+            } else {
+              final fallback = {
+                'data': decoded,
+                'timestamp': DateTime.now().millisecondsSinceEpoch,
+                'id': const Uuid().v4(),
+              };
+              await prefs.setString(key, jsonEncode(fallback));
+              unsyncedData.add({
+                'id': fallback['id'],
+                'key': key.replaceFirst('autosave_', ''),
+                'data': fallback['data'],
+                'timestamp': fallback['timestamp'],
+              });
+            }
           }
         }
       }
-      
+
       return unsyncedData;
     } catch (e) {
       print('AutosaveService: Error getting unsynced data: $e');

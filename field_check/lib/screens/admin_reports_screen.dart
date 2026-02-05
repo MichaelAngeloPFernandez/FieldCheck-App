@@ -16,9 +16,9 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
+import 'package:field_check/widgets/compass_selector.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/file_download/file_download.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 
 class AdminReportsScreen extends StatefulWidget {
@@ -77,6 +77,40 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _setReportViewMode(String mode) async {
+    if (mode == _viewMode) return;
+    setState(() {
+      _viewMode = mode;
+      if (mode == 'task') {
+        _hasNewTaskReports = false;
+      }
+    });
+
+    if (mode == 'task') {
+      await _fetchTaskReports();
+    }
+  }
+
+  Future<void> _setReportArchiveMode(bool archived) async {
+    if (_viewMode == 'attendance') {
+      if (_showArchivedAttendance == archived) return;
+      setState(() {
+        _showArchivedAttendance = archived;
+      });
+      await _fetchAttendanceRecords();
+      return;
+    }
+
+    if (_showArchivedReports == archived) return;
+    setState(() {
+      _showArchivedReports = archived;
+      if (archived) {
+        _taskOverdueOnly = false;
+      }
+    });
+    await _fetchTaskReports();
   }
 
   ChoiceChip _buildFilterChip({
@@ -606,44 +640,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     }
   }
 
-  Future<void> _openUrlExternal(String url) async {
-    final safeUrl = _ensureUrlEncoded(url);
-    Uri uri;
-    try {
-      uri = Uri.parse(safeUrl);
-      if (uri.host.isEmpty) {
-        throw const FormatException('Invalid URL');
-      }
-    } catch (_) {
-      if (mounted) {
-        AppWidgets.showErrorSnackbar(context, 'Invalid attachment URL');
-      }
-      return;
-    }
-
-    // Keep URL encoded; decoding path segments can break URLs with spaces.
-
-    final can = await canLaunchUrl(uri);
-    if (!can) {
-      if (mounted) {
-        AppWidgets.showErrorSnackbar(
-          context,
-          'No app found to open attachment',
-        );
-      }
-      return;
-    }
-
-    final ok = await launchUrl(
-      uri,
-      mode: LaunchMode.platformDefault,
-      webOnlyWindowName: '_blank',
-    );
-    if (!ok && mounted) {
-      AppWidgets.showErrorSnackbar(context, 'Unable to open attachment');
-    }
-  }
-
   void _showImagePreview(String title, String url) {
     showDialog<void>(
       context: context,
@@ -678,38 +674,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  _buildCardAction(
-                    child: IconButton(
-                      tooltip: 'Open',
-                      onPressed: () async {
-                        try {
-                          final uri = Uri.parse(url);
-                          final isProtected = uri.path.startsWith(
-                            '/api/reports/attachments/',
-                          );
-                          if (isProtected) {
-                            final dl = _resolveAttachmentAccessUrl(
-                              url,
-                              filename: title,
-                              forDownload: true,
-                            );
-                            await _downloadAttachment(dl, title);
-                          } else {
-                            await _openUrlExternal(url);
-                          }
-                        } catch (_) {
-                          await _openUrlExternal(url);
-                        }
-                      },
-                      icon: const Icon(Icons.open_in_new),
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 36,
-                        height: 36,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
                   _buildCardAction(
                     child: IconButton(
                       tooltip: 'Close',
@@ -1886,6 +1850,64 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = constraints.maxWidth < 380 ? 150.0 : 180.0;
+                    final scopeValue = _viewMode == 'attendance'
+                        ? (_showArchivedAttendance ? 'archived' : 'current')
+                        : (_showArchivedReports ? 'archived' : 'current');
+                    return Wrap(
+                      spacing: 14,
+                      runSpacing: 14,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        CompassSelector(
+                          title: 'Report View',
+                          size: size,
+                          accentColor: theme.colorScheme.primary,
+                          selectedValue: _viewMode,
+                          onSelected: (value) {
+                            _setReportViewMode(value);
+                          },
+                          options: const [
+                            CompassOption(
+                              value: 'attendance',
+                              label: 'Attendance',
+                              icon: Icons.fact_check,
+                            ),
+                            CompassOption(
+                              value: 'task',
+                              label: 'Tasks',
+                              icon: Icons.assignment,
+                            ),
+                          ],
+                        ),
+                        CompassSelector(
+                          title: 'Scope',
+                          size: size,
+                          accentColor: Colors.indigo,
+                          selectedValue: scopeValue,
+                          onSelected: (value) {
+                            _setReportArchiveMode(value == 'archived');
+                          },
+                          options: const [
+                            CompassOption(
+                              value: 'current',
+                              label: 'Current',
+                              icon: Icons.timeline,
+                            ),
+                            CompassOption(
+                              value: 'archived',
+                              label: 'Archived',
+                              icon: Icons.archive,
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
                 // View toggle
                 Row(
                   children: [
@@ -1894,9 +1916,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       selected: _viewMode == 'attendance',
                       onSelected: (sel) {
                         if (!sel) return;
-                        setState(() {
-                          _viewMode = 'attendance';
-                        });
+                        _setReportViewMode('attendance');
                       },
                     ),
                     const SizedBox(width: 8),
@@ -1924,11 +1944,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       selected: _viewMode == 'task',
                       onSelected: (sel) async {
                         if (!sel) return;
-                        setState(() {
-                          _viewMode = 'task';
-                          _hasNewTaskReports = false;
-                        });
-                        await _fetchTaskReports();
+                        await _setReportViewMode('task');
                       },
                     ),
                   ],
@@ -1947,17 +1963,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           : !_showArchivedReports,
                       onSelected: (sel) async {
                         if (!sel) return;
-                        if (_viewMode == 'attendance') {
-                          setState(() {
-                            _showArchivedAttendance = false;
-                          });
-                          await _fetchAttendanceRecords();
-                          return;
-                        }
-                        setState(() {
-                          _showArchivedReports = false;
-                        });
-                        await _fetchTaskReports();
+                        await _setReportArchiveMode(false);
                       },
                     ),
                     ChoiceChip(
@@ -1967,18 +1973,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           : _showArchivedReports,
                       onSelected: (sel) async {
                         if (!sel) return;
-                        if (_viewMode == 'attendance') {
-                          setState(() {
-                            _showArchivedAttendance = true;
-                          });
-                          await _fetchAttendanceRecords();
-                          return;
-                        }
-                        setState(() {
-                          _showArchivedReports = true;
-                          _taskOverdueOnly = false;
-                        });
-                        await _fetchTaskReports();
+                        await _setReportArchiveMode(true);
                       },
                     ),
                   ],
@@ -2724,20 +2719,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                 _showImagePreview(filename, accessUrl);
                                 return;
                               }
-                              try {
-                                final uri = Uri.parse(accessUrl);
-                                final isProtected = uri.path.startsWith(
-                                  '/api/reports/attachments/',
-                                );
-                                if (isProtected) {
-                                  await _downloadAttachment(
-                                    downloadUrl,
-                                    filename,
-                                  );
-                                  return;
-                                }
-                              } catch (_) {}
-                              await _openUrlExternal(accessUrl);
+                              await _downloadAttachment(downloadUrl, filename);
                             },
                             child: Container(
                               padding: const EdgeInsets.all(12),
@@ -2812,25 +2794,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                 accessUrl,
                                               );
                                               return;
-                                            case 'open':
-                                              try {
-                                                final uri = Uri.parse(
-                                                  accessUrl,
-                                                );
-                                                final isProtected = uri.path
-                                                    .startsWith(
-                                                      '/api/reports/attachments/',
-                                                    );
-                                                if (!isImage && isProtected) {
-                                                  await _downloadAttachment(
-                                                    downloadUrl,
-                                                    filename,
-                                                  );
-                                                  return;
-                                                }
-                                              } catch (_) {}
-                                              await _openUrlExternal(accessUrl);
-                                              return;
                                             case 'download':
                                               await _downloadAttachment(
                                                 downloadUrl,
@@ -2856,10 +2819,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                                   value: 'preview',
                                                   child: Text('Preview'),
                                                 ),
-                                              const PopupMenuItem(
-                                                value: 'open',
-                                                child: Text('Open'),
-                                              ),
                                               const PopupMenuItem(
                                                 value: 'download',
                                                 child: Text('Download'),

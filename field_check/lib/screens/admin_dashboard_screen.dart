@@ -18,6 +18,7 @@ import 'package:field_check/services/dashboard_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/employee_location_service.dart';
 import 'package:field_check/services/geofence_service.dart';
+import 'package:field_check/services/location_service.dart';
 import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/models/geofence_model.dart';
@@ -64,6 +65,14 @@ Color _notificationTypeColor(String type) {
   }
 }
 
+class _StatMetric {
+  final String label;
+  final String value;
+  final Color? color;
+
+  const _StatMetric({required this.label, required this.value, this.color});
+}
+
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
 
@@ -78,6 +87,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final RealtimeService _realtimeService = RealtimeService();
   final EmployeeLocationService _locationService = EmployeeLocationService();
   final GeofenceService _geofenceService = GeofenceService();
+  final LocationService _deviceLocationService = LocationService();
 
   static const int _taskLimitPerEmployee = 3;
 
@@ -121,6 +131,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   static const LatLng _defaultCenter = LatLng(14.5995, 120.9842); // Manila
   bool _showNoEmployeesPopup = true;
 
+  LatLng? _adminMarkerLocation;
+  bool _adminLocationRequested = false;
+
   bool _pendingOnlineEmployeeRefresh = false;
 
   bool _isInspectorCollapsed = true;
@@ -138,6 +151,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Timer? _employeeSearchDebounce;
 
   static final Color _panelBorderBlue = Colors.blue.shade200;
+  static const Color _adminMarkerColor = Color(0xFF5C4EF5);
   static const Color _panelTextPrimary = Colors.black87;
   static const double _controlFontSize = 13;
 
@@ -172,6 +186,119 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (locName.isNotEmpty) return locName;
 
     return selectedId;
+  }
+
+  String _adminMarkerLabel() {
+    final admin = _userService.currentUser;
+    final name = (admin?.name ?? '').trim();
+    if (name.isNotEmpty) return name;
+    final email = (admin?.email ?? '').trim();
+    if (email.isNotEmpty) return email;
+    final username = (admin?.username ?? '').trim();
+    if (username.isNotEmpty) return username;
+    return 'Admin';
+  }
+
+  String? _currentAdminId() {
+    final id = _userService.currentUser?.id;
+    if (id == null) return null;
+    final trimmed = id.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  LatLng? _adminLiveLocation() {
+    final adminId = _currentAdminId();
+    if (adminId == null) return null;
+    return _liveLocations[adminId];
+  }
+
+  LatLng? _adminLocationFromProfile(UserModel? profile) {
+    if (profile == null) return null;
+    final lat = profile.lastLatitude;
+    final lng = profile.lastLongitude;
+    if (lat == null || lng == null) return null;
+    return LatLng(lat, lng);
+  }
+
+  void _setAdminMarkerLocation(LatLng location) {
+    if (!mounted) return;
+    if (_adminMarkerLocation == location) return;
+    setState(() {
+      _adminMarkerLocation = location;
+    });
+  }
+
+  Future<void> _ensureAdminMarkerLocation() async {
+    if (_adminMarkerLocation != null) return;
+
+    final live = _adminLiveLocation();
+    if (live != null) {
+      _setAdminMarkerLocation(live);
+      return;
+    }
+
+    final cached = _adminLocationFromProfile(_userService.currentUser);
+    if (cached != null) {
+      _setAdminMarkerLocation(cached);
+      return;
+    }
+
+    try {
+      final profile = await _userService.getProfile();
+      final refreshed = _adminLocationFromProfile(profile);
+      if (refreshed != null) {
+        _setAdminMarkerLocation(refreshed);
+        return;
+      }
+    } catch (_) {}
+
+    if (_adminLocationRequested) return;
+    _adminLocationRequested = true;
+    try {
+      final pos = await _deviceLocationService.getCurrentLocation();
+      _setAdminMarkerLocation(LatLng(pos.latitude, pos.longitude));
+    } catch (_) {}
+  }
+
+  String _employeeSortLabel(String userId) {
+    final user = _employees[userId];
+    final code = (user?.employeeId ?? '').trim();
+    if (code.isNotEmpty) return code.toLowerCase();
+    final name = (user?.name ?? '').trim();
+    if (name.isNotEmpty) return name.toLowerCase();
+    final locName = (_employeeLocations[userId]?.name ?? '').trim();
+    if (locName.isNotEmpty) return locName.toLowerCase();
+    return userId.toLowerCase();
+  }
+
+  List<String> _availableInspectionIds() {
+    final adminId = _currentAdminId();
+    final ids = _liveLocations.keys
+        .where((id) => adminId == null || id != adminId)
+        .where((id) => _passesEmployeeFilters(id))
+        .toList();
+    ids.sort((a, b) => _employeeSortLabel(a).compareTo(_employeeSortLabel(b)));
+    return ids;
+  }
+
+  void _setInspectionFromRoster(List<String> roster, int nextIndex) {
+    if (roster.isEmpty) return;
+    final idx = nextIndex.clamp(0, roster.length - 1);
+    final nextId = roster[idx];
+    setState(() {
+      _inspectionStack
+        ..clear()
+        ..addAll(roster);
+      _inspectionIndex = idx;
+      _selectedEmployeeId = nextId;
+      _isInspectorCollapsed = false;
+    });
+
+    final pos = _liveLocations[nextId];
+    if (pos != null) {
+      _panTo(pos, zoom: 16);
+    }
+    _ensureEmployeeLoaded(nextId);
   }
 
   void _rebuildEmployeeIdAlias() {
@@ -315,6 +442,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final canonical = _canonicalUserId(userId);
     if (canonical.trim().isEmpty) return;
 
+    final roster = _availableInspectionIds();
+    final rosterIndex = roster.indexOf(canonical);
+    if (rosterIndex >= 0) {
+      _setInspectionFromRoster(roster, rosterIndex);
+      return;
+    }
+
     final existingIdx = _inspectionStack.indexOf(canonical);
     setState(() {
       if (existingIdx >= 0) {
@@ -327,7 +461,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       _isInspectorCollapsed = false;
     });
 
-    _ensureEmployeeLoaded(userId);
+    _ensureEmployeeLoaded(canonical);
   }
 
   void _toggleInspectorCollapsed() {
@@ -337,45 +471,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _inspectPrev() {
-    if (!_isInspecting) return;
-    if (_inspectionIndex <= 0) return;
-    setState(() {
-      _inspectionIndex -= 1;
-      _selectedEmployeeId = _inspectionStack[_inspectionIndex];
-    });
-
-    final id = _selectedEmployeeId;
-    if (id != null) {
-      final pos = _liveLocations[id];
-      if (pos != null) {
-        _panTo(pos, zoom: 16);
-      }
-    }
-
-    if (id != null) {
-      _ensureEmployeeLoaded(id);
-    }
+    final roster = _availableInspectionIds();
+    if (roster.isEmpty) return;
+    final currentId = _inspectedEmployeeId ?? _selectedEmployeeId;
+    final currentIndex = currentId == null ? -1 : roster.indexOf(currentId);
+    final nextIndex = currentIndex < 0
+        ? roster.length - 1
+        : (currentIndex - 1 + roster.length) % roster.length;
+    _setInspectionFromRoster(roster, nextIndex);
   }
 
   void _inspectNext() {
-    if (!_isInspecting) return;
-    if (_inspectionIndex >= _inspectionStack.length - 1) return;
-    setState(() {
-      _inspectionIndex += 1;
-      _selectedEmployeeId = _inspectionStack[_inspectionIndex];
-    });
-
-    final id = _selectedEmployeeId;
-    if (id != null) {
-      final pos = _liveLocations[id];
-      if (pos != null) {
-        _panTo(pos, zoom: 16);
-      }
-    }
-
-    if (id != null) {
-      _ensureEmployeeLoaded(id);
-    }
+    final roster = _availableInspectionIds();
+    if (roster.isEmpty) return;
+    final currentId = _inspectedEmployeeId ?? _selectedEmployeeId;
+    final currentIndex = currentId == null ? -1 : roster.indexOf(currentId);
+    final nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % roster.length;
+    _setInspectionFromRoster(roster, nextIndex);
   }
 
   Future<void> _ensureEmployeeLoaded(String rawId) async {
@@ -415,6 +527,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       SnackBar(
         content: Text('$label copied'),
         duration: const Duration(milliseconds: 900),
+      ),
+    );
+  }
+
+  Marker _buildAdminMarker(LatLng location) {
+    final label = _adminMarkerLabel();
+    return Marker(
+      point: location,
+      width: 46,
+      height: 46,
+      child: _maybeTooltip(
+        message: 'Admin: $label',
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _adminMarkerColor,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: _adminMarkerColor.withValues(alpha: 0.45),
+                blurRadius: 10,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.admin_panel_settings,
+            color: Colors.white,
+            size: 22,
+          ),
+        ),
       ),
     );
   }
@@ -511,6 +654,111 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  Widget _buildStatMetricPill(
+    _StatMetric metric, {
+    required Color fallbackColor,
+    bool compact = false,
+  }) {
+    final theme = Theme.of(context);
+    final color = metric.color ?? fallbackColor;
+    final isDark = theme.brightness == Brightness.dark;
+    final textStyle = theme.textTheme.labelSmall?.copyWith(
+      fontWeight: FontWeight.w700,
+      color: theme.colorScheme.onSurface.withValues(alpha: 0.85),
+      fontSize: compact ? 11 : null,
+    );
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 6 : 8,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.22 : 0.14),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: metric.value,
+              style: textStyle?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            TextSpan(text: ' ${metric.label}', style: textStyle),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatDialogContent({
+    required IconData icon,
+    required Color color,
+    String? description,
+    required List<_StatMetric> metrics,
+    String? footer,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.18),
+                shape: BoxShape.circle,
+                border: Border.all(color: color.withValues(alpha: 0.35)),
+              ),
+              child: Icon(icon, color: color, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                description ?? 'Summary',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: metrics
+              .map(
+                (metric) => _buildStatMetricPill(
+                  metric,
+                  fallbackColor: color,
+                  compact: true,
+                ),
+              )
+              .toList(),
+        ),
+        if (footer != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            footer,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildEmployeeInspectorContent({
     required VoidCallback onExit,
     required VoidCallback onPrev,
@@ -565,6 +813,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }
 
         final pos = LatLng(latN.toDouble(), lngN.toDouble());
+        final adminId = _currentAdminId();
+        if (adminId != null && employeeId == adminId) {
+          _setAdminMarkerLocation(pos);
+        }
         if (!mounted) return;
         _liveLocations[employeeId] = pos;
         final tsRaw = data['timestamp']?.toString();
@@ -940,9 +1192,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     if (_nearbyMode == 'admin') {
-      final adminId = _userService.currentUser?.id;
-      if (adminId == null) return null;
-      return _liveLocations[adminId];
+      return _adminLiveLocation() ?? _adminMarkerLocation;
     }
 
     return null;
@@ -1079,6 +1329,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildMapLegend() {
+    final showAdmin = _adminMarkerLocation != null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1113,6 +1364,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             icon: Icons.schedule,
             label: 'Busy',
           ),
+          if (showAdmin) ...[
+            const SizedBox(height: 6),
+            _buildLegendItem(
+              color: _adminMarkerColor,
+              icon: Icons.admin_panel_settings,
+              label: 'Admin',
+            ),
+          ],
         ],
       ),
     );
@@ -1221,6 +1480,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   setState(() {
                     _nearbyMode = next;
                   });
+                  if (next == 'admin') {
+                    _ensureAdminMarkerLocation();
+                  }
                   final center = _nearbyCenter();
                   if (center != null) {
                     _panTo(center, zoom: 14);
@@ -1756,12 +2018,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) {
-        final total = _dashboardStats?.users.totalEmployees ?? 0;
-        final active = _dashboardStats?.users.activeEmployees ?? 0;
+        final stats = _dashboardStats;
+        final total = stats?.users.totalEmployees ?? 0;
+        final active = stats?.users.activeEmployees ?? 0;
         final inactive = (total - active).clamp(0, total);
+        final admins = stats?.users.totalAdmins ?? 0;
         return AlertDialog(
           title: const Text('Employee Availability'),
-          content: Text('Total: $total\nActive: $active\nInactive: $inactive'),
+          content: _buildStatDialogContent(
+            icon: Icons.people,
+            color: Colors.blue,
+            description: 'Workforce coverage across active and inactive staff.',
+            metrics: [
+              _StatMetric(label: 'Total', value: '$total'),
+              _StatMetric(
+                label: 'Active',
+                value: '$active',
+                color: Colors.green,
+              ),
+              _StatMetric(
+                label: 'Inactive',
+                value: '$inactive',
+                color: Colors.redAccent,
+              ),
+              _StatMetric(
+                label: 'Admins',
+                value: '$admins',
+                color: Colors.deepPurple,
+              ),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -1778,12 +2064,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) {
-        final total = _dashboardStats?.geofences.total ?? 0;
-        final active = _dashboardStats?.geofences.active ?? 0;
+        final stats = _dashboardStats;
+        final total = stats?.geofences.total ?? 0;
+        final active = stats?.geofences.active ?? 0;
         final inactive = (total - active).clamp(0, total);
         return AlertDialog(
           title: const Text('Geofences'),
-          content: Text('Total: $total\nActive: $active\nInactive: $inactive'),
+          content: _buildStatDialogContent(
+            icon: Icons.location_on,
+            color: Colors.green,
+            description: 'Coverage zones across active and inactive sites.',
+            metrics: [
+              _StatMetric(label: 'Total', value: '$total'),
+              _StatMetric(
+                label: 'Active',
+                value: '$active',
+                color: Colors.green,
+              ),
+              _StatMetric(
+                label: 'Inactive',
+                value: '$inactive',
+                color: Colors.orange,
+              ),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -1800,13 +2104,35 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) {
-        final total = _dashboardStats?.tasks.total ?? 0;
-        final pending = _dashboardStats?.tasks.pending ?? 0;
-        final completed = _dashboardStats?.tasks.completed ?? 0;
+        final stats = _dashboardStats;
+        final total = stats?.tasks.total ?? 0;
+        final pending = stats?.tasks.pending ?? 0;
+        final completed = stats?.tasks.completed ?? 0;
+        final inProgress = stats?.tasks.inProgress ?? 0;
         return AlertDialog(
           title: const Text('Tasks'),
-          content: Text(
-            'Total: $total\nPending: $pending\nCompleted: $completed',
+          content: _buildStatDialogContent(
+            icon: Icons.task,
+            color: Colors.orange,
+            description: 'Task progress and workload across all assignments.',
+            metrics: [
+              _StatMetric(label: 'Total', value: '$total'),
+              _StatMetric(
+                label: 'Pending',
+                value: '$pending',
+                color: Colors.orange,
+              ),
+              _StatMetric(
+                label: 'In progress',
+                value: '$inProgress',
+                color: Colors.blueAccent,
+              ),
+              _StatMetric(
+                label: 'Completed',
+                value: '$completed',
+                color: Colors.green,
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -1824,14 +2150,35 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) {
-        final today = _dashboardStats?.attendance.today ?? 0;
-        final checkIns = _dashboardStats?.attendance.todayCheckIns ?? 0;
-        final checkOuts = _dashboardStats?.attendance.todayCheckOuts ?? 0;
+        final stats = _dashboardStats;
+        final today = stats?.attendance.today ?? 0;
+        final checkIns = stats?.attendance.todayCheckIns ?? 0;
+        final checkOuts = stats?.attendance.todayCheckOuts ?? 0;
         final open = (checkIns - checkOuts).clamp(0, checkIns);
         return AlertDialog(
           title: const Text("Today's Attendance"),
-          content: Text(
-            'Records: $today\nCheck-ins: $checkIns\nCheck-outs: $checkOuts\nOpen: $open',
+          content: _buildStatDialogContent(
+            icon: Icons.check_circle,
+            color: Colors.purple,
+            description: 'Daily attendance captured in the current period.',
+            metrics: [
+              _StatMetric(label: 'Records', value: '$today'),
+              _StatMetric(
+                label: 'Check-ins',
+                value: '$checkIns',
+                color: Colors.deepPurple,
+              ),
+              _StatMetric(
+                label: 'Check-outs',
+                value: '$checkOuts',
+                color: Colors.indigo,
+              ),
+              _StatMetric(
+                label: 'Open',
+                value: '$open',
+                color: Colors.purpleAccent,
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -2967,8 +3314,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 520;
-        final checkIns = _dashboardStats?.attendance.todayCheckIns ?? 0;
-        final checkOuts = _dashboardStats?.attendance.todayCheckOuts ?? 0;
+        final stats = _dashboardStats!;
+        final totalEmployees = stats.users.totalEmployees;
+        final activeEmployees = stats.users.activeEmployees;
+        final inactiveEmployees = (totalEmployees - activeEmployees).clamp(
+          0,
+          totalEmployees,
+        );
+        final totalAdmins = stats.users.totalAdmins;
+
+        final totalGeofences = stats.geofences.total;
+        final activeGeofences = stats.geofences.active;
+        final inactiveGeofences = (totalGeofences - activeGeofences).clamp(
+          0,
+          totalGeofences,
+        );
+
+        final totalTasks = stats.tasks.total;
+        final pendingTasks = stats.tasks.pending;
+        final inProgressTasks = stats.tasks.inProgress;
+        final completedTasks = stats.tasks.completed;
+
+        final checkIns = stats.attendance.todayCheckIns;
+        final checkOuts = stats.attendance.todayCheckOuts;
         final openAttendance = (checkIns - checkOuts).clamp(0, checkIns);
         return GridView.count(
           shrinkWrap: true,
@@ -2976,38 +3344,86 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           crossAxisCount: isNarrow ? 1 : 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: isNarrow ? 3.0 : 1.4,
+          childAspectRatio: isNarrow ? 2.35 : 1.3,
           children: [
             _buildStatCard(
               title: 'Total Employees',
-              value: _dashboardStats!.users.totalEmployees.toString(),
+              value: totalEmployees.toString(),
               icon: Icons.people,
               color: Colors.blue,
-              subtitle: '${_dashboardStats!.users.activeEmployees} active',
+              subtitle: '$totalAdmins admins',
+              metrics: [
+                _StatMetric(
+                  label: 'Active',
+                  value: activeEmployees.toString(),
+                  color: Colors.green,
+                ),
+                _StatMetric(
+                  label: 'Inactive',
+                  value: inactiveEmployees.toString(),
+                  color: Colors.redAccent,
+                ),
+              ],
               onTap: _showEmployeeAvailabilityDialog,
             ),
             _buildStatCard(
               title: 'Geofences',
-              value: _dashboardStats!.geofences.total.toString(),
+              value: totalGeofences.toString(),
               icon: Icons.location_on,
               color: Colors.green,
-              subtitle: '${_dashboardStats!.geofences.active} active',
+              subtitle: '$activeGeofences active',
+              metrics: [
+                _StatMetric(
+                  label: 'Active',
+                  value: activeGeofences.toString(),
+                  color: Colors.green,
+                ),
+                _StatMetric(
+                  label: 'Inactive',
+                  value: inactiveGeofences.toString(),
+                  color: Colors.orange,
+                ),
+              ],
               onTap: _showGeofenceDetailsDialog,
             ),
             _buildStatCard(
               title: 'Tasks',
-              value: _dashboardStats!.tasks.total.toString(),
+              value: totalTasks.toString(),
               icon: Icons.task,
               color: Colors.orange,
-              subtitle: '${_dashboardStats!.tasks.pending} pending',
+              subtitle: '$completedTasks completed',
+              metrics: [
+                _StatMetric(
+                  label: 'Pending',
+                  value: pendingTasks.toString(),
+                  color: Colors.orange,
+                ),
+                _StatMetric(
+                  label: 'In progress',
+                  value: inProgressTasks.toString(),
+                  color: Colors.blueAccent,
+                ),
+              ],
               onTap: _showTasksDialog,
             ),
             _buildStatCard(
               title: 'Today\'s Attendance',
-              value: _dashboardStats!.attendance.today.toString(),
+              value: stats.attendance.today.toString(),
               icon: Icons.check_circle,
               color: Colors.purple,
-              subtitle: '$openAttendance open • $checkOuts checked out',
+              subtitle: '$checkIns check-ins',
+              metrics: [
+                _StatMetric(
+                  label: 'Open',
+                  value: openAttendance.toString(),
+                  color: Colors.deepPurple,
+                ),
+                _StatMetric(
+                  label: 'Checked out',
+                  value: checkOuts.toString(),
+                  color: Colors.indigo,
+                ),
+              ],
               onTap: _showAttendanceDialog,
             ),
           ],
@@ -3068,86 +3484,144 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required IconData icon,
     required Color color,
     String? subtitle,
+    List<_StatMetric> metrics = const [],
     VoidCallback? onTap,
   }) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
     final surface = theme.colorScheme.surface;
-    final tint = color.withValues(
-      alpha: theme.brightness == Brightness.dark ? 0.18 : 0.08,
+    final isDark = theme.brightness == Brightness.dark;
+    final tint = color.withValues(alpha: isDark ? 0.18 : 0.08);
+    final borderColor = theme.colorScheme.outlineVariant.withValues(
+      alpha: isDark ? 0.6 : 0.4,
     );
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: Color.alphaBlend(tint, surface),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: borderColor),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Container(
-            decoration: BoxDecoration(color: Color.alphaBlend(tint, surface)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.14),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: color.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Icon(icon, color: color, size: 18),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: onSurface.withValues(alpha: 0.9),
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    value,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: onSurface,
+          child: Stack(
+            children: [
+              Positioned(
+                right: -28,
+                top: -34,
+                child: Icon(
+                  icon,
+                  size: 120,
+                  color: color.withValues(alpha: isDark ? 0.16 : 0.12),
+                ),
+              ),
+              Positioned(
+                left: -36,
+                bottom: -44,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        color.withValues(alpha: isDark ? 0.22 : 0.18),
+                        Colors.transparent,
+                      ],
+                      radius: 0.7,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 6),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: color.withValues(
+                              alpha: isDark ? 0.26 : 0.16,
+                            ),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: color.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Icon(icon, color: color, size: 20),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: onSurface.withValues(alpha: 0.9),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (subtitle != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: onSurface.withValues(alpha: 0.65),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          Icons.arrow_forward_ios,
+                          size: 14,
+                          color: onSurface.withValues(alpha: 0.4),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: onSurface.withValues(alpha: 0.7),
+                      value,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: onSurface,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (metrics.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: metrics
+                            .map(
+                              (metric) => _buildStatMetricPill(
+                                metric,
+                                fallbackColor: color,
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -3535,117 +4009,128 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         }).toList(),
                       ),
                       MarkerLayer(
-                        markers: _liveLocations.entries
-                            .where((e) => _passesEmployeeFilters(e.key))
-                            .map((entry) {
-                              final user = _employees[entry.key];
-                              final empLocation = _employeeLocations[entry.key];
+                        markers: [
+                          if (_adminMarkerLocation != null)
+                            _buildAdminMarker(_adminMarkerLocation!),
+                          ..._liveLocations.entries
+                              .where((entry) {
+                                final adminId = _currentAdminId();
+                                if (adminId != null && entry.key == adminId) {
+                                  return false;
+                                }
+                                return _passesEmployeeFilters(entry.key);
+                              })
+                              .map((entry) {
+                                final user = _employees[entry.key];
+                                final empLocation =
+                                    _employeeLocations[entry.key];
 
-                              final tooltipText =
-                                  (user != null && user.name.trim().isNotEmpty)
-                                  ? user.name
-                                  : ((user != null &&
-                                            user.email.trim().isNotEmpty)
-                                        ? user.email
-                                        : 'Employee');
-                              final isBusy =
-                                  empLocation?.status == EmployeeStatus.busy;
+                                final tooltipText =
+                                    (user != null &&
+                                        user.name.trim().isNotEmpty)
+                                    ? user.name
+                                    : ((user != null &&
+                                              user.email.trim().isNotEmpty)
+                                          ? user.email
+                                          : 'Employee');
+                                final isBusy =
+                                    empLocation?.status == EmployeeStatus.busy;
 
-                              Color markerColor;
-                              IconData markerIcon;
+                                Color markerColor;
+                                IconData markerIcon;
 
-                              if (isBusy) {
-                                markerColor = Colors.red;
-                                markerIcon = Icons.schedule;
-                              } else if (empLocation?.status ==
-                                  EmployeeStatus.available) {
-                                markerColor = Colors.green;
-                                markerIcon = Icons.check_circle;
-                              } else {
-                                markerColor = Colors.blue;
-                                markerIcon = Icons.directions_run;
-                              }
+                                if (isBusy) {
+                                  markerColor = Colors.red;
+                                  markerIcon = Icons.schedule;
+                                } else if (empLocation?.status ==
+                                    EmployeeStatus.available) {
+                                  markerColor = Colors.green;
+                                  markerIcon = Icons.check_circle;
+                                } else {
+                                  markerColor = Colors.blue;
+                                  markerIcon = Icons.directions_run;
+                                }
 
-                              return Marker(
-                                point: entry.value,
-                                width: 40,
-                                height: 40,
-                                child: Material(
-                                  type: MaterialType.transparency,
-                                  child: InkResponse(
-                                    containedInkWell: true,
-                                    radius: 24,
-                                    highlightShape: BoxShape.circle,
-                                    onTap: () {
-                                      final id = _canonicalUserId(entry.key);
-                                      final selectedUser = _employees[id];
-                                      final code =
-                                          (selectedUser?.employeeId ?? '')
-                                              .trim();
-                                      final name = (selectedUser?.name ?? '')
-                                          .trim();
-                                      final label = code.isNotEmpty
-                                          ? code
-                                          : (name.isNotEmpty ? name : id);
-                                      debugPrint(
-                                        '🧭 Marker tapped (map): ${entry.key} -> $id',
-                                      );
-                                      _pushInspection(id);
-                                      _panTo(entry.value, zoom: 16);
-
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).hideCurrentSnackBar();
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Selected $label'),
-                                            duration: const Duration(
-                                              milliseconds: 900,
-                                            ),
-                                          ),
+                                return Marker(
+                                  point: entry.value,
+                                  width: 40,
+                                  height: 40,
+                                  child: Material(
+                                    type: MaterialType.transparency,
+                                    child: InkResponse(
+                                      containedInkWell: true,
+                                      radius: 24,
+                                      highlightShape: BoxShape.circle,
+                                      onTap: () {
+                                        final id = _canonicalUserId(entry.key);
+                                        final selectedUser = _employees[id];
+                                        final code =
+                                            (selectedUser?.employeeId ?? '')
+                                                .trim();
+                                        final name = (selectedUser?.name ?? '')
+                                            .trim();
+                                        final label = code.isNotEmpty
+                                            ? code
+                                            : (name.isNotEmpty ? name : id);
+                                        debugPrint(
+                                          '🧭 Marker tapped (map): ${entry.key} -> $id',
                                         );
-                                      }
+                                        _pushInspection(id);
+                                        _panTo(entry.value, zoom: 16);
 
-                                      if (!isWide) {
-                                        _openInspectionSheet();
-                                      }
-                                    },
-                                    child: _maybeTooltip(
-                                      message: tooltipText,
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: markerColor,
-                                          border: Border.all(
-                                            color: Colors.white,
-                                            width: 2,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: markerColor.withValues(
-                                                alpha: 0.5,
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).hideCurrentSnackBar();
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Selected $label'),
+                                              duration: const Duration(
+                                                milliseconds: 900,
                                               ),
-                                              blurRadius: 8,
-                                              spreadRadius: 2,
                                             ),
-                                          ],
-                                        ),
-                                        padding: const EdgeInsets.all(6),
-                                        child: Icon(
-                                          markerIcon,
-                                          color: Colors.white,
-                                          size: 20,
+                                          );
+                                        }
+
+                                        if (!isWide) {
+                                          _openInspectionSheet();
+                                        }
+                                      },
+                                      child: _maybeTooltip(
+                                        message: tooltipText,
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: markerColor,
+                                            border: Border.all(
+                                              color: Colors.white,
+                                              width: 2,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: markerColor.withValues(
+                                                  alpha: 0.5,
+                                                ),
+                                                blurRadius: 8,
+                                                spreadRadius: 2,
+                                              ),
+                                            ],
+                                          ),
+                                          padding: const EdgeInsets.all(6),
+                                          child: Icon(
+                                            markerIcon,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              );
-                            })
-                            .toList(),
+                                );
+                              }),
+                        ],
                       ),
                     ],
                   ),
@@ -4135,8 +4620,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildFloatingEmployeeIndicators() {
     // Get online employees only
+    final adminId = _currentAdminId();
     final onlineEmployees = _liveLocations.entries
         .where((entry) => _isEmployeeOnline(entry.key))
+        .where((entry) => adminId == null || entry.key != adminId)
         .toList();
 
     if (onlineEmployees.isEmpty) return const SizedBox.shrink();
@@ -4384,6 +4871,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     await _loadOnlineEmployeeLocations();
     await _loadGeofencesForNearby();
     _subscribeToLocations();
+    await _ensureAdminMarkerLocation();
   }
 
   Future<void> _loadEmployeesForMap() async {
@@ -4413,6 +4901,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           '📍 Loaded ${response.length} online employees from backend',
         );
         setState(() {
+          final adminId = _currentAdminId();
           final seenOnlineIds = <String>{};
           for (final emp in response) {
             final rawId =
@@ -4504,6 +4993,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
             // Only add if we have valid userId and coordinates
             if (userId.isNotEmpty && lat != null && lng != null) {
+              if (adminId != null && userId == adminId) {
+                _adminMarkerLocation = LatLng(lat, lng);
+              }
               _liveLocations[userId] = LatLng(lat, lng);
               _lastGpsUpdate[userId] = DateTime.now();
 
@@ -4605,11 +5097,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (!mounted) return;
       setState(() {
         final wasEmpty = _liveLocations.isEmpty;
+        final adminId = _currentAdminId();
         for (final empLoc in locations) {
           final pos = LatLng(empLoc.latitude, empLoc.longitude);
           final id = _canonicalUserId(empLoc.employeeId);
           _employeeLocations[id] = empLoc;
 
+          if (adminId != null && id == adminId) {
+            _adminMarkerLocation = pos;
+          }
           if (empLoc.isOnline) {
             _liveLocations[id] = pos;
             _lastGpsUpdate[id] = DateTime.now();

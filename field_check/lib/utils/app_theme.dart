@@ -20,8 +20,8 @@ class AppTheme {
   static const Color surfaceDark = Color(0xFF1E1E1E); // Dark Surface
 
   static const Color textPrimary = Color(0xFF212121); // Dark text
-  static const Color textSecondary = Color(0xFF757575); // Medium text
-  static const Color textTertiary = Color(0xFFBDBDBD); // Light text
+  static const Color textSecondary = Color(0xFF5E5E5E); // Medium text
+  static const Color textTertiary = Color(0xFF9E9E9E); // Light text
   static const Color dividerColor = Color(0xFFE0E0E0); // Divider
 
   // ============================================================================
@@ -114,10 +114,10 @@ class AppTheme {
   );
 
   static const TextStyle bodySm = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.w400,
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
     color: textSecondary,
-    height: 1.4,
+    height: 1.45,
   );
 
   static const TextStyle labelLg = TextStyle(
@@ -323,15 +323,15 @@ class AppTheme {
       ),
       bodyMedium: TextStyle(
         fontSize: 15,
-        fontWeight: FontWeight.w400,
+        fontWeight: FontWeight.w500,
         color: textPrimary,
-        height: 1.4,
+        height: 1.45,
       ),
       bodySmall: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w400,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
         color: textSecondary,
-        height: 1.35,
+        height: 1.45,
       ),
       labelLarge: TextStyle(
         fontSize: 14,
@@ -547,15 +547,15 @@ class AppTheme {
       ),
       bodyMedium: TextStyle(
         fontSize: 15,
-        fontWeight: FontWeight.w400,
+        fontWeight: FontWeight.w500,
         color: Colors.white,
-        height: 1.4,
+        height: 1.45,
       ),
       bodySmall: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w400,
-        color: Colors.white70,
-        height: 1.35,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: Color(0xDEFFFFFF),
+        height: 1.45,
       ),
       labelLarge: TextStyle(
         fontSize: 14,
@@ -565,12 +565,12 @@ class AppTheme {
       labelMedium: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: Colors.white70,
+        color: Color(0xDEFFFFFF),
       ),
       labelSmall: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: Colors.white60,
+        color: Color(0xCCFFFFFF),
       ),
     ),
 

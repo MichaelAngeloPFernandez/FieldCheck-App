@@ -437,11 +437,19 @@ class TaskService {
     }
   }
 
-  Future<void> updateUserTaskStatus(String userTaskId, String status) async {
+  Future<void> updateUserTaskStatus(
+    String userTaskId,
+    String status, {
+    int? progressPercent,
+  }) async {
+    final payload = <String, dynamic>{'status': status};
+    if (progressPercent != null) {
+      payload['progressPercent'] = progressPercent;
+    }
     final response = await http.put(
       Uri.parse('$_baseUrl/user-task/$userTaskId/status'),
       headers: await _headers(),
-      body: json.encode({'status': status}),
+      body: json.encode(payload),
     );
 
     if (response.statusCode != 200) {

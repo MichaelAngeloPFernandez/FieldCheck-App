@@ -689,17 +689,26 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
     },
   });
 });
-
-// @route PUT /api/tasks/user-task/:userTaskId/status
 // @access Private
 const updateUserTaskStatus = asyncHandler(async (req, res) => {
   const { userTaskId } = req.params;
-  const { status } = req.body;
+  const { status, progressPercent } = req.body;
+  let progressValue;
+  if (progressPercent !== undefined) {
+    const parsed = Number(progressPercent);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+      res.status(400);
+      throw new Error('progressPercent must be a number between 0 and 100');
+    }
+    progressValue = Math.round(parsed);
+  }
+
   const ut = await UserTask.findById(userTaskId);
   if (!ut) {
     res.status(404);
     throw new Error('UserTask not found');
   }
+
   const nextStatus = status;
 
   // Validate transition against the owning Task (if it still exists)
@@ -729,11 +738,15 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
   }
 
   ut.status = nextStatus;
+  if (progressValue !== undefined) {
+    ut.progressPercent = progressValue;
+  }
   if (nextStatus === 'completed') {
     ut.completedAt = new Date();
   } else if (!nextStatus || nextStatus === 'pending' || nextStatus === 'pending_acceptance') {
     ut.completedAt = undefined;
   }
+
   await ut.save();
 
   // IMPORTANT: Do not overwrite global Task.status from per-assignee status.
@@ -749,14 +762,25 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
       const anyInProgress = statuses.some((s) => s === 'in_progress');
       const allCompleted = statuses.length > 0 && statuses.every((s) => s === 'completed');
 
+      if (progressValue !== undefined) {
+        taskForStatusUpdate.progressPercent = progressValue;
+      }
+
       if (allCompleted) {
         taskForStatusUpdate.status = 'completed';
-        taskForStatusUpdate.progressPercent = 100;
+        if (
+          progressValue === undefined &&
+          (typeof taskForStatusUpdate.progressPercent !== 'number' ||
+            taskForStatusUpdate.progressPercent < 1)
+        ) {
+          taskForStatusUpdate.progressPercent = 100;
+        }
       } else if (anyInProgress) {
         taskForStatusUpdate.status = 'in_progress';
         if (
-          typeof taskForStatusUpdate.progressPercent !== 'number' ||
-          taskForStatusUpdate.progressPercent < 1
+          progressValue === undefined &&
+          (typeof taskForStatusUpdate.progressPercent !== 'number' ||
+            taskForStatusUpdate.progressPercent < 1)
         ) {
           taskForStatusUpdate.progressPercent = 50;
         }
@@ -772,17 +796,39 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
   // Auto-create a simple task report on completion
   if (status === 'completed') {
     try {
-      await Report.create({
+      const existing = await Report.findOne({
         type: 'task',
         task: ut.taskId,
         employee: ut.userId,
-        content: 'Task marked completed',
-      });
-      io.emit('newReport', { type: 'task', taskId: ut.taskId.toString(), userId: ut.userId.toString() });
+      })
+        .sort({ submittedAt: -1 })
+        .select('content attachments');
+
+      const hasMeaningfulReport =
+        existing &&
+        ((Array.isArray(existing.attachments) && existing.attachments.length > 0) ||
+          (typeof existing.content === 'string' &&
+            existing.content.trim().length > 0 &&
+            existing.content.trim() !== 'Task marked completed'));
+
+      if (!hasMeaningfulReport) {
+        await Report.create({
+          type: 'task',
+          task: ut.taskId,
+          employee: ut.userId,
+          content: 'Task marked completed',
+        });
+        io.emit('newReport', {
+          type: 'task',
+          taskId: ut.taskId.toString(),
+          userId: ut.userId.toString(),
+        });
+      }
     } catch (e) {
       console.error('Failed to auto-create task completion report:', e);
     }
   }
+
   // Emit employeeLocationUpdate so admin dashboards update status/marker color
   // even when the employee is not continuously streaming GPS.
   try {
@@ -866,6 +912,7 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
     status: ut.status,
     assignedAt: ut.assignedAt.toISOString(),
     completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
+    progressPercent: ut.progressPercent,
   }); // Emit real-time event
   res.json({
     id: ut._id.toString(),
@@ -874,6 +921,7 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
     status: ut.status,
     assignedAt: ut.assignedAt.toISOString(),
     completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
+    progressPercent: ut.progressPercent,
   });
 });
 
@@ -882,6 +930,7 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
 const acceptUserTask = asyncHandler(async (req, res) => {
   const { userTaskId } = req.params;
   const ut = await UserTask.findById(userTaskId);
+
   if (!ut) {
     res.status(404);
     throw new Error('UserTask not found');

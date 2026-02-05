@@ -11,6 +11,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/widgets/app_widgets.dart';
+import 'package:field_check/widgets/compass_selector.dart';
 
 class AdminTaskManagementScreen extends StatefulWidget {
   final bool embedded;
@@ -1517,40 +1518,134 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
           ),
         Padding(
           padding: const EdgeInsets.all(8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Column(
             children: [
-              ChoiceChip(
-                label: const Text('Current Tasks'),
-                selected: _tab == 'current',
-                onSelected: (sel) {
-                  if (!sel) return;
-                  setState(() {
-                    _tab = 'current';
-                  });
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = constraints.maxWidth < 380 ? 150.0 : 180.0;
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      CompassSelector(
+                        title: 'Task View',
+                        size: size,
+                        accentColor: brandColor,
+                        selectedValue: _tab,
+                        onSelected: (value) {
+                          if (value == _tab) return;
+                          setState(() {
+                            _tab = value;
+                          });
+                        },
+                        options: const [
+                          CompassOption(
+                            value: 'current',
+                            label: 'Current',
+                            icon: Icons.schedule,
+                          ),
+                          CompassOption(
+                            value: 'expired',
+                            label: 'Overdue',
+                            icon: Icons.warning_amber_rounded,
+                          ),
+                          CompassOption(
+                            value: 'completed',
+                            label: 'Done',
+                            icon: Icons.check_circle,
+                          ),
+                          CompassOption(
+                            value: 'archived',
+                            label: 'Archive',
+                            icon: Icons.inventory_2,
+                          ),
+                        ],
+                      ),
+                      CompassSelector(
+                        title: 'Difficulty',
+                        size: size,
+                        accentColor: Colors.teal,
+                        selectedValue: _difficultyFilter,
+                        onSelected: (value) {
+                          if (value == _difficultyFilter) return;
+                          setState(() => _difficultyFilter = value);
+                        },
+                        options: const [
+                          CompassOption(
+                            value: 'all',
+                            label: 'All',
+                            icon: Icons.blur_on,
+                          ),
+                          CompassOption(
+                            value: 'easy',
+                            label: 'Easy',
+                            icon: Icons.sentiment_satisfied_alt,
+                          ),
+                          CompassOption(
+                            value: 'medium',
+                            label: 'Medium',
+                            icon: Icons.trending_up,
+                          ),
+                          CompassOption(
+                            value: 'hard',
+                            label: 'Hard',
+                            icon: Icons.local_fire_department,
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
                 },
               ),
-              const SizedBox(width: 8),
-              ChoiceChip(
-                label: const Text('Overdue Tasks'),
-                selected: _tab == 'expired',
-                onSelected: (sel) {
-                  if (!sel) return;
-                  setState(() {
-                    _tab = 'expired';
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-              ChoiceChip(
-                label: const Text('Archived Tasks'),
-                selected: _tab == 'archived',
-                onSelected: (sel) {
-                  if (!sel) return;
-                  setState(() {
-                    _tab = 'archived';
-                  });
-                },
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Current Tasks'),
+                    selected: _tab == 'current',
+                    onSelected: (sel) {
+                      if (!sel) return;
+                      setState(() {
+                        _tab = 'current';
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Overdue Tasks'),
+                    selected: _tab == 'expired',
+                    onSelected: (sel) {
+                      if (!sel) return;
+                      setState(() {
+                        _tab = 'expired';
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Completed Tasks'),
+                    selected: _tab == 'completed',
+                    onSelected: (sel) {
+                      if (!sel) return;
+                      setState(() {
+                        _tab = 'completed';
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Archived Tasks'),
+                    selected: _tab == 'archived',
+                    onSelected: (sel) {
+                      if (!sel) return;
+                      setState(() {
+                        _tab = 'archived';
+                      });
+                    },
+                  ),
+                ],
               ),
             ],
           ),
@@ -1607,11 +1702,16 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                   }
 
                   final filtered = source.where((task) {
+                    final isCompleted = task.status == 'completed';
+
                     // Tab filtering
-                    if (_tab == 'current' && task.isOverdue) {
+                    if (_tab == 'completed' && !isCompleted) {
                       return false;
                     }
-                    if (_tab == 'expired' && !task.isOverdue) {
+                    if (_tab == 'current' && (task.isOverdue || isCompleted)) {
+                      return false;
+                    }
+                    if (_tab == 'expired' && (!task.isOverdue || isCompleted)) {
                       return false;
                     }
 
@@ -1628,6 +1728,8 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       child: Text(
                         _tab == 'archived'
                             ? 'No archived tasks.'
+                            : _tab == 'completed'
+                            ? 'No completed tasks.'
                             : _tab == 'expired'
                             ? 'No expired tasks.'
                             : 'No tasks available.',
@@ -1688,7 +1790,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (_tab == 'current' || _tab == 'expired')
+                              if (_tab == 'current' ||
+                                  _tab == 'expired' ||
+                                  _tab == 'completed')
                                 PopupMenuButton<String>(
                                   tooltip: 'Actions',
                                   icon: const Icon(Icons.more_vert),

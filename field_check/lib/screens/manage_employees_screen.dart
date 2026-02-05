@@ -6,6 +6,7 @@ import '../models/user_model.dart';
 import 'dart:async';
 import '../config/api_config.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/compass_selector.dart';
 
 class ManageEmployeesScreen extends StatefulWidget {
   const ManageEmployeesScreen({super.key, this.showInactiveOnly = false});
@@ -590,6 +591,52 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
                   onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = constraints.maxWidth < 380 ? 150.0 : 180.0;
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: CompassSelector(
+                        title: 'Status Filter',
+                        size: size,
+                        accentColor: Theme.of(context).colorScheme.primary,
+                        selectedValue: _filterStatus,
+                        onSelected: (value) {
+                          if (value == _filterStatus) return;
+                          setState(() => _filterStatus = value);
+                        },
+                        options: const [
+                          CompassOption(
+                            value: 'all',
+                            label: 'All',
+                            icon: Icons.blur_on,
+                          ),
+                          CompassOption(
+                            value: 'active',
+                            label: 'Active',
+                            icon: Icons.check_circle,
+                          ),
+                          CompassOption(
+                            value: 'inactive',
+                            label: 'Inactive',
+                            icon: Icons.remove_circle_outline,
+                          ),
+                          CompassOption(
+                            value: 'verified',
+                            label: 'Verified',
+                            icon: Icons.verified,
+                          ),
+                          CompassOption(
+                            value: 'unverified',
+                            label: 'Unverified',
+                            icon: Icons.warning_amber_rounded,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 // Filter chips

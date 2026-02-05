@@ -43,6 +43,8 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   bool _isBlocking = false;
   bool _hasUnsavedChanges = false;
   bool _statusMarkedInProgress = false;
+  int _reportProgressPercent = 0;
+  int? _lastSyncedProgressPercent;
   Timer? _autosaveTimer;
   String? _submitPhase;
   int _submitTotal = 0;
@@ -60,6 +62,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         _textController.text = initial;
       }
     }
+    _reportProgressPercent = _calculateReportProgressPercent();
     _loadAutosavedData();
     _startAutosave();
   }
@@ -72,6 +75,49 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   bool get _needsAcceptance {
     final s = _task.userTaskStatus;
     return s == null || s == 'pending' || s == 'pending_acceptance';
+  }
+
+  int _countWords(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return 0;
+    return RegExp(r'\b\w+\b').allMatches(trimmed).length;
+  }
+
+  int _calculateReportProgressPercent() {
+    final wordCount = _countWords(_textController.text);
+    int progress = 0;
+
+    if (wordCount >= 500) {
+      progress += 50;
+    } else if (wordCount >= 250) {
+      progress += 25;
+    }
+
+    if (_beforeFiles.isNotEmpty && _afterFiles.isNotEmpty) {
+      progress += 25;
+    }
+
+    if (_documentFiles.isNotEmpty) {
+      progress += 25;
+    }
+
+    return progress.clamp(0, 100).toInt();
+  }
+
+  void _refreshReportProgress() {
+    if (_task.checklist.isNotEmpty) return;
+    final next = _calculateReportProgressPercent();
+    if (next == _reportProgressPercent || !mounted) return;
+    setState(() {
+      _reportProgressPercent = next;
+    });
+  }
+
+  int _currentProgressPercent() {
+    if (_task.checklist.isNotEmpty) {
+      return _task.progressPercent.clamp(0, 100);
+    }
+    return _reportProgressPercent;
   }
 
   Future<void> _acceptTask() async {
@@ -102,15 +148,15 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
   void _startAutosave() {
     _textController.addListener(() {
-      if (_textController.text.isEmpty) return;
-
       _hasUnsavedChanges = true;
+      _refreshReportProgress();
 
       // Mark task as in_progress on first keystroke (if not already marked)
       if (!_statusMarkedInProgress &&
           (_task.userTaskStatus == 'accepted' ||
               _task.userTaskStatus == 'in_progress') &&
-          _task.userTaskId != null) {
+          _task.userTaskId != null &&
+          _textController.text.trim().isNotEmpty) {
         _statusMarkedInProgress = true;
         _markTaskInProgress();
       }
@@ -188,6 +234,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           loadFiles(beforeFiles, _beforeFiles);
           loadFiles(afterFiles, _afterFiles);
           loadFiles(documentFiles, _documentFiles);
+
+          if (_task.checklist.isEmpty) {
+            _reportProgressPercent = _calculateReportProgressPercent();
+          }
         });
       }
     } catch (e) {
@@ -195,8 +245,11 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     }
   }
 
-  Future<void> _saveToAutosave() async {
-    if (!_hasUnsavedChanges) return;
+  Future<void> _saveToAutosave({
+    bool force = false,
+    String? successMessage,
+  }) async {
+    if (!_hasUnsavedChanges && !force) return;
 
     try {
       final content = _textController.text;
@@ -225,12 +278,54 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         'employeeId': widget.employeeId,
       });
 
-      _hasUnsavedChanges = false;
       if (mounted) {
-        AppWidgets.showSuccessSnackbar(context, 'Progress saved automatically');
+        setState(() {
+          _hasUnsavedChanges = false;
+        });
+        AppWidgets.showSuccessSnackbar(
+          context,
+          successMessage ?? 'Progress saved automatically',
+        );
+      } else {
+        _hasUnsavedChanges = false;
       }
+
+      await _syncReportProgressToBackend(
+        progressPercent: _reportProgressPercent,
+      );
     } catch (e) {
       debugPrint('Error saving to autosave: $e');
+    }
+  }
+
+  Future<void> _saveProgressManually() async {
+    _refreshReportProgress();
+    await _saveToAutosave(force: true, successMessage: 'Progress saved');
+  }
+
+  Future<void> _syncReportProgressToBackend({int? progressPercent}) async {
+    if (_task.checklist.isNotEmpty) return;
+    if (_needsAcceptance) return;
+
+    final userTaskId = _task.userTaskId;
+    final status = _task.userTaskStatus;
+    if (userTaskId == null || userTaskId.trim().isEmpty) return;
+    if (status == null || status.trim().isEmpty) return;
+
+    final next = (progressPercent ?? _calculateReportProgressPercent())
+        .clamp(0, 100)
+        .toInt();
+    if (_lastSyncedProgressPercent == next) return;
+
+    try {
+      await TaskService().updateUserTaskStatus(
+        userTaskId,
+        status,
+        progressPercent: next,
+      );
+      _lastSyncedProgressPercent = next;
+    } catch (e) {
+      debugPrint('Error syncing report progress: $e');
     }
   }
 
@@ -265,6 +360,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
         setState(() {
           _beforeFiles.addAll(accepted);
+          _hasUnsavedChanges = true;
+          if (_task.checklist.isEmpty) {
+            _reportProgressPercent = _calculateReportProgressPercent();
+          }
         });
         _saveToAutosave();
       }
@@ -311,6 +410,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
         setState(() {
           _afterFiles.addAll(accepted);
+          _hasUnsavedChanges = true;
+          if (_task.checklist.isEmpty) {
+            _reportProgressPercent = _calculateReportProgressPercent();
+          }
         });
         _saveToAutosave();
       }
@@ -357,6 +460,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
         setState(() {
           _documentFiles.addAll(accepted);
+          _hasUnsavedChanges = true;
+          if (_task.checklist.isEmpty) {
+            _reportProgressPercent = _calculateReportProgressPercent();
+          }
         });
         _saveToAutosave();
       }
@@ -411,24 +518,33 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   void _removeBeforeFile(int index) {
     setState(() {
       _beforeFiles.removeAt(index);
+      _hasUnsavedChanges = true;
+      if (_task.checklist.isEmpty) {
+        _reportProgressPercent = _calculateReportProgressPercent();
+      }
     });
-    _hasUnsavedChanges = true;
     _saveToAutosave();
   }
 
   void _removeAfterFile(int index) {
     setState(() {
       _afterFiles.removeAt(index);
+      _hasUnsavedChanges = true;
+      if (_task.checklist.isEmpty) {
+        _reportProgressPercent = _calculateReportProgressPercent();
+      }
     });
-    _hasUnsavedChanges = true;
     _saveToAutosave();
   }
 
   void _removeDocumentFile(int index) {
     setState(() {
       _documentFiles.removeAt(index);
+      _hasUnsavedChanges = true;
+      if (_task.checklist.isEmpty) {
+        _reportProgressPercent = _calculateReportProgressPercent();
+      }
     });
-    _hasUnsavedChanges = true;
     _saveToAutosave();
   }
 
@@ -713,9 +829,13 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           throw Exception('Accept this task first to begin');
         }
 
+        final progressPercent = _task.checklist.isNotEmpty
+            ? null
+            : _calculateReportProgressPercent();
         await TaskService().updateUserTaskStatus(
           _task.userTaskId!,
           'completed',
+          progressPercent: progressPercent,
         );
 
         await _autosaveService.clearData('task_report_${widget.task.id}');
@@ -823,6 +943,11 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hasChecklist = _task.checklist.isNotEmpty;
+    final progressPercent = _currentProgressPercent().clamp(0, 100).toInt();
+    final progressLabel = hasChecklist
+        ? 'Progress: $progressPercent%'
+        : 'Report Progress: $progressPercent%';
     return AppPage(
       appBarTitle: 'Task Report',
       showBack: true,
@@ -835,12 +960,28 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
             label: const Text('Accept'),
           ),
         if (_hasUnsavedChanges)
-          const Padding(
-            padding: EdgeInsets.only(right: 12),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
             child: Center(
-              child: Text(
-                'Unsaved changes',
-                style: TextStyle(color: Colors.orange),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: const Text(
+                  'Unsaved changes',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
           ),
@@ -962,29 +1103,31 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                   ),
                 ],
                 const SizedBox(height: 8),
-                if (_task.checklist.isNotEmpty) ...[
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        size: 16,
-                        color: AppTheme.textSecondary,
+                Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      size: 16,
+                      color: AppTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      progressLabel,
+                      style: AppTheme.bodySm.copyWith(
+                        color: AppTheme.textPrimary.withValues(alpha: 0.75),
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Progress: ${_task.progressPercent.clamp(0, 100)}%',
-                        style: AppTheme.bodySm.copyWith(
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                LinearProgressIndicator(
+                  value: progressPercent / 100.0,
+                  backgroundColor: AppTheme.dividerColor,
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppTheme.primaryColor,
                   ),
-                  const SizedBox(height: 4),
-                  LinearProgressIndicator(
-                    value: _task.progressPercent.clamp(0, 100) / 100.0,
-                    backgroundColor: AppTheme.dividerColor,
-                  ),
-                ],
+                ),
               ],
             ),
           ),
@@ -1046,7 +1189,24 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  const Text('Write your report:', style: AppTheme.labelLg),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Write your report:',
+                          style: AppTheme.labelLg,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: _isSubmitting ? null : _saveProgressManually,
+                        icon: const Icon(Icons.save_outlined, size: 18),
+                        label: const Text('Save Progress'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   Expanded(
                     child: Container(
