@@ -4,10 +4,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/services/user_service.dart';
-import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/attendance_service.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/utils/manila_time.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class EmployeeProfileScreen extends StatefulWidget {
   const EmployeeProfileScreen({super.key});
@@ -32,14 +32,6 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   late TextEditingController _emailController;
   late TextEditingController _usernameController;
   late TextEditingController _phoneController;
-
-  String _normalizeAvatarUrl(String rawPath) {
-    final p = rawPath.trim();
-    if (p.isEmpty) return p;
-    if (p.startsWith('http://') || p.startsWith('https://')) return p;
-    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
-    return '${ApiConfig.baseUrl}/$p';
-  }
 
   Future<void> _pickAvatar() async {
     try {
@@ -386,11 +378,6 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         : '?';
     final avatarUrl = profile.avatarUrl?.trim() ?? '';
     final hasAvatar = _pickedAvatarBytes != null || avatarUrl.isNotEmpty;
-    final ImageProvider<Object>? avatarImage = _pickedAvatarBytes != null
-        ? MemoryImage(_pickedAvatarBytes!)
-        : (avatarUrl.isNotEmpty
-              ? NetworkImage(_normalizeAvatarUrl(avatarUrl))
-              : null);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -426,16 +413,37 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     CircleAvatar(
                       radius: 38,
                       backgroundColor: Colors.white,
-                      backgroundImage: avatarImage,
-                      child: hasAvatar
-                          ? null
-                          : Text(
-                              initials,
-                              style: theme.textTheme.headlineMedium?.copyWith(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
+                      child: ClipOval(
+                        child: SizedBox(
+                          width: 76,
+                          height: 76,
+                          child: _pickedAvatarBytes != null
+                              ? Image.memory(
+                                  _pickedAvatarBytes!,
+                                  fit: BoxFit.cover,
+                                )
+                              : (hasAvatar
+                                    ? AppWidgets.userAvatar(
+                                        radius: 38,
+                                        avatarUrl: avatarUrl,
+                                        initials: initials,
+                                        backgroundColor: Colors.white,
+                                        foregroundColor:
+                                            theme.colorScheme.primary,
+                                      )
+                                    : Center(
+                                        child: Text(
+                                          initials,
+                                          style: theme.textTheme.headlineMedium
+                                              ?.copyWith(
+                                                color:
+                                                    theme.colorScheme.primary,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                        ),
+                                      )),
+                        ),
+                      ),
                     ),
                     if (_isEditing)
                       Container(

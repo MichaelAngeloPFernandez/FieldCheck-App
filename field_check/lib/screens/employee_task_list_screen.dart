@@ -642,6 +642,15 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                                 ),
                               ),
                             );
+                            if (mounted) {
+                              setState(() {
+                                _assignedTasksFuture = TaskService()
+                                    .fetchAssignedTasks(
+                                      widget.userModelId,
+                                      archived: _fetchArchived,
+                                    );
+                              });
+                            }
                             if (ok == true && ctx.mounted) {
                               Navigator.pop(ctx, true);
                             }
@@ -703,7 +712,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
   }
 
   Future<void> _completeTaskWithReport(Task task) async {
-    final result = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) =>
@@ -711,14 +720,13 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
       ),
     );
 
-    if (result == true && mounted) {
-      setState(() {
-        _assignedTasksFuture = TaskService().fetchAssignedTasks(
-          widget.userModelId,
-          archived: _fetchArchived,
-        );
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _assignedTasksFuture = TaskService().fetchAssignedTasks(
+        widget.userModelId,
+        archived: _fetchArchived,
+      );
+    });
   }
 
   Future<void> _refreshTasks() async {

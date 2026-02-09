@@ -16,7 +16,7 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/report_export_preview_screen.dart';
 import 'package:field_check/screens/admin_employee_history_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
-import 'package:field_check/widgets/compass_selector.dart';
+import 'package:field_check/widgets/admin_control_bar.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/file_download/file_download.dart';
 import 'package:flutter/services.dart';
@@ -39,7 +39,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   List<ReportModel> _archivedTaskReports = [];
   List<Task> _overdueTasks = [];
   String _viewMode = 'attendance'; // 'attendance' | 'task'
-  bool _hasNewTaskReports = false;
   bool _isLoadingTaskReports = false;
   String? _taskReportsError;
   bool _isLoadingOverdueTasks = false;
@@ -80,17 +79,18 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   Future<void> _setReportViewMode(String mode) async {
-    if (mode == _viewMode) return;
+    if (!mounted) return;
     setState(() {
       _viewMode = mode;
-      if (mode == 'task') {
-        _hasNewTaskReports = false;
-      }
     });
 
-    if (mode == 'task') {
-      await _fetchTaskReports();
+    if (mode == 'attendance') {
+      await _fetchAttendanceRecords();
+      return;
     }
+
+    await _fetchTaskReports();
+    await _fetchOverdueTasks();
   }
 
   Future<void> _setReportArchiveMode(bool archived) async {
@@ -1493,9 +1493,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     });
 
     _socket.on('newReport', (_) {
-      setState(() {
-        _hasNewTaskReports = true;
-      });
       // Always fetch reports in real-time for all admins
       _fetchTaskReports();
     });
@@ -1852,56 +1849,53 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               children: [
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final size = constraints.maxWidth < 380 ? 150.0 : 180.0;
                     final scopeValue = _viewMode == 'attendance'
                         ? (_showArchivedAttendance ? 'archived' : 'current')
                         : (_showArchivedReports ? 'archived' : 'current');
-                    return Wrap(
-                      spacing: 14,
-                      runSpacing: 14,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        CompassSelector(
-                          title: 'Report View',
-                          size: size,
-                          accentColor: theme.colorScheme.primary,
-                          selectedValue: _viewMode,
-                          onSelected: (value) {
-                            _setReportViewMode(value);
-                          },
-                          options: const [
-                            CompassOption(
-                              value: 'attendance',
-                              label: 'Attendance',
-                              icon: Icons.fact_check,
-                            ),
-                            CompassOption(
-                              value: 'task',
-                              label: 'Tasks',
-                              icon: Icons.assignment,
-                            ),
-                          ],
+
+                    return AdminControlBar<String, String>(
+                      title: 'Reports',
+                      subtitle:
+                          'Review attendance logs and task completion reports',
+                      primaryOptions: const [
+                        AdminControlOption(
+                          value: 'attendance',
+                          label: 'Attendance',
+                          icon: Icons.fact_check,
                         ),
-                        CompassSelector(
-                          title: 'Scope',
-                          size: size,
-                          accentColor: Colors.indigo,
-                          selectedValue: scopeValue,
-                          onSelected: (value) {
-                            _setReportArchiveMode(value == 'archived');
-                          },
-                          options: const [
-                            CompassOption(
-                              value: 'current',
-                              label: 'Current',
-                              icon: Icons.timeline,
-                            ),
-                            CompassOption(
-                              value: 'archived',
-                              label: 'Archived',
-                              icon: Icons.archive,
-                            ),
-                          ],
+                        AdminControlOption(
+                          value: 'task',
+                          label: 'Task Reports',
+                          icon: Icons.assignment,
+                        ),
+                      ],
+                      primaryValue: _viewMode,
+                      onPrimaryChanged: (value) {
+                        if (value == _viewMode) return;
+                        _setReportViewMode(value);
+                      },
+                      secondaryLabel: 'Scope',
+                      secondaryOptions: const [
+                        AdminControlOption(
+                          value: 'current',
+                          label: 'Current',
+                          icon: Icons.timeline,
+                        ),
+                        AdminControlOption(
+                          value: 'archived',
+                          label: 'Archived',
+                          icon: Icons.archive,
+                        ),
+                      ],
+                      secondaryValue: scopeValue,
+                      onSecondaryChanged: (value) {
+                        _setReportArchiveMode(value == 'archived');
+                      },
+                      actions: [
+                        FilledButton.tonalIcon(
+                          onPressed: _openFiltersSheet,
+                          icon: const Icon(Icons.tune),
+                          label: const Text('Filters'),
                         ),
                       ],
                     );
@@ -1909,75 +1903,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ),
                 const SizedBox(height: 12),
                 // View toggle
-                Row(
-                  children: [
-                    ChoiceChip(
-                      label: const Text('Attendance'),
-                      selected: _viewMode == 'attendance',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        _setReportViewMode('attendance');
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('Task Reports'),
-                          if (_hasNewTaskReports)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 6.0),
-                              child: SizedBox(
-                                width: 8,
-                                height: 8,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.error,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      selected: _viewMode == 'task',
-                      onSelected: (sel) async {
-                        if (!sel) return;
-                        await _setReportViewMode('task');
-                      },
-                    ),
-                  ],
-                ),
+                const SizedBox.shrink(),
 
                 const SizedBox(height: 12),
 
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('Current'),
-                      selected: _viewMode == 'attendance'
-                          ? !_showArchivedAttendance
-                          : !_showArchivedReports,
-                      onSelected: (sel) async {
-                        if (!sel) return;
-                        await _setReportArchiveMode(false);
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Archived'),
-                      selected: _viewMode == 'attendance'
-                          ? _showArchivedAttendance
-                          : _showArchivedReports,
-                      onSelected: (sel) async {
-                        if (!sel) return;
-                        await _setReportArchiveMode(true);
-                      },
-                    ),
-                  ],
-                ),
+                const SizedBox.shrink(),
 
                 Container(
                   padding: const EdgeInsets.all(12),

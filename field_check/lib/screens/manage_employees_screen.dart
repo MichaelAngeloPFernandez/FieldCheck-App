@@ -4,9 +4,8 @@ import '../services/user_service.dart';
 import '../services/realtime_service.dart';
 import '../models/user_model.dart';
 import 'dart:async';
-import '../config/api_config.dart';
 import '../widgets/app_widgets.dart';
-import '../widgets/compass_selector.dart';
+import '../widgets/admin_control_bar.dart';
 
 class ManageEmployeesScreen extends StatefulWidget {
   const ManageEmployeesScreen({super.key, this.showInactiveOnly = false});
@@ -24,14 +23,6 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
   final Set<String> _selectedEmployeeIds = {};
   bool _isSelectMode = false;
   late StreamSubscription<Map<String, dynamic>> _userEventSubscription;
-
-  String _normalizeAvatarUrl(String rawPath) {
-    final p = rawPath.trim();
-    if (p.isEmpty) return p;
-    if (p.startsWith('http://') || p.startsWith('https://')) return p;
-    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
-    return '${ApiConfig.baseUrl}/$p';
-  }
 
   @override
   void initState() {
@@ -593,110 +584,67 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 12),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final size = constraints.maxWidth < 380 ? 150.0 : 180.0;
-                    return Align(
-                      alignment: Alignment.centerLeft,
-                      child: CompassSelector(
-                        title: 'Status Filter',
-                        size: size,
-                        accentColor: Theme.of(context).colorScheme.primary,
-                        selectedValue: _filterStatus,
-                        onSelected: (value) {
-                          if (value == _filterStatus) return;
-                          setState(() => _filterStatus = value);
-                        },
-                        options: const [
-                          CompassOption(
-                            value: 'all',
-                            label: 'All',
-                            icon: Icons.blur_on,
-                          ),
-                          CompassOption(
-                            value: 'active',
-                            label: 'Active',
-                            icon: Icons.check_circle,
-                          ),
-                          CompassOption(
-                            value: 'inactive',
-                            label: 'Inactive',
-                            icon: Icons.remove_circle_outline,
-                          ),
-                          CompassOption(
-                            value: 'verified',
-                            label: 'Verified',
-                            icon: Icons.verified,
-                          ),
-                          CompassOption(
-                            value: 'unverified',
-                            label: 'Unverified',
-                            icon: Icons.warning_amber_rounded,
-                          ),
-                        ],
-                      ),
-                    );
+                AdminControlBar<String, String>(
+                  title: 'Employees',
+                  subtitle: 'Search, filter, and manage workforce accounts',
+                  primaryOptions: const [
+                    AdminControlOption(
+                      value: 'all',
+                      label: 'All',
+                      icon: Icons.blur_on,
+                    ),
+                    AdminControlOption(
+                      value: 'active',
+                      label: 'Active',
+                      icon: Icons.check_circle,
+                    ),
+                    AdminControlOption(
+                      value: 'inactive',
+                      label: 'Inactive',
+                      icon: Icons.remove_circle_outline,
+                    ),
+                    AdminControlOption(
+                      value: 'verified',
+                      label: 'Verified',
+                      icon: Icons.verified,
+                    ),
+                    AdminControlOption(
+                      value: 'unverified',
+                      label: 'Unverified',
+                      icon: Icons.warning_amber_rounded,
+                    ),
+                  ],
+                  primaryValue: _filterStatus,
+                  onPrimaryChanged: (value) {
+                    if (value == _filterStatus) return;
+                    setState(() => _filterStatus = value);
                   },
-                ),
-                const SizedBox(height: 12),
-                // Filter chips
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    FilterChip(
-                      label: const Text('All'),
-                      selected: _filterStatus == 'all',
-                      onSelected: (_) => setState(() => _filterStatus = 'all'),
-                    ),
-                    FilterChip(
-                      label: const Text('Active'),
-                      selected: _filterStatus == 'active',
-                      onSelected: (_) =>
-                          setState(() => _filterStatus = 'active'),
-                    ),
-                    FilterChip(
-                      label: const Text('Inactive'),
-                      selected: _filterStatus == 'inactive',
-                      onSelected: (_) =>
-                          setState(() => _filterStatus = 'inactive'),
-                    ),
-                    FilterChip(
-                      label: const Text('Verified'),
-                      selected: _filterStatus == 'verified',
-                      onSelected: (_) =>
-                          setState(() => _filterStatus = 'verified'),
-                    ),
-                    FilterChip(
-                      label: const Text('Unverified'),
-                      selected: _filterStatus == 'unverified',
-                      onSelected: (_) =>
-                          setState(() => _filterStatus = 'unverified'),
+                  actions: [
+                    TextButton.icon(
+                      icon: Icon(
+                        _isSelectMode
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                      ),
+                      label: Text(
+                        _isSelectMode ? 'Exit Select Mode' : 'Select Mode',
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isSelectMode = !_isSelectMode;
+                          if (!_isSelectMode) {
+                            _selectedEmployeeIds.clear();
+                          }
+                        });
+                      },
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                // Filter chips
+                const SizedBox.shrink(),
                 const SizedBox(height: 8),
-                // Select mode toggle
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    icon: Icon(
-                      _isSelectMode
-                          ? Icons.check_box
-                          : Icons.check_box_outline_blank,
-                    ),
-                    label: Text(
-                      _isSelectMode ? 'Exit Select Mode' : 'Select Mode',
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isSelectMode = !_isSelectMode;
-                        if (!_isSelectMode) {
-                          _selectedEmployeeIds.clear();
-                        }
-                      });
-                    },
-                  ),
-                ),
+                const SizedBox.shrink(),
               ],
             ),
           ),
@@ -753,19 +701,16 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                   });
                                 },
                               )
-                            : CircleAvatar(
-                                backgroundImage:
-                                    (user.avatarUrl != null &&
-                                        user.avatarUrl!.trim().isNotEmpty)
-                                    ? NetworkImage(
-                                        _normalizeAvatarUrl(user.avatarUrl!),
-                                      )
-                                    : null,
-                                child:
-                                    (user.avatarUrl == null ||
-                                        user.avatarUrl!.trim().isEmpty)
-                                    ? const Icon(Icons.person)
-                                    : null,
+                            : AppWidgets.userAvatar(
+                                radius: 20,
+                                avatarUrl: user.avatarUrl,
+                                initials: displayName.isNotEmpty
+                                    ? displayName.characters.first.toUpperCase()
+                                    : '?',
+                                fallbackIcon: Icons.person,
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.primary,
                               ),
                         title: Text(displayName),
                         subtitle: Text(

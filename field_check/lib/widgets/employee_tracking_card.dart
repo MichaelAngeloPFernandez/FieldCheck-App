@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/widgets/workload_indicator_widget.dart';
-import 'package:field_check/config/api_config.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class EmployeeTrackingCard extends StatelessWidget {
   final UserModel employee;
@@ -23,16 +23,6 @@ class EmployeeTrackingCard extends StatelessWidget {
     final taskCount = employee.activeTaskCount ?? 0;
     final workload = employee.workloadWeight ?? 0.0;
 
-    final rawAvatar = employee.avatarUrl?.trim() ?? '';
-    final hasAvatar = rawAvatar.isNotEmpty;
-    final avatarUrl = !hasAvatar
-        ? ''
-        : (rawAvatar.startsWith('http://') || rawAvatar.startsWith('https://'))
-        ? rawAvatar
-        : rawAvatar.startsWith('/')
-        ? '${ApiConfig.baseUrl}$rawAvatar'
-        : '${ApiConfig.baseUrl}/$rawAvatar';
-
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -47,21 +37,14 @@ class EmployeeTrackingCard extends StatelessWidget {
               Row(
                 children: [
                   // Avatar
-                  CircleAvatar(
+                  AppWidgets.userAvatar(
                     radius: 20,
+                    avatarUrl: employee.avatarUrl,
+                    initials: employee.name.isNotEmpty
+                        ? employee.name.characters.first.toUpperCase()
+                        : '?',
                     backgroundColor: isOnline ? Colors.green : Colors.grey,
-                    backgroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
-                    child: hasAvatar
-                        ? null
-                        : Text(
-                            employee.name.isNotEmpty
-                                ? employee.name[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                    fallbackIcon: Icons.person,
                   ),
                   const SizedBox(width: 12),
                   // Name and status

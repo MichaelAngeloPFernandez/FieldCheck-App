@@ -406,8 +406,8 @@ const getUserTasks = asyncHandler(async (req, res) => {
         status: ut.status,
         assignedAt: ut.assignedAt.toISOString(),
         completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
-      }))
-    )
+      })),
+    ),
   );
 });
 
@@ -428,16 +428,29 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
   const assignmentByTaskId = new Map(
     assignments.map((a) => [a.taskId.toString(), a]),
   );
+
   res.json(
     tasks.map((t) => {
       const a = assignmentByTaskId.get(t._id.toString());
-      return {
+      const base = {
         ...toTaskJson(t, a ? a._id.toString() : undefined),
         userTaskStatus: a ? a.status : undefined,
-        userTaskAssignedAt: a && a.assignedAt ? a.assignedAt.toISOString() : undefined,
+        userTaskAssignedAt:
+          a && a.assignedAt ? a.assignedAt.toISOString() : undefined,
         userTaskCompletedAt:
           a && a.completedAt ? a.completedAt.toISOString() : undefined,
       };
+
+      // IMPORTANT:
+      // - For checklist tasks, progress is derived from Task.checklist completion (global).
+      // - For non-checklist tasks, progress must be per-assignee (UserTask.progressPercent)
+      //   so the employee list/overview matches what the assignee sees in their report screen.
+      if (a && (!Array.isArray(t.checklist) || t.checklist.length === 0)) {
+        const p = typeof a.progressPercent === 'number' ? a.progressPercent : 0;
+        base.progressPercent = Math.max(0, Math.min(100, Math.round(p)));
+      }
+
+      return base;
     }),
   );
 });

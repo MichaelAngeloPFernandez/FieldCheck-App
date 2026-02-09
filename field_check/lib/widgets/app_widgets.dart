@@ -2,11 +2,76 @@
 
 import 'package:flutter/material.dart';
 import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/config/api_config.dart';
 
 /// Reusable UI components for consistent design across the app
 class AppWidgets {
   // Prevent instantiation
   AppWidgets._();
+
+  static String _normalizeAvatarUrl(String rawPath) {
+    final p = rawPath.trim();
+    if (p.isEmpty) return p;
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
+    return '${ApiConfig.baseUrl}/$p';
+  }
+
+  static Widget userAvatar({
+    required double radius,
+    String? avatarUrl,
+    String? initials,
+    IconData fallbackIcon = Icons.person,
+    Color? backgroundColor,
+    Color? foregroundColor,
+  }) {
+    final trimmed = avatarUrl?.trim() ?? '';
+    final hasAvatar = trimmed.isNotEmpty;
+    final bg = backgroundColor ?? AppTheme.primaryColor;
+    final fg = foregroundColor ?? Colors.white;
+
+    if (!hasAvatar) {
+      final text = (initials ?? '').trim();
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: bg,
+        child: text.isNotEmpty
+            ? Text(
+                text,
+                style: TextStyle(color: fg, fontWeight: FontWeight.w800),
+              )
+            : Icon(fallbackIcon, color: fg, size: radius),
+      );
+    }
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: bg,
+      child: ClipOval(
+        child: Image.network(
+          _normalizeAvatarUrl(trimmed),
+          width: radius * 2,
+          height: radius * 2,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            final text = (initials ?? '').trim();
+            return Container(
+              width: radius * 2,
+              height: radius * 2,
+              color: bg,
+              alignment: Alignment.center,
+              child: text.isNotEmpty
+                  ? Text(
+                      text,
+                      style: TextStyle(color: fg, fontWeight: FontWeight.w800),
+                    )
+                  : Icon(fallbackIcon, color: fg, size: radius),
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   static String friendlyErrorMessage(
     Object error, {

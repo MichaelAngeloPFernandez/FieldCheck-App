@@ -10,8 +10,8 @@ import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_page.dart';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
-import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -31,14 +31,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isSyncing = false;
   Uint8List? _pickedAvatarBytes;
   String? _pickedAvatarFilename;
-
-  String _normalizeAvatarUrl(String rawPath) {
-    final p = (rawPath).trim();
-    if (p.isEmpty) return p;
-    if (p.startsWith('http://') || p.startsWith('https://')) return p;
-    if (p.startsWith('/')) return '${ApiConfig.baseUrl}$p';
-    return '${ApiConfig.baseUrl}/$p';
-  }
 
   @override
   void initState() {
@@ -310,25 +302,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: CircleAvatar(
                       radius: 40,
                       backgroundColor: const Color(0xFF2688d4),
-                      backgroundImage: tempPickedAvatarBytes != null
-                          ? MemoryImage(tempPickedAvatarBytes!)
-                          : (_profile?.avatarUrl?.isNotEmpty == true
-                                ? NetworkImage(
-                                        _normalizeAvatarUrl(
-                                          _profile!.avatarUrl!,
-                                        ),
-                                      )
-                                      as ImageProvider
-                                : null),
-                      child:
-                          tempPickedAvatarBytes == null &&
-                              (_profile?.avatarUrl?.isEmpty ?? true)
-                          ? const Icon(
-                              Icons.person,
-                              size: 40,
-                              color: Colors.white,
+                      child: tempPickedAvatarBytes != null
+                          ? ClipOval(
+                              child: Image.memory(
+                                tempPickedAvatarBytes!,
+                                width: 80,
+                                height: 80,
+                                fit: BoxFit.cover,
+                              ),
                             )
-                          : null,
+                          : AppWidgets.userAvatar(
+                              radius: 40,
+                              avatarUrl: _profile?.avatarUrl,
+                              initials: (_profile?.name ?? '').trim().isNotEmpty
+                                  ? _profile!.name.characters.first
+                                        .toUpperCase()
+                                  : '?',
+                              fallbackIcon: Icons.person,
+                              backgroundColor: const Color(0xFF2688d4),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -527,25 +519,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     CircleAvatar(
                       radius: 32,
                       backgroundColor: theme.colorScheme.primary,
-                      backgroundImage: _pickedAvatarBytes != null
-                          ? MemoryImage(_pickedAvatarBytes!)
-                          : (_profile?.avatarUrl?.isNotEmpty == true
-                                ? NetworkImage(
-                                        _normalizeAvatarUrl(
-                                          _profile!.avatarUrl!,
-                                        ),
-                                      )
-                                      as ImageProvider
-                                : null),
-                      child:
-                          _pickedAvatarBytes == null &&
-                              (_profile?.avatarUrl?.isEmpty ?? true)
-                          ? const Icon(
-                              Icons.person,
-                              size: 32,
-                              color: Colors.white,
+                      child: _pickedAvatarBytes != null
+                          ? ClipOval(
+                              child: Image.memory(
+                                _pickedAvatarBytes!,
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
+                              ),
                             )
-                          : null,
+                          : AppWidgets.userAvatar(
+                              radius: 32,
+                              avatarUrl: _profile?.avatarUrl,
+                              initials: (_profile?.name ?? '').trim().isNotEmpty
+                                  ? _profile!.name.characters.first
+                                        .toUpperCase()
+                                  : '?',
+                              fallbackIcon: Icons.person,
+                              backgroundColor: theme.colorScheme.primary,
+                            ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(

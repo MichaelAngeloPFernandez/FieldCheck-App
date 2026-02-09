@@ -2607,20 +2607,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       return;
     }
 
+    switch (index) {
+      case _navDashboard:
+        _selectAdminScreen(0);
+        break;
+      case _navEmployees:
+        _selectAdminScreen(1);
+        break;
+      case _navReports:
+        _selectAdminScreen(4);
+        break;
+      default:
+        _selectAdminScreen(0);
+    }
+  }
+
+  void _selectAdminScreen(int index) {
+    if (!mounted) return;
+    if (_selectedIndex == index) return;
     setState(() {
-      switch (index) {
-        case _navDashboard:
-          _selectedIndex = 0;
-          break;
-        case _navEmployees:
-          _selectedIndex = 1;
-          break;
-        case _navReports:
-          _selectedIndex = 4;
-          break;
-        default:
-          _selectedIndex = 0;
-      }
+      _selectedIndex = index;
     });
 
     // If we navigated back to the dashboard and stats were marked dirty
@@ -3065,6 +3071,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     const brandColor = Color(0xFF2688d4);
+    final width = MediaQuery.sizeOf(context).width;
+    final useRail = width >= 980;
+    final railExtended = width >= 1240;
     return Scaffold(
       appBar: AppBar(
         leading: _selectedIndex != 0
@@ -3128,33 +3137,96 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ],
       ),
-      body: _buildCurrentScreen(),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        showUnselectedLabels: true,
-        selectedItemColor: brandColor,
-        unselectedItemColor: Theme.of(
-          context,
-        ).colorScheme.onSurface.withValues(alpha: 0.7),
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-        selectedIconTheme: const IconThemeData(color: brandColor, size: 28),
-        unselectedIconTheme: const IconThemeData(size: 24),
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Employees'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.assessment),
-            label: 'Reports',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.more_horiz), label: 'More'),
-        ],
-        currentIndex: _currentNavIndex(),
-        onTap: _onItemTapped,
-      ),
+      body: useRail
+          ? Row(
+              children: [
+                NavigationRail(
+                  extended: railExtended,
+                  selectedIndex: _selectedIndex,
+                  onDestinationSelected: _selectAdminScreen,
+                  labelType: railExtended
+                      ? null
+                      : NavigationRailLabelType.selected,
+                  destinations: const [
+                    NavigationRailDestination(
+                      icon: Icon(Icons.dashboard_outlined),
+                      selectedIcon: Icon(Icons.dashboard),
+                      label: Text('Dashboard'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.people_outline),
+                      selectedIcon: Icon(Icons.people),
+                      label: Text('Employees'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.admin_panel_settings_outlined),
+                      selectedIcon: Icon(Icons.admin_panel_settings),
+                      label: Text('Admins'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.location_on_outlined),
+                      selectedIcon: Icon(Icons.location_on),
+                      label: Text('Geofences'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.assessment_outlined),
+                      selectedIcon: Icon(Icons.assessment),
+                      label: Text('Reports'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.settings_outlined),
+                      selectedIcon: Icon(Icons.settings),
+                      label: Text('Settings'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.task_outlined),
+                      selectedIcon: Icon(Icons.task),
+                      label: Text('Tasks'),
+                    ),
+                  ],
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(child: _buildCurrentScreen()),
+              ],
+            )
+          : _buildCurrentScreen(),
+      bottomNavigationBar: useRail
+          ? null
+          : BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              showUnselectedLabels: true,
+              selectedItemColor: brandColor,
+              unselectedItemColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+              selectedIconTheme: const IconThemeData(
+                color: brandColor,
+                size: 28,
+              ),
+              unselectedIconTheme: const IconThemeData(size: 24),
+              items: const <BottomNavigationBarItem>[
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.dashboard),
+                  label: 'Dashboard',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.people),
+                  label: 'Employees',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.assessment),
+                  label: 'Reports',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.more_horiz),
+                  label: 'More',
+                ),
+              ],
+              currentIndex: _currentNavIndex(),
+              onTap: _onItemTapped,
+            ),
     );
   }
 
@@ -3313,7 +3385,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildStatsGrid() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 520;
         final stats = _dashboardStats!;
         final totalEmployees = stats.users.totalEmployees;
         final activeEmployees = stats.users.activeEmployees;
@@ -3338,15 +3409,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         final checkIns = stats.attendance.todayCheckIns;
         final checkOuts = stats.attendance.todayCheckOuts;
         final openAttendance = (checkIns - checkOuts).clamp(0, checkIns);
-        return GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: isNarrow ? 1 : 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: isNarrow ? 2.35 : 1.3,
+
+        return Column(
           children: [
-            _buildStatCard(
+            _buildStatDrawerCard(
               title: 'Total Employees',
               value: totalEmployees.toString(),
               icon: Icons.people,
@@ -3366,7 +3432,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ],
               onTap: _showEmployeeAvailabilityDialog,
             ),
-            _buildStatCard(
+            const SizedBox(height: 10),
+            _buildStatDrawerCard(
               title: 'Geofences',
               value: totalGeofences.toString(),
               icon: Icons.location_on,
@@ -3386,7 +3453,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ],
               onTap: _showGeofenceDetailsDialog,
             ),
-            _buildStatCard(
+            const SizedBox(height: 10),
+            _buildStatDrawerCard(
               title: 'Tasks',
               value: totalTasks.toString(),
               icon: Icons.task,
@@ -3406,7 +3474,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ],
               onTap: _showTasksDialog,
             ),
-            _buildStatCard(
+            const SizedBox(height: 10),
+            _buildStatDrawerCard(
               title: 'Today\'s Attendance',
               value: stats.attendance.today.toString(),
               icon: Icons.check_circle,
@@ -3429,6 +3498,111 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildStatDrawerCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    String? subtitle,
+    List<_StatMetric> metrics = const [],
+    VoidCallback? onTap,
+  }) {
+    final theme = Theme.of(context);
+    final surface = theme.colorScheme.surface;
+    final onSurface = theme.colorScheme.onSurface;
+    final isDark = theme.brightness == Brightness.dark;
+    final tint = color.withValues(alpha: isDark ? 0.18 : 0.08);
+    final borderColor = theme.colorScheme.outlineVariant.withValues(
+      alpha: isDark ? 0.6 : 0.4,
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+        color: Color.alphaBlend(tint, surface),
+      ),
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: Colors.transparent,
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+        ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: isDark ? 0.26 : 0.16),
+              shape: BoxShape.circle,
+              border: Border.all(color: color.withValues(alpha: 0.35)),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          title: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: onSurface.withValues(alpha: 0.92),
+            ),
+          ),
+          subtitle: subtitle == null
+              ? null
+              : Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: onSurface.withValues(alpha: 0.65),
+                  ),
+                ),
+          trailing: Text(
+            value,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: onSurface,
+            ),
+          ),
+          children: [
+            if (metrics.isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: metrics
+                      .map(
+                        (metric) =>
+                            _buildStatMetricPill(metric, fallbackColor: color),
+                      )
+                      .toList(),
+                ),
+              ),
+            if (onTap != null) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: onTap,
+                  icon: Icon(Icons.open_in_new, color: color, size: 18),
+                  label: Text(
+                    'Open details',
+                    style: TextStyle(fontWeight: FontWeight.w800, color: color),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -3475,156 +3649,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         if (action != null) action,
       ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color color,
-    String? subtitle,
-    List<_StatMetric> metrics = const [],
-    VoidCallback? onTap,
-  }) {
-    final theme = Theme.of(context);
-    final onSurface = theme.colorScheme.onSurface;
-    final surface = theme.colorScheme.surface;
-    final isDark = theme.brightness == Brightness.dark;
-    final tint = color.withValues(alpha: isDark ? 0.18 : 0.08);
-    final borderColor = theme.colorScheme.outlineVariant.withValues(
-      alpha: isDark ? 0.6 : 0.4,
-    );
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: Color.alphaBlend(tint, surface),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: borderColor),
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                right: -28,
-                top: -34,
-                child: Icon(
-                  icon,
-                  size: 120,
-                  color: color.withValues(alpha: isDark ? 0.16 : 0.12),
-                ),
-              ),
-              Positioned(
-                left: -36,
-                bottom: -44,
-                child: Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        color.withValues(alpha: isDark ? 0.22 : 0.18),
-                        Colors.transparent,
-                      ],
-                      radius: 0.7,
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: color.withValues(
-                              alpha: isDark ? 0.26 : 0.16,
-                            ),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: color.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: Icon(icon, color: color, size: 20),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                style: theme.textTheme.labelLarge?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: onSurface.withValues(alpha: 0.9),
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              if (subtitle != null) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  subtitle,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: onSurface.withValues(alpha: 0.65),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          Icons.arrow_forward_ios,
-                          size: 14,
-                          color: onSurface.withValues(alpha: 0.4),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      value,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: onSurface,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (metrics.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: metrics
-                            .map(
-                              (metric) => _buildStatMetricPill(
-                                metric,
-                                fallbackColor: color,
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -3711,11 +3735,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSectionHeader(title: 'Quick Actions'),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildQuickActionButton(
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final crossAxisCount = width >= 980
+                    ? 3
+                    : width >= 640
+                    ? 2
+                    : 1;
+
+                final actions = <Widget>[
+                  _buildQuickActionButton(
                     icon: Icons.people,
                     label: 'Manage Employees',
                     color: Colors.blue,
@@ -3725,10 +3756,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       });
                     },
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildQuickActionButton(
+                  _buildQuickActionButton(
                     icon: Icons.admin_panel_settings,
                     label: 'Manage Admins',
                     color: Colors.red,
@@ -3738,14 +3766,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       });
                     },
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildQuickActionButton(
+                  _buildQuickActionButton(
                     icon: Icons.location_on,
                     label: 'Add Geofence',
                     color: Colors.green,
@@ -3755,10 +3776,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       });
                     },
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildQuickActionButton(
+                  _buildQuickActionButton(
                     icon: Icons.task,
                     label: 'Create Task',
                     color: Colors.orange,
@@ -3768,14 +3786,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       });
                     },
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildQuickActionButton(
+                  _buildQuickActionButton(
                     icon: Icons.assessment,
                     label: 'View Reports',
                     color: Colors.purple,
@@ -3785,10 +3796,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       });
                     },
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildQuickActionButton(
+                  _buildQuickActionButton(
                     icon: Icons.settings,
                     label: 'Settings',
                     color: Colors.teal,
@@ -3798,8 +3806,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       });
                     },
                   ),
-                ),
-              ],
+                ];
+
+                return GridView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: crossAxisCount == 1 ? 4.2 : 3.4,
+                  ),
+                  children: actions,
+                );
+              },
             ),
           ],
         ),
@@ -3821,38 +3841,43 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Ink(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: color.withValues(alpha: 0.2)),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   color: Color.alphaBlend(
                     color.withValues(alpha: 0.14),
                     surface,
                   ),
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: color.withValues(alpha: 0.35)),
                 ),
-                child: Icon(icon, color: color, size: 20),
+                child: Icon(icon, color: color, size: 18),
               ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w700,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
               ),
             ],
           ),

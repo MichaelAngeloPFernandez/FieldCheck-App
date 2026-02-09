@@ -11,7 +11,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/widgets/app_widgets.dart';
-import 'package:field_check/widgets/compass_selector.dart';
+import 'package:field_check/widgets/admin_control_bar.dart';
 
 class AdminTaskManagementScreen extends StatefulWidget {
   final bool embedded;
@@ -1520,175 +1520,110 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
           padding: const EdgeInsets.all(8.0),
           child: Column(
             children: [
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final size = constraints.maxWidth < 380 ? 150.0 : 180.0;
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      CompassSelector(
-                        title: 'Task View',
-                        size: size,
-                        accentColor: brandColor,
-                        selectedValue: _tab,
-                        onSelected: (value) {
-                          if (value == _tab) return;
-                          setState(() {
-                            _tab = value;
-                          });
-                        },
-                        options: const [
-                          CompassOption(
-                            value: 'current',
-                            label: 'Current',
-                            icon: Icons.schedule,
-                          ),
-                          CompassOption(
-                            value: 'expired',
-                            label: 'Overdue',
-                            icon: Icons.warning_amber_rounded,
-                          ),
-                          CompassOption(
-                            value: 'completed',
-                            label: 'Done',
-                            icon: Icons.check_circle,
-                          ),
-                          CompassOption(
-                            value: 'archived',
-                            label: 'Archive',
-                            icon: Icons.inventory_2,
-                          ),
-                        ],
-                      ),
-                      CompassSelector(
-                        title: 'Difficulty',
-                        size: size,
-                        accentColor: Colors.teal,
-                        selectedValue: _difficultyFilter,
-                        onSelected: (value) {
-                          if (value == _difficultyFilter) return;
-                          setState(() => _difficultyFilter = value);
-                        },
-                        options: const [
-                          CompassOption(
-                            value: 'all',
-                            label: 'All',
-                            icon: Icons.blur_on,
-                          ),
-                          CompassOption(
-                            value: 'easy',
-                            label: 'Easy',
-                            icon: Icons.sentiment_satisfied_alt,
-                          ),
-                          CompassOption(
-                            value: 'medium',
-                            label: 'Medium',
-                            icon: Icons.trending_up,
-                          ),
-                          CompassOption(
-                            value: 'hard',
-                            label: 'Hard',
-                            icon: Icons.local_fire_department,
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
+              AdminControlBar<String, String>(
+                title: 'Tasks',
+                subtitle: 'Monitor task workload, deadlines, and assignments',
+                primaryOptions: const [
+                  AdminControlOption(
+                    value: 'current',
+                    label: 'Active',
+                    icon: Icons.schedule,
+                  ),
+                  AdminControlOption(
+                    value: 'expired',
+                    label: 'Overdue',
+                    icon: Icons.warning_amber_rounded,
+                  ),
+                  AdminControlOption(
+                    value: 'completed',
+                    label: 'Completed',
+                    icon: Icons.check_circle,
+                  ),
+                  AdminControlOption(
+                    value: 'archived',
+                    label: 'Archived',
+                    icon: Icons.inventory_2,
+                  ),
+                ],
+                primaryValue: _tab,
+                onPrimaryChanged: (value) {
+                  if (value == _tab) return;
+                  setState(() => _tab = value);
                 },
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ChoiceChip(
-                    label: const Text('Current Tasks'),
-                    selected: _tab == 'current',
-                    onSelected: (sel) {
-                      if (!sel) return;
-                      setState(() {
-                        _tab = 'current';
-                      });
-                    },
+                secondaryLabel: 'Difficulty',
+                secondaryOptions: const [
+                  AdminControlOption(value: 'all', label: 'All'),
+                  AdminControlOption(
+                    value: 'easy',
+                    label: 'Easy',
+                    icon: Icons.sentiment_satisfied_alt,
                   ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Overdue Tasks'),
-                    selected: _tab == 'expired',
-                    onSelected: (sel) {
-                      if (!sel) return;
-                      setState(() {
-                        _tab = 'expired';
-                      });
-                    },
+                  AdminControlOption(
+                    value: 'medium',
+                    label: 'Medium',
+                    icon: Icons.trending_up,
                   ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Completed Tasks'),
-                    selected: _tab == 'completed',
-                    onSelected: (sel) {
-                      if (!sel) return;
-                      setState(() {
-                        _tab = 'completed';
-                      });
-                    },
+                  AdminControlOption(
+                    value: 'hard',
+                    label: 'Hard',
+                    icon: Icons.local_fire_department,
                   ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Archived Tasks'),
-                    selected: _tab == 'archived',
-                    onSelected: (sel) {
-                      if (!sel) return;
-                      setState(() {
-                        _tab = 'archived';
-                      });
+                ],
+                secondaryValue: _difficultyFilter,
+                onSecondaryChanged: (value) {
+                  if (value == _difficultyFilter) return;
+                  setState(() => _difficultyFilter = value);
+                },
+                actions: [
+                  FilledButton.icon(
+                    onPressed: _addTask,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create Task'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: brandColor,
+                      foregroundColor: Colors.white,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final selected = await showMenu<String>(
+                        context: context,
+                        position: const RelativeRect.fromLTRB(999, 80, 12, 0),
+                        items: const [
+                          PopupMenuItem(
+                            value: 'dueDate',
+                            child: Text('Sort by Due Date'),
+                          ),
+                          PopupMenuItem(
+                            value: 'difficulty',
+                            child: Text('Sort by Difficulty'),
+                          ),
+                          PopupMenuItem(
+                            value: 'status',
+                            child: Text('Sort by Status'),
+                          ),
+                        ],
+                      );
+                      if (selected == null || !mounted) return;
+                      setState(() => _sortBy = selected);
                     },
+                    icon: const Icon(Icons.sort),
+                    label: const Text('Sort'),
+                    style: OutlinedButton.styleFrom(
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              const SizedBox.shrink(),
             ],
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8.0),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              ChoiceChip(
-                label: const Text('All difficulties'),
-                selected: _difficultyFilter == 'all',
-                onSelected: (sel) {
-                  if (!sel) return;
-                  setState(() => _difficultyFilter = 'all');
-                },
-              ),
-              ChoiceChip(
-                label: const Text('Easy'),
-                selected: _difficultyFilter == 'easy',
-                onSelected: (sel) {
-                  if (!sel) return;
-                  setState(() => _difficultyFilter = 'easy');
-                },
-              ),
-              ChoiceChip(
-                label: const Text('Medium'),
-                selected: _difficultyFilter == 'medium',
-                onSelected: (sel) {
-                  if (!sel) return;
-                  setState(() => _difficultyFilter = 'medium');
-                },
-              ),
-              ChoiceChip(
-                label: const Text('Hard'),
-                selected: _difficultyFilter == 'hard',
-                onSelected: (sel) {
-                  if (!sel) return;
-                  setState(() => _difficultyFilter = 'hard');
-                },
-              ),
-            ],
-          ),
+          child: const SizedBox.shrink(),
         ),
         Expanded(
           child: _isLoading

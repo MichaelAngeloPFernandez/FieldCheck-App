@@ -305,7 +305,6 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
   Future<void> _syncReportProgressToBackend({int? progressPercent}) async {
     if (_task.checklist.isNotEmpty) return;
-    if (_needsAcceptance) return;
 
     final userTaskId = _task.userTaskId;
     final status = _task.userTaskStatus;
