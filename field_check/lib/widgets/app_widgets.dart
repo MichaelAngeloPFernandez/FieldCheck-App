@@ -73,6 +73,31 @@ class AppWidgets {
     );
   }
 
+  static Future<bool> confirmLogout(BuildContext context) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to log out?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
   static String friendlyErrorMessage(
     Object error, {
     String fallback = 'Error',

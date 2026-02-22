@@ -420,7 +420,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Future<void> _logout() async {
+  Future<void> _performLogout() async {
     AppLogger.info(AppLogger.tagAuth, 'User logout initiated');
     try {
       await _userService.markOffline();
@@ -449,6 +449,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,
     );
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await AppWidgets.confirmLogout(context);
+    if (!confirmed) return;
+    await _performLogout();
   }
 
   Widget _buildDrawerNavItem({

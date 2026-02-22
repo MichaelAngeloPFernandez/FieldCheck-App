@@ -699,9 +699,12 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   Widget _buildGeofenceTab(ScrollController scrollController) {
     final selected = _selectedGeofence;
 
+    final bottomPadding =
+        MediaQuery.of(context).padding.bottom + 24 + 72; // FAB + margin
+
     return ListView(
       controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      padding: EdgeInsets.fromLTRB(12, 12, 12, bottomPadding),
       children: [
         if (_hasAnyPending)
           Card(
@@ -911,6 +914,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     final selected = _selectedGeofence;
     return StatefulBuilder(
       builder: (context, setStateLocal) {
+        final bottomPadding =
+            MediaQuery.of(context).padding.bottom + 24 + 72; // FAB + margin
+
         List<UserModel> applyFilter(
           String query,
           String filterMode,
@@ -985,7 +991,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
 
         return ListView(
           controller: scrollController,
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+          padding: EdgeInsets.fromLTRB(12, 12, 12, bottomPadding),
           children: [
             if (_hasAnyPending)
               Card(

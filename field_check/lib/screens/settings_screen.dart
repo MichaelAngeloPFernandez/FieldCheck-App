@@ -250,6 +250,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _logout() async {
+    final confirmed = await AppWidgets.confirmLogout(context);
+    if (!confirmed) return;
+
     // Best-effort: mark this employee as offline for admin dashboards
     try {
       await _userService.markOffline();

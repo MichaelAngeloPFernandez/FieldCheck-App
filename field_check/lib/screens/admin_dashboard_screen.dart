@@ -13,6 +13,7 @@ import 'package:field_check/screens/admin_world_map_screen.dart';
 import 'package:field_check/screens/manage_employees_screen.dart';
 import 'package:field_check/screens/manage_admins_screen.dart';
 import 'package:field_check/screens/login_screen.dart';
+import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/dashboard_service.dart';
 import 'package:field_check/services/realtime_service.dart';
@@ -26,6 +27,11 @@ import 'package:field_check/widgets/admin_info_modal.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+class _AdminNavIntent extends Intent {
+  final int index;
+  const _AdminNavIntent(this.index);
+}
 
 // Notification model for dashboard alerts
 class DashboardNotification {
@@ -82,6 +88,8 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _selectedIndex = 0;
+
+  bool _railHoverExpanded = false;
   final UserService _userService = UserService();
   final DashboardService _dashboardService = DashboardService();
   final RealtimeService _realtimeService = RealtimeService();
@@ -3073,160 +3081,257 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     const brandColor = Color(0xFF2688d4);
     final width = MediaQuery.sizeOf(context).width;
     final useRail = width >= 980;
-    final railExtended = width >= 1240;
-    return Scaffold(
-      appBar: AppBar(
-        leading: _selectedIndex != 0
-            ? BackButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedIndex = 0;
-                  });
-
-                  if (_dashboardStats == null || _dashboardDirty) {
-                    _loadDashboardData();
-                  }
-
-                  if (_pendingOnlineEmployeeRefresh) {
-                    _pendingOnlineEmployeeRefresh = false;
-                    _loadOnlineEmployeeLocations();
-                  }
-                },
-              )
-            : null,
-        title: Text(_getAppBarTitle()),
-        backgroundColor: brandColor,
-        actions: [
-          if (_selectedIndex == 0)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadDashboardData,
-            ),
-          IconButton(
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.notifications),
-                if (_notifications.any((n) => !n.isRead))
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: _buildNotificationBadge(
-                      _notifications.where((n) => !n.isRead).length,
-                    ),
-                  ),
-              ],
-            ),
-            onPressed: _showNotificationsInbox,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              try {
-                await _userService.markOffline();
-              } catch (_) {}
-
-              await _userService.logout();
-              if (!mounted) return;
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false,
-              );
+    return Shortcuts(
+      shortcuts: {
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.digit1):
+            const _AdminNavIntent(0),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.digit2):
+            const _AdminNavIntent(1),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.digit3):
+            const _AdminNavIntent(2),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.digit4):
+            const _AdminNavIntent(3),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.digit5):
+            const _AdminNavIntent(4),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.digit6):
+            const _AdminNavIntent(5),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.digit7):
+            const _AdminNavIntent(6),
+      },
+      child: Actions(
+        actions: {
+          _AdminNavIntent: CallbackAction<_AdminNavIntent>(
+            onInvoke: (intent) {
+              _selectAdminScreen(intent.index);
+              return null;
             },
           ),
-        ],
-      ),
-      body: useRail
-          ? Row(
-              children: [
-                NavigationRail(
-                  extended: railExtended,
-                  selectedIndex: _selectedIndex,
-                  onDestinationSelected: _selectAdminScreen,
-                  labelType: railExtended
-                      ? null
-                      : NavigationRailLabelType.selected,
-                  destinations: const [
-                    NavigationRailDestination(
-                      icon: Icon(Icons.dashboard_outlined),
-                      selectedIcon: Icon(Icons.dashboard),
-                      label: Text('Dashboard'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.people_outline),
-                      selectedIcon: Icon(Icons.people),
-                      label: Text('Employees'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.admin_panel_settings_outlined),
-                      selectedIcon: Icon(Icons.admin_panel_settings),
-                      label: Text('Admins'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.location_on_outlined),
-                      selectedIcon: Icon(Icons.location_on),
-                      label: Text('Geofences'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.assessment_outlined),
-                      selectedIcon: Icon(Icons.assessment),
-                      label: Text('Reports'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.settings_outlined),
-                      selectedIcon: Icon(Icons.settings),
-                      label: Text('Settings'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.task_outlined),
-                      selectedIcon: Icon(Icons.task),
-                      label: Text('Tasks'),
-                    ),
-                  ],
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            appBar: AppBar(
+              leading: _selectedIndex != 0
+                  ? BackButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedIndex = 0;
+                        });
+
+                        if (_dashboardStats == null || _dashboardDirty) {
+                          _loadDashboardData();
+                        }
+
+                        if (_pendingOnlineEmployeeRefresh) {
+                          _pendingOnlineEmployeeRefresh = false;
+                          _loadOnlineEmployeeLocations();
+                        }
+                      },
+                    )
+                  : null,
+              title: Text(_getAppBarTitle()),
+              backgroundColor: brandColor,
+              actions: [
+                if (_selectedIndex == 0)
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: _loadDashboardData,
+                  ),
+                IconButton(
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.notifications),
+                      if (_notifications.any((n) => !n.isRead))
+                        Positioned(
+                          right: -2,
+                          top: -2,
+                          child: _buildNotificationBadge(
+                            _notifications.where((n) => !n.isRead).length,
+                          ),
+                        ),
+                    ],
+                  ),
+                  onPressed: _showNotificationsInbox,
                 ),
-                const VerticalDivider(width: 1),
-                Expanded(child: _buildCurrentScreen()),
-              ],
-            )
-          : _buildCurrentScreen(),
-      bottomNavigationBar: useRail
-          ? null
-          : BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              showUnselectedLabels: true,
-              selectedItemColor: brandColor,
-              unselectedItemColor: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.7),
-              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-              selectedIconTheme: const IconThemeData(
-                color: brandColor,
-                size: 28,
-              ),
-              unselectedIconTheme: const IconThemeData(size: 24),
-              items: const <BottomNavigationBarItem>[
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.dashboard),
-                  label: 'Dashboard',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.people),
-                  label: 'Employees',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.assessment),
-                  label: 'Reports',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.more_horiz),
-                  label: 'More',
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  onPressed: () async {
+                    final confirmed = await AppWidgets.confirmLogout(context);
+                    if (!confirmed) return;
+
+                    try {
+                      await _userService.markOffline();
+                    } catch (_) {}
+
+                    await _userService.logout();
+                    if (!mounted) return;
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const LoginScreen(),
+                      ),
+                      (route) => false,
+                    );
+                  },
                 ),
               ],
-              currentIndex: _currentNavIndex(),
-              onTap: _onItemTapped,
             ),
+            body: useRail
+                ? Row(
+                    children: [
+                      MouseRegion(
+                        onEnter: (_) {
+                          if (!mounted) return;
+                          setState(() {
+                            _railHoverExpanded = true;
+                          });
+                        },
+                        onExit: (_) {
+                          if (!mounted) return;
+                          setState(() {
+                            _railHoverExpanded = false;
+                          });
+                        },
+                        child: NavigationRail(
+                          extended: _railHoverExpanded,
+                          minWidth: 64,
+                          minExtendedWidth: 220,
+                          selectedIndex: _selectedIndex,
+                          onDestinationSelected: _selectAdminScreen,
+                          labelType: _railHoverExpanded
+                              ? null
+                              : NavigationRailLabelType.none,
+                          destinations: [
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Dashboard (Ctrl+1)',
+                                child: Icon(Icons.dashboard_outlined),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Dashboard (Ctrl+1)',
+                                child: Icon(Icons.dashboard),
+                              ),
+                              label: const Text('Dashboard'),
+                            ),
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Employees (Ctrl+2)',
+                                child: Icon(Icons.people_outline),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Employees (Ctrl+2)',
+                                child: Icon(Icons.people),
+                              ),
+                              label: const Text('Employees'),
+                            ),
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Admins (Ctrl+3)',
+                                child: Icon(
+                                  Icons.admin_panel_settings_outlined,
+                                ),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Admins (Ctrl+3)',
+                                child: Icon(Icons.admin_panel_settings),
+                              ),
+                              label: const Text('Admins'),
+                            ),
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Geofences (Ctrl+4)',
+                                child: Icon(Icons.location_on_outlined),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Geofences (Ctrl+4)',
+                                child: Icon(Icons.location_on),
+                              ),
+                              label: const Text('Geofences'),
+                            ),
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Reports (Ctrl+5)',
+                                child: Icon(Icons.assessment_outlined),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Reports (Ctrl+5)',
+                                child: Icon(Icons.assessment),
+                              ),
+                              label: const Text('Reports'),
+                            ),
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Settings (Ctrl+6)',
+                                child: Icon(Icons.settings_outlined),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Settings (Ctrl+6)',
+                                child: Icon(Icons.settings),
+                              ),
+                              label: const Text('Settings'),
+                            ),
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Tasks (Ctrl+7)',
+                                child: Icon(Icons.task_outlined),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Tasks (Ctrl+7)',
+                                child: Icon(Icons.task),
+                              ),
+                              label: const Text('Tasks'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const VerticalDivider(width: 1),
+                      Expanded(child: _buildCurrentScreen()),
+                    ],
+                  )
+                : _buildCurrentScreen(),
+            bottomNavigationBar: useRail
+                ? null
+                : BottomNavigationBar(
+                    type: BottomNavigationBarType.fixed,
+                    backgroundColor: Theme.of(context).colorScheme.surface,
+                    showUnselectedLabels: true,
+                    selectedItemColor: brandColor,
+                    unselectedItemColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
+                    selectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    selectedIconTheme: const IconThemeData(
+                      color: brandColor,
+                      size: 28,
+                    ),
+                    unselectedIconTheme: const IconThemeData(size: 24),
+                    items: const <BottomNavigationBarItem>[
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.dashboard),
+                        label: 'Dashboard',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.people),
+                        label: 'Employees',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.assessment),
+                        label: 'Reports',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.more_horiz),
+                        label: 'More',
+                      ),
+                    ],
+                    currentIndex: _currentNavIndex(),
+                    onTap: _onItemTapped,
+                  ),
+          ),
+        ),
+      ),
     );
   }
 
