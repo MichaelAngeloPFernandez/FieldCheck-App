@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const mongoose = require('mongoose');
 const { GridFSBucket, ObjectId } = require('mongodb');
+const User = require('../models/User');
 
 const {
   authUser,
@@ -82,13 +83,28 @@ router.post('/upload/avatar', protect, avatarUpload.single('avatar'), async (req
 
     const qp = new URLSearchParams({ filename: originalName }).toString();
     const relPath = `/api/users/avatar/${fileId}?${qp}`;
-    return res.status(200).json({
-      avatarUrl: relPath,
-      path: relPath,
-      originalName,
-      size: req.file.size,
-      mimeType: req.file.mimetype,
-    });
+    Promise.resolve()
+      .then(async () => {
+        if (req.user && req.user._id) {
+          await User.findByIdAndUpdate(
+            req.user._id,
+            { avatarUrl: relPath },
+            { new: false },
+          );
+        }
+      })
+      .catch((e) => {
+        console.warn('Avatar uploaded but failed to persist avatarUrl:', e);
+      })
+      .finally(() => {
+        return res.status(200).json({
+          avatarUrl: relPath,
+          path: relPath,
+          originalName,
+          size: req.file.size,
+          mimeType: req.file.mimetype,
+        });
+      });
   });
 
   uploadStream.end(req.file.buffer);

@@ -49,11 +49,29 @@ class AppWidgets {
       backgroundColor: bg,
       child: ClipOval(
         child: Image.network(
+          key: ValueKey(_normalizeAvatarUrl(trimmed)),
           _normalizeAvatarUrl(trimmed),
           width: radius * 2,
           height: radius * 2,
           fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            final text = (initials ?? '').trim();
+            return Container(
+              width: radius * 2,
+              height: radius * 2,
+              color: bg,
+              alignment: Alignment.center,
+              child: text.isNotEmpty
+                  ? Text(
+                      text,
+                      style: TextStyle(color: fg, fontWeight: FontWeight.w800),
+                    )
+                  : Icon(fallbackIcon, color: fg, size: radius),
+            );
+          },
           errorBuilder: (context, error, stackTrace) {
+            debugPrint('Avatar load failed: $error');
             final text = (initials ?? '').trim();
             return Container(
               width: radius * 2,

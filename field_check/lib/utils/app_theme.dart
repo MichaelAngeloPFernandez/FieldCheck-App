@@ -140,6 +140,8 @@ class AppTheme {
   static final ThemeData lightTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
+    fontFamily: fontFamily,
+    fontFamilyFallback: const ['Inter', 'Segoe UI', 'Arial'],
     primaryColor: primaryColor,
     scaffoldBackgroundColor: backgroundColor,
 
@@ -167,6 +169,19 @@ class AppTheme {
         color: Colors.white,
       ),
       iconTheme: IconThemeData(color: Colors.white),
+    ),
+
+    tabBarTheme: const TabBarThemeData(
+      labelColor: Colors.white,
+      unselectedLabelColor: Colors.white70,
+      indicatorColor: Colors.white,
+      indicatorSize: TabBarIndicatorSize.tab,
+      dividerColor: Colors.white24,
+      labelStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      unselectedLabelStyle: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
     ),
 
     // Elevated Button Theme
@@ -364,6 +379,8 @@ class AppTheme {
   static final ThemeData darkTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
+    fontFamily: fontFamily,
+    fontFamilyFallback: const ['Inter', 'Segoe UI', 'Arial'],
     primaryColor: primaryColor,
     scaffoldBackgroundColor: darkBackgroundColor,
 
@@ -391,6 +408,19 @@ class AppTheme {
         color: Colors.white,
       ),
       iconTheme: IconThemeData(color: Colors.white),
+    ),
+
+    tabBarTheme: const TabBarThemeData(
+      labelColor: Colors.white,
+      unselectedLabelColor: Colors.white70,
+      indicatorColor: Colors.white,
+      indicatorSize: TabBarIndicatorSize.tab,
+      dividerColor: Colors.white24,
+      labelStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      unselectedLabelStyle: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
     ),
 
     // Elevated Button Theme

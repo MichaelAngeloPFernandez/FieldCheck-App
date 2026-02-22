@@ -69,6 +69,8 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: 'Roboto',
+      fontFamilyFallback: const ['Inter', 'Segoe UI', 'Arial'],
       primaryColor: primaryColor,
       scaffoldBackgroundColor: backgroundColor,
       appBarTheme: const AppBarTheme(
@@ -155,6 +157,18 @@ class AppTheme {
         hintStyle: const TextStyle(color: textHintColor),
         labelStyle: const TextStyle(color: textPrimaryColor),
       ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white.withValues(alpha: 0.8),
+        indicatorColor: Colors.white,
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.white.withValues(alpha: 0.2),
+        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
       textTheme: const TextTheme(
         displayLarge: TextStyle(
           fontSize: fontSizeH1,
@@ -172,44 +186,54 @@ class AppTheme {
           color: textPrimaryColor,
         ),
         headlineMedium: TextStyle(
-          fontSize: fontSizeXxl,
-          fontWeight: FontWeight.w600,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
           color: textPrimaryColor,
         ),
         headlineSmall: TextStyle(
-          fontSize: fontSizeXl,
-          fontWeight: FontWeight.w600,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
           color: textPrimaryColor,
         ),
         titleLarge: TextStyle(
-          fontSize: fontSizeLg,
-          fontWeight: FontWeight.w600,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
           color: textPrimaryColor,
         ),
         titleMedium: TextStyle(
-          fontSize: fontSizeMd,
-          fontWeight: FontWeight.w500,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
           color: textPrimaryColor,
         ),
         titleSmall: TextStyle(
-          fontSize: fontSizeSm,
-          fontWeight: FontWeight.w500,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
           color: textPrimaryColor,
         ),
         bodyLarge: TextStyle(
-          fontSize: fontSizeMd,
+          fontSize: 16,
           fontWeight: FontWeight.normal,
           color: textPrimaryColor,
         ),
         bodyMedium: TextStyle(
-          fontSize: fontSizeSm,
+          fontSize: 14,
           fontWeight: FontWeight.normal,
           color: textSecondaryColor,
         ),
         bodySmall: TextStyle(
-          fontSize: fontSizeXs,
+          fontSize: 12,
           fontWeight: FontWeight.normal,
           color: textHintColor,
+        ),
+        labelLarge: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: textPrimaryColor,
+        ),
+        labelMedium: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: textSecondaryColor,
         ),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
@@ -245,6 +269,8 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: 'Roboto',
+      fontFamilyFallback: const ['Inter', 'Segoe UI', 'Arial'],
       primaryColor: primaryLight,
       scaffoldBackgroundColor: const Color(0xFF121212),
       appBarTheme: const AppBarTheme(
@@ -279,6 +305,18 @@ class AppTheme {
           ),
         ),
       ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white.withValues(alpha: 0.8),
+        indicatorColor: Colors.white,
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.white.withValues(alpha: 0.2),
+        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
       textTheme: const TextTheme(
         displayLarge: TextStyle(
           fontSize: fontSizeH1,
@@ -296,44 +334,54 @@ class AppTheme {
           color: Colors.white,
         ),
         headlineMedium: TextStyle(
-          fontSize: fontSizeXxl,
-          fontWeight: FontWeight.w600,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
           color: Colors.white,
         ),
         headlineSmall: TextStyle(
-          fontSize: fontSizeXl,
-          fontWeight: FontWeight.w600,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
           color: Colors.white,
         ),
         titleLarge: TextStyle(
-          fontSize: fontSizeLg,
-          fontWeight: FontWeight.w600,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
           color: Colors.white,
         ),
         titleMedium: TextStyle(
-          fontSize: fontSizeMd,
-          fontWeight: FontWeight.w500,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
         titleSmall: TextStyle(
-          fontSize: fontSizeSm,
-          fontWeight: FontWeight.w500,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
           color: Colors.white70,
         ),
         bodyLarge: TextStyle(
-          fontSize: fontSizeMd,
+          fontSize: 16,
           fontWeight: FontWeight.normal,
           color: Colors.white,
         ),
         bodyMedium: TextStyle(
-          fontSize: fontSizeSm,
+          fontSize: 14,
           fontWeight: FontWeight.normal,
           color: Colors.white70,
         ),
         bodySmall: TextStyle(
-          fontSize: fontSizeXs,
+          fontSize: 12,
           fontWeight: FontWeight.normal,
           color: Colors.white54,
+        ),
+        labelLarge: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+        labelMedium: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Colors.white70,
         ),
       ),
     );

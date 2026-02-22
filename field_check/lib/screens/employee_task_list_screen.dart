@@ -5,8 +5,10 @@ import 'package:field_check/models/task_model.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/autosave_service.dart';
+import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/task_report_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
+import 'package:field_check/screens/employee_profile_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
 
@@ -24,11 +26,16 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
   late Future<List<Task>> _assignedTasksFuture;
   final RealtimeService _realtimeService = RealtimeService();
   final AutosaveService _autosaveService = AutosaveService();
+  final UserService _userService = UserService();
 
   late final TabController _tabController;
 
   StreamSubscription<Map<String, dynamic>>? _taskSub;
   Timer? _taskRefreshDebounce;
+
+  String _avatarUrl = '';
+  String _avatarInitials = '';
+  int _avatarCacheBuster = 0;
 
   String _statusFilter =
       'all'; // all, pending, accepted, in_progress, completed
@@ -51,6 +58,32 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
     _markTasksScopeRead();
     _initRealtimeService();
     _autosaveService.initialize();
+    _loadProfileAvatar();
+  }
+
+  String _buildInitials(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return '';
+    final parts = trimmed
+        .split(RegExp(r'\s+'))
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '';
+    return parts.take(2).map((p) => p.characters.first.toUpperCase()).join();
+  }
+
+  Future<void> _loadProfileAvatar() async {
+    try {
+      final profile = await _userService.getProfile();
+      if (!mounted) return;
+      setState(() {
+        _avatarUrl = (profile.avatarUrl ?? '').trim();
+        _avatarInitials = _buildInitials(profile.name);
+        _avatarCacheBuster = DateTime.now().millisecondsSinceEpoch;
+      });
+    } catch (_) {
+      // Best-effort only. Avatar will fall back to initials/icon.
+    }
   }
 
   Future<void> _markTasksScopeRead() async {
@@ -510,7 +543,14 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text(task.description),
+                Text(
+                  task.description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.92),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
@@ -814,7 +854,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
               const SizedBox(height: 8),
               Text(
                 task.description,
-                style: theme.textTheme.bodySmall?.copyWith(
+                style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
                 ),
               ),
@@ -927,6 +967,10 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final trimmedAvatar = _avatarUrl.trim();
+    final avatarWithBust = trimmedAvatar.isEmpty
+        ? ''
+        : '$trimmedAvatar${trimmedAvatar.contains('?') ? '&' : '?'}v=$_avatarCacheBuster';
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -943,6 +987,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
           unselectedLabelStyle: theme.textTheme.labelMedium?.copyWith(
             fontWeight: FontWeight.w600,
           ),
+          indicatorPadding: const EdgeInsets.symmetric(horizontal: 8),
           tabs: const [
             Tab(text: 'Current'),
             Tab(text: 'Overdue'),
@@ -950,6 +995,28 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
           ],
         ),
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const EmployeeProfileScreen(),
+                  ),
+                );
+              },
+              child: Center(
+                child: AppWidgets.userAvatar(
+                  radius: 16,
+                  avatarUrl: avatarWithBust,
+                  initials: _avatarInitials,
+                  backgroundColor: Colors.white,
+                  foregroundColor: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'My Reports',
             icon: const Icon(Icons.description_outlined),
