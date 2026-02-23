@@ -1131,44 +1131,49 @@ app.post('/api/sync', protect, async (req, res) => {
           continue;
         }
 
-        const geofence = await Geofence.findById(item.geofenceId);
-        if (!geofence) {
-          results.items.push({
-            eventId,
-            type,
-            status: 'rejected',
-            reason: 'geofence_not_found',
-          });
-          results.attendanceRejected++;
-          continue;
-        }
-        const toRad = (deg) => (deg * Math.PI) / 180;
-
-        const haversineMeters = (lat1, lon1, lat2, lon2) => {
-          const R = 6371000;
-          const dLat = toRad(lat2 - lat1);
-          const dLon = toRad(lon2 - lon1);
-          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          return R * c;
-        };
-        const distanceMeters = haversineMeters(geofence.latitude, geofence.longitude, item.latitude, item.longitude);
-        if (distanceMeters > geofence.radius) {
-          results.items.push({
-            eventId,
-            type,
-            status: 'rejected',
-            reason: 'outside_geofence',
-            distanceMeters,
-            radius: geofence.radius,
-          });
-          results.attendanceRejected++;
-          continue;
-        }
-
         if (type === 'checkin') {
+          const geofence = await Geofence.findById(item.geofenceId);
+          if (!geofence) {
+            results.items.push({
+              eventId,
+              type,
+              status: 'rejected',
+              reason: 'geofence_not_found',
+            });
+            results.attendanceRejected++;
+            continue;
+          }
+          const toRad = (deg) => (deg * Math.PI) / 180;
+
+          const haversineMeters = (lat1, lon1, lat2, lon2) => {
+            const R = 6371000;
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+          };
+          const distanceMeters = haversineMeters(
+            geofence.latitude,
+            geofence.longitude,
+            item.latitude,
+            item.longitude,
+          );
+          if (distanceMeters > geofence.radius) {
+            results.items.push({
+              eventId,
+              type,
+              status: 'rejected',
+              reason: 'outside_geofence',
+              distanceMeters,
+              radius: geofence.radius,
+            });
+            results.attendanceRejected++;
+            continue;
+          }
+
           const created = await Attendance.create({
             employee: req.user._id,
             geofence: geofence._id,
@@ -1177,6 +1182,7 @@ app.post('/api/sync', protect, async (req, res) => {
             location: { lat: item.latitude, lng: item.longitude },
             syncCheckInEventId: eventId,
           });
+
           results.items.push({
             eventId,
             type,
@@ -1186,8 +1192,7 @@ app.post('/api/sync', protect, async (req, res) => {
           results.attendanceAccepted++;
           results.attendanceProcessed++;
         } else {
-          // Checkout: do not require inside geofence in the main flow, but /api/sync currently does.
-          // We keep this behavior for now; if we find an open record, close it.
+          // Checkout: align with main checkout flow: do NOT enforce inside-geofence.
           const openRecord = await Attendance.findOne({
             employee: req.user._id,
             checkOut: { $exists: false },
