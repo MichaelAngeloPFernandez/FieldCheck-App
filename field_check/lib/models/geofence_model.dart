@@ -108,6 +108,9 @@ class Geofence {
         if (e is Map<String, dynamic>) {
           return UserModel.fromJson(e);
         }
+        if (e is Map) {
+          return UserModel.fromJson(Map<String, dynamic>.from(e));
+        }
         final id = e?.toString() ?? '';
         return UserModel(id: id, name: '', email: '', role: 'employee');
       }).toList();
