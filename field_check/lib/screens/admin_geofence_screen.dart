@@ -355,25 +355,26 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final effectiveGeofences = _pendingGeofenceUpdates.isEmpty
+        ? [..._geofences, ..._pendingNewGeofences]
+        : [
+            ...(_geofences
+                .map(
+                  (g) =>
+                      g.id != null && _pendingGeofenceUpdates.containsKey(g.id)
+                      ? _pendingGeofenceUpdates[g.id]!
+                      : g,
+                )
+                .toList()),
+            ..._pendingNewGeofences,
+          ];
+
     return Scaffold(
       body: Stack(
         children: [
           CustomMap(
             height: double.infinity,
-            geofences: _pendingGeofenceUpdates.isEmpty
-                ? [..._geofences, ..._pendingNewGeofences]
-                : [
-                    ...(_geofences
-                        .map(
-                          (g) =>
-                              g.id != null &&
-                                  _pendingGeofenceUpdates.containsKey(g.id)
-                              ? _pendingGeofenceUpdates[g.id]!
-                              : g,
-                        )
-                        .toList()),
-                    ..._pendingNewGeofences,
-                  ],
+            geofences: effectiveGeofences,
             mapController: _mapController,
             currentLocation: _selectedLocation != null
                 ? UserLocation.fromLatLng(_selectedLocation!)
@@ -387,7 +388,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_hasOverlaps(_geofences))
+                  if (_hasOverlaps(effectiveGeofences))
                     Container(
                       width: double.infinity,
                       margin: const EdgeInsets.only(bottom: 8),
@@ -810,38 +811,63 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
             ),
           )
         else ...[
-          ..._pendingNewGeofences.map((geofence) {
-            return Card(
-              color: Theme.of(context).colorScheme.surface,
-              child: ListTile(
-                title: Text(
-                  geofence.name.isEmpty ? '(New geofence)' : geofence.name,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
+          ...(_pendingNewGeofences.toList()..sort((a, b) {
+                final aAssigned = _assignedEmployeeCount(a) > 0;
+                final bAssigned = _assignedEmployeeCount(b) > 0;
+                if (aAssigned != bAssigned) return aAssigned ? 1 : -1;
+                return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+              }))
+              .map((geofence) {
+                return Card(
+                  color: Theme.of(context).colorScheme.surface,
+                  child: ListTile(
+                    title: Text(
+                      geofence.name.isEmpty ? '(New geofence)' : geofence.name,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    subtitle: Text(
+                      _assignedEmployeeCount(geofence) == 0
+                          ? 'No assigned employees yet'
+                          : (geofence.address.isEmpty
+                                ? 'Pending (not saved yet)'
+                                : geofence.address),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                    ),
+                    trailing: Text(
+                      'Pending',
+                      style: TextStyle(color: Colors.orange.shade300),
+                    ),
                   ),
-                ),
-                subtitle: Text(
-                  geofence.address.isEmpty
-                      ? 'Pending (not saved yet)'
-                      : geofence.address,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.7),
-                  ),
-                ),
-                trailing: Text(
-                  'Pending',
-                  style: TextStyle(color: Colors.orange.shade300),
-                ),
-              ),
-            );
-          }),
-          ..._geofences.asMap().entries.map((entry) {
-            final index = entry.key;
+                );
+              }),
+
+          ...(() {
+            final list = _geofences
+                .map(
+                  (g) =>
+                      g.id != null && _pendingGeofenceUpdates.containsKey(g.id)
+                      ? _pendingGeofenceUpdates[g.id]!
+                      : g,
+                )
+                .toList();
+            list.sort((a, b) {
+              final aAssigned = _assignedEmployeeCount(a) > 0;
+              final bAssigned = _assignedEmployeeCount(b) > 0;
+              if (aAssigned != bAssigned) return aAssigned ? 1 : -1;
+              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            });
+            return list;
+          })().asMap().entries.map((entry) {
             final geofence = entry.value;
+            final index = _geofences.indexWhere((g) => g.id == geofence.id);
             return Card(
               color: Theme.of(context).colorScheme.surface,
               child: ListTile(
@@ -852,7 +878,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                   ),
                 ),
                 subtitle: Text(
-                  geofence.address,
+                  _assignedEmployeeCount(geofence) == 0
+                      ? 'No assigned employees yet'
+                      : geofence.address,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -898,7 +926,9 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _deleteGeofence(index),
+                      onPressed: index < 0
+                          ? null
+                          : () => _deleteGeofence(index),
                     ),
                   ],
                 ),
@@ -2261,15 +2291,39 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
       b.latitude,
       b.longitude,
     );
-    return d < (a.radius + b.radius);
+    const toleranceMeters = 1.0;
+    return d < (a.radius + b.radius - toleranceMeters);
+  }
+
+  int _assignedEmployeeCount(Geofence g) {
+    final list = g.assignedEmployees ?? const [];
+    return list
+        .map((e) => e.id)
+        .where((id) => id.trim().isNotEmpty)
+        .toSet()
+        .length;
   }
 
   void _showOverlapDetails(BuildContext context) {
     final List<String> pairs = [];
-    for (int i = 0; i < _geofences.length; i++) {
-      for (int j = i + 1; j < _geofences.length; j++) {
-        if (_isOverlap(_geofences[i], _geofences[j])) {
-          pairs.add('${_geofences[i].name} ↔ ${_geofences[j].name}');
+    final effectiveGeofences = _pendingGeofenceUpdates.isEmpty
+        ? [..._geofences, ..._pendingNewGeofences]
+        : [
+            ...(_geofences
+                .map(
+                  (g) =>
+                      g.id != null && _pendingGeofenceUpdates.containsKey(g.id)
+                      ? _pendingGeofenceUpdates[g.id]!
+                      : g,
+                )
+                .toList()),
+            ..._pendingNewGeofences,
+          ];
+    final active = effectiveGeofences.where((g) => g.isActive).toList();
+    for (int i = 0; i < active.length; i++) {
+      for (int j = i + 1; j < active.length; j++) {
+        if (_isOverlap(active[i], active[j])) {
+          pairs.add('${active[i].name} ↔ ${active[j].name}');
         }
       }
     }

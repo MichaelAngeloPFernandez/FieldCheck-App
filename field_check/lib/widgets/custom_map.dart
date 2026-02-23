@@ -211,11 +211,17 @@ class _CustomMapState extends State<CustomMap> {
 
     final Geofence? nearest = _nearestGeofence();
     final int distance = nearest != null ? _distanceTo(nearest) : 0;
-    final bool isAssigned =
-        nearest != null &&
-        widget.currentUserId != null &&
-        (nearest.assignedEmployees?.any((u) => u.id == widget.currentUserId) ??
-            false);
+    final bool isAssigned = nearest != null
+        ? (widget.currentUserId != null
+              ? (nearest.assignedEmployees?.any(
+                      (u) => u.id == widget.currentUserId,
+                    ) ??
+                    false)
+              : ((nearest.assignedEmployees ?? const [])
+                    .map((u) => u.id)
+                    .where((id) => id.trim().isNotEmpty)
+                    .isNotEmpty))
+        : false;
 
     return Container(
       width: widget.width,
