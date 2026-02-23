@@ -376,6 +376,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
             height: double.infinity,
             geofences: effectiveGeofences,
             mapController: _mapController,
+            overlayTopOffset: _hasOverlaps(effectiveGeofences) ? 64 : 12,
             currentLocation: _selectedLocation != null
                 ? UserLocation.fromLatLng(_selectedLocation!)
                 : null,

@@ -16,6 +16,7 @@ class CustomMap extends StatefulWidget {
   final bool isEditable;
   final String? currentUserId;
   final MapController? mapController;
+  final double overlayTopOffset;
 
   const CustomMap({
     super.key,
@@ -28,6 +29,7 @@ class CustomMap extends StatefulWidget {
     this.isEditable = false,
     this.currentUserId,
     this.mapController,
+    this.overlayTopOffset = 12,
   });
 
   @override
@@ -295,7 +297,7 @@ class _CustomMapState extends State<CustomMap> {
           if (nearest != null)
             Positioned(
               left: 12,
-              top: 12,
+              top: widget.overlayTopOffset,
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
