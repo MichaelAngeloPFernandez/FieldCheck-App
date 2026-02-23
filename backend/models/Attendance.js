@@ -48,8 +48,30 @@ const attendanceSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    // Idempotency keys for offline sync (client-generated UUIDs)
+    syncCheckInEventId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    syncCheckOutEventId: {
+      type: String,
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true }
+);
+
+attendanceSchema.index(
+  { employee: 1, syncCheckInEventId: 1 },
+  { unique: true, sparse: true },
+);
+
+attendanceSchema.index(
+  { employee: 1, syncCheckOutEventId: 1 },
+  { unique: true, sparse: true },
 );
 
 module.exports = mongoose.model('Attendance', attendanceSchema);

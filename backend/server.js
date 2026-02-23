@@ -1079,13 +1079,69 @@ const Geofence = require('./models/Geofence');
 app.post('/api/sync', protect, async (req, res) => {
   const payload = req.body || {};
 
-  const results = { attendanceProcessed: 0 };
+  const results = {
+    attendanceProcessed: 0,
+    attendanceAccepted: 0,
+    attendanceDuplicates: 0,
+    attendanceRejected: 0,
+    items: [],
+  };
   try {
     const items = Array.isArray(payload.attendance) ? payload.attendance : [];
     for (const item of items) {
       try {
+        const type = String(item.type || '').toLowerCase();
+        const eventId = (item.eventId || item.id || '').toString().trim();
+        if (type !== 'checkin' && type !== 'checkout') {
+          results.items.push({
+            eventId: eventId || null,
+            type,
+            status: 'rejected',
+            reason: 'invalid_type',
+          });
+          results.attendanceRejected++;
+          continue;
+        }
+        if (!eventId) {
+          results.items.push({
+            eventId: null,
+            type,
+            status: 'rejected',
+            reason: 'missing_event_id',
+          });
+          results.attendanceRejected++;
+          continue;
+        }
+
+        // Idempotency: if we already processed this eventId for this employee, mark duplicate.
+        const dupeQuery =
+          type === 'checkin'
+            ? { employee: req.user._id, syncCheckInEventId: eventId }
+            : { employee: req.user._id, syncCheckOutEventId: eventId };
+        const existing = await Attendance.findOne(dupeQuery).select('_id').lean();
+        if (existing) {
+          results.items.push({
+            eventId,
+            type,
+            status: 'duplicate',
+            reason: 'already_processed',
+            attendanceId: existing._id?.toString?.() || String(existing._id),
+          });
+          results.attendanceDuplicates++;
+          continue;
+        }
+
         const geofence = await Geofence.findById(item.geofenceId);
-        if (!geofence) continue;
+        if (!geofence) {
+          results.items.push({
+            eventId,
+            type,
+            status: 'rejected',
+            reason: 'geofence_not_found',
+          });
+          results.attendanceRejected++;
+          continue;
+        }
         const toRad = (deg) => (deg * Math.PI) / 180;
 
         const haversineMeters = (lat1, lon1, lat2, lon2) => {
@@ -1099,26 +1155,70 @@ app.post('/api/sync', protect, async (req, res) => {
           return R * c;
         };
         const distanceMeters = haversineMeters(geofence.latitude, geofence.longitude, item.latitude, item.longitude);
-        if (distanceMeters > geofence.radius) continue;
+        if (distanceMeters > geofence.radius) {
+          results.items.push({
+            eventId,
+            type,
+            status: 'rejected',
+            reason: 'outside_geofence',
+            distanceMeters,
+            radius: geofence.radius,
+          });
+          results.attendanceRejected++;
+          continue;
+        }
 
-        if (item.type === 'checkin') {
-          await Attendance.create({
+        if (type === 'checkin') {
+          const created = await Attendance.create({
             employee: req.user._id,
             geofence: geofence._id,
             checkIn: item.timestamp ? new Date(item.timestamp) : new Date(),
             status: 'in',
             location: { lat: item.latitude, lng: item.longitude },
+            syncCheckInEventId: eventId,
           });
-        } else if (item.type === 'checkout') {
-          const openRecord = await Attendance.findOne({ employee: req.user._id, geofence: geofence._id, checkOut: { $exists: false } }).sort({ createdAt: -1 });
-          if (openRecord) {
-            openRecord.checkOut = item.timestamp ? new Date(item.timestamp) : new Date();
-            openRecord.status = 'out';
-            openRecord.location = { lat: item.latitude, lng: item.longitude };
-            await openRecord.save();
+          results.items.push({
+            eventId,
+            type,
+            status: 'accepted',
+            attendanceId: created._id.toString(),
+          });
+          results.attendanceAccepted++;
+          results.attendanceProcessed++;
+        } else {
+          // Checkout: do not require inside geofence in the main flow, but /api/sync currently does.
+          // We keep this behavior for now; if we find an open record, close it.
+          const openRecord = await Attendance.findOne({
+            employee: req.user._id,
+            checkOut: { $exists: false },
+          }).sort({ createdAt: -1 });
+
+          if (!openRecord) {
+            results.items.push({
+              eventId,
+              type,
+              status: 'rejected',
+              reason: 'no_open_attendance',
+            });
+            results.attendanceRejected++;
+            continue;
           }
+
+          openRecord.checkOut = item.timestamp ? new Date(item.timestamp) : new Date();
+          openRecord.status = 'out';
+          openRecord.location = { lat: item.latitude, lng: item.longitude };
+          openRecord.syncCheckOutEventId = eventId;
+          await openRecord.save();
+
+          results.items.push({
+            eventId,
+            type,
+            status: 'accepted',
+            attendanceId: openRecord._id.toString(),
+          });
+          results.attendanceAccepted++;
+          results.attendanceProcessed++;
         }
-        results.attendanceProcessed++;
       } catch (_) {}
     }
     res.status(200).json({ message: 'Sync processed', results });
@@ -1131,7 +1231,6 @@ app.post('/api/sync', protect, async (req, res) => {
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 app.use(notFound);
 app.use(errorHandler);
-
 const port = process.env.PORT || 3000;
 
 // Gracefully handle server listen errors (e.g., port already in use)

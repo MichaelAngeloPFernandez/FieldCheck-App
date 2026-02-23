@@ -1,4 +1,5 @@
 // ignore_for_file: avoid_print, use_build_context_synchronously
+import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -14,6 +15,7 @@ import '../services/autosave_service.dart';
 import '../services/attendance_service.dart';
 import '../widgets/location_tracker_indicator.dart';
 import '../widgets/checkin_timer_widget.dart';
+import 'package:uuid/uuid.dart';
 
 class EnhancedAttendanceScreen extends StatefulWidget {
   const EnhancedAttendanceScreen({super.key});
@@ -754,6 +756,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       }
 
       final attendanceData = {
+        'eventId': const Uuid().v4(),
         'isCheckedIn': !_isCheckedIn,
         'timestamp': now.toIso8601String(),
         'latitude': _userPosition?.latitude,
@@ -1343,18 +1346,23 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       });
       final unsynced = await _autosaveService.getUnsyncedData();
       final items = <Map<String, dynamic>>[];
+      final keyByEventId = <String, String>{};
       for (final e in unsynced) {
         final key = e['key'] as String;
         if (key.startsWith('attendance_')) {
           final data = e['data'] as Map<String, dynamic>;
+          final eventId = (data['eventId'] ?? e['id'])?.toString();
+          if (eventId == null || eventId.trim().isEmpty) {
+            continue;
+          }
+          keyByEventId[eventId] = key;
           items.add({
-            'type': (data['data']?['isCheckedIn'] == true)
-                ? 'checkin'
-                : 'checkout',
-            'timestamp': data['data']?['timestamp'],
-            'latitude': data['data']?['latitude'],
-            'longitude': data['data']?['longitude'],
-            'geofenceId': data['data']?['geofenceId'],
+            'eventId': eventId,
+            'type': (data['isCheckedIn'] == true) ? 'checkin' : 'checkout',
+            'timestamp': data['timestamp'],
+            'latitude': data['latitude'],
+            'longitude': data['longitude'],
+            'geofenceId': data['geofenceId'],
           });
         }
       }
@@ -1370,16 +1378,36 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
         body: {'attendance': items},
       );
       if (res.statusCode == 200) {
-        for (final e in unsynced) {
-          final key = e['key'] as String;
-          if (key.startsWith('attendance_')) {
+        final acceptedEventIds = <String>{};
+        try {
+          final decoded = jsonDecode(res.body);
+          final results = decoded is Map ? decoded['results'] : null;
+          final itemsRes = results is Map ? results['items'] : null;
+          if (itemsRes is List) {
+            for (final r in itemsRes) {
+              if (r is! Map) continue;
+              final status = (r['status'] ?? '').toString();
+              final eventId = (r['eventId'] ?? '').toString();
+              if (eventId.isEmpty) continue;
+              if (status == 'accepted' || status == 'duplicate') {
+                acceptedEventIds.add(eventId);
+              }
+            }
+          }
+        } catch (_) {}
+
+        for (final eventId in acceptedEventIds) {
+          final key = keyByEventId[eventId];
+          if (key != null) {
             await _autosaveService.clearData(key);
           }
         }
         await _loadPendingSyncCount();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Synced ${items.length} records')),
+            SnackBar(
+              content: Text('Synced ${acceptedEventIds.length} records'),
+            ),
           );
         }
       } else {
