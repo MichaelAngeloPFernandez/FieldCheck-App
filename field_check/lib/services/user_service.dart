@@ -370,33 +370,66 @@ class UserService {
 
   Future<void> forgotPassword(String email) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/users/forgot-password'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'email': email}),
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/users/forgot-password'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'email': email}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) return;
+
+      final message = _extractErrorMessage(
+        response,
+        'Failed to send reset email',
       );
-      if (response.statusCode == 404) {
-        throw Exception('Email not found');
-      }
-      if (response.statusCode != 200) {
-        throw Exception('Failed to send reset email: ${response.body}');
-      }
+      throw Exception(message);
     } catch (e) {
       if (e is http.ClientException) {
         throw Exception('Server unreachable. Please try again later.');
+      }
+      if (e is SocketException) {
+        throw Exception(
+          'Network error. Please confirm you are online and try again.',
+        );
+      }
+      if (e is TimeoutException) {
+        throw Exception('Request timed out. Please try again.');
       }
       rethrow;
     }
   }
 
   Future<void> resetPassword(String token, String newPassword) async {
-    final response = await http.post(
-      Uri.parse('$_baseUrl/users/reset-password/$token'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'password': newPassword}),
-    );
-    if (response.statusCode != 200) {
-      throw Exception('Failed to reset password: ${response.body}');
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/users/reset-password/$token'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'password': newPassword}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) return;
+      final message = _extractErrorMessage(
+        response,
+        'Failed to reset password',
+      );
+      throw Exception(message);
+    } catch (e) {
+      if (e is http.ClientException) {
+        throw Exception('Server unreachable. Please try again later.');
+      }
+      if (e is SocketException) {
+        throw Exception(
+          'Network error. Please confirm you are online and try again.',
+        );
+      }
+      if (e is TimeoutException) {
+        throw Exception('Request timed out. Please try again.');
+      }
+      rethrow;
     }
   }
 

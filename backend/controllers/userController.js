@@ -212,7 +212,8 @@ const verifyEmail = asyncHandler(async (req, res) => {
 // @access  Public
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  const user = await User.findOne({ email });
+  const emailStr = String(email || '').trim().toLowerCase();
+  const user = emailStr ? await User.findOne({ email: emailStr }) : null;
   if (!user) {
     // Explicitly return 404 so client can show "Email not found"
     return res.status(404).json({ message: 'Email not found' });
@@ -224,14 +225,15 @@ const forgotPassword = asyncHandler(async (req, res) => {
   user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
   await user.save();
 
-  const resetUrl = `${req.protocol}://${req.get('host')}/api/users/reset-password/${resetToken}`;
+  const frontendBase = (process.env.FRONTEND_URL || '').toString().trim();
+  const resetUrl = frontendBase ? `${frontendBase.replace(/\/$/, '')}/reset-password?token=${resetToken}` : '';
 
   try {
     await sendEmail({
       email: user.email,
       subject: 'Reset your FieldCheck password',
       templateName: 'passwordReset',
-      templateData: { name: user.name, resetLink: resetUrl },
+      templateData: { name: user.name, resetLink: resetUrl, resetToken },
     });
     return res.status(200).json({ message: 'Password reset email sent' });
   } catch (error) {
