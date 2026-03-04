@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
+    bash \
     unzip \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -15,6 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Flutter SDK
 RUN git clone --depth 1 --branch ${FLUTTER_VERSION} https://github.com/flutter/flutter.git /opt/flutter
 ENV PATH="/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:${PATH}"
+
+# Run Flutter as non-root to avoid toolchain edge cases
+RUN useradd -m -u 10001 flutter
+USER flutter
+ENV HOME=/home/flutter
+ENV PUB_CACHE=/home/flutter/.pub-cache
 
 WORKDIR /app
 
@@ -25,7 +32,7 @@ RUN flutter pub get
 
 # Copy the rest of the app and build
 COPY . .
-RUN flutter build web --release
+RUN flutter build web --release --no-pub
 
 
 FROM nginx:1.27-alpine
