@@ -6,6 +6,7 @@ import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/report_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/realtime_service.dart';
+import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/manila_time.dart';
@@ -174,6 +175,9 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         _task.userTaskId!,
         'in_progress',
       );
+      try {
+        await LocationSyncService().refreshNow();
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _task = _task.copyWith(userTaskStatus: 'in_progress');
@@ -836,6 +840,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           'completed',
           progressPercent: progressPercent,
         );
+
+        try {
+          await LocationSyncService().refreshNow();
+        } catch (_) {}
 
         await _autosaveService.clearData('task_report_${widget.task.id}');
 

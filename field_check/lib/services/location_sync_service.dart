@@ -32,6 +32,11 @@ class LocationSyncService {
   DateTime? _lastSyncTime;
   final ValueNotifier<DateTime?> _lastSharedAt = ValueNotifier<DateTime?>(null);
 
+  // Keep location updates responsive. This is a minimum interval between emits;
+  // the position stream itself still controls how often we get new positions.
+  static const int _minSyncIntervalSecondsWeb = 5;
+  static const int _minSyncIntervalSecondsDefault = 3;
+
   String? _employeeId;
   String? _employeeName;
 
@@ -70,12 +75,15 @@ class LocationSyncService {
         _connected.value = true;
         _lastError.value = null;
         debugPrint('✅ LocationSyncService: Connected ($_socketUrl)');
-        _ensureIdentityLoaded().then((_) {
-          try {
-            // Notify admins that this employee is online
-            _emitEmployeeOnline();
-          } catch (_) {}
-        });
+        _ensureIdentityLoaded().then((_) => _emitAfterIdentityReady());
+
+        // Flush latest known position immediately after reconnect.
+        try {
+          final lastPos = _lastPosition.value;
+          if (lastPos != null && (_sharingEnabled || _isCheckedIn)) {
+            _syncLocationToBackend(lastPos);
+          }
+        } catch (_) {}
 
         // If sharing/tracking started before socket was connected, emit once now.
         if ((_sharingEnabled || _isCheckedIn) &&
@@ -117,7 +125,7 @@ class LocationSyncService {
       _isTracking = true;
       _startLocationStream();
     }
-    _ensureIdentityLoaded();
+    _ensureIdentityLoaded().then((_) => _emitAfterIdentityReady());
     if (!_initialized) {
       _lastError.value =
           'socket_not_initialized: call initializeSocket() first';
@@ -125,13 +133,13 @@ class LocationSyncService {
       return;
     }
     if (!_socket.connected) {
+      try {
+        _socket.connect();
+      } catch (_) {}
       _pendingEmitOnConnect = true;
       return;
     }
-    try {
-      _emitEmployeeOnline();
-    } catch (_) {}
-    _emitCurrentOnce();
+    _emitAfterIdentityReady();
   }
 
   /// Start live location sharing even when not checked-in.
@@ -142,7 +150,7 @@ class LocationSyncService {
       _isTracking = true;
       _startLocationStream();
     }
-    _ensureIdentityLoaded();
+    _ensureIdentityLoaded().then((_) => _emitAfterIdentityReady());
     if (!_initialized) {
       _lastError.value =
           'socket_not_initialized: call initializeSocket() first';
@@ -150,13 +158,39 @@ class LocationSyncService {
       return;
     }
     if (!_socket.connected) {
+      try {
+        _socket.connect();
+      } catch (_) {}
       _pendingEmitOnConnect = true;
       return;
     }
-    try {
-      _emitEmployeeOnline();
-    } catch (_) {}
-    _emitCurrentOnce();
+    _emitAfterIdentityReady();
+  }
+
+  /// Force a single location emit now (used after task status changes so
+  /// admin dashboards update busy/available promptly).
+  Future<void> refreshNow() async {
+    if (!(_sharingEnabled || _isCheckedIn)) {
+      return;
+    }
+    if (!_initialized) {
+      _lastError.value =
+          'socket_not_initialized: call initializeSocket() first';
+      _pendingEmitOnConnect = true;
+      return;
+    }
+
+    await _ensureIdentityLoaded();
+
+    if (!_socket.connected) {
+      _pendingEmitOnConnect = true;
+      try {
+        _socket.connect();
+      } catch (_) {}
+      return;
+    }
+
+    _emitAfterIdentityReady();
   }
 
   Future<void> _emitCurrentOnce() async {
@@ -212,6 +246,18 @@ class LocationSyncService {
 
   void stopSharing() {
     _sharingEnabled = false;
+    try {
+      if (_initialized && _socket.connected) {
+        final profile = _userService.currentUser;
+        final id = (profile?.id ?? _employeeId)?.trim();
+        if (id != null && id.isNotEmpty) {
+          _socket.emit('employeeOffline', {
+            'employeeId': id,
+            'timestamp': DateTime.now().toIso8601String(),
+          });
+        }
+      }
+    } catch (_) {}
     if (!_isCheckedIn) {
       _isTracking = false;
       try {
@@ -249,9 +295,12 @@ class LocationSyncService {
               if (position.accuracy > 0 && position.accuracy <= threshold) {
                 final now = DateTime.now();
 
-                // Sync location every 15 seconds for backend updates
+                // Sync location frequently for live sharing.
+                final minSeconds = kIsWeb
+                    ? _minSyncIntervalSecondsWeb
+                    : _minSyncIntervalSecondsDefault;
                 if (_lastSyncTime == null ||
-                    now.difference(_lastSyncTime!).inSeconds >= 15) {
+                    now.difference(_lastSyncTime!).inSeconds >= minSeconds) {
                   _lastSyncTime = now;
                   _syncLocationToBackend(position);
                 }
@@ -276,6 +325,10 @@ class LocationSyncService {
     if (!(_sharingEnabled || _isCheckedIn) ||
         !_initialized ||
         !_socket.connected) {
+      // If we're tracking but disconnected, send as soon as we reconnect.
+      if (_initialized && (_sharingEnabled || _isCheckedIn)) {
+        _pendingEmitOnConnect = true;
+      }
       return;
     }
 
@@ -296,6 +349,7 @@ class LocationSyncService {
         'timestamp': DateTime.now().toIso8601String(),
         // Map can interpret this as roaming/online when not checked in
         'isCheckedIn': _isCheckedIn,
+        'sharingEnabled': _sharingEnabled,
       };
 
       // Emit location update with instant delivery
@@ -372,7 +426,20 @@ class LocationSyncService {
       final fetched = await _userService.getProfile();
       _employeeId = fetched.id;
       _employeeName = fetched.name;
+      _emitAfterIdentityReady();
     } catch (_) {}
+  }
+
+  void _emitAfterIdentityReady() {
+    if (!(_sharingEnabled || _isCheckedIn) ||
+        !_initialized ||
+        !_socket.connected) {
+      return;
+    }
+    try {
+      _emitEmployeeOnline();
+    } catch (_) {}
+    _emitCurrentOnce();
   }
 
   Future<bool> _ensureLocationPermission() async {

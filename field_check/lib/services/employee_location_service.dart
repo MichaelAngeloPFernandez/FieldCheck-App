@@ -15,6 +15,7 @@ enum EmployeeStatus {
 /// Employee location data model
 class EmployeeLocation {
   final String employeeId;
+  final String? employeeCode;
   final String name;
   final String? username;
   final double latitude;
@@ -32,6 +33,7 @@ class EmployeeLocation {
 
   EmployeeLocation({
     required this.employeeId,
+    this.employeeCode,
     required this.name,
     this.username,
     required this.latitude,
@@ -51,6 +53,7 @@ class EmployeeLocation {
   factory EmployeeLocation.fromJson(Map<String, dynamic> json) {
     return EmployeeLocation(
       employeeId: json['employeeId'] as String,
+      employeeCode: json['employeeCode'] as String?,
       name: json['name'] as String,
       username: json['username'] as String?,
       latitude: (json['latitude'] as num).toDouble(),
@@ -72,6 +75,7 @@ class EmployeeLocation {
 
   Map<String, dynamic> toJson() => {
     'employeeId': employeeId,
+    'employeeCode': employeeCode,
     'name': name,
     'username': username,
     'latitude': latitude,
@@ -108,7 +112,7 @@ class EmployeeLocationService {
   EmployeeLocationService._internal();
 
   final UserService _userService = UserService();
-  late io.Socket _socket;
+  io.Socket? _socket;
 
   // Streams
   final _employeeLocationsController =
@@ -134,9 +138,18 @@ class EmployeeLocationService {
 
   /// Initialize socket connection for real-time location updates
   Future<void> initialize() async {
-    if (_isConnected) return;
+    if (_socket != null && _isConnected) return;
 
     try {
+      try {
+        if (_socket != null) {
+          _socket!.disconnect();
+          _socket!.dispose();
+        }
+      } catch (_) {}
+      _socket = null;
+      _isConnected = false;
+
       final token = await _userService.getToken();
       final options = io.OptionBuilder()
           .setTransports(['websocket', 'polling'])
@@ -150,17 +163,34 @@ class EmployeeLocationService {
         options['auth'] = {'token': token};
       }
 
+      options['reconnection'] = true;
+      options['reconnectionAttempts'] = 999999;
+      options['reconnectionDelay'] = 500;
+      options['reconnectionDelayMax'] = 5000;
+      options['randomizationFactor'] = 0.5;
+
       _socket = io.io(ApiConfig.baseUrl, options);
 
-      _socket.onConnect((_) {
+      _socket!.onConnect((_) {
         debugPrint('✅ EmployeeLocationService: Connected');
         _isConnected = true;
         _joinLocationRoom();
       });
 
-      _socket.onDisconnect((_) {
+      _socket!.onDisconnect((_) {
         debugPrint('❌ EmployeeLocationService: Disconnected');
         _isConnected = false;
+      });
+
+      _socket!.onConnectError((err) {
+        debugPrint('❌ EmployeeLocationService: Connect error: $err');
+        _isConnected = false;
+      });
+
+      _socket!.onReconnect((_) {
+        debugPrint('🔁 EmployeeLocationService: Reconnected');
+        _isConnected = true;
+        _joinLocationRoom();
       });
 
       _setupEventListeners();
@@ -171,7 +201,10 @@ class EmployeeLocationService {
 
   void _setupEventListeners() {
     // Real-time employee location updates
-    _socket.on('employeeLocationUpdate', (data) {
+    final socket = _socket;
+    if (socket == null) return;
+
+    socket.on('employeeLocationUpdate', (data) {
       try {
         final location = EmployeeLocation.fromJson(
           data as Map<String, dynamic>,
@@ -185,22 +218,35 @@ class EmployeeLocationService {
     });
 
     // Batch location updates
-    _socket.on('employeeLocationsUpdate', (data) {
+    socket.on('employeeLocationsUpdate', (data) {
       try {
         final locations = (data as List)
             .map((e) => EmployeeLocation.fromJson(e as Map<String, dynamic>))
             .toList();
+
+        final nextIds = <String>{};
         for (final location in locations) {
+          nextIds.add(location.employeeId);
           _updateLocationCache(location);
         }
-        _employeeLocationsController.add(locations);
+
+        // Prune anything not present in the authoritative snapshot.
+        final existingIds = _cachedLocations.keys.toList();
+        for (final id in existingIds) {
+          if (!nextIds.contains(id)) {
+            _cachedLocations.remove(id);
+            _locationHistory.remove(id);
+          }
+        }
+
+        _broadcastAllLocations();
       } catch (e) {
         debugPrint('❌ Error processing batch locations: $e');
       }
     });
 
     // Employee status changes
-    _socket.on('employeeStatusChange', (data) {
+    socket.on('employeeStatusChange', (data) {
       try {
         _statusChangeController.add(data as Map<String, dynamic>);
         // Update cached location with new status
@@ -238,31 +284,12 @@ class EmployeeLocationService {
     });
 
     // Employee went offline
-    _socket.on('employeeOffline', (data) {
+    socket.on('employeeOffline', (data) {
       try {
         final employeeId = data['employeeId'] as String;
-        if (_cachedLocations.containsKey(employeeId)) {
-          final oldLocation = _cachedLocations[employeeId]!;
-          final offlineLocation = EmployeeLocation(
-            employeeId: oldLocation.employeeId,
-            name: oldLocation.name,
-            username: oldLocation.username,
-            latitude: oldLocation.latitude,
-            longitude: oldLocation.longitude,
-            accuracy: oldLocation.accuracy,
-            speed: oldLocation.speed,
-            status: EmployeeStatus.offline,
-            timestamp: DateTime.now(),
-            activeTaskCount: oldLocation.activeTaskCount,
-            workloadScore: oldLocation.workloadScore,
-            currentGeofence: oldLocation.currentGeofence,
-            distanceToNearestTask: oldLocation.distanceToNearestTask,
-            isOnline: false,
-            batteryLevel: oldLocation.batteryLevel,
-          );
-          _updateLocationCache(offlineLocation);
-          _broadcastAllLocations();
-        }
+        _cachedLocations.remove(employeeId);
+        _locationHistory.remove(employeeId);
+        _broadcastAllLocations();
       } catch (e) {
         debugPrint('❌ Error processing offline event: $e');
       }
@@ -290,8 +317,9 @@ class EmployeeLocationService {
   }
 
   void _joinLocationRoom() {
-    if (_socket.connected) {
-      _socket.emit('joinLocationRoom', {});
+    final socket = _socket;
+    if (socket != null && socket.connected) {
+      socket.emit('joinLocationRoom', {});
     }
   }
 
@@ -329,15 +357,17 @@ class EmployeeLocationService {
 
   /// Emit location update from employee
   void emitLocationUpdate(Map<String, dynamic> locationData) {
-    if (_socket.connected) {
-      _socket.emit('employeeLocationUpdate', locationData);
+    final socket = _socket;
+    if (socket != null && socket.connected) {
+      socket.emit('employeeLocationUpdate', locationData);
     }
   }
 
   /// Request admin to manually update employee status
   void requestStatusUpdate(String employeeId, EmployeeStatus newStatus) {
-    if (_socket.connected) {
-      _socket.emit('requestStatusUpdate', {
+    final socket = _socket;
+    if (socket != null && socket.connected) {
+      socket.emit('requestStatusUpdate', {
         'employeeId': employeeId,
         'status': newStatus.toString().split('.').last,
       });
@@ -348,6 +378,11 @@ class EmployeeLocationService {
     _employeeLocationsController.close();
     _singleLocationController.close();
     _statusChangeController.close();
-    _socket.disconnect();
+    try {
+      _socket?.disconnect();
+      _socket?.dispose();
+    } catch (_) {}
+    _socket = null;
+    _isConnected = false;
   }
 }

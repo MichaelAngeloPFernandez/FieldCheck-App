@@ -123,6 +123,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Map<String, List<LatLng>> _trails = {};
 
   final Map<String, DateTime> _lastGpsUpdate = {};
+  final Set<String> _onlineEmployeeIds = <String>{};
   Timer? _gpsSweepTimer;
   static const Duration _gpsOnlineWindow = Duration(minutes: 2);
 
@@ -234,6 +235,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     setState(() {
       _adminMarkerLocation = location;
     });
+
+    if (_nearbyMode != 'off') {
+      _broadcastAdminNearbyMode();
+    }
   }
 
   Future<void> _ensureAdminMarkerLocation() async {
@@ -266,6 +271,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final pos = await _deviceLocationService.getCurrentLocation();
       _setAdminMarkerLocation(LatLng(pos.latitude, pos.longitude));
     } catch (_) {}
+  }
+
+  void _broadcastAdminNearbyMode() {
+    final adminPos = _adminMarkerLocation;
+    final geofence = _selectedNearbyGeofence;
+    final LatLng? broadcastPos;
+    if (_nearbyMode == 'geofence' && geofence != null) {
+      broadcastPos = LatLng(geofence.latitude, geofence.longitude);
+    } else {
+      broadcastPos = adminPos;
+    }
+    final payload = {
+      'mode': _nearbyMode,
+      'latitude': broadcastPos?.latitude,
+      'longitude': broadcastPos?.longitude,
+      'geofenceId': _selectedNearbyGeofence?.id,
+      'radiusMeters': _nearbyRadiusMeters,
+    };
+    debugPrint('AdminDashboard: adminNearbyModeChanged -> $payload');
+    _realtimeService.emit('adminNearbyModeChanged', payload);
   }
 
   String _employeeSortLabel(String userId) {
@@ -379,6 +404,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   bool _isEmployeeOnline(String userId) {
+    // Consider employees "online" if either:
+    // - they are in the latest authoritative online snapshot from backend, or
+    // - we have a recent GPS ping.
+    if (_onlineEmployeeIds.contains(userId)) return true;
     final loc = _employeeLocations[userId];
     if (loc != null) {
       return loc.isOnline;
@@ -391,6 +420,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   int get _gpsOnlineCount {
+    // Prefer snapshot-based count so newly logged-in employees show immediately
+    // even before their first location ping.
+    if (_onlineEmployeeIds.isNotEmpty) {
+      return _onlineEmployeeIds.length;
+    }
     final cutoff = DateTime.now().subtract(_gpsOnlineWindow);
     return _lastGpsUpdate.values.where((ts) => ts.isAfter(cutoff)).length;
   }
@@ -866,6 +900,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final List<DashboardNotification> _notifications = [];
   final Set<String> _snackDedupKeys = {};
 
+  bool _seededInitialOnlineNotification = false;
+
   StreamSubscription<Map<String, dynamic>>? _adminNotifSub;
 
   Widget _buildCurrentScreen() {
@@ -1068,6 +1104,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       action = null;
     }
 
+    // Check if this is a grouped online employees notification
+    final isGroupedOnline =
+        action == 'seedOnlineSnapshot' && payload['employees'] != null;
+    List<Map<String, dynamic>> employeesList = [];
+    if (isGroupedOnline) {
+      try {
+        final rawList = payload['employees'];
+        if (rawList is List) {
+          employeesList = rawList.map((e) {
+            if (e is Map<String, dynamic>) return e;
+            if (e is Map) return Map<String, dynamic>.from(e);
+            return <String, dynamic>{};
+          }).toList();
+        }
+      } catch (_) {}
+    }
+
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1088,9 +1141,72 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               const SizedBox(height: 12),
               _buildDetailRow('Type:', notif.type),
               _buildDetailRow('Action:', action ?? '-'),
-              _buildDetailRow('Employee:', employeeName ?? '-'),
-              _buildDetailRow('Employee ID:', employeeId ?? '-'),
+              if (!isGroupedOnline) ...[
+                _buildDetailRow('Employee:', employeeName ?? '-'),
+                _buildDetailRow('Employee ID:', employeeId ?? '-'),
+              ],
               _buildDetailRow('Time:', ts),
+              if (isGroupedOnline && employeesList.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Divider(),
+                const SizedBox(height: 8),
+                Text(
+                  'Online Employees (${employeesList.length}):',
+                  style: const TextStyle(
+                    fontSize: AppTheme.fontSizeMd,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimaryColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: employeesList.length,
+                    itemBuilder: (context, index) {
+                      final emp = employeesList[index];
+                      final name = emp['name']?.toString() ?? 'Unknown';
+                      final code = emp['employeeCode']?.toString() ?? '';
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                code.isNotEmpty ? '$name ($code)' : name,
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontSizeSm,
+                                  color: AppTheme.textPrimaryColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1212,6 +1328,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final isBusy = loc?.status == EmployeeStatus.busy;
     final isOnline = _isEmployeeOnline(userId);
     final hasLiveLocation = _liveLocations[userId] != null;
+
+    // Never treat admins as employees in the inspector/map.
+    final role = (user?.role ?? '').toString().trim().toLowerCase();
+    if (role.isNotEmpty && role != 'employee') {
+      return false;
+    }
 
     // Allow employees who either have a recent GPS ping or at least a last-known
     // location on the map. This prevents "online" employees from disappearing
@@ -1337,7 +1459,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildMapLegend() {
-    final showAdmin = _adminMarkerLocation != null;
+    final showAdmin = _nearbyMode != 'off' && _adminMarkerLocation != null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1488,9 +1610,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   setState(() {
                     _nearbyMode = next;
                   });
-                  if (next == 'admin') {
+                  if (next != 'off') {
                     _ensureAdminMarkerLocation();
                   }
+                  _broadcastAdminNearbyMode();
                   final center = _nearbyCenter();
                   if (center != null) {
                     _panTo(center, zoom: 14);
@@ -1508,6 +1631,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   _nearbyRadiusMeters = 2000;
                   _selectedNearbyGeofence = null;
                 });
+                _broadcastAdminNearbyMode();
               },
               icon: const Icon(Icons.clear_all),
               label: const Text('Reset'),
@@ -1540,6 +1664,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               setState(() {
                 _selectedNearbyGeofence = g;
               });
+              _broadcastAdminNearbyMode();
               final center = _nearbyCenter();
               if (center != null) {
                 _panTo(center, zoom: 14);
@@ -1576,6 +1701,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     setState(() {
                       _nearbyRadiusMeters = v;
                     });
+                    _broadcastAdminNearbyMode();
                   },
                 ),
               ),
@@ -2203,47 +2329,131 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       await _locationService.initialize();
       _employeeLocationsSnapshotSub?.cancel();
-      _employeeLocationsSnapshotSub = _locationService.employeeLocationsStream
-          .listen((locations) {
-            if (!mounted) return;
-            _employeeLocations
-              ..clear()
-              ..addEntries(
-                locations.map(
-                  (loc) => MapEntry(_canonicalUserId(loc.employeeId), loc),
-                ),
-              );
+      _employeeLocationsSnapshotSub = _locationService.employeeLocationsStream.listen((
+        locations,
+      ) {
+        if (!mounted) return;
 
-            for (final loc in locations) {
-              final id = _canonicalUserId(loc.employeeId);
-              if (id.isEmpty) continue;
-              if (!loc.isOnline) continue;
+        if (!_seededInitialOnlineNotification) {
+          _seededInitialOnlineNotification = true;
+          try {
+            // Only notify about employees that are online AND have valid GPS coordinates
+            final online = locations
+                .where(
+                  (l) => l.isOnline && l.latitude != 0.0 && l.longitude != 0.0,
+                )
+                .toList();
+            if (online.isNotEmpty) {
+              final count = online.length;
+              final key = 'seedOnlineSnapshot:$count';
+              if (!_snackDedupKeys.contains(key)) {
+                _snackDedupKeys.add(key);
 
-              _liveLocations[id] = LatLng(loc.latitude, loc.longitude);
-              _lastGpsUpdate[id] = loc.timestamp;
-            }
+                // Build grouped employee list with names and IDs
+                final employeeList = online
+                    .asMap()
+                    .entries
+                    .map((entry) {
+                      final idx = entry.key + 1;
+                      final emp = entry.value;
+                      final empCode = emp.employeeCode ?? '';
+                      return '$idx. ${emp.name}${empCode.isNotEmpty ? ' ($empCode)' : ''}';
+                    })
+                    .join('\n');
 
-            final onlineIds = <String>{
-              for (final loc in locations)
-                if (loc.isOnline) _canonicalUserId(loc.employeeId),
-            }..removeWhere((id) => id.trim().isEmpty);
+                setState(() {
+                  _notifications.insert(
+                    0,
+                    DashboardNotification(
+                      id: DateTime.now().millisecondsSinceEpoch.toString(),
+                      title: 'Online employees',
+                      message: count == 1
+                          ? '${online.first.name} is online.'
+                          : '$count employees are online.',
+                      type: 'employee',
+                      timestamp: DateTime.now(),
+                      payload: {
+                        'action': 'seedOnlineSnapshot',
+                        'count': count,
+                        'employeeList': employeeList,
+                        'employees': online
+                            .map(
+                              (e) => {
+                                'name': e.name,
+                                'employeeCode': e.employeeCode ?? '',
+                                'employeeId': e.employeeId,
+                              },
+                            )
+                            .toList(),
+                      },
+                    ),
+                  );
 
-            // Prune any markers/trails that are no longer online.
-            // This prevents "ghost" markers that persist after logout.
-            if (_liveLocations.isNotEmpty) {
-              final ids = _liveLocations.keys.toList();
-              for (final id in ids) {
-                if (!onlineIds.contains(id)) {
-                  _liveLocations.remove(id);
-                  _lastGpsUpdate.remove(id);
-                  _trails.remove(id);
-                }
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        count == 1
+                            ? '${online.first.name} is online'
+                            : '$count employees are online',
+                      ),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                });
+
+                Future<void>.delayed(const Duration(seconds: 6)).then((_) {
+                  if (!mounted) return;
+                  _snackDedupKeys.remove(key);
+                });
               }
             }
+          } catch (_) {}
+        }
 
-            _liveLocationDirty = true;
-            _scheduleLiveLocationUiUpdate();
-          });
+        _employeeLocations
+          ..clear()
+          ..addEntries(
+            locations.map(
+              (loc) => MapEntry(_canonicalUserId(loc.employeeId), loc),
+            ),
+          );
+
+        for (final loc in locations) {
+          final id = _canonicalUserId(loc.employeeId);
+          if (id.isEmpty) continue;
+
+          if (loc.isOnline) {
+            _liveLocations[id] = LatLng(loc.latitude, loc.longitude);
+            _lastGpsUpdate[id] = loc.timestamp;
+          } else {
+            _liveLocations.remove(id);
+            _lastGpsUpdate.remove(id);
+            _trails.remove(id);
+          }
+        }
+
+        final onlineIds = <String>{
+          for (final loc in locations)
+            if (loc.isOnline) _canonicalUserId(loc.employeeId),
+        }..removeWhere((id) => id.trim().isEmpty);
+
+        // Prune any markers/trails that are no longer online.
+        // This prevents "ghost" markers that persist after logout.
+        if (_liveLocations.isNotEmpty) {
+          final ids = _liveLocations.keys.toList();
+          for (final id in ids) {
+            if (!onlineIds.contains(id)) {
+              _liveLocations.remove(id);
+              _lastGpsUpdate.remove(id);
+              _trails.remove(id);
+            }
+          }
+        }
+
+        _liveLocationDirty = true;
+        _scheduleLiveLocationUiUpdate();
+      });
 
       _subscribeToLocations();
     } catch (_) {}
@@ -2256,7 +2466,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         final action = (data['action'] ?? '') as String;
         if (action == 'employeeOnline') {
           final employeeName = (data['name'] ?? 'Employee') as String;
-          final key = 'employeeOnline:$employeeName';
+          final employeeCode = (data['employeeId'] ?? '').toString();
+          final displayName = employeeCode.isNotEmpty
+              ? '$employeeName ($employeeCode)'
+              : employeeName;
+          final key = 'employeeOnline:$employeeName:$employeeCode';
           if (_snackDedupKeys.contains(key)) return;
           _snackDedupKeys.add(key);
 
@@ -2266,7 +2480,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               DashboardNotification(
                 id: DateTime.now().millisecondsSinceEpoch.toString(),
                 title: 'Employee Online',
-                message: '$employeeName is now online.',
+                message: '$displayName is now online.',
                 type: 'employee',
                 timestamp: DateTime.now(),
                 payload: data,
@@ -2276,7 +2490,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('$employeeName is online'),
+                content: Text('$displayName is online'),
                 duration: const Duration(seconds: 2),
               ),
             );
@@ -2428,6 +2642,95 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       final type = event['type'] as String? ?? '';
       final action = event['action'] as String? ?? '';
+
+      // Handle presence events (employee online/offline)
+      if (type == 'presence') {
+        final data = event['data'] as Map<String, dynamic>? ?? {};
+        final rawId = (data['employeeId'] ?? data['userId'] ?? '').toString();
+        final employeeId = _canonicalUserId(rawId);
+
+        if (employeeId.trim().isNotEmpty) {
+          if (action == 'employeeOffline') {
+            // Immediately remove employee from map markers and caches
+            setState(() {
+              _liveLocations.remove(employeeId);
+              _trails.remove(employeeId);
+              _lastGpsUpdate.remove(employeeId);
+              _onlineEmployeeIds.remove(employeeId);
+
+              // Update the employee location record to offline
+              final loc = _employeeLocations[employeeId];
+              if (loc != null) {
+                _employeeLocations[employeeId] = EmployeeLocation(
+                  employeeId: loc.employeeId,
+                  latitude: loc.latitude,
+                  longitude: loc.longitude,
+                  accuracy: loc.accuracy,
+                  status: EmployeeStatus.offline,
+                  isOnline: false,
+                  timestamp: DateTime.now(),
+                  name: loc.name,
+                  username: loc.username,
+                  activeTaskCount: loc.activeTaskCount,
+                  workloadScore: loc.workloadScore,
+                  speed: loc.speed,
+                  currentGeofence: loc.currentGeofence,
+                  distanceToNearestTask: loc.distanceToNearestTask,
+                  batteryLevel: loc.batteryLevel,
+                );
+              }
+            });
+
+            // Show notification with employee name and display ID
+            final employeeName = (data['name'] ?? 'Employee').toString();
+            final employeeCode = (data['employeeCode'] ?? '').toString();
+            final displayName = employeeCode.isNotEmpty
+                ? '$employeeName ($employeeCode)'
+                : employeeName;
+            final key = 'employeeOffline:$employeeId';
+            if (!_snackDedupKeys.contains(key)) {
+              _snackDedupKeys.add(key);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('$displayName went offline'),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+              Future.delayed(const Duration(seconds: 6), () {
+                _snackDedupKeys.remove(key);
+              });
+            }
+          } else if (action == 'employeeOnline') {
+            // Add to online set and trigger refresh to get location
+            setState(() {
+              _onlineEmployeeIds.add(employeeId);
+            });
+            _scheduleOnlineEmployeeRefresh();
+
+            // Show notification with employee name and display ID
+            final employeeName = (data['name'] ?? 'Employee').toString();
+            final employeeCode =
+                (data['employeeCode'] ?? data['employeeId'] ?? '').toString();
+            final displayName = employeeCode.isNotEmpty
+                ? '$employeeName ($employeeCode)'
+                : employeeName;
+            final key = 'employeeOnline:$employeeId';
+            if (!_snackDedupKeys.contains(key)) {
+              _snackDedupKeys.add(key);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('$displayName is now online'),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+              Future.delayed(const Duration(seconds: 6), () {
+                _snackDedupKeys.remove(key);
+              });
+            }
+          }
+        }
+        return;
+      }
 
       if (type != 'attendance' && type != 'report') {
         return;
@@ -2999,11 +3302,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
             children: [
-              SizedBox(
-                height: 220,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 260),
                 child: DefaultTabController(
                   length: 2,
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       const TabBar(
                         tabs: [
@@ -3012,55 +3316,66 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Flexible(
-                        fit: FlexFit.loose,
+                      Expanded(
                         child: TabBarView(
                           children: [
-                            ListView(
-                              padding: EdgeInsets.zero,
-                              children: [
-                                _buildDetailRow('Name', user?.name ?? 'N/A'),
-                                _buildDetailRow('Email', user?.email ?? 'N/A'),
-                                _buildDetailRow('Phone', user?.phone ?? 'N/A'),
-                                _buildDetailRow('Role', user?.role ?? 'N/A'),
-                              ],
-                            ),
-                            ListView(
-                              padding: EdgeInsets.zero,
-                              children: [
-                                _buildStatusRow(
-                                  'Online Status',
-                                  loc?.status == EmployeeStatus.busy
-                                      ? 'Busy'
-                                      : loc?.status == EmployeeStatus.available
-                                      ? 'Checked In'
-                                      : loc?.status == EmployeeStatus.offline
-                                      ? 'Offline'
-                                      : isOnline
-                                      ? 'Online'
-                                      : 'Offline',
-                                  loc?.status == EmployeeStatus.busy
-                                      ? Colors.red
-                                      : loc?.status == EmployeeStatus.available
-                                      ? Colors.green
-                                      : loc?.status == EmployeeStatus.offline
-                                      ? Colors.grey
-                                      : isOnline
-                                      ? Colors.blue
-                                      : Colors.grey,
-                                ),
-                                _buildStatusRow(
-                                  'Active Tasks',
-                                  '$activeTaskCount',
-                                  isBusy ? Colors.red : Colors.blue,
-                                ),
-                                if (loc != null)
-                                  _buildStatusRow(
-                                    'Workload Score',
-                                    loc.workloadScore.toStringAsFixed(2),
-                                    _getWorkloadColor(loc.workloadScore),
+                            SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildDetailRow('Name', user?.name ?? 'N/A'),
+                                  _buildDetailRow(
+                                    'Email',
+                                    user?.email ?? 'N/A',
                                   ),
-                              ],
+                                  _buildDetailRow(
+                                    'Phone',
+                                    user?.phone ?? 'N/A',
+                                  ),
+                                  _buildDetailRow('Role', user?.role ?? 'N/A'),
+                                ],
+                              ),
+                            ),
+                            SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildStatusRow(
+                                    'Online Status',
+                                    loc?.status == EmployeeStatus.busy
+                                        ? 'Busy'
+                                        : loc?.status ==
+                                              EmployeeStatus.available
+                                        ? 'Checked In'
+                                        : loc?.status == EmployeeStatus.offline
+                                        ? 'Offline'
+                                        : isOnline
+                                        ? 'Online'
+                                        : 'Offline',
+                                    loc?.status == EmployeeStatus.busy
+                                        ? Colors.red
+                                        : loc?.status ==
+                                              EmployeeStatus.available
+                                        ? Colors.green
+                                        : loc?.status == EmployeeStatus.offline
+                                        ? Colors.grey
+                                        : isOnline
+                                        ? Colors.blue
+                                        : Colors.grey,
+                                  ),
+                                  _buildStatusRow(
+                                    'Active Tasks',
+                                    '$activeTaskCount',
+                                    isBusy ? Colors.red : Colors.blue,
+                                  ),
+                                  if (loc != null)
+                                    _buildStatusRow(
+                                      'Workload Score',
+                                      loc.workloadScore.toStringAsFixed(2),
+                                      _getWorkloadColor(loc.workloadScore),
+                                    ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -4155,14 +4470,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 final empLocation =
                                     _employeeLocations[entry.key];
 
-                                final tooltipText =
-                                    (user != null &&
-                                        user.name.trim().isNotEmpty)
-                                    ? user.name
-                                    : ((user != null &&
-                                              user.email.trim().isNotEmpty)
-                                          ? user.email
-                                          : 'Employee');
+                                final empId = (user?.employeeId ?? '').trim();
+                                final empName = (user?.name ?? '').trim();
+                                final tooltipText = empName.isNotEmpty
+                                    ? (empId.isNotEmpty
+                                          ? '$empName ($empId)'
+                                          : empName)
+                                    : (empId.isNotEmpty ? empId : 'Employee');
                                 final isBusy =
                                     empLocation?.status == EmployeeStatus.busy;
 
@@ -4249,11 +4563,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                             ],
                                           ),
                                           padding: const EdgeInsets.all(6),
-                                          child: Icon(
-                                            markerIcon,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
+                                          child:
+                                              (user != null &&
+                                                  user.avatarUrl != null &&
+                                                  user.avatarUrl!
+                                                      .trim()
+                                                      .isNotEmpty)
+                                              ? ClipOval(
+                                                  child: Image.network(
+                                                    user.avatarUrl!,
+                                                    width: 24,
+                                                    height: 24,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder:
+                                                        (
+                                                          context,
+                                                          error,
+                                                          stackTrace,
+                                                        ) {
+                                                          return Icon(
+                                                            markerIcon,
+                                                            color: Colors.white,
+                                                            size: 20,
+                                                          );
+                                                        },
+                                                  ),
+                                                )
+                                              : Icon(
+                                                  markerIcon,
+                                                  color: Colors.white,
+                                                  size: 20,
+                                                ),
                                         ),
                                       ),
                                     ),
@@ -4303,7 +4643,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       child: _buildFloatingEmployeeIndicators(),
                     ),
                   ),
-                if (_liveLocations.isEmpty && _showNoEmployeesPopup)
+                if (_gpsOnlineCount == 0 &&
+                    _liveLocations.isEmpty &&
+                    _showNoEmployeesPopup)
                   Align(
                     alignment: Alignment.center,
                     child: GestureDetector(
@@ -5001,7 +5343,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     await _loadOnlineEmployeeLocations();
     await _loadGeofencesForNearby();
     _subscribeToLocations();
-    await _ensureAdminMarkerLocation();
+    if (_nearbyMode != 'off') {
+      await _ensureAdminMarkerLocation();
+    }
   }
 
   Future<void> _loadEmployeesForMap() async {
@@ -5038,6 +5382,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 (emp['userId'] ?? emp['employeeId'] ?? emp['id'] ?? '')
                     .toString();
             final userId = _canonicalUserId(rawId);
+
+            final roleRaw = (emp['role'] ?? '').toString().trim().toLowerCase();
+            if (roleRaw.isNotEmpty && roleRaw != 'employee') {
+              // Defensive: backend should already filter, but do not allow admins
+              // or other roles into the employee inspector/map cache.
+              continue;
+            }
+
             if (userId.trim().isNotEmpty) {
               seenOnlineIds.add(userId);
             }
@@ -5123,8 +5475,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
             // Only add if we have valid userId and coordinates
             if (userId.isNotEmpty && lat != null && lng != null) {
+              // Do not treat admin as an employee marker.
               if (adminId != null && userId == adminId) {
-                _adminMarkerLocation = LatLng(lat, lng);
+                continue;
               }
               _liveLocations[userId] = LatLng(lat, lng);
               _lastGpsUpdate[userId] = DateTime.now();
@@ -5173,6 +5526,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             }
           }
 
+          // Snapshot-based online tracking (independent of GPS ping age).
+          _onlineEmployeeIds
+            ..clear()
+            ..addAll(seenOnlineIds);
+
           // Prune anything not present in the authoritative online list.
           final existingIds = _liveLocations.keys.toList();
           for (final id in existingIds) {
@@ -5181,6 +5539,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               _lastGpsUpdate.remove(id);
               _trails.remove(id);
             }
+          }
+
+          // Defensive: ensure admin id is never cached as an employee marker.
+          if (adminId != null) {
+            _liveLocations.remove(adminId);
+            _lastGpsUpdate.remove(adminId);
+            _trails.remove(adminId);
           }
 
           final locIds = _employeeLocations.keys.toList();
@@ -5231,15 +5596,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         for (final empLoc in locations) {
           final pos = LatLng(empLoc.latitude, empLoc.longitude);
           final id = _canonicalUserId(empLoc.employeeId);
-          _employeeLocations[id] = empLoc;
 
+          // Ensure we never treat admin locations as employee markers.
           if (adminId != null && id == adminId) {
             _adminMarkerLocation = pos;
+            continue;
           }
+
+          // Skip any non-employee roles if present.
+          final role = (_employees[id]?.role ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+          if (role.isNotEmpty && role != 'employee') {
+            continue;
+          }
+
+          _employeeLocations[id] = empLoc;
           if (empLoc.isOnline) {
+            _onlineEmployeeIds.add(id);
             _liveLocations[id] = pos;
             _lastGpsUpdate[id] = DateTime.now();
           } else {
+            _onlineEmployeeIds.remove(id);
             // Employee logged out / marked offline: remove marker immediately.
             _liveLocations.remove(id);
             _lastGpsUpdate.remove(id);

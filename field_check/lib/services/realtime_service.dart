@@ -26,11 +26,14 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _unreadCountsController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _adminNearbyController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   bool _isConnected = false;
   Timer? _reconnectTimer;
   int _reconnectAttempts = 0;
   static const int maxReconnectAttempts = 5;
+  final Set<String> _rooms = <String>{};
 
   Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
   Stream<int> get onlineCountStream => _onlineCountController.stream;
@@ -43,6 +46,8 @@ class RealtimeService {
       _notificationController.stream;
   Stream<Map<String, dynamic>> get unreadCountsStream =>
       _unreadCountsController.stream;
+  Stream<Map<String, dynamic>> get adminNearbyStream =>
+      _adminNearbyController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -50,6 +55,15 @@ class RealtimeService {
     if (_socket != null && _isConnected) return;
 
     try {
+      try {
+        if (_socket != null) {
+          _socket!.disconnect();
+          _socket!.dispose();
+        }
+      } catch (_) {}
+      _socket = null;
+      _isConnected = false;
+
       final token = await UserService().getToken();
       final options = io.OptionBuilder()
           .setTransports(['websocket', 'polling'])
@@ -63,6 +77,12 @@ class RealtimeService {
         options['auth'] = {'token': token};
       }
 
+      options['reconnection'] = true;
+      options['reconnectionAttempts'] = 999999;
+      options['reconnectionDelay'] = 500;
+      options['reconnectionDelayMax'] = 5000;
+      options['randomizationFactor'] = 0.5;
+
       _socket = io.io(ApiConfig.baseUrl, options);
 
       _socket!.onConnect((_) {
@@ -70,11 +90,19 @@ class RealtimeService {
         _isConnected = true;
         _reconnectAttempts = 0;
         _reconnectTimer?.cancel();
+
+        // Re-join any rooms after reconnect.
+        for (final room in _rooms) {
+          try {
+            _socket!.emit('joinRoom', {'room': room});
+          } catch (_) {}
+        }
       });
 
       _socket!.onDisconnect((_) {
         print('RealtimeService: Disconnected from Socket.IO');
         _isConnected = false;
+        // Socket.IO client will auto-reconnect; keep a lightweight fallback.
         _scheduleReconnect();
       });
 
@@ -289,6 +317,31 @@ class RealtimeService {
       });
     });
 
+    // Persisted (DB-backed) notifications pushed via AppNotificationService.
+    _socket!.on('notificationCreated', (data) {
+      try {
+        if (data is Map<String, dynamic>) {
+          _notificationController.add(data);
+          _eventController.add({
+            'type': 'notification',
+            'action': (data['action'] ?? data['scope'] ?? 'created').toString(),
+            'data': data,
+          });
+        } else if (data is Map) {
+          final mapped = Map<String, dynamic>.from(data);
+          _notificationController.add(mapped);
+          _eventController.add({
+            'type': 'notification',
+            'action': (mapped['action'] ?? mapped['scope'] ?? 'created')
+                .toString(),
+            'data': mapped,
+          });
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing notificationCreated: $e');
+      }
+    });
+
     // Admin notifications for check-in/check-out events
     _socket!.on('adminNotification', (data) {
       print('RealtimeService: Admin notification: $data');
@@ -299,6 +352,62 @@ class RealtimeService {
           'action': data['action'] ?? 'info',
           'data': data,
         });
+      }
+    });
+
+    // Employee online/offline presence events
+    _socket!.on('employeeOnline', (data) {
+      print('RealtimeService: Employee online: $data');
+      try {
+        if (data is Map<String, dynamic>) {
+          _eventController.add({
+            'type': 'presence',
+            'action': 'employeeOnline',
+            'data': data,
+          });
+        } else if (data is Map) {
+          _eventController.add({
+            'type': 'presence',
+            'action': 'employeeOnline',
+            'data': Map<String, dynamic>.from(data),
+          });
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing employeeOnline: $e');
+      }
+    });
+
+    _socket!.on('employeeOffline', (data) {
+      print('RealtimeService: Employee offline: $data');
+      try {
+        if (data is Map<String, dynamic>) {
+          _eventController.add({
+            'type': 'presence',
+            'action': 'employeeOffline',
+            'data': data,
+          });
+        } else if (data is Map) {
+          _eventController.add({
+            'type': 'presence',
+            'action': 'employeeOffline',
+            'data': Map<String, dynamic>.from(data),
+          });
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing employeeOffline: $e');
+      }
+    });
+
+    _socket!.on('adminNearbyMode', (data) {
+      print('RealtimeService: adminNearbyMode: $data');
+      try {
+        if (data is Map<String, dynamic>) {
+          _adminNearbyController.add(data);
+        } else if (data is Map) {
+          _adminNearbyController.add(Map<String, dynamic>.from(data));
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing adminNearbyMode: $e');
       }
     });
 
@@ -316,19 +425,23 @@ class RealtimeService {
   }
 
   void _scheduleReconnect() {
-    if (_reconnectAttempts >= maxReconnectAttempts) {
-      print('RealtimeService: Max reconnection attempts reached');
-      return;
-    }
-
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(Duration(seconds: 2 * (_reconnectAttempts + 1)), () {
-      _reconnectAttempts++;
-      print(
-        'RealtimeService: Attempting reconnection $_reconnectAttempts/$maxReconnectAttempts',
-      );
-      initialize();
-    });
+    // Avoid aggressive loops; keep a slow fallback reconnect in case the
+    // underlying client reconnection is blocked by a transient error.
+    _reconnectTimer = Timer(
+      Duration(seconds: 5 + (2 * _reconnectAttempts)),
+      () {
+        _reconnectAttempts = (_reconnectAttempts + 1).clamp(0, 999999);
+        try {
+          if (_socket != null && !_isConnected) {
+            _socket!.connect();
+            return;
+          }
+        } catch (_) {}
+
+        initialize();
+      },
+    );
   }
 
   void emit(String event, Map<String, dynamic> data) {
@@ -340,20 +453,29 @@ class RealtimeService {
   }
 
   void joinRoom(String room) {
+    final r = room.trim();
+    if (r.isEmpty) return;
+    _rooms.add(r);
     if (_socket != null && _isConnected) {
-      _socket!.emit('joinRoom', {'room': room});
+      _socket!.emit('joinRoom', {'room': r});
     }
   }
 
   void leaveRoom(String room) {
+    final r = room.trim();
+    if (r.isEmpty) return;
+    _rooms.remove(r);
     if (_socket != null && _isConnected) {
-      _socket!.emit('leaveRoom', {'room': room});
+      _socket!.emit('leaveRoom', {'room': r});
     }
   }
 
   void disconnect() {
     _reconnectTimer?.cancel();
-    _socket?.disconnect();
+    try {
+      _socket?.disconnect();
+      _socket?.dispose();
+    } catch (_) {}
     _socket = null;
     _isConnected = false;
   }
@@ -367,5 +489,6 @@ class RealtimeService {
     _userController.close();
     _locationController.close();
     _notificationController.close();
+    _adminNearbyController.close();
   }
 }

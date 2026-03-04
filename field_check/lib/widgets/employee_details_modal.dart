@@ -261,33 +261,58 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
                   const SizedBox(height: 20),
                   // Status change dropdown
                   _buildSection('Change Status', [
-                    DropdownButton<EmployeeStatus>(
-                      value: _selectedStatus,
-                      isExpanded: true,
-                      items: EmployeeStatus.values.map((status) {
-                        return DropdownMenuItem(
-                          value: status,
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: _getStatusColor(status),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(_getStatusLabel(status)),
-                            ],
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.outline.withValues(
+                            alpha: 0.4,
                           ),
-                        );
-                      }).toList(),
-                      onChanged: (status) {
-                        if (status != null) {
-                          setState(() => _selectedStatus = status);
-                        }
-                      },
+                        ),
+                      ),
+                      child: DropdownButton<EmployeeStatus>(
+                        value: _selectedStatus,
+                        isExpanded: true,
+                        underline: const SizedBox.shrink(),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        items: EmployeeStatus.values.map((status) {
+                          return DropdownMenuItem(
+                            value: status,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: _getStatusColor(status),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _getStatusLabel(status),
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (status) {
+                          if (status != null) {
+                            setState(() => _selectedStatus = status);
+                          }
+                        },
+                      ),
                     ),
                   ]),
                   const SizedBox(height: 24),

@@ -13,6 +13,7 @@ import 'package:field_check/services/task_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:field_check/services/location_sync_service.dart';
+import 'package:field_check/services/realtime_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -27,6 +28,7 @@ class _MapScreenState extends State<MapScreen> {
   final UserService _userService = UserService();
   final TaskService _taskService = TaskService();
   final LocationSyncService _locationSyncService = LocationSyncService();
+  final RealtimeService _realtimeService = RealtimeService();
 
   LatLng? _userLatLng;
   List<Geofence> _geofences = [];
@@ -57,8 +59,12 @@ class _MapScreenState extends State<MapScreen> {
 
   // Real-time location streaming
   late StreamSubscription<dynamic>? _locationSubscription;
+  StreamSubscription<Map<String, dynamic>>? _adminNearbySub;
   bool _gpsConnected = false;
   double? _currentAccuracy;
+
+  String _adminNearbyMode = 'off';
+  LatLng? _adminLatLng;
 
   Widget _buildDebugOverlay() {
     if (!kDebugMode) return const SizedBox.shrink();
@@ -325,6 +331,27 @@ class _MapScreenState extends State<MapScreen> {
     _mapController = MapController();
     _loadData();
     _startRealTimeLocationTracking();
+    _initAdminNearby();
+  }
+
+  Future<void> _initAdminNearby() async {
+    await _realtimeService.initialize();
+    _adminNearbySub?.cancel();
+    _adminNearbySub = _realtimeService.adminNearbyStream.listen((data) {
+      final mode = (data['mode'] ?? 'off').toString();
+      final lat = data['latitude'];
+      final lng = data['longitude'];
+      final nextLat = lat is num ? lat.toDouble() : null;
+      final nextLng = lng is num ? lng.toDouble() : null;
+
+      if (!mounted) return;
+      setState(() {
+        _adminNearbyMode = mode;
+        _adminLatLng = (mode != 'off' && nextLat != null && nextLng != null)
+            ? LatLng(nextLat, nextLng)
+            : null;
+      });
+    });
   }
 
   /// Compute GEO TASKS: tasks assigned to geofences
@@ -352,6 +379,7 @@ class _MapScreenState extends State<MapScreen> {
     try {
       _locationSubscription?.cancel();
     } catch (_) {}
+    _adminNearbySub?.cancel();
     _searchDebounce?.cancel();
     _searchController.dispose();
     _locationSearchController.dispose();
@@ -837,6 +865,40 @@ class _MapScreenState extends State<MapScreen> {
                                     ? Colors.red
                                     : Colors.blue,
                                 size: 44,
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (_adminNearbyMode != 'off' && _adminLatLng != null)
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: _adminLatLng!,
+                              width: 46,
+                              height: 46,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.deepPurple,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.deepPurple.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      blurRadius: 10,
+                                      spreadRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.admin_panel_settings,
+                                  color: Colors.white,
+                                  size: 22,
+                                ),
                               ),
                             ),
                           ],
