@@ -19,6 +19,7 @@ ENV PATH="/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:${PATH}"
 
 # Run Flutter as non-root to avoid toolchain edge cases
 RUN useradd -m -u 10001 flutter
+RUN chown -R flutter:flutter /opt/flutter
 USER flutter
 ENV HOME=/home/flutter
 ENV PUB_CACHE=/home/flutter/.pub-cache
