@@ -2,7 +2,7 @@
 
 FROM debian:bookworm-slim AS build
 
-ARG FLUTTER_VERSION=3.22.3
+ARG FLUTTER_VERSION=3.41.3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
