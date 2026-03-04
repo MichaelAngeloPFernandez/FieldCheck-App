@@ -24,6 +24,48 @@ async function emitUnreadCounts(userId) {
   } catch (_) {}
 }
 
+async function emitUnreadNotifications(userId, { scope, limit } = {}) {
+  try {
+    const io = global.io;
+    if (!io) return;
+
+    const cleanUserId = String(userId || '').trim();
+    if (cleanUserId.length !== 24) return;
+
+    const q = { recipientUser: cleanUserId, readAt: null };
+    if (scope) {
+      q.scope = String(scope);
+    }
+
+    const n =
+      typeof limit === 'number' && Number.isFinite(limit)
+        ? Math.max(1, Math.min(50, limit))
+        : 20;
+
+    const items = await AppNotification.find(q)
+      .sort({ createdAt: -1 })
+      .limit(n)
+      .lean();
+
+    if (!items.length) return;
+
+    for (const doc of items.reverse()) {
+      io.to(`user:${cleanUserId}`).emit('notificationCreated', {
+        id: String(doc._id),
+        scope: doc.scope,
+        type: doc.type,
+        action: doc.action,
+        title: doc.title,
+        message: doc.message,
+        payload: doc.payload,
+        createdAt: doc.createdAt?.toISOString?.() || new Date().toISOString(),
+        readAt: null,
+        replay: true,
+      });
+    }
+  } catch (_) {}
+}
+
 async function createNotification({
   recipientUserId,
   scope,
@@ -101,6 +143,7 @@ async function createForAdmins({
 module.exports = {
   getUnreadCountsForUser,
   emitUnreadCounts,
+  emitUnreadNotifications,
   createNotification,
   createForAdmins,
 };

@@ -4,6 +4,7 @@ const User = require('../models/User');
 const sendEmail = require('../utils/emailService');
 const { generateToken, generateRefreshToken, verifyRefreshToken } = require('../utils/generateToken');
 const { v4: uuidv4 } = require('uuid');
+const { generateSequentialId } = require('../utils/idGenerator');
 
 function escapeRegExp(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -77,7 +78,7 @@ const registerUser = asyncHandler(async (req, res) => {
   const emailStr = (email || '').toString().trim().toLowerCase();
   const usernameStr = (username || '').toString().trim().toLowerCase();
   const roleStr = (role || 'employee').toString().trim().toLowerCase();
-  const employeeIdStr = (employeeId || '').toString().trim();
+  let employeeIdStr = (employeeId || '').toString().trim();
 
   const userExists = await User.findOne({ email: emailStr });
   if (userExists) {
@@ -94,17 +95,24 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 
   if (roleStr !== 'admin') {
+    // Auto-generate employee ID if not provided
     if (!employeeIdStr) {
-      res.status(400);
-      throw new Error('employeeId is required for employees');
+      const generatedId = await generateSequentialId('employee');
+      employeeIdStr = generatedId;
+    } else {
+      // Validate provided ID isn't taken
+      const employeeIdTaken = await User.findOne({
+        employeeId: { $regex: `^${escapeRegExp(employeeIdStr)}$`, $options: 'i' },
+      });
+      if (employeeIdTaken) {
+        res.status(400);
+        throw new Error('Employee ID is already taken');
+      }
     }
-    const employeeIdTaken = await User.findOne({
-      employeeId: { $regex: `^${escapeRegExp(employeeIdStr)}$`, $options: 'i' },
-    });
-    if (employeeIdTaken) {
-      res.status(400);
-      throw new Error('Employee ID is already taken');
-    }
+  } else {
+    // Admin role - generate admin ID
+    const generatedId = await generateSequentialId('admin');
+    employeeIdStr = generatedId;
   }
 
   const verificationToken = uuidv4();
@@ -116,7 +124,7 @@ const registerUser = asyncHandler(async (req, res) => {
     password,
     role: roleStr,
     phone: phone || undefined,
-    employeeId: roleStr !== 'admin' ? employeeIdStr : '',
+    employeeId: employeeIdStr,
     verificationToken,
     verificationTokenExpires: Date.now() + 3600000, // 1 hour
   });
@@ -568,7 +576,9 @@ const importUsers = asyncHandler(async (req, res) => {
 
       const existing = await User.findOne({ email });
       if (!existing) {
-        await User.create({ name, username, email, password, role, isVerified: true, isActive, phone });
+        // Generate sequential ID for new users
+        const employeeId = await generateSequentialId(role);
+        await User.create({ name, username, email, password, role, isVerified: true, isActive, phone, employeeId });
         result.created++;
       } else {
         existing.name = name ?? existing.name;
@@ -586,23 +596,6 @@ const importUsers = asyncHandler(async (req, res) => {
   }
   res.json(result);
 });
-
-module.exports = {
-  authUser,
-  registerUser,
-  verifyEmail,
-  forgotPassword,
-  resetPassword,
-  getUserProfile,
-  updateUserProfile,
-  deactivateUser,
-  reactivateUser,
-  deleteUser,
-  getUsers,
-  updateUserByAdmin,
-  resetUserPasswordByAdmin,
-  importUsers,
-};
 
 // @desc    Refresh access token
 // @route   POST /api/users/refresh-token
@@ -660,6 +653,8 @@ const logout = asyncHandler(async (req, res) => {
     if (global.io) {
       global.io.emit('employeeOffline', {
         employeeId: user._id.toString(),
+        name: user.name || 'Employee',
+        employeeCode: user.employeeId || '',
         timestamp: new Date().toISOString(),
       });
     }
@@ -723,6 +718,22 @@ const googleSignIn = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports.refreshAccessToken = refreshAccessToken;
-module.exports.logout = logout;
-module.exports.googleSignIn = googleSignIn;
+module.exports = {
+  authUser,
+  registerUser,
+  verifyEmail,
+  forgotPassword,
+  resetPassword,
+  getUserProfile,
+  updateUserProfile,
+  deactivateUser,
+  reactivateUser,
+  deleteUser,
+  getUsers,
+  updateUserByAdmin,
+  resetUserPasswordByAdmin,
+  importUsers,
+  refreshAccessToken,
+  logout,
+  googleSignIn,
+};

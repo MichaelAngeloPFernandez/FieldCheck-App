@@ -51,6 +51,15 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    status: {
+      type: String,
+      enum: ['available', 'moving', 'busy', 'offline'],
+      default: 'offline',
+    },
+    statusOverride: {
+      type: Boolean,
+      default: false,
+    },
     activeTaskCount: {
       type: Number,
       default: 0,

@@ -71,6 +71,14 @@ const employeeLocations = new Map(); // { userId: { lat, lng, accuracy, timestam
 module.exports.employeeLocations = employeeLocations;
 
 const employeeLocationPayloads = new Map();
+let adminNearbyState = {
+  mode: 'off',
+  latitude: null,
+  longitude: null,
+  geofenceId: null,
+  radiusMeters: null,
+  updatedAt: null,
+};
 
 // Throttle admin notifications for overtasked employees
 const overtaskNotified = new Map(); // { userId: { count: number, at: number } }
@@ -200,6 +208,11 @@ io.on('connection', (socket) => {
           const u = await User.findById(userIdFromToken).select('role');
           if (u && u.role === 'admin') {
             socket.join('role:admin');
+          } else if (u && u.role === 'employee') {
+            socket.join('role:employee');
+            try {
+              io.to('user:' + userIdFromToken).emit('adminNearbyMode', adminNearbyState);
+            } catch (_) {}
           }
 
           try {
@@ -372,7 +385,6 @@ io.on('connection', (socket) => {
         payloadId.length === 24
       ) {
         userId = payloadId;
-        userIdFromToken = payloadId;
       }
 
       socket.data.userId = userIdFromToken;
@@ -426,11 +438,100 @@ io.on('connection', (socket) => {
       } catch (_) {}
     } catch (_) {}
   });
+  socket.on('employeeOffline', async (data) => {
+    try {
+      const payloadId =
+        data && (data.employeeId || data.userId || data.id)
+          ? String(data.employeeId || data.userId || data.id)
+          : '';
+
+      let userId = userIdFromToken;
+      if (
+        (typeof userId !== 'string' || userId.length !== 24) &&
+        payloadId.length === 24
+      ) {
+        userId = payloadId;
+      }
+
+      if (typeof userId === 'string' && userId.length === 24) {
+        try {
+          User.findByIdAndUpdate(userId, { isOnline: false, status: 'offline' }).catch(() => {});
+        } catch (_) {}
+      }
+
+      try {
+        employeeLocations.delete(userId);
+      } catch (_) {}
+
+      try {
+        employeeLocationPayloads.delete(userId);
+      } catch (_) {}
+
+      // Fetch employee details for proper notification display
+      let employeeName = 'Employee';
+      let employeeCode = '';
+      try {
+        const user = await User.findById(userId).select('name employeeId').lean();
+        if (user) {
+          employeeName = user.name || 'Employee';
+          employeeCode = user.employeeId || '';
+        }
+      } catch (_) {}
+
+      try {
+        io.emit('employeeOffline', {
+          employeeId: String(userId),
+          name: employeeName,
+          employeeCode: employeeCode,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (_) {}
+    } catch (_) {}
+  });
+  socket.on('adminNearbyModeChanged', async (data) => {
+    try {
+      const requesterId =
+        socket && socket.data && socket.data.userId ? String(socket.data.userId) : '';
+      if (typeof requesterId !== 'string' || requesterId.length !== 24) {
+        return;
+      }
+
+      const requester = await User.findById(requesterId).select('role').lean();
+      if (!requester || requester.role !== 'admin') {
+        return;
+      }
+
+      const mode = (data && data.mode ? String(data.mode) : 'off').toLowerCase();
+      const latitude = data && typeof data.latitude === 'number' ? data.latitude : null;
+      const longitude = data && typeof data.longitude === 'number' ? data.longitude : null;
+      const geofenceId = data && data.geofenceId ? String(data.geofenceId) : null;
+      const radiusMeters =
+        data && typeof data.radiusMeters === 'number' ? data.radiusMeters : null;
+
+      adminNearbyState = {
+        mode,
+        latitude,
+        longitude,
+        geofenceId,
+        radiusMeters,
+        updatedAt: new Date().toISOString(),
+      };
+
+      try {
+        io.to('role:employee').emit('adminNearbyMode', adminNearbyState);
+      } catch (_) {}
+    } catch (_) {}
+  });
 
   // Handle real-time location updates from employees while checked in
   socket.on('employeeLocationUpdate', (data, callback) => {
     try {
       const { latitude, longitude, accuracy, timestamp } = data;
+
+      const sharingEnabled =
+        !(data && Object.prototype.hasOwnProperty.call(data, 'sharingEnabled'))
+          ? true
+          : !!data.sharingEnabled;
 
       const payloadId =
         data && (data.employeeId || data.userId || data.id)
@@ -443,7 +544,6 @@ io.on('connection', (socket) => {
         payloadId.length === 24
       ) {
         userId = payloadId;
-        userIdFromToken = payloadId;
       }
 
       // Store latest location instantly
@@ -453,6 +553,49 @@ io.on('connection', (socket) => {
         accuracy: accuracy,
         timestamp: timestamp,
       });
+
+      if (!sharingEnabled) {
+        try {
+          if (typeof userId === 'string' && userId.length === 24) {
+            User.findByIdAndUpdate(userId, { isOnline: false, status: 'offline' }).catch(() => {});
+          }
+        } catch (_) {}
+
+        try {
+          employeeLocations.delete(userId);
+        } catch (_) {}
+
+        try {
+          employeeLocationPayloads.delete(userId);
+        } catch (_) {}
+
+        try {
+          let employeeName = (data && data.name ? String(data.name) : '').trim();
+          let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
+
+          if ((!employeeName || !employeeCode) && typeof userId === 'string' && userId.length === 24) {
+            try {
+              const u = await User.findById(userId).select('name employeeId').lean();
+              if (u) {
+                if (!employeeName && u.name) employeeName = String(u.name);
+                if (!employeeCode && u.employeeId) employeeCode = String(u.employeeId);
+              }
+            } catch (_) {}
+          }
+
+          io.emit('employeeOffline', {
+            employeeId: String(userId),
+            name: employeeName || 'Employee',
+            employeeCode: employeeCode || '',
+            timestamp: new Date().toISOString(),
+          });
+        } catch (_) {}
+
+        if (typeof callback === 'function') {
+          callback({ received: true, timestamp: Date.now() });
+        }
+        return;
+      }
 
       if (typeof userId === 'string' && userId.length === 24) {
         const locationDoc = {
@@ -471,6 +614,24 @@ io.on('connection', (socket) => {
       }
 
       // Broadcast to admins/dashboard for real-time monitoring (async)
+
+      // Throttle expensive enrichment per user to reduce lag when multiple accounts are active.
+
+      socket.data = socket.data || {};
+
+      socket.data._lastEnrichAt = socket.data._lastEnrichAt || {};
+
+      const prevEnrichAt = socket.data._lastEnrichAt[String(userId)];
+
+      if (prevEnrichAt && Date.now() - prevEnrichAt < 1200) {
+
+        return;
+
+      }
+
+      socket.data._lastEnrichAt[String(userId)] = Date.now();
+
+
       setImmediate(async () => {
         try {
           // Update location, lastLocationUpdate, and isOnline in database for auto-checkout tracking and map display
@@ -744,10 +905,25 @@ io.on('connection', (socket) => {
             } catch (_) {}
 
             try {
-              io.emit('employeeOffline', {
-                employeeId: String(userId),
-                timestamp: new Date().toISOString(),
-              });
+              let employeeName = (data && data.name ? String(data.name) : '').trim();
+          let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
+
+          if ((!employeeName || !employeeCode) && typeof userId === 'string' && userId.length === 24) {
+            try {
+              const u = await User.findById(userId).select('name employeeId').lean();
+              if (u) {
+                if (!employeeName && u.name) employeeName = String(u.name);
+                if (!employeeCode && u.employeeId) employeeCode = String(u.employeeId);
+              }
+            } catch (_) {}
+          }
+
+          io.emit('employeeOffline', {
+            employeeId: String(userId),
+            name: employeeName || 'Employee',
+            employeeCode: employeeCode || '',
+            timestamp: new Date().toISOString(),
+          });
             } catch (_) {}
 
             try {

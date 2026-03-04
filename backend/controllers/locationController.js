@@ -282,11 +282,19 @@ exports.updateLocation = async (req, res) => {
       }
     }
 
-    let status = 'moving';
-    if (startedTaskCount > 0) {
-      status = 'busy';
-    } else if (checkedInAttendance && isWithinCheckedInGeofence) {
-      status = 'available';
+    // Determine status - respect admin's manual override if set
+    let status = user.status || 'moving';
+    const hasStatusOverride = user.statusOverride === true;
+    
+    if (!hasStatusOverride) {
+      // Auto-compute status only if no manual override
+      if (startedTaskCount > 0) {
+        status = 'busy';
+      } else if (checkedInAttendance && isWithinCheckedInGeofence) {
+        status = 'available';
+      } else {
+        status = 'moving';
+      }
     }
 
     const workloadScore = Math.min(activeTaskCount / 5, 1.0);
@@ -410,14 +418,18 @@ exports.markOffline = async (req, res) => {
   try {
     const employeeId = req.user.id;
 
-    await User.findByIdAndUpdate(employeeId, {
-      isOnline: false,
-    });
+    const user = await User.findByIdAndUpdate(
+      employeeId,
+      { isOnline: false, status: 'offline' },
+      { new: true }
+    ).select('name employeeId');
 
-    // Emit offline event
+    // Emit offline event with employee details
     if (global.io) {
       global.io.emit('employeeOffline', {
         employeeId,
+        name: user?.name || 'Employee',
+        employeeCode: user?.employeeId || '',
         timestamp: new Date().toISOString(),
       });
     }
@@ -493,7 +505,7 @@ exports.getEmployeeLocation = async (req, res) => {
 exports.updateEmployeeStatus = async (req, res) => {
   try {
     const { employeeId } = req.params;
-    const { status } = req.body;
+    const { status, clearOverride } = req.body;
 
     // Validate status
     const validStatuses = ['available', 'moving', 'busy', 'offline'];
@@ -506,11 +518,27 @@ exports.updateEmployeeStatus = async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    // Emit status change event
+    // Update user status and set override flag (unless explicitly clearing it)
+    const updateData = {
+      status,
+      statusOverride: clearOverride === true ? false : true,
+    };
+    
+    // If setting to offline, also update isOnline
+    if (status === 'offline') {
+      updateData.isOnline = false;
+    }
+
+    await User.findByIdAndUpdate(employeeId, updateData);
+
+    // Emit status change event with employee details
     if (global.io) {
       global.io.emit('employeeStatusChange', {
         employeeId,
         status,
+        name: user.name,
+        employeeCode: user.employeeId || '',
+        statusOverride: updateData.statusOverride,
         timestamp: new Date().toISOString(),
       });
     }
@@ -518,7 +546,12 @@ exports.updateEmployeeStatus = async (req, res) => {
     res.json({
       success: true,
       message: 'Status updated',
-      data: { employeeId, status },
+      data: { 
+        employeeId, 
+        status, 
+        statusOverride: updateData.statusOverride,
+        name: user.name,
+      },
     });
   } catch (error) {
     console.error('Error updating status:', error);
@@ -681,8 +714,9 @@ exports.getOnlineEmployees = async (req, res) => {
     const maxActive = 3;
 
     const onlineUsers = await User.find({
+      role: 'employee',
       isOnline: true,
-    }).select('_id name username email phone employeeId lastLatitude lastLongitude lastLocationUpdate isOnline activeTaskCount workloadWeight');
+    }).select('_id name username email phone role employeeId lastLatitude lastLongitude lastLocationUpdate isOnline activeTaskCount workloadWeight status statusOverride');
 
     await Promise.all(
       onlineUsers.map(async (u) => {
@@ -713,37 +747,45 @@ exports.getOnlineEmployees = async (req, res) => {
 
     const checkedInSet = new Set(checkedInDocs.map((d) => d.employee.toString()));
 
-    const locations = onlineUsers
-      .filter((user) =>
-        user.lastLatitude !== undefined &&
-        user.lastLongitude !== undefined &&
-        user.lastLatitude !== null &&
-        user.lastLongitude !== null
-      )
-      .map((user) => ({
-        userId: user._id.toString(),
-        employeeId: user._id.toString(),
-        employeeCode: (user.employeeId || '').toString(),
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        phone: user.phone,
-        latitude: user.lastLatitude,
-        longitude: user.lastLongitude,
-        accuracy: 0,
-        timestamp: user.lastLocationUpdate?.toISOString() || new Date().toISOString(),
-        isOnline: user.isOnline,
-        isStale: !!(user.lastLocationUpdate && user.lastLocationUpdate < fiveMinutesAgo),
-        activeTaskCount: activeCounts.get(user._id.toString()) || 0,
-        startedTaskCount: startedCounts.get(user._id.toString()) || 0,
-        status:
-          (startedCounts.get(user._id.toString()) || 0) > 0
-            ? 'busy'
-            : checkedInSet.has(user._id.toString())
-              ? 'available'
-              : 'moving',
-        workloadScore: user.workloadWeight || 0,
-      }));
+    const locations = onlineUsers.map((user) => {
+        // Determine status - respect override if set
+        let status = user.status || 'moving';
+        const hasOverride = user.statusOverride === true;
+        
+        if (!hasOverride) {
+          // Auto-compute status only if no manual override
+          const startedCount = startedCounts.get(user._id.toString()) || 0;
+          if (startedCount > 0) {
+            status = 'busy';
+          } else if (checkedInSet.has(user._id.toString())) {
+            status = 'available';
+          } else {
+            status = 'moving';
+          }
+        }
+
+        return {
+          userId: user._id.toString(),
+          employeeId: user._id.toString(),
+          employeeCode: (user.employeeId || '').toString(),
+          name: user.name,
+          username: user.username,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          latitude: user.lastLatitude ?? null,
+          longitude: user.lastLongitude ?? null,
+          accuracy: 0,
+          timestamp: user.lastLocationUpdate?.toISOString() || new Date().toISOString(),
+          isOnline: user.isOnline,
+          isStale: !!(user.lastLocationUpdate && user.lastLocationUpdate < fiveMinutesAgo),
+          activeTaskCount: activeCounts.get(user._id.toString()) || 0,
+          startedTaskCount: startedCounts.get(user._id.toString()) || 0,
+          status,
+          statusOverride: hasOverride,
+          workloadScore: user.workloadWeight || 0,
+        };
+      });
 
     res.json(locations);
   } catch (error) {
