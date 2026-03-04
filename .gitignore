@@ -6,6 +6,9 @@ backend/test-results/
 !backend/.env.example
 
 .firebase/
-field_check/build/**
-!field_check/build/web/
-!field_check/build/web/**
+field_check/build/
+build/
+backend/server.js.*bak*
+backend/server.js.bak*
+backend/server.js.*
+scripts/
