@@ -20,19 +20,25 @@ ENV PATH="/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:${PATH}"
 # Run Flutter as non-root to avoid toolchain edge cases
 RUN useradd -m -u 10001 flutter
 RUN chown -R flutter:flutter /opt/flutter
-USER flutter
-ENV HOME=/home/flutter
-ENV PUB_CACHE=/home/flutter/.pub-cache
-
 WORKDIR /app
 
 # Copy only what we need for dependency resolution first
 COPY pubspec.yaml pubspec.lock ./
+RUN chown -R flutter:flutter /app
+
+USER flutter
+ENV HOME=/home/flutter
+ENV PUB_CACHE=/home/flutter/.pub-cache
+
 RUN flutter config --no-analytics
 RUN flutter pub get
 
 # Copy the rest of the app and build
+USER root
 COPY . .
+RUN chown -R flutter:flutter /app
+
+USER flutter
 RUN flutter build web --release --no-pub
 
 
