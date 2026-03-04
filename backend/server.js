@@ -573,22 +573,34 @@ io.on('connection', (socket) => {
           let employeeName = (data && data.name ? String(data.name) : '').trim();
           let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
 
-          if ((!employeeName || !employeeCode) && typeof userId === 'string' && userId.length === 24) {
+          const emitOffline = (nameVal, codeVal) => {
             try {
-              const u = await User.findById(userId).select('name employeeId').lean();
-              if (u) {
-                if (!employeeName && u.name) employeeName = String(u.name);
-                if (!employeeCode && u.employeeId) employeeCode = String(u.employeeId);
-              }
+              io.emit('employeeOffline', {
+                employeeId: String(userId),
+                name: (nameVal || '').trim() || 'Employee',
+                employeeCode: (codeVal || '').trim(),
+                timestamp: new Date().toISOString(),
+              });
             } catch (_) {}
-          }
+          };
 
-          io.emit('employeeOffline', {
-            employeeId: String(userId),
-            name: employeeName || 'Employee',
-            employeeCode: employeeCode || '',
-            timestamp: new Date().toISOString(),
-          });
+          if ((!employeeName || !employeeCode) && typeof userId === 'string' && userId.length === 24) {
+            User.findById(userId)
+              .select('name employeeId')
+              .lean()
+              .then((u) => {
+                if (u) {
+                  if (!employeeName && u.name) employeeName = String(u.name);
+                  if (!employeeCode && u.employeeId) employeeCode = String(u.employeeId);
+                }
+                emitOffline(employeeName, employeeCode);
+              })
+              .catch(() => {
+                emitOffline(employeeName, employeeCode);
+              });
+          } else {
+            emitOffline(employeeName, employeeCode);
+          }
         } catch (_) {}
 
         if (typeof callback === 'function') {
