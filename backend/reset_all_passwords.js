@@ -2,10 +2,11 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const bcrypt = require('bcryptjs');
 const readline = require('readline');
+const path = require('path');
 
 const User = require('./models/User');
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 async function confirmOrExit() {
   if (process.argv.includes('--yes')) return;
@@ -25,6 +26,10 @@ async function confirmOrExit() {
 async function main() {
   const newPasswordArg = process.argv.find((a) => a.startsWith('--password='));
   const newPassword = newPasswordArg ? newPasswordArg.split('=').slice(1).join('=') : 'password123';
+
+  if (typeof process.env.MONGO_URI === 'string') {
+    process.env.MONGO_URI = process.env.MONGO_URI.trim();
+  }
 
   if (!process.env.MONGO_URI) {
     throw new Error('MONGO_URI is not set. Put it in backend/.env or your environment variables.');
