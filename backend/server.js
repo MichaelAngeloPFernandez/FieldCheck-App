@@ -1235,6 +1235,36 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
+app.get('/api/health/details', async (req, res) => {
+  const provided = (req.get('x-health-secret') || req.query.secret || '').toString();
+  const expected = (process.env.HEALTH_SECRET || '').toString();
+  if (!expected || provided !== expected) {
+    return res.status(401).json({ status: 'unauthorized' });
+  }
+
+  const readyState = mongoose?.connection?.readyState;
+  const connected = dbReady || readyState === 1;
+  const nodeEnv = (process.env.NODE_ENV || 'development').trim();
+  const dbHost = mongoose?.connection?.host || null;
+  const dbName = mongoose?.connection?.db?.databaseName || null;
+  const gitCommit = process.env.RENDER_GIT_COMMIT || process.env.SOURCE_VERSION || null;
+
+  let userCount;
+  try {
+    userCount = await User.countDocuments({});
+  } catch (_) {
+    userCount = undefined;
+  }
+
+  return res.status(connected ? 200 : 503).json({
+    status: connected ? 'ok' : 'starting',
+    nodeEnv,
+    db: { readyState, host: dbHost, name: dbName },
+    build: { gitCommit },
+    userCount,
+  });
+});
+
 app.use('/api/users', userRoutes);
 app.use('/api/geofences', geofenceRoutes);
 app.use('/api/attendance', attendanceRoutes);
