@@ -290,6 +290,14 @@ const resetPassword = asyncHandler(async (req, res) => {
 const getUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (user) {
+    if (user.role === 'employee') {
+      const existingId = (user.employeeId || '').toString().trim();
+      if (!existingId) {
+        const generatedId = await generateSequentialId('employee');
+        user.employeeId = generatedId;
+        await user.save();
+      }
+    }
     res.json({
       _id: user._id,
       name: user.name,
