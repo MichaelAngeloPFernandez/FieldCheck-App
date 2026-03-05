@@ -22,3 +22,16 @@ String formatManilaTimeOfDay(BuildContext context, DateTime? dt) {
   if (dt == null) return '-';
   return TimeOfDay.fromDateTime(toManilaTime(dt)).format(context);
 }
+
+String greetingManila({DateTime? now}) {
+  final dt = toManilaTime(now ?? DateTime.now());
+  final hour = dt.hour;
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+String formatManilaClock({DateTime? now}) {
+  final dt = toManilaTime(now ?? DateTime.now());
+  return DateFormat('HH:mm').format(dt);
+}

@@ -4455,7 +4455,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       MarkerLayer(
                         markers: [
-                          if (_adminMarkerLocation != null)
+                          if (_nearbyMode != 'off' &&
+                              _adminMarkerLocation != null)
                             _buildAdminMarker(_adminMarkerLocation!),
                           ..._liveLocations.entries
                               .where((entry) {

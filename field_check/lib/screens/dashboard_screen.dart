@@ -42,6 +42,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final CheckoutNotificationService _checkoutService =
       CheckoutNotificationService();
 
+  Timer? _greetingTimer;
+
   StreamSubscription<CheckoutWarning>? _checkoutWarningSub;
   StreamSubscription<AutoCheckoutEvent>? _autoCheckoutSub;
   StreamSubscription<Map<String, dynamic>>? _taskEventsSub;
@@ -62,6 +64,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     _loadUserId();
     _initServices();
+
+    _greetingTimer?.cancel();
+    _greetingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  String _buildGreetingTitle() {
+    final user = _userService.currentUser;
+    final name = (user?.username ?? '').trim().isNotEmpty
+        ? (user?.username ?? '').trim()
+        : (user?.name ?? '').trim();
+    final code = (user?.employeeId ?? '').trim();
+    final idLabel = code.isNotEmpty
+        ? code
+        : ((user?.id ?? '').trim().isNotEmpty
+              ? (user!.id.substring(0, 8))
+              : '');
+    final greeting = greetingManila();
+    final who = name.isNotEmpty ? name : 'User';
+    final suffix = idLabel.isNotEmpty ? ' • $idLabel' : '';
+    return '$greeting, $who$suffix';
   }
 
   Future<void> _initServices() async {
@@ -270,6 +295,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    _greetingTimer?.cancel();
     _locationSyncService.stopTracking();
     _locationSyncService.dispose();
     _checkoutWarningSub?.cancel();
@@ -635,7 +661,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     )
                   : null),
         title: Text(
-          _navLabels[_selectedIndex],
+          _selectedIndex == 0
+              ? _buildGreetingTitle()
+              : _navLabels[_selectedIndex],
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w700,
             color: appBarForeground,
