@@ -510,6 +510,14 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
   if (req.body.role) user.role = req.body.role;
   if (typeof req.body.isActive !== 'undefined') user.isActive = req.body.isActive;
 
+  if (user.role === 'employee') {
+    const existingId = (user.employeeId || '').toString().trim();
+    if (!existingId) {
+      const generatedId = await generateSequentialId('employee');
+      user.employeeId = generatedId;
+    }
+  }
+
   const updatedUser = await user.save();
   res.json({
     _id: updatedUser._id,

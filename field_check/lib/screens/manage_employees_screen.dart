@@ -180,7 +180,6 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
 
   Future<void> _addEmployee() async {
     final nameController = TextEditingController();
-    final employeeIdController = TextEditingController();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
     final phoneController = TextEditingController();
@@ -199,12 +198,6 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Full Name'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                TextFormField(
-                  controller: employeeIdController,
-                  decoration: const InputDecoration(labelText: 'Employee ID'),
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
@@ -261,7 +254,6 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           emailController.text.trim(),
           passwordController.text,
           role: 'employee',
-          employeeId: employeeIdController.text.trim(),
           phone: phoneController.text.trim().isEmpty
               ? null
               : phoneController.text.trim(),
@@ -366,6 +358,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     final phoneController = TextEditingController(text: user.phone ?? '');
     String role = user.role;
     final formKey = GlobalKey<FormState>();
+    final existingEmployeeId = (user.employeeId ?? '').toString().trim();
 
     final ok = await showDialog<bool>(
       context: context,
@@ -389,7 +382,13 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                 ),
                 TextFormField(
                   controller: employeeIdController,
-                  decoration: const InputDecoration(labelText: 'Employee ID'),
+                  readOnly: true,
+                  decoration: InputDecoration(
+                    labelText: 'Employee ID',
+                    hintText: existingEmployeeId.isEmpty
+                        ? 'Auto-generated'
+                        : null,
+                  ),
                 ),
                 TextFormField(
                   controller: emailController,
@@ -450,9 +449,6 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
           email: emailController.text.trim(),
           role: role,
           username: nextUsername.isEmpty ? null : nextUsername,
-          employeeId: employeeIdController.text.trim().isEmpty
-              ? null
-              : employeeIdController.text.trim(),
           phone: phoneController.text.trim(),
         );
         if (!mounted) return;
