@@ -25,7 +25,11 @@ const authUser = asyncHandler(async (req, res) => {
   const exactInsensitive = new RegExp(`^${escapeRegExp(value)}$`, 'i');
   // Be tolerant: users may enter email or username; handle case differences safely.
   user = await User.findOne({
-    $or: [{ email: exactInsensitive }, { username: exactInsensitive }],
+    $or: [
+      { email: exactInsensitive },
+      { username: exactInsensitive },
+      { employeeId: exactInsensitive },
+    ],
   });
   // fallback: allow login by name if username not set
   if (!user) {
