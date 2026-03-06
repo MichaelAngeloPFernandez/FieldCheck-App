@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, deprecated_member_use
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -26,6 +27,8 @@ import 'package:field_check/models/geofence_model.dart';
 import 'package:field_check/widgets/admin_info_modal.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/services/employee_tracking_service.dart';
+import 'package:field_check/utils/http_util.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class _AdminNavIntent extends Intent {
@@ -96,6 +99,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final EmployeeLocationService _locationService = EmployeeLocationService();
   final GeofenceService _geofenceService = GeofenceService();
   final LocationService _deviceLocationService = LocationService();
+  final EmployeeTrackingService _employeeTrackingService =
+      EmployeeTrackingService();
+
+  final Map<String, EmployeeAvailability?> _availabilityByEmployeeId = {};
+  final Map<String, bool> _availabilityLoading = {};
+  final Map<String, String?> _availabilityError = {};
+
+  final Map<String, Map<String, dynamic>> _attendanceStatusByEmployeeId = {};
+  DateTime? _attendanceStatusFetchedAt;
+  bool _attendanceStatusLoading = false;
+  String? _attendanceStatusError;
 
   static const int _taskLimitPerEmployee = 3;
 
@@ -514,23 +528,43 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _inspectPrev() {
-    final roster = _availableInspectionIds();
-    if (roster.isEmpty) return;
-    final currentId = _inspectedEmployeeId ?? _selectedEmployeeId;
-    final currentIndex = currentId == null ? -1 : roster.indexOf(currentId);
-    final nextIndex = currentIndex < 0
-        ? roster.length - 1
-        : (currentIndex - 1 + roster.length) % roster.length;
-    _setInspectionFromRoster(roster, nextIndex);
+    if (_inspectionStack.isEmpty) return;
+    final nextIndex = _inspectionIndex <= 0
+        ? _inspectionStack.length - 1
+        : _inspectionIndex - 1;
+    final nextId = _inspectionStack[nextIndex];
+    setState(() {
+      _inspectionIndex = nextIndex;
+      _selectedEmployeeId = nextId;
+      _isInspectorCollapsed = false;
+    });
+
+    final pos = _liveLocations[nextId];
+    if (pos != null) {
+      _panTo(pos, zoom: 16);
+    }
+    _ensureEmployeeLoaded(nextId);
   }
 
   void _inspectNext() {
-    final roster = _availableInspectionIds();
-    if (roster.isEmpty) return;
-    final currentId = _inspectedEmployeeId ?? _selectedEmployeeId;
-    final currentIndex = currentId == null ? -1 : roster.indexOf(currentId);
-    final nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % roster.length;
-    _setInspectionFromRoster(roster, nextIndex);
+    if (_inspectionStack.isEmpty) return;
+    final nextIndex =
+        (_inspectionIndex < 0 ||
+            _inspectionIndex >= _inspectionStack.length - 1)
+        ? 0
+        : _inspectionIndex + 1;
+    final nextId = _inspectionStack[nextIndex];
+    setState(() {
+      _inspectionIndex = nextIndex;
+      _selectedEmployeeId = nextId;
+      _isInspectorCollapsed = false;
+    });
+
+    final pos = _liveLocations[nextId];
+    if (pos != null) {
+      _panTo(pos, zoom: 16);
+    }
+    _ensureEmployeeLoaded(nextId);
   }
 
   Future<void> _ensureEmployeeLoaded(String rawId) async {
@@ -679,12 +713,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         IconButton(
           tooltip: 'Previous',
-          onPressed: idx > 0 ? onPrev : null,
+          onPressed: total > 1 ? onPrev : null,
           icon: const Icon(Icons.chevron_left),
         ),
         IconButton(
           tooltip: 'Next',
-          onPressed: idx >= 0 && idx < total - 1 ? onNext : null,
+          onPressed: total > 1 ? onNext : null,
           icon: const Icon(Icons.chevron_right),
         ),
         const SizedBox(width: 8),
@@ -1332,7 +1366,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _passesEmployeeFilters(String userId) {
     final user = _employees[userId];
     final loc = _employeeLocations[userId];
-    final isBusy = loc?.status == EmployeeStatus.busy;
+    final active = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
+    final isBusy = loc?.status == EmployeeStatus.busy && active > 0;
     final isOnline = _isEmployeeOnline(userId);
     final hasLiveLocation = _liveLocations[userId] != null;
 
@@ -3267,7 +3302,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final isOnline = _isEmployeeOnline(userId);
     final loc = _employeeLocations[userId];
     final activeTaskCount = loc?.activeTaskCount ?? user?.activeTaskCount ?? 0;
-    final isBusy = loc?.status == EmployeeStatus.busy;
+    final isBusy = loc?.status == EmployeeStatus.busy && activeTaskCount > 0;
+
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final muted = onSurface.withValues(alpha: 0.72);
 
     final email = (user?.email ?? '').trim();
     final phone = (user?.phone ?? '').trim();
@@ -3278,15 +3317,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       children: [
         Text(
           user?.name ?? 'Employee',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: onSurface.withValues(alpha: 0.92),
+          ),
         ),
         const SizedBox(height: 4),
         Text(
           user?.email ?? '',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.75),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: muted,
+            fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 8),
@@ -3326,15 +3367,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ],
         ),
         const SizedBox(height: 12),
+        Text(
+          'Details',
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: onSurface.withValues(alpha: 0.9),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildDetailRow('Name', user?.name ?? 'N/A'),
+        _buildDetailRow('Email', user?.email ?? 'N/A'),
+        _buildDetailRow('Phone', user?.phone ?? 'N/A'),
+        _buildDetailRow('Role', user?.role ?? 'N/A'),
+        const SizedBox(height: 14),
+        Text(
+          'Status',
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: onSurface.withValues(alpha: 0.9),
+          ),
+        ),
+        const SizedBox(height: 8),
         _buildStatusRow(
           'Online Status',
-          loc?.status == EmployeeStatus.busy
+          isBusy
               ? 'Busy'
               : loc?.status == EmployeeStatus.available
               ? 'Checked In'
               : loc?.status == EmployeeStatus.offline
               ? 'Offline'
-              : isOnline
+              : _liveLocations.containsKey(userId)
               ? 'Online'
               : 'Offline',
           loc?.status == EmployeeStatus.busy
@@ -3348,125 +3410,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               : Colors.grey,
         ),
         _buildStatusRow(
-          'Task Load',
+          'Active Tasks',
           '$activeTaskCount / $_taskLimitPerEmployee',
           isBusy ? Colors.red : Colors.blue,
         ),
+        if (loc != null)
+          _buildStatusRow(
+            'Workload Score',
+            loc.workloadScore.toStringAsFixed(2),
+            _getWorkloadColor(loc.workloadScore),
+          ),
         const SizedBox(height: 12),
         if (isOnline && _liveLocations.containsKey(userId))
           Text(
             'Lat: ${_liveLocations[userId]!.latitude.toStringAsFixed(4)}\nLng: ${_liveLocations[userId]!.longitude.toStringAsFixed(4)}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.75),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: muted,
+              fontWeight: FontWeight.w600,
             ),
           )
         else
           Text(
             'Location not available',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.7),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: muted,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        const SizedBox(height: 8),
-        Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(top: 8),
-            title: const Text(
-              'More details',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 260),
-                child: DefaultTabController(
-                  length: 2,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const TabBar(
-                        tabs: [
-                          Tab(text: 'Details'),
-                          Tab(text: 'Status'),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: TabBarView(
-                          children: [
-                            SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildDetailRow('Name', user?.name ?? 'N/A'),
-                                  _buildDetailRow(
-                                    'Email',
-                                    user?.email ?? 'N/A',
-                                  ),
-                                  _buildDetailRow(
-                                    'Phone',
-                                    user?.phone ?? 'N/A',
-                                  ),
-                                  _buildDetailRow('Role', user?.role ?? 'N/A'),
-                                ],
-                              ),
-                            ),
-                            SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildStatusRow(
-                                    'Online Status',
-                                    loc?.status == EmployeeStatus.busy
-                                        ? 'Busy'
-                                        : loc?.status ==
-                                              EmployeeStatus.available
-                                        ? 'Checked In'
-                                        : loc?.status == EmployeeStatus.offline
-                                        ? 'Offline'
-                                        : isOnline
-                                        ? 'Online'
-                                        : 'Offline',
-                                    loc?.status == EmployeeStatus.busy
-                                        ? Colors.red
-                                        : loc?.status ==
-                                              EmployeeStatus.available
-                                        ? Colors.green
-                                        : loc?.status == EmployeeStatus.offline
-                                        ? Colors.grey
-                                        : isOnline
-                                        ? Colors.blue
-                                        : Colors.grey,
-                                  ),
-                                  _buildStatusRow(
-                                    'Active Tasks',
-                                    '$activeTaskCount',
-                                    isBusy ? Colors.red : Colors.blue,
-                                  ),
-                                  if (loc != null)
-                                    _buildStatusRow(
-                                      'Workload Score',
-                                      loc.workloadScore.toStringAsFixed(2),
-                                      _getWorkloadColor(loc.workloadScore),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }
@@ -4560,8 +4530,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                           ? '$empName ($empId)'
                                           : empName)
                                     : (empId.isNotEmpty ? empId : 'Employee');
+                                final active =
+                                    empLocation?.activeTaskCount ??
+                                    user?.activeTaskCount ??
+                                    0;
                                 final isBusy =
-                                    empLocation?.status == EmployeeStatus.busy;
+                                    empLocation?.status ==
+                                        EmployeeStatus.busy &&
+                                    active > 0;
 
                                 Color markerColor;
                                 IconData markerIcon;
@@ -4895,6 +4871,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _showEmployeeDetails(String userId, UserModel? user) {
+    _ensureEmployeeAvailabilityLoaded(userId);
+    _ensureAttendanceStatusesLoaded();
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -5019,7 +4997,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 style: TextStyle(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 8),
-                              _buildAvailabilityInfo(userId),
+                              _buildEmployeeAvailabilityInfo(userId),
                             ],
                           ),
                         ),
@@ -5063,45 +5041,184 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return Colors.blue;
       case 'blocked':
         return Colors.red;
+
       default:
         return Colors.grey;
     }
   }
 
-  Widget _buildAvailabilityInfo(String userId) {
-    final user = _employees[userId];
-    if (user == null) return const SizedBox.shrink();
+  Future<void> _ensureAttendanceStatusesLoaded() async {
+    if (_attendanceStatusLoading) return;
+    final now = DateTime.now();
+    if (_attendanceStatusFetchedAt != null &&
+        now.difference(_attendanceStatusFetchedAt!).inSeconds < 30) {
+      return;
+    }
 
-    final isOnline = _isEmployeeOnline(userId);
-    final loc = _employeeLocations[userId];
+    _attendanceStatusLoading = true;
+    _attendanceStatusError = null;
+    try {
+      final res = await HttpUtil().get('/api/attendance/admin/all-status');
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+      final decoded = jsonDecode(res.body);
+      if (decoded is! Map) {
+        throw Exception('Unexpected response');
+      }
+      final employees = decoded['employees'];
+      if (employees is List) {
+        _attendanceStatusByEmployeeId.clear();
+        for (final item in employees) {
+          if (item is! Map) continue;
+          final m = Map<String, dynamic>.from(item);
+          final rawId = m['userId'] ?? m['_id'] ?? m['id'];
+          final id = _canonicalUserId((rawId ?? '').toString());
+          if (id.isEmpty) continue;
+          _attendanceStatusByEmployeeId[id] = m;
+        }
+      }
+      _attendanceStatusFetchedAt = DateTime.now();
+    } catch (_) {
+      _attendanceStatusError = 'Failed to load attendance status';
+    } finally {
+      _attendanceStatusLoading = false;
+      if (mounted) setState(() {});
+    }
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildStatusRow(
-          'Current Status',
-          loc?.status == EmployeeStatus.busy
-              ? 'Busy'
-              : loc?.status == EmployeeStatus.available
-              ? 'Checked In'
-              : isOnline
-              ? 'Online'
-              : 'Offline',
-          loc?.status == EmployeeStatus.busy
-              ? Colors.red
-              : loc?.status == EmployeeStatus.available
-              ? Colors.green
-              : isOnline
-              ? Colors.blue
-              : Colors.grey,
+  Future<void> _ensureEmployeeAvailabilityLoaded(String userId) async {
+    final id = _canonicalUserId(userId);
+    if (id.isEmpty) return;
+    if (_availabilityLoading[id] == true) return;
+    if (_availabilityByEmployeeId.containsKey(id)) return;
+
+    _availabilityLoading[id] = true;
+    _availabilityError[id] = null;
+    if (mounted) setState(() {});
+    try {
+      final avail = await _employeeTrackingService.getEmployeeAvailability(id);
+      _availabilityByEmployeeId[id] = avail;
+    } catch (_) {
+      _availabilityError[id] = 'Failed to load availability';
+      _availabilityByEmployeeId[id] = null;
+    } finally {
+      _availabilityLoading[id] = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Widget _buildEmployeeAvailabilityInfo(String userId) {
+    final id = _canonicalUserId(userId);
+    final isLoading = _availabilityLoading[id] == true;
+    final err = _availabilityError[id];
+    final avail = _availabilityByEmployeeId[id];
+
+    final attendance = _attendanceStatusByEmployeeId[id];
+    final bool isCheckedIn = attendance?['isCheckedIn'] == true;
+    final geofenceName = (attendance?['lastGeofenceName'] ?? '').toString();
+    final lastCheckTime = (attendance?['lastCheckTime'] ?? '').toString();
+
+    if (isLoading) {
+      return Row(
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Loading availability...',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      );
+    }
+
+    if (err != null && err.trim().isNotEmpty) {
+      return Text(
+        err,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.75),
         ),
-        if (isOnline) ...[
-          _buildStatusRow('Vacancy', 'Available', Colors.green),
-          _buildStatusRow('Distance to Tasks', 'Checking...', Colors.blue),
-        ] else
-          _buildStatusRow('Last Seen', 'Offline', Colors.grey),
-      ],
+      );
+    }
+
+    final status = (avail?.status ?? '').toString().trim().toLowerCase();
+    final isOnline = avail?.isOnline ?? _isEmployeeOnline(id);
+    final activeTaskCount =
+        avail?.activeTaskCount ??
+        (_employeeLocations[id]?.activeTaskCount ??
+            _employees[id]?.activeTaskCount ??
+            0);
+    final isBusy = status == 'busy' && activeTaskCount > 0;
+    final resolvedStatus = !isOnline
+        ? 'Offline'
+        : isBusy
+        ? 'Busy'
+        : (status.isNotEmpty
+              ? status[0].toUpperCase() + status.substring(1)
+              : 'Online');
+
+    final List<Widget> rows = [];
+    rows.add(
+      _buildStatusRow(
+        'Availability',
+        resolvedStatus,
+        !isOnline
+            ? Colors.grey
+            : isBusy
+            ? Colors.red
+            : Colors.green,
+      ),
     );
+
+    rows.add(
+      _buildStatusRow(
+        'Checked In',
+        isCheckedIn ? 'Yes' : 'No',
+        isCheckedIn ? Colors.green : Colors.grey,
+      ),
+    );
+
+    if (isCheckedIn) {
+      if (geofenceName.trim().isNotEmpty) {
+        rows.add(_buildStatusRow('Geofence', geofenceName, Colors.blue));
+      }
+      if (lastCheckTime.trim().isNotEmpty) {
+        rows.add(_buildStatusRow('Last Check', lastCheckTime, Colors.blue));
+      }
+    }
+
+    rows.add(
+      _buildStatusRow(
+        'Active Tasks',
+        '$activeTaskCount / $_taskLimitPerEmployee',
+        isBusy ? Colors.red : Colors.blue,
+      ),
+    );
+
+    if (_attendanceStatusError != null &&
+        (_attendanceStatusError ?? '').trim().isNotEmpty) {
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            _attendanceStatusError!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows);
   }
 
   Widget _buildStatusRow(String label, String value, Color valueColor) {
