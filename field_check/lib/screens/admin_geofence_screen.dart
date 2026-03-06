@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/user_service.dart'; // Import UserService
+import '../models/user_model.dart'; // Import UserModel
 import 'package:field_check/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
@@ -46,6 +47,13 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
 
+  String? _selectedGeofenceId;
+  List<UserModel> _allEmployees = [];
+  final TextEditingController _assignmentsSearchController =
+      TextEditingController();
+  Timer? _assignmentsSearchDebounce;
+  String _assignmentsFilter = 'all';
+
   final Map<String, Geofence> _pendingGeofenceUpdates = {};
   final List<Geofence> _pendingNewGeofences = [];
 
@@ -60,7 +68,20 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   void initState() {
     super.initState();
     _fetchGeofences();
+    _fetchAllEmployees();
     _initSocket();
+  }
+
+  Future<void> _fetchAllEmployees() async {
+    try {
+      final employees = await _userService.fetchEmployees();
+      if (!mounted) return;
+      setState(() {
+        _allEmployees = employees;
+      });
+    } catch (e) {
+      debugPrint('Error fetching employees: $e');
+    }
   }
 
   Future<void> _initSocket() async {
@@ -107,9 +128,85 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   void dispose() {
     // Dispose socket to avoid leaks
     _socket.dispose();
+    _sheetController.dispose();
     _searchDebounce?.cancel();
     _searchController.dispose();
+    _assignmentsSearchDebounce?.cancel();
+    _assignmentsSearchController.dispose();
     super.dispose();
+  }
+
+  Geofence? get _selectedGeofence {
+    final id = _selectedGeofenceId;
+    if (id == null) return null;
+    final pending = _pendingGeofenceUpdates[id];
+    if (pending != null) return pending;
+    for (final g in _geofences) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
+  bool get _hasAnyPending =>
+      _pendingGeofenceUpdates.isNotEmpty || _pendingNewGeofences.isNotEmpty;
+
+  void _selectGeofence(Geofence geofence) {
+    setState(() {
+      _selectedGeofenceId = geofence.id;
+      _selectedLocation = LatLng(geofence.latitude, geofence.longitude);
+    });
+    _mapController.move(LatLng(geofence.latitude, geofence.longitude), 18);
+  }
+
+  void _discardAllPending() {
+    setState(() {
+      _pendingGeofenceUpdates.clear();
+      _pendingNewGeofences.clear();
+    });
+  }
+
+  Future<void> _saveAllPending() async {
+    if (!_hasAnyPending) return;
+
+    final entries = _pendingGeofenceUpdates.entries.toList();
+    int successCount = 0;
+    final List<String> failedNames = [];
+
+    for (final g in _pendingNewGeofences.toList()) {
+      try {
+        await _geofenceService.addGeofence(g);
+        successCount++;
+      } catch (_) {
+        failedNames.add(g.name);
+      }
+    }
+
+    for (final e in entries) {
+      final g = e.value;
+      try {
+        await _geofenceService.updateGeofence(g);
+        successCount++;
+      } catch (_) {
+        failedNames.add(g.name);
+      }
+    }
+
+    await _fetchGeofences();
+    if (!mounted) return;
+    setState(() {
+      _pendingGeofenceUpdates.clear();
+      _pendingNewGeofences.clear();
+    });
+
+    final msg = failedNames.isEmpty
+        ? 'Saved $successCount geofence(s).'
+        : 'Saved $successCount geofence(s). Failed: ${failedNames.take(3).join(', ')}${failedNames.length > 3 ? '…' : ''}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: failedNames.isEmpty ? Colors.green : Colors.orange,
+      ),
+    );
   }
 
   Future<void> _fetchGeofences() async {
@@ -242,6 +339,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
       ),
       onTap: () {
+        _selectGeofence(g);
         _mapController.move(LatLng(g.latitude, g.longitude), 16);
       },
     );
@@ -399,6 +497,242 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     );
   }
 
+  Widget _buildGeofenceTab(ScrollController scrollController) {
+    final selected = _selectedGeofence;
+    final bottomPadding = MediaQuery.of(context).padding.bottom + 24 + 72;
+
+    return ListView(
+      controller: scrollController,
+      padding: EdgeInsets.fromLTRB(12, 12, 12, bottomPadding),
+      children: [
+        if (_hasAnyPending)
+          Card(
+            color: Theme.of(context).colorScheme.surface,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Unsaved changes: ${_pendingGeofenceUpdates.length + _pendingNewGeofences.length}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _discardAllPending,
+                    child: Text(
+                      'Discard',
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ),
+                  FilledButton(
+                    onPressed: _saveAllPending,
+                    child: const Text('Save All'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        _buildSearchToggleButton(),
+        _buildSearchPanel(),
+        const SizedBox(height: 8),
+
+        Text(
+          'Geofence Areas',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        if (selected != null)
+          Card(
+            color: Theme.of(context).colorScheme.surface,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    selected.name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    selected.address,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        const SizedBox(height: 8),
+        ..._pendingNewGeofences.map(_buildGeofenceRow),
+        ..._geofences.map((g) {
+          final staged =
+              g.id != null && _pendingGeofenceUpdates.containsKey(g.id)
+              ? _pendingGeofenceUpdates[g.id]!
+              : g;
+          return _buildGeofenceRow(staged);
+        }),
+      ],
+    );
+  }
+
+  Widget _buildAssignmentsTab(ScrollController scrollController) {
+    final selected = _selectedGeofence;
+    final bottomPadding = MediaQuery.of(context).padding.bottom + 24 + 72;
+
+    if (selected == null) {
+      return ListView(
+        controller: scrollController,
+        padding: EdgeInsets.fromLTRB(12, 12, 12, bottomPadding),
+        children: [
+          Text(
+            'Select a geofence to manage assignments.',
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final assignedIds = (selected.assignedEmployees ?? const [])
+        .map((e) => e.id.toString())
+        .where((id) => id.trim().isNotEmpty)
+        .toSet();
+
+    Iterable<UserModel> base = _allEmployees;
+
+    if (_assignmentsFilter == 'assigned') {
+      base = base.where((e) => assignedIds.contains(e.id));
+    } else if (_assignmentsFilter == 'unassigned') {
+      base = base.where((e) => !assignedIds.contains(e.id));
+    }
+
+    final q = _assignmentsSearchController.text.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      base = base.where((e) {
+        final name = e.name.toLowerCase();
+        final username = (e.username ?? '').toLowerCase();
+        return name.contains(q) || username.contains(q);
+      });
+    }
+
+    final employees = base.toList();
+
+    return ListView(
+      controller: scrollController,
+      padding: EdgeInsets.fromLTRB(12, 12, 12, bottomPadding),
+      children: [
+        TextField(
+          controller: _assignmentsSearchController,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search),
+            hintText: 'Search employees...',
+          ),
+          onChanged: (_) {
+            _assignmentsSearchDebounce?.cancel();
+            _assignmentsSearchDebounce = Timer(
+              const Duration(milliseconds: 250),
+              () {
+                if (mounted) setState(() {});
+              },
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            ChoiceChip(
+              label: const Text('All'),
+              selected: _assignmentsFilter == 'all',
+              onSelected: (_) => setState(() => _assignmentsFilter = 'all'),
+            ),
+            ChoiceChip(
+              label: const Text('Assigned'),
+              selected: _assignmentsFilter == 'assigned',
+              onSelected: (_) =>
+                  setState(() => _assignmentsFilter = 'assigned'),
+            ),
+            ChoiceChip(
+              label: const Text('Unassigned'),
+              selected: _assignmentsFilter == 'unassigned',
+              onSelected: (_) =>
+                  setState(() => _assignmentsFilter = 'unassigned'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Assigned: ${assignedIds.length}',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...employees.map((emp) {
+          final empId = emp.id;
+          final isAssigned =
+              empId.trim().isNotEmpty && assignedIds.contains(empId.toString());
+          return CheckboxListTile(
+            dense: true,
+            value: isAssigned,
+            title: Text(emp.name),
+            subtitle: Text(emp.username ?? ''),
+            onChanged: (v) {
+              final geofenceId = selected.id;
+              if (geofenceId == null) return;
+              if (empId.trim().isEmpty) return;
+
+              final current = _pendingGeofenceUpdates[geofenceId] ?? selected;
+              final existing = List.of(
+                current.assignedEmployees ?? const <UserModel>[],
+              );
+              if (v == true) {
+                if (!existing.any((e) => e.id == empId)) {
+                  existing.add(emp);
+                }
+              } else {
+                existing.removeWhere((e) => e.id == empId);
+              }
+              setState(() {
+                _pendingGeofenceUpdates[geofenceId] = current.copyWith(
+                  assignedEmployees: existing,
+                );
+              });
+            },
+          );
+        }),
+      ],
+    );
+  }
+
   void _selectPlaceResult(_PlaceSearchResult result) {
     final latLng = result.latLng;
     if (latLng == null) return;
@@ -519,48 +853,63 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 padding: const EdgeInsets.all(12),
                 child: DraggableScrollableSheet(
                   controller: _sheetController,
-                  initialChildSize: 0.18,
-                  minChildSize: 0.12,
+                  initialChildSize: 0.28,
+                  minChildSize: 0.18,
                   maxChildSize: 0.55,
                   snap: true,
-                  snapSizes: const [0.12, 0.18, 0.55],
+                  snapSizes: const [0.28, 0.5, 0.55],
                   builder: (context, controller) {
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(20),
-                        ),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).dividerColor.withValues(alpha: 0.35),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
+                    return Material(
+                      color: Colors.transparent,
+                      elevation: 10,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16),
+                          ),
+                          border: Border.all(
                             color: Theme.of(
                               context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.2),
-                            blurRadius: 16,
-                            offset: const Offset(0, -4),
+                            ).dividerColor.withValues(alpha: 0.35),
                           ),
-                        ],
-                      ),
-                      child: ListView(
-                        controller: controller,
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                        children: [
-                          _buildSheetHandle(),
-                          _buildSearchToggleButton(),
-                          _buildSearchPanel(),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Geofences',
-                            style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        child: DefaultTabController(
+                          length: 2,
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 8),
+                              _buildSheetHandle(),
+                              TabBar(
+                                labelColor: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface,
+                                unselectedLabelColor: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                                indicatorColor: const Color(0xFF2688d4),
+                                dividerColor: Theme.of(
+                                  context,
+                                ).dividerColor.withValues(alpha: 0.35),
+                                tabs: const [
+                                  Tab(text: 'Geofences'),
+                                  Tab(text: 'Assignments'),
+                                ],
+                              ),
+                              Expanded(
+                                child: TabBarView(
+                                  children: [
+                                    _buildGeofenceTab(controller),
+                                    _buildAssignmentsTab(controller),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          ...effectiveGeofences.map(_buildGeofenceRow),
-                        ],
+                        ),
                       ),
                     );
                   },
