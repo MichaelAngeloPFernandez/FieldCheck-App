@@ -298,6 +298,16 @@ const getUserProfile = asyncHandler(async (req, res) => {
         await user.save();
       }
     }
+
+    if (user.role === 'admin') {
+      const existingId = (user.employeeId || '').toString().trim();
+      if (!existingId) {
+        const generatedId = await generateSequentialId('admin');
+        user.employeeId = generatedId;
+        await user.save();
+      }
+    }
+
     res.json({
       _id: user._id,
       name: user.name,

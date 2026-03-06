@@ -108,6 +108,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   RealtimeUpdates? _realtimeUpdates;
   bool _isLoading = true;
   Timer? _refreshTimer;
+  Timer? _greetingTimer;
   bool _isFetchingRealtime = false;
   bool _isFetchingDashboard = false;
   Timer? _dashboardReloadDebounce;
@@ -934,6 +935,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _initLocationService();
     _startGpsSweepTimer();
     _startRefreshTimer();
+
+    _greetingTimer?.cancel();
+    _greetingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
   }
 
   Widget _buildNotificationItem(DashboardNotification notif) {
@@ -2683,7 +2690,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
             // Show notification with employee name and display ID
             final employeeName = (data['name'] ?? 'Employee').toString();
-            final employeeCode = (data['employeeCode'] ?? '').toString();
+            final employeeCode = (data['employeeId'] ?? '').toString();
             final displayName = employeeCode.isNotEmpty
                 ? '$employeeName ($employeeCode)'
                 : employeeName;
@@ -2850,6 +2857,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   void dispose() {
+    _greetingTimer?.cancel();
     _refreshTimer?.cancel();
     _gpsSweepTimer?.cancel();
     _dashboardReloadDebounce?.cancel();
@@ -2867,6 +2875,78 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _employeeSearchController.dispose();
     _mapController.dispose();
     super.dispose();
+  }
+
+  String _adminGreetingTitle() {
+    final admin = _userService.currentUser;
+    final name = (admin?.username ?? '').trim().isNotEmpty
+        ? (admin?.username ?? '').trim()
+        : (admin?.name ?? '').trim();
+    final code = (admin?.employeeId ?? '').trim();
+    final who = name.isNotEmpty ? name : 'Admin';
+    final suffix = code.isNotEmpty ? ' • $code' : '';
+    return '${greetingManila()}, $who$suffix';
+  }
+
+  Widget _buildAdminGreetingHeader() {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              Icons.admin_panel_settings,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _adminGreetingTitle(),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Time (PH/HK): ${formatManilaClock()}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadDashboardData() async {
@@ -3714,6 +3794,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildAdminGreetingHeader(),
+                const SizedBox(height: 12),
                 // Real-time status indicator
                 if (_realtimeUpdates != null)
                   Container(

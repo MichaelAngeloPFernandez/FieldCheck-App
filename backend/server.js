@@ -89,6 +89,10 @@ const userSockets = new Map(); // { userId: Set(socketId) }
 const pendingOfflineTimers = new Map(); // { userId: Timeout }
 const OFFLINE_GRACE_MS = 15000;
 
+// Throttle rapid "sharing enabled" wakeups so toggling doesn't spam the admin UI.
+const lastSharingWakeEmitAt = new Map(); // { userId: number }
+const SHARING_WAKE_THROTTLE_MS = 2000;
+
 let _cachedMaxActivePerEmployee = null;
 let _cachedMaxActivePerEmployeeAt = 0;
 const _maxActiveCacheMs = 60 * 1000;
@@ -553,6 +557,50 @@ io.on('connection', (socket) => {
         accuracy: accuracy,
         timestamp: timestamp,
       });
+
+      // If the client is actively sharing location again, ensure presence is
+      // flipped back to online immediately so admins see the change without
+      // waiting for any DB writes or enrichment.
+      if (sharingEnabled) {
+        try {
+          const userKey = String(userId);
+          const nowMs = Date.now();
+          const prev = lastSharingWakeEmitAt.get(userKey) || 0;
+          if (nowMs - prev >= SHARING_WAKE_THROTTLE_MS) {
+            lastSharingWakeEmitAt.set(userKey, nowMs);
+
+            // Emit presence + marker payload immediately using whatever we have.
+            // This keeps admin list + markers responsive even if enrichment is slow.
+            const employeeName = (data && data.name ? String(data.name) : '').trim();
+            const username = (data && data.username ? String(data.username) : '').trim();
+            const employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
+
+            try {
+              io.emit('employeeOnline', {
+                employeeId: userKey,
+                name: employeeName || 'Employee',
+                employeeCode,
+                timestamp: new Date().toISOString(),
+              });
+            } catch (_) {}
+
+            try {
+              io.emit('liveEmployeeLocation', {
+                employeeId: userKey,
+                name: employeeName || 'Employee',
+                username: username || null,
+                employeeCode: employeeCode || null,
+                socketId: socket.id,
+                userId,
+                latitude,
+                longitude,
+                accuracy,
+                timestamp: timestamp || new Date().toISOString(),
+              });
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
 
       if (!sharingEnabled) {
         try {

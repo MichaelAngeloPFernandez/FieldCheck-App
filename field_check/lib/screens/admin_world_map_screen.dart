@@ -12,6 +12,7 @@ import 'package:field_check/services/task_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/services/availability_service.dart';
 import 'package:field_check/services/employee_location_service.dart';
+import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 
 class AdminWorldMapScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   final TaskService _taskService = TaskService();
   final AvailabilityService _availabilityService = AvailabilityService();
   final EmployeeLocationService _locationService = EmployeeLocationService();
+  final RealtimeService _realtimeService = RealtimeService();
   final MapController _mapController = MapController();
 
   final Map<String, UserModel> _employees = {};
@@ -40,6 +42,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   final Map<String, _WorldAvailability> _availability = {};
 
   StreamSubscription<List<EmployeeLocation>>? _employeeLocationSub;
+  StreamSubscription<Map<String, dynamic>>? _adminNearbySub;
   bool _loadingUsers = true;
   String? _selectedUserId;
   List<Task> _selectedUserTasks = const [];
@@ -56,6 +59,9 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
 
   Timer? _snapshotRefreshTimer;
 
+  String _adminNearbyMode = 'off';
+  LatLng? _adminNearbyLatLng;
+
   static const LatLng _defaultCenter = LatLng(14.5995, 120.9842); // Manila
 
   @override
@@ -70,6 +76,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     // Seed any cached snapshot immediately so the screen doesn't start empty
     // while waiting for the next socket event.
     _applyLocations(_locationService.getAllLocations());
+    await _initAdminNearby();
     await _loadEmployees();
     await _refreshAvailability();
 
@@ -77,6 +84,27 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     _snapshotRefreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       if (!mounted) return;
       _applyLocations(_locationService.getAllLocations());
+    });
+  }
+
+  Future<void> _initAdminNearby() async {
+    await _realtimeService.initialize();
+    _adminNearbySub?.cancel();
+    _adminNearbySub = _realtimeService.adminNearbyStream.listen((data) {
+      final mode = (data['mode'] ?? 'off').toString();
+      final lat = data['latitude'];
+      final lng = data['longitude'];
+      final nextLat = lat is num ? lat.toDouble() : null;
+      final nextLng = lng is num ? lng.toDouble() : null;
+
+      if (!mounted) return;
+      setState(() {
+        _adminNearbyMode = mode;
+        _adminNearbyLatLng =
+            (mode != 'off' && nextLat != null && nextLng != null)
+            ? LatLng(nextLat, nextLng)
+            : null;
+      });
     });
   }
 
@@ -846,6 +874,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   @override
   void dispose() {
     _employeeLocationSub?.cancel();
+    _adminNearbySub?.cancel();
     _snapshotRefreshTimer?.cancel();
     super.dispose();
   }
@@ -1024,116 +1053,153 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                           }).toList(),
                         ),
                         MarkerLayer(
-                          markers: filteredLive.entries.map((entry) {
-                            final user = _employees[entry.key];
-                            final empLocation = filteredLocations.firstWhere(
-                              (e) => e.employeeId == entry.key,
-                              orElse: () => EmployeeLocation(
-                                employeeId: entry.key,
-                                name: user?.name ?? 'Unknown',
-                                latitude: entry.value.latitude,
-                                longitude: entry.value.longitude,
-                                accuracy: 0,
-                                status: EmployeeStatus.offline,
-                                timestamp: DateTime.now(),
-                                activeTaskCount: 0,
-                                workloadScore: 0,
-                                isOnline: false,
-                              ),
-                            );
-
-                            // Check if employee is in offline transition period
-                            final isInOfflineTransition = _offlineTimestamps
-                                .containsKey(entry.key);
-
-                            Color markerColor;
-                            IconData markerIcon;
-                            double opacity = 1.0;
-
-                            if (isInOfflineTransition) {
-                              // Show gray icon for offline employees in transition
-                              markerColor = Colors.grey;
-                              markerIcon = Icons.cloud_off;
-                              opacity =
-                                  0.6; // Reduced opacity for offline state
-                            } else {
-                              switch (empLocation.status) {
-                                case EmployeeStatus.available:
-                                  markerColor = Colors.green;
-                                  markerIcon = Icons.check_circle;
-                                  break;
-                                case EmployeeStatus.moving:
-                                  markerColor = Colors.blue;
-                                  markerIcon = Icons.directions_run;
-                                  break;
-                                case EmployeeStatus.busy:
-                                  markerColor = Colors.red;
-                                  markerIcon = Icons.schedule;
-                                  break;
-                                case EmployeeStatus.offline:
-                                  markerColor = Colors.grey;
-                                  markerIcon = Icons.cloud_off;
-                                  opacity = 0.6;
-                                  break;
-                              }
-                            }
-
-                            return Marker(
-                              point: entry.value,
-                              width: 54,
-                              height: 54,
-                              child: GestureDetector(
-                                onTap: () => _onEmployeeTap(entry.key),
-                                child: Opacity(
-                                  opacity: opacity,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: markerColor,
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 3,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: markerColor.withValues(
-                                            alpha: 0.35,
-                                          ),
-                                          blurRadius: 16,
-                                          offset: const Offset(0, 10),
-                                        ),
-                                      ],
+                          markers: [
+                            if (_adminNearbyMode != 'off' &&
+                                _adminNearbyLatLng != null)
+                              Marker(
+                                point: _adminNearbyLatLng!,
+                                width: 52,
+                                height: 52,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: const Color(
+                                      0xFF5C4EF5,
+                                    ).withValues(alpha: 0.95),
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 3,
                                     ),
-                                    child: Center(
-                                      child:
-                                          (user != null &&
-                                              (user.avatarUrl ?? '')
-                                                  .trim()
-                                                  .isNotEmpty)
-                                          ? AppWidgets.userAvatar(
-                                              radius: 17,
-                                              avatarUrl: user.avatarUrl,
-                                              initials:
-                                                  user.name.trim().isNotEmpty
-                                                  ? user.name.characters.first
-                                                        .toUpperCase()
-                                                  : '?',
-                                              backgroundColor:
-                                                  Colors.transparent,
-                                              foregroundColor: Colors.white,
-                                              fallbackIcon: markerIcon,
-                                            )
-                                          : Icon(
-                                              markerIcon,
-                                              color: Colors.white,
-                                              size: 22,
-                                            ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(
+                                          0xFF5C4EF5,
+                                        ).withValues(alpha: 0.35),
+                                        blurRadius: 16,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.admin_panel_settings,
+                                      color: Colors.white,
+                                      size: 24,
                                     ),
                                   ),
                                 ),
                               ),
-                            );
-                          }).toList(),
+                            ...filteredLive.entries.map((entry) {
+                              final user = _employees[entry.key];
+                              final empLocation = filteredLocations.firstWhere(
+                                (e) => e.employeeId == entry.key,
+                                orElse: () => EmployeeLocation(
+                                  employeeId: entry.key,
+                                  name: user?.name ?? 'Unknown',
+                                  latitude: entry.value.latitude,
+                                  longitude: entry.value.longitude,
+                                  accuracy: 0,
+                                  status: EmployeeStatus.offline,
+                                  timestamp: DateTime.now(),
+                                  activeTaskCount: 0,
+                                  workloadScore: 0,
+                                  isOnline: false,
+                                ),
+                              );
+
+                              // Check if employee is in offline transition period
+                              final isInOfflineTransition = _offlineTimestamps
+                                  .containsKey(entry.key);
+
+                              Color markerColor;
+                              IconData markerIcon;
+                              double opacity = 1.0;
+
+                              if (isInOfflineTransition) {
+                                // Show gray icon for offline employees in transition
+                                markerColor = Colors.grey;
+                                markerIcon = Icons.cloud_off;
+                                opacity =
+                                    0.6; // Reduced opacity for offline state
+                              } else {
+                                switch (empLocation.status) {
+                                  case EmployeeStatus.available:
+                                    markerColor = Colors.green;
+                                    markerIcon = Icons.check_circle;
+                                    break;
+                                  case EmployeeStatus.moving:
+                                    markerColor = Colors.blue;
+                                    markerIcon = Icons.directions_run;
+                                    break;
+                                  case EmployeeStatus.busy:
+                                    markerColor = Colors.red;
+                                    markerIcon = Icons.schedule;
+                                    break;
+                                  case EmployeeStatus.offline:
+                                    markerColor = Colors.grey;
+                                    markerIcon = Icons.cloud_off;
+                                    opacity = 0.6;
+                                    break;
+                                }
+                              }
+
+                              return Marker(
+                                point: entry.value,
+                                width: 54,
+                                height: 54,
+                                child: GestureDetector(
+                                  onTap: () => _onEmployeeTap(entry.key),
+                                  child: Opacity(
+                                    opacity: opacity,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: markerColor,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 3,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: markerColor.withValues(
+                                              alpha: 0.35,
+                                            ),
+                                            blurRadius: 16,
+                                            offset: const Offset(0, 10),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Center(
+                                        child:
+                                            (user != null &&
+                                                (user.avatarUrl ?? '')
+                                                    .trim()
+                                                    .isNotEmpty)
+                                            ? AppWidgets.userAvatar(
+                                                radius: 17,
+                                                avatarUrl: user.avatarUrl,
+                                                initials:
+                                                    user.name.trim().isNotEmpty
+                                                    ? user.name.characters.first
+                                                          .toUpperCase()
+                                                    : '?',
+                                                backgroundColor:
+                                                    Colors.transparent,
+                                                foregroundColor: Colors.white,
+                                                fallbackIcon: markerIcon,
+                                              )
+                                            : Icon(
+                                                markerIcon,
+                                                color: Colors.white,
+                                                size: 22,
+                                              ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ],
                         ),
                       ],
                     ),
