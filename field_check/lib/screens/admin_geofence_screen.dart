@@ -52,6 +52,7 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   bool _isSearchingPlaces = false;
   String? _placesError;
   List<_PlaceSearchResult> _placeResults = [];
+  bool _isSearchExpanded = false;
 
   @override
   void initState() {
@@ -195,6 +196,18 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     });
   }
 
+  void _toggleSearchExpanded() {
+    setState(() {
+      _isSearchExpanded = !_isSearchExpanded;
+      if (!_isSearchExpanded) {
+        _searchController.clear();
+        _placeResults = [];
+        _placesError = null;
+        _isSearchingPlaces = false;
+      }
+    });
+  }
+
   void _selectPlaceResult(_PlaceSearchResult result) {
     final latLng = result.latLng;
     if (latLng == null) return;
@@ -316,146 +329,167 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Material(
-                      elevation: 6,
-                      borderRadius: BorderRadius.circular(12),
-                      child: TextField(
-                        controller: _searchController,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        cursorColor: Theme.of(context).colorScheme.onSurface,
-                        decoration: InputDecoration(
-                          hintText: 'Search places (e.g., "Makati", "Ayala")',
-                          hintStyle: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.6),
-                          ),
-                          prefixIcon: Icon(
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: Material(
+                        color: Theme.of(context).colorScheme.surface,
+                        elevation: 6,
+                        borderRadius: BorderRadius.circular(999),
+                        child: IconButton(
+                          tooltip: _isSearchExpanded
+                              ? 'Collapse search'
+                              : 'Search',
+                          onPressed: _toggleSearchExpanded,
+                          icon: Icon(
                             Icons.search,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.75),
-                          ),
-                          suffixIcon: _searchController.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _searchController.clear();
-                                      _placeResults = [];
-                                      _placesError = null;
-                                    });
-                                  },
-                                  icon: Icon(
-                                    Icons.clear,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.75),
-                                  ),
-                                ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).dividerColor.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).dividerColor.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          filled: true,
-                          fillColor: Theme.of(context).colorScheme.surface,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
-                        onChanged: _onSearchChanged,
                       ),
                     ),
-                    if (_isSearchingPlaces ||
-                        _placesError != null ||
-                        _placeResults.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(top: 8),
-                        width: double.infinity,
-                        constraints: const BoxConstraints(maxHeight: 240),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Theme.of(
-                              context,
-                            ).dividerColor.withValues(alpha: 0.35),
+                    if (_isSearchExpanded) ...[
+                      const SizedBox(height: 8),
+                      Material(
+                        elevation: 6,
+                        borderRadius: BorderRadius.circular(12),
+                        child: TextField(
+                          controller: _searchController,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
+                          cursorColor: Theme.of(context).colorScheme.onSurface,
+                          decoration: InputDecoration(
+                            hintText: 'Search places (e.g., "Makati", "Ayala")',
+                            hintStyle: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.6),
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.75),
+                            ),
+                            suffixIcon: _searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _searchController.clear();
+                                        _placeResults = [];
+                                        _placesError = null;
+                                      });
+                                    },
+                                    icon: Icon(
+                                      Icons.clear,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.75),
+                                    ),
+                                  ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).dividerColor.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).dividerColor.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            filled: true,
+                            fillColor: Theme.of(context).colorScheme.surface,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                          ),
+                          onChanged: _onSearchChanged,
                         ),
-                        child: _isSearchingPlaces
-                            ? Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Row(
-                                  children: [
-                                    const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      'Searching...',
-                                      style: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : (_placeResults.isNotEmpty
-                                  ? ListView.builder(
-                                      shrinkWrap: true,
-                                      itemCount: _placeResults.length,
-                                      itemBuilder: (context, index) {
-                                        final r = _placeResults[index];
-                                        return ListTile(
-                                          dense: true,
-                                          leading: const Icon(
-                                            Icons.location_on,
-                                            color: Colors.blue,
-                                          ),
-                                          title: Text(
-                                            r.displayName,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          onTap: () => _selectPlaceResult(r),
-                                        );
-                                      },
-                                    )
-                                  : Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Text(
-                                        _placesError ?? 'No results',
-                                        style: TextStyle(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withValues(alpha: 0.75),
+                      ),
+                      if (_isSearchingPlaces ||
+                          _placesError != null ||
+                          _placeResults.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          width: double.infinity,
+                          constraints: const BoxConstraints(maxHeight: 240),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).dividerColor.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: _isSearchingPlaces
+                              ? Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
+                                    children: [
+                                      const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
                                         ),
                                       ),
-                                    )),
-                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        'Searching...',
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : (_placeResults.isNotEmpty
+                                    ? ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: _placeResults.length,
+                                        itemBuilder: (context, index) {
+                                          final r = _placeResults[index];
+                                          return ListTile(
+                                            dense: true,
+                                            leading: const Icon(
+                                              Icons.location_on,
+                                              color: Colors.blue,
+                                            ),
+                                            title: Text(
+                                              r.displayName,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            onTap: () => _selectPlaceResult(r),
+                                          );
+                                        },
+                                      )
+                                    : Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: Text(
+                                          _placesError ?? 'No results',
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.75),
+                                          ),
+                                        ),
+                                      )),
+                        ),
+                    ],
                   ],
                 ),
               ),
