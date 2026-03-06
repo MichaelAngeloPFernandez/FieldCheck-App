@@ -43,6 +43,8 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   late io.Socket _socket;
 
   final MapController _mapController = MapController();
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
 
   final Map<String, Geofence> _pendingGeofenceUpdates = {};
   final List<Geofence> _pendingNewGeofences = [];
@@ -208,6 +210,195 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     });
   }
 
+  Widget _buildSheetHandle() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Center(
+        child: Container(
+          width: 44,
+          height: 5,
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGeofenceRow(Geofence g) {
+    return ListTile(
+      dense: true,
+      title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        'r=${g.radius.toStringAsFixed(0)}m',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Icon(
+        Icons.chevron_right,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+      ),
+      onTap: () {
+        _mapController.move(LatLng(g.latitude, g.longitude), 16);
+      },
+    );
+  }
+
+  Widget _buildSearchToggleButton() {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
+        elevation: 0,
+        borderRadius: BorderRadius.circular(999),
+        child: IconButton(
+          tooltip: _isSearchExpanded ? 'Collapse search' : 'Search',
+          onPressed: _toggleSearchExpanded,
+          icon: Icon(
+            Icons.search,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchPanel() {
+    if (!_isSearchExpanded) return const SizedBox.shrink();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        TextField(
+          controller: _searchController,
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          cursorColor: Theme.of(context).colorScheme.onSurface,
+          decoration: InputDecoration(
+            hintText: 'Search places (e.g., "Makati", "Ayala")',
+            hintStyle: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+            prefixIcon: Icon(
+              Icons.search,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
+            suffixIcon: _searchController.text.isEmpty
+                ? null
+                : IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _searchController.clear();
+                        _placeResults = [];
+                        _placesError = null;
+                      });
+                    },
+                    icon: Icon(
+                      Icons.clear,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.75),
+                    ),
+                  ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+              ),
+            ),
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.surface,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+          ),
+          onChanged: _onSearchChanged,
+        ),
+        if (_isSearchingPlaces ||
+            _placesError != null ||
+            _placeResults.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            width: double.infinity,
+            constraints: const BoxConstraints(maxHeight: 240),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+              ),
+            ),
+            child: _isSearchingPlaces
+                ? Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Searching...',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : (_placeResults.isNotEmpty
+                      ? ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _placeResults.length,
+                          itemBuilder: (context, index) {
+                            final r = _placeResults[index];
+                            return ListTile(
+                              dense: true,
+                              leading: const Icon(
+                                Icons.location_on,
+                                color: Colors.blue,
+                              ),
+                              title: Text(
+                                r.displayName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onTap: () => _selectPlaceResult(r),
+                            );
+                          },
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            _placesError ?? 'No results',
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.75),
+                            ),
+                          ),
+                        )),
+          ),
+      ],
+    );
+  }
+
   void _selectPlaceResult(_PlaceSearchResult result) {
     final latLng = result.latLng;
     if (latLng == null) return;
@@ -326,171 +517,53 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Align(
-                      alignment: Alignment.bottomRight,
-                      child: Material(
+                child: DraggableScrollableSheet(
+                  controller: _sheetController,
+                  initialChildSize: 0.18,
+                  minChildSize: 0.12,
+                  maxChildSize: 0.55,
+                  snap: true,
+                  snapSizes: const [0.12, 0.18, 0.55],
+                  builder: (context, controller) {
+                    return Container(
+                      decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.surface,
-                        elevation: 6,
-                        borderRadius: BorderRadius.circular(999),
-                        child: IconButton(
-                          tooltip: _isSearchExpanded
-                              ? 'Collapse search'
-                              : 'Search',
-                          onPressed: _toggleSearchExpanded,
-                          icon: Icon(
-                            Icons.search,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(20),
                         ),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.35),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.2),
+                            blurRadius: 16,
+                            offset: const Offset(0, -4),
+                          ),
+                        ],
                       ),
-                    ),
-                    if (_isSearchExpanded) ...[
-                      const SizedBox(height: 8),
-                      Material(
-                        elevation: 6,
-                        borderRadius: BorderRadius.circular(12),
-                        child: TextField(
-                          controller: _searchController,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
+                      child: ListView(
+                        controller: controller,
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                        children: [
+                          _buildSheetHandle(),
+                          _buildSearchToggleButton(),
+                          _buildSearchPanel(),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Geofences',
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
-                          cursorColor: Theme.of(context).colorScheme.onSurface,
-                          decoration: InputDecoration(
-                            hintText: 'Search places (e.g., "Makati", "Ayala")',
-                            hintStyle: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.6),
-                            ),
-                            prefixIcon: Icon(
-                              Icons.search,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.75),
-                            ),
-                            suffixIcon: _searchController.text.isEmpty
-                                ? null
-                                : IconButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _searchController.clear();
-                                        _placeResults = [];
-                                        _placesError = null;
-                                      });
-                                    },
-                                    icon: Icon(
-                                      Icons.clear,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(alpha: 0.75),
-                                    ),
-                                  ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).dividerColor.withValues(alpha: 0.35),
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).dividerColor.withValues(alpha: 0.35),
-                              ),
-                            ),
-                            filled: true,
-                            fillColor: Theme.of(context).colorScheme.surface,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 12,
-                            ),
-                          ),
-                          onChanged: _onSearchChanged,
-                        ),
+                          const SizedBox(height: 6),
+                          ...effectiveGeofences.map(_buildGeofenceRow),
+                        ],
                       ),
-                      if (_isSearchingPlaces ||
-                          _placesError != null ||
-                          _placeResults.isNotEmpty)
-                        Container(
-                          margin: const EdgeInsets.only(top: 8),
-                          width: double.infinity,
-                          constraints: const BoxConstraints(maxHeight: 240),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).dividerColor.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: _isSearchingPlaces
-                              ? Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Row(
-                                    children: [
-                                      const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Text(
-                                        'Searching...',
-                                        style: TextStyle(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurface,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : (_placeResults.isNotEmpty
-                                    ? ListView.builder(
-                                        shrinkWrap: true,
-                                        itemCount: _placeResults.length,
-                                        itemBuilder: (context, index) {
-                                          final r = _placeResults[index];
-                                          return ListTile(
-                                            dense: true,
-                                            leading: const Icon(
-                                              Icons.location_on,
-                                              color: Colors.blue,
-                                            ),
-                                            title: Text(
-                                              r.displayName,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            onTap: () => _selectPlaceResult(r),
-                                          );
-                                        },
-                                      )
-                                    : Padding(
-                                        padding: const EdgeInsets.all(12),
-                                        child: Text(
-                                          _placesError ?? 'No results',
-                                          style: TextStyle(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurface
-                                                .withValues(alpha: 0.75),
-                                          ),
-                                        ),
-                                      )),
-                        ),
-                    ],
-                  ],
+                    );
+                  },
                 ),
               ),
             ),
