@@ -47,6 +47,8 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
 
+  double _sheetSize = 0.28;
+
   String? _selectedGeofenceId;
   List<UserModel> _allEmployees = [];
   final TextEditingController _assignmentsSearchController =
@@ -70,6 +72,15 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     _fetchGeofences();
     _fetchAllEmployees();
     _initSocket();
+
+    _sheetController.addListener(() {
+      final next = _sheetController.size;
+      if (next == _sheetSize) return;
+      if (!mounted) return;
+      setState(() {
+        _sheetSize = next;
+      });
+    });
   }
 
   Future<void> _fetchAllEmployees() async {
@@ -209,6 +220,114 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
     );
   }
 
+  Widget _buildSheetHeader() {
+    final pendingCount =
+        _pendingGeofenceUpdates.length + _pendingNewGeofences.length;
+    final selected = _selectedGeofence;
+    final title = selected != null ? selected.name : 'Geofence Manager';
+    final subtitle = selected != null
+        ? selected.address
+        : 'Select a geofence to edit';
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (details) {
+        final screenH = MediaQuery.of(context).size.height;
+        if (screenH <= 0) return;
+        final delta = -details.delta.dy / screenH;
+        final next = (_sheetSize + delta).clamp(0.18, 0.55);
+        _sheetController.jumpTo(next);
+      },
+      onVerticalDragEnd: (_) {
+        final snap = <double>[0.28, 0.5, 0.55].reduce(
+          (a, b) => (_sheetSize - a).abs() < (_sheetSize - b).abs() ? a : b,
+        );
+        _sheetController.animateTo(
+          snap,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111827),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          children: [
+            Center(
+              child: Container(
+                width: 56,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.28),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.72),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (pendingCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2688d4).withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0xFF2688d4).withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Text(
+                      '$pendingCount pending',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _fetchGeofences() async {
     try {
       final fetchedGeofences = await _geofenceService.fetchGeofences();
@@ -305,24 +424,6 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
         _isSearchingPlaces = false;
       }
     });
-  }
-
-  Widget _buildSheetHandle() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Center(
-        child: Container(
-          width: 44,
-          height: 5,
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildGeofenceRow(Geofence g) {
@@ -867,22 +968,19 @@ class _AdminGeofenceScreenState extends State<AdminGeofenceScreen> {
                       ),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
+                          color: const Color(0xFF0B1220),
                           borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(16),
                           ),
                           border: Border.all(
-                            color: Theme.of(
-                              context,
-                            ).dividerColor.withValues(alpha: 0.35),
+                            color: Colors.white.withValues(alpha: 0.08),
                           ),
                         ),
                         child: DefaultTabController(
                           length: 2,
                           child: Column(
                             children: [
-                              const SizedBox(height: 8),
-                              _buildSheetHandle(),
+                              _buildSheetHeader(),
                               TabBar(
                                 labelColor: Theme.of(
                                   context,
