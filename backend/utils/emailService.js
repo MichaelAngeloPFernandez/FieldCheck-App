@@ -66,9 +66,28 @@ const sendEmail = async (options) => {
     throw new Error('Email service not configured');
   }
 
-  const transporter = config.disableEmail || !config.hasSmtp
-    ? nodemailer.createTransport({ jsonTransport: true })
-    : nodemailer.createTransport(config.smtp);
+  const transportMode = config.disableEmail
+    ? 'disabled-json'
+    : config.hasSmtp
+      ? 'smtp'
+      : 'dev-json';
+
+  let transporter;
+  try {
+    transporter = config.disableEmail || !config.hasSmtp
+      ? nodemailer.createTransport({ jsonTransport: true })
+      : nodemailer.createTransport(config.smtp);
+  } catch (e) {
+    console.error('Email: failed to create transporter', {
+      mode: transportMode,
+      host: config.smtp && config.smtp.host,
+      port: config.smtp && config.smtp.port,
+      secure: config.smtp && config.smtp.secure,
+      user: config.smtp && config.smtp.auth && config.smtp.auth.user,
+      error: e && e.message ? e.message : String(e),
+    });
+    throw e;
+  }
 
   let html = options.message || '';
   if (options.templateName === 'accountActivation') {
@@ -87,7 +106,37 @@ const sendEmail = async (options) => {
     attachments: options.attachments || [],
   };
 
-  await withTimeout(transporter.sendMail(mailOptions), 15000, 'sendMail');
+  try {
+    const info = await withTimeout(
+      transporter.sendMail(mailOptions),
+      15000,
+      'sendMail',
+    );
+    if (transportMode !== 'smtp') {
+      console.warn('Email: sent using non-SMTP transport (no delivery)', {
+        mode: transportMode,
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+        preview: info && info.message ? info.message : undefined,
+      });
+    }
+    return info;
+  } catch (e) {
+    console.error('Email: sendMail failed', {
+      mode: transportMode,
+      host: config.smtp && config.smtp.host,
+      port: config.smtp && config.smtp.port,
+      secure: config.smtp && config.smtp.secure,
+      user: config.smtp && config.smtp.auth && config.smtp.auth.user,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      error: e && e.message ? e.message : String(e),
+      code: e && e.code ? e.code : undefined,
+      response: e && e.response ? e.response : undefined,
+      responseCode: e && e.responseCode ? e.responseCode : undefined,
+    });
+    throw e;
+  }
 };
 
 module.exports = sendEmail;
