@@ -1,7 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, library_prefixes
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
@@ -34,24 +33,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   int _geofenceRadius = 100;
   String _syncFrequency = 'Every 15 minutes';
 
-  static const int _taskMaxActivePerEmployeeMin = 1;
-  static const int _taskMaxActivePerEmployeeMax = 50;
-
-  int _taskMaxActivePerEmployee = 10;
-  final TextEditingController _taskMaxActivePerEmployeeController =
-      TextEditingController(text: '10');
-
-  int _clampTaskMaxActivePerEmployee(int value) {
-    return value.clamp(
-      _taskMaxActivePerEmployeeMin,
-      _taskMaxActivePerEmployeeMax,
-    );
-  }
-
-  int _normalizeTaskMaxActivePerEmployee(int? parsed) {
-    if (parsed == null) return _taskMaxActivePerEmployee;
-    return _clampTaskMaxActivePerEmployee(parsed);
-  }
+  static const int _taskMaxActivePerEmployee = 3;
 
   bool _settingsLoadedFromBackend = true;
   bool _isSavingSettings = false;
@@ -128,18 +110,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               _syncFrequency = update['syncFrequency'] as String;
               prefs.setString('syncFrequency', _syncFrequency);
             }
-
-            if (update.containsKey('task.maxActivePerEmployee')) {
-              final raw = update['task.maxActivePerEmployee'];
-              final parsed = raw is num ? raw.toInt() : int.tryParse('$raw');
-              if (parsed != null) {
-                final normalized = _normalizeTaskMaxActivePerEmployee(parsed);
-                _taskMaxActivePerEmployee = normalized;
-                prefs.setInt('task.maxActivePerEmployee', normalized);
-                _taskMaxActivePerEmployeeController.text = normalized
-                    .toString();
-              }
-            }
           });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Settings synced in real-time')),
@@ -170,7 +140,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   void dispose() {
     _socket.dispose();
     _urgentMessageController.dispose();
-    _taskMaxActivePerEmployeeController.dispose();
     super.dispose();
   }
 
@@ -178,13 +147,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     try {
       final settings = await _settingsService.fetchSettings();
       if (settings.isNotEmpty) {
-        final rawTaskMax = settings['task.maxActivePerEmployee'];
-        final parsedTaskMax = rawTaskMax is num
-            ? rawTaskMax.toInt()
-            : int.tryParse(rawTaskMax?.toString() ?? '');
-        final normalizedTaskMax = _normalizeTaskMaxActivePerEmployee(
-          parsedTaskMax,
-        );
         setState(() {
           _allowOfflineMode = settings['allowOfflineMode'] ?? _allowOfflineMode;
           _requireBeaconVerification =
@@ -195,11 +157,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           _geofenceRadius =
               (settings['geofenceRadius'] as num?)?.toInt() ?? _geofenceRadius;
           _syncFrequency = settings['syncFrequency'] ?? _syncFrequency;
-          _taskMaxActivePerEmployee = normalizedTaskMax;
           _settingsLoadedFromBackend = true;
         });
-        _taskMaxActivePerEmployeeController.text = _taskMaxActivePerEmployee
-            .toString();
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('allowOfflineMode', _allowOfflineMode);
         await prefs.setBool(
@@ -209,10 +168,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         await prefs.setBool('enableLocationTracking', _enableLocationTracking);
         await prefs.setInt('geofenceRadius', _geofenceRadius);
         await prefs.setString('syncFrequency', _syncFrequency);
-        await prefs.setInt(
-          'task.maxActivePerEmployee',
-          _taskMaxActivePerEmployee,
-        );
       } else {
         // Fallback to local if backend not available
         final prefs = await SharedPreferences.getInstance();
@@ -227,13 +182,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               _enableLocationTracking;
           _geofenceRadius = prefs.getInt('geofenceRadius') ?? _geofenceRadius;
           _syncFrequency = prefs.getString('syncFrequency') ?? _syncFrequency;
-          _taskMaxActivePerEmployee = _normalizeTaskMaxActivePerEmployee(
-            prefs.getInt('task.maxActivePerEmployee'),
-          );
           _settingsLoadedFromBackend = false;
         });
-        _taskMaxActivePerEmployeeController.text = _taskMaxActivePerEmployee
-            .toString();
       }
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
@@ -247,38 +197,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             prefs.getBool('enableLocationTracking') ?? _enableLocationTracking;
         _geofenceRadius = prefs.getInt('geofenceRadius') ?? _geofenceRadius;
         _syncFrequency = prefs.getString('syncFrequency') ?? _syncFrequency;
-        _taskMaxActivePerEmployee = _normalizeTaskMaxActivePerEmployee(
-          prefs.getInt('task.maxActivePerEmployee'),
-        );
         _settingsLoadedFromBackend = false;
       });
-      _taskMaxActivePerEmployeeController.text = _taskMaxActivePerEmployee
-          .toString();
     }
   }
 
   Future<void> _saveSettings() async {
     if (_isSavingSettings) return;
-
-    final before = _taskMaxActivePerEmployee;
-    final normalized = _normalizeTaskMaxActivePerEmployee(
-      _taskMaxActivePerEmployee,
-    );
-    if (normalized != before) {
-      setState(() {
-        _taskMaxActivePerEmployee = normalized;
-      });
-      _taskMaxActivePerEmployeeController.text = normalized.toString();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Max active tasks per employee was adjusted to $normalized (allowed: $_taskMaxActivePerEmployeeMin-$_taskMaxActivePerEmployeeMax).',
-            ),
-          ),
-        );
-      }
-    }
 
     setState(() {
       _isSavingSettings = true;
@@ -617,72 +542,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                     _syncFrequency = value!;
                                   });
                                 },
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(
-                          width: cardWidth,
-                          child: cardShell(
-                            title: 'Task Settings',
-                            icon: Icons.task,
-                            children: [
-                              ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: const Text(
-                                  'Max Active Tasks Per Employee',
-                                ),
-                                subtitle: const Text(
-                                  'Controls assignment limits and warnings in Admin Task Management',
-                                ),
-                                trailing: SizedBox(
-                                  width: 96,
-                                  child: TextField(
-                                    controller:
-                                        _taskMaxActivePerEmployeeController,
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                    ],
-                                    textAlign: TextAlign.center,
-                                    decoration: const InputDecoration(
-                                      isDense: true,
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    onChanged: (value) {
-                                      final parsed = int.tryParse(value);
-                                      if (parsed == null) return;
-                                      setState(() {
-                                        _taskMaxActivePerEmployee = parsed;
-                                      });
-                                    },
-                                    onSubmitted: (value) {
-                                      final parsed = int.tryParse(value);
-                                      final normalized =
-                                          _normalizeTaskMaxActivePerEmployee(
-                                            parsed,
-                                          );
-                                      if (!mounted) return;
-                                      setState(() {
-                                        _taskMaxActivePerEmployee = normalized;
-                                      });
-                                      _taskMaxActivePerEmployeeController.text =
-                                          normalized.toString();
-                                      if (parsed != null &&
-                                          parsed != normalized) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Adjusted to $normalized (allowed: $_taskMaxActivePerEmployeeMin-$_taskMaxActivePerEmployeeMax).',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ),
                               ),
                             ],
                           ),

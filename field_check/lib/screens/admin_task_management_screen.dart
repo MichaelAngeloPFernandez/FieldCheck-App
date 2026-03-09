@@ -6,7 +6,6 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/availability_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/models/user_model.dart';
-import 'package:field_check/services/settings_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
@@ -40,17 +39,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   final Map<String, double> _employeeDifficultyWeight = {};
   final Map<String, int> _employeeOverdueCount = {};
 
-  static const int _taskLimitMin = 1;
-  static const int _taskLimitMax = 50;
-
-  int _taskLimitPerEmployee = 10;
-  final Map<String, Set<String>> _taskAssignmentOverrides = {};
+  static const int _taskLimitPerEmployee = 3;
 
   Timer? _fetchDebounce;
-
-  int _clampTaskLimit(int value) {
-    return value.clamp(_taskLimitMin, _taskLimitMax);
-  }
 
   String _canonicalUserId(UserModel user) {
     if (user.id.isNotEmpty) return user.id;
@@ -62,40 +53,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   void initState() {
     super.initState();
     _fetchTasks();
-    _loadTaskLimit();
     _initSocket();
-  }
-
-  Future<void> _loadTaskLimit() async {
-    try {
-      final raw = await SettingsService().getSetting(
-        'task.maxActivePerEmployee',
-      );
-
-      int? parsed;
-      if (raw is num) {
-        parsed = raw.toInt();
-      } else if (raw is String) {
-        parsed = int.tryParse(raw);
-      } else if (raw is Map) {
-        final m = Map<String, dynamic>.from(raw);
-        final dynamic inner = m['maxActivePerEmployee'];
-        if (inner is num) {
-          parsed = inner.toInt();
-        } else if (inner is String) {
-          parsed = int.tryParse(inner);
-        }
-      }
-
-      if (parsed != null && mounted) {
-        final normalized = _clampTaskLimit(parsed);
-        setState(() {
-          _taskLimitPerEmployee = normalized;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading task limit setting: $e');
-    }
   }
 
   Future<void> _escalateTask(Task task) async {
@@ -936,13 +894,10 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     }());
 
     final selectedEmployeeIds = <String>{};
-    final overrideEmployeeIds = _taskAssignmentOverrides[task.id] ?? <String>{};
 
     if (serverAssigneeIdsFromApi.isNotEmpty) {
       selectedEmployeeIds.addAll(
-        serverAssigneeIdsFromApi
-            .map((raw) => assigneeIdToEmployeeModelId[raw] ?? raw)
-            .where((id) => id.isNotEmpty),
+        serverAssigneeIdsFromApi.where((id) => id.trim().isNotEmpty),
       );
     }
 
@@ -959,8 +914,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       );
       return true;
     }());
-
-    _taskAssignmentOverrides[task.id] = overrideEmployeeIds;
 
     if (!mounted) return;
 
@@ -1075,9 +1028,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                               ].cast<int>().reduce((a, b) => a > b ? a : b);
                               final atLimit =
                                   activeCount >= _taskLimitPerEmployee;
-                              final isOverridden = overrideEmployeeIds.contains(
-                                employee.id,
-                              );
                               final isAlreadyAssigned =
                                   initialSelectedEmployeeIds.contains(
                                     employee.id,
@@ -1142,42 +1092,10 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                   final isNewlySelecting =
                                       selected == true && !isAlreadyAssigned;
 
-                                  if (isNewlySelecting &&
-                                      atLimit &&
-                                      !isOverridden) {
+                                  if (isNewlySelecting && atLimit) {
                                     showDialogNotice(
-                                      '${employee.name} is already at/above the max active tasks ($_taskLimitPerEmployee). Use Override to assign anyway, or unassign/archive some tasks first.',
+                                      '${employee.name} is already at/above the max active tasks ($_taskLimitPerEmployee). Unassign/archive some tasks first.',
                                     );
-                                    showDialog<bool>(
-                                      context: context,
-                                      builder: (dCtx) => AlertDialog(
-                                        title: const Text(
-                                          'Employee at task limit',
-                                        ),
-                                        content: Text(
-                                          '${employee.name} already has $activeCount active task(s), which is at/above the limit ($_taskLimitPerEmployee).\n\nOverride and assign anyway?',
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.of(dCtx).pop(false),
-                                            child: const Text('Cancel'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.of(dCtx).pop(true),
-                                            child: const Text('Override'),
-                                          ),
-                                        ],
-                                      ),
-                                    ).then((allow) {
-                                      if (allow != true) return;
-                                      if (!mounted) return;
-                                      dialogSetState(() {
-                                        overrideEmployeeIds.add(employee.id);
-                                        selectedEmployeeIds.add(employee.id);
-                                      });
-                                    });
                                     return;
                                   }
 
@@ -1186,7 +1104,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                       selectedEmployeeIds.add(employee.id);
                                     } else {
                                       selectedEmployeeIds.remove(employee.id);
-                                      overrideEmployeeIds.remove(employee.id);
                                     }
                                   });
                                 },
@@ -1243,7 +1160,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           );
 
                           selectedEmployeeIds.clear();
-                          overrideEmployeeIds.clear();
 
                           _fetchTasks();
 
@@ -1302,12 +1218,11 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           _employeeActiveTaskCount[id] ?? 0,
                           employee?.activeTaskCount ?? 0,
                         ].cast<int>().reduce((a, b) => a > b ? a : b);
-                        return activeCount >= _taskLimitPerEmployee &&
-                            !overrideEmployeeIds.contains(id);
+                        return activeCount >= _taskLimitPerEmployee;
                       }).toList();
                       if (blocked.isNotEmpty) {
                         showDialogNotice(
-                          'Some selected employees are at the task limit ($_taskLimitPerEmployee). Tap the employee again and choose Override, or deselect them.',
+                          'Some selected employees are at the task limit ($_taskLimitPerEmployee). Deselect them to continue.',
                         );
                         return;
                       }
@@ -1331,8 +1246,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       _fetchTasks();
 
                       if (!mounted) return;
-
-                      _taskAssignmentOverrides.remove(task.id);
 
                       final summary =
                           result['summary'] as Map<String, dynamic>?;

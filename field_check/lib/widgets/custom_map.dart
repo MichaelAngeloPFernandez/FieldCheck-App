@@ -13,6 +13,7 @@ class CustomMap extends StatefulWidget {
   final UserLocation? currentLocation;
   final Function(double, double)? onTap;
   final Function(double, double)? onLongPress;
+  final void Function(Geofence geofence)? onGeofenceTap;
   final bool isEditable;
   final String? currentUserId;
   final MapController? mapController;
@@ -26,6 +27,7 @@ class CustomMap extends StatefulWidget {
     this.currentLocation,
     this.onTap,
     this.onLongPress,
+    this.onGeofenceTap,
     this.isEditable = false,
     this.currentUserId,
     this.mapController,
@@ -274,6 +276,26 @@ class _CustomMapState extends State<CustomMap> {
                     ),
                 ],
               ),
+              if (widget.onGeofenceTap != null)
+                MarkerLayer(
+                  markers: [
+                    for (final geofence in widget.geofences)
+                      Marker(
+                        point: LatLng(geofence.latitude, geofence.longitude),
+                        width: 44,
+                        height: 44,
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => widget.onGeofenceTap!(geofence),
+                            child: const ColoredBox(color: Colors.transparent),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               if (widget.currentLocation != null)
                 MarkerLayer(
                   markers: [
