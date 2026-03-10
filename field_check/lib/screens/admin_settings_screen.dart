@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import '../services/user_service.dart';
+import '../models/user_model.dart';
 import 'manage_employees_screen.dart';
 import 'manage_admins_screen.dart';
 import 'admin_geofence_screen.dart';
@@ -48,6 +49,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   final TextEditingController _urgentMessageController =
       TextEditingController();
   bool _isSendingUrgent = false;
+
+  List<UserModel> _urgentEmployees = <UserModel>[];
+  UserModel? _selectedUrgentEmployee;
+  bool _isLoadingUrgentEmployees = false;
   late io.Socket _socket;
 
   int _selectedSectionIndex = 0;
@@ -66,6 +71,78 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     _initSocket();
     _loadSettings();
     _smsOutboxService.init();
+    _loadUrgentEmployees();
+  }
+
+  Future<void> _loadUrgentEmployees() async {
+    if (_isLoadingUrgentEmployees) return;
+    setState(() {
+      _isLoadingUrgentEmployees = true;
+    });
+
+    try {
+      final employees = await _userService.fetchEmployees();
+      if (!mounted) return;
+      final withPhones = employees
+          .where((e) => (e.phone ?? '').toString().trim().isNotEmpty)
+          .toList();
+      withPhones.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+      setState(() {
+        _urgentEmployees = withPhones;
+        if (_selectedUrgentEmployee != null) {
+          final match = withPhones
+              .where((e) => e.id == _selectedUrgentEmployee!.id)
+              .cast<UserModel?>()
+              .firstWhere((_) => true, orElse: () => null);
+          _selectedUrgentEmployee = match;
+        }
+        _isLoadingUrgentEmployees = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _urgentEmployees = <UserModel>[];
+        _selectedUrgentEmployee = null;
+        _isLoadingUrgentEmployees = false;
+      });
+    }
+  }
+
+  Future<void> _showCopyDialog({
+    required String phone,
+    required String message,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Copy SMS details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Phone number'),
+            const SizedBox(height: 6),
+            SelectableText(phone),
+            const SizedBox(height: 12),
+            const Text('Message'),
+            const SizedBox(height: 6),
+            SelectableText(message),
+            const SizedBox(height: 12),
+            const Text(
+              'On Windows/Web the app cannot send SMS. Use your phone to send this message to the number above.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _initSocket() {
@@ -888,13 +965,55 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     icon: Icons.sms_failed_outlined,
                     children: [
                       const Text(
-                        'Send urgent SMS to all active employees',
+                        'Send urgent SMS to one employee (device composer)',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 8),
+                      DropdownButtonFormField<UserModel>(
+                        initialValue: _selectedUrgentEmployee,
+                        isExpanded: true,
+                        items: _urgentEmployees
+                            .map(
+                              (e) => DropdownMenuItem<UserModel>(
+                                value: e,
+                                child: Text(
+                                  '${e.name} (${e.phone})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: _isLoadingUrgentEmployees
+                            ? null
+                            : (value) {
+                                setState(() {
+                                  _selectedUrgentEmployee = value;
+                                });
+                              },
+                        decoration: InputDecoration(
+                          labelText: 'Recipient',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            tooltip: 'Refresh employee list',
+                            onPressed: _isLoadingUrgentEmployees
+                                ? null
+                                : _loadUrgentEmployees,
+                            icon: _isLoadingUrgentEmployees
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       TextField(
                         controller: _urgentMessageController,
                         maxLines: 3,
@@ -911,18 +1030,26 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                         child: ElevatedButton.icon(
                           onPressed:
                               _isSendingUrgent ||
-                                  _urgentMessageController.text.trim().isEmpty
+                                  _urgentMessageController.text
+                                      .trim()
+                                      .isEmpty ||
+                                  _selectedUrgentEmployee == null
                               ? null
                               : () async {
                                   final text = _urgentMessageController.text
                                       .trim();
+                                  final recipient = _selectedUrgentEmployee;
+                                  final phone = recipient?.phone;
+                                  if (recipient == null || phone == null) {
+                                    return;
+                                  }
                                   final ok =
                                       await showDialog<bool>(
                                         context: context,
                                         builder: (ctx) => AlertDialog(
                                           title: const Text('Send Urgent SMS'),
                                           content: Text(
-                                            'Send this message to all active employees with a phone number?\n\n$text',
+                                            'Open SMS composer for ${recipient.name} (${phone.trim()})?\n\n$text',
                                           ),
                                           actions: [
                                             TextButton(
@@ -945,15 +1072,23 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                     _isSendingUrgent = true;
                                   });
                                   try {
-                                    final result = await _smsOutboxService
-                                        .sendUrgentWithFallback(text);
+                                    if (kIsWeb) {
+                                      await _showCopyDialog(
+                                        phone: phone.trim(),
+                                        message: text,
+                                      );
+                                    } else {
+                                      await _smsOutboxService
+                                          .openDeviceComposer(
+                                            message: text,
+                                            phoneNumber: phone.trim(),
+                                          );
+                                    }
                                     if (!mounted) return;
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
+                                      const SnackBar(
                                         content: Text(
-                                          result.success
-                                              ? 'Urgent SMS sent (${(result.backendResponse?['sent'] ?? '—')} recipients)'
-                                              : 'SMS queued for retry. Device composer opened (mobile) / message ready to copy (web).',
+                                          'SMS composer opened. Tap Send to deliver the message.',
                                         ),
                                       ),
                                     );
@@ -963,7 +1098,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          'Failed to send urgent SMS: $e',
+                                          'Failed to open SMS composer: $e',
                                         ),
                                         backgroundColor: Colors.red,
                                       ),
