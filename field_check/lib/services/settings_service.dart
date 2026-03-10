@@ -7,6 +7,10 @@ import 'package:field_check/utils/http_util.dart';
 class SettingsService {
   static const String _settingsPath = '/api/settings';
 
+  static const String smsTaskAssignmentEnabledKey = 'sms.taskAssignmentEnabled';
+  static const String smsAttendanceEnabledKey = 'sms.attendanceEnabled';
+  static const String smsOverdueEnabledKey = 'sms.overdueEnabled';
+
   Future<Map<String, String>> _buildHeaders() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
@@ -14,6 +18,32 @@ class SettingsService {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
+  }
+
+  Future<bool> getBoolSetting(String key, {required bool defaultValue}) async {
+    final value = await getSetting(key);
+    if (value is bool) return value;
+    if (value is String) {
+      final v = value.toLowerCase().trim();
+      if (v == 'true') return true;
+      if (v == 'false') return false;
+    }
+    if (value is num) {
+      return value != 0;
+    }
+    return defaultValue;
+  }
+
+  Future<bool> getSmsTaskAssignmentEnabled() async {
+    return getBoolSetting(smsTaskAssignmentEnabledKey, defaultValue: true);
+  }
+
+  Future<bool> getSmsAttendanceEnabled() async {
+    return getBoolSetting(smsAttendanceEnabledKey, defaultValue: true);
+  }
+
+  Future<bool> getSmsOverdueEnabled() async {
+    return getBoolSetting(smsOverdueEnabledKey, defaultValue: true);
   }
 
   // Get settings from backend

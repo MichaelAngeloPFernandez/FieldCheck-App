@@ -13,7 +13,6 @@ import 'package:field_check/screens/admin_task_management_screen.dart';
 import 'package:field_check/screens/admin_world_map_screen.dart';
 import 'package:field_check/screens/manage_employees_screen.dart';
 import 'package:field_check/screens/manage_admins_screen.dart';
-import 'package:field_check/screens/login_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/dashboard_service.dart';
@@ -3531,13 +3530,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                     await _userService.logout();
                     if (!mounted) return;
-                    Navigator.pushAndRemoveUntil(
+                    Navigator.of(
                       context,
-                      MaterialPageRoute(
-                        builder: (context) => const LoginScreen(),
-                      ),
-                      (route) => false,
-                    );
+                    ).pushNamedAndRemoveUntil('/landing', (r) => false);
                   },
                 ),
               ],

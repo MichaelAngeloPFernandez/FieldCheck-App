@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:field_check/models/task_model.dart' as task_model;
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/notification_service.dart';
+import 'package:field_check/services/settings_service.dart';
 import 'package:flutter/foundation.dart';
 
 class TaskMonitoringService {
@@ -16,6 +17,7 @@ class TaskMonitoringService {
 
   final TaskService _taskService = TaskService();
   final NotificationService _notificationService = NotificationService();
+  final SettingsService _settingsService = SettingsService();
 
   Timer? _monitoringTimer;
   final Map<String, DateTime> _lastNotificationTime = {};
@@ -42,6 +44,14 @@ class TaskMonitoringService {
   /// Check for overdue tasks and notify
   Future<void> _checkForOverdueTasks() async {
     try {
+      bool smsEnabled = true;
+      try {
+        smsEnabled = await _settingsService.getSmsOverdueEnabled();
+      } catch (_) {
+        smsEnabled = true;
+      }
+      if (!smsEnabled) return;
+
       final tasks = await _taskService.getCurrentTasks();
       final now = DateTime.now();
 
@@ -63,7 +73,8 @@ class TaskMonitoringService {
 
         // Send SMS notification
         try {
-          final employeeId = task.assignedTo?.id ?? 'unassigned';
+          final employeeId = task.assignedTo?.id;
+          if (employeeId == null || employeeId.trim().isEmpty) continue;
           await _notificationService.sendOverdueTaskSms(
             employeeId: employeeId,
             taskTitle: task.title,

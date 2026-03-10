@@ -149,7 +149,6 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         name: _nameController.text,
         email: _emailController.text,
         username: _usernameController.text,
-        phone: _phoneController.text,
         avatarUrl: newAvatarUrl,
       );
 
@@ -644,7 +643,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                       'Phone (SMS)',
                       _phoneController,
                       Icons.phone,
-                      _isEditing,
+                      false,
                     ),
                     if (_isEditing) ...[
                       const SizedBox(height: 16),

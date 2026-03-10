@@ -1,5 +1,6 @@
 import 'package:field_check/utils/http_util.dart';
 import 'package:field_check/services/user_service.dart';
+import 'dart:convert';
 
 class NotificationService {
   static const String _basePath = '/api/notifications';
@@ -14,17 +15,39 @@ class NotificationService {
 
   /// Send an urgent SMS to all active employees with a phone number.
   Future<void> sendUrgentSmsToEmployees(String message) async {
-    final response = await HttpUtil().post(
-      '$_basePath/urgent',
-      body: <String, dynamic>{
-        'message': message,
-        // Backend defaults to employees when roles/userIds are omitted
-      },
-      headers: await _headers(),
-    );
+    final response = await HttpUtil()
+        .post(
+          '$_basePath/urgent',
+          body: <String, dynamic>{
+            'message': message,
+            // Backend defaults to employees when roles/userIds are omitted
+          },
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw Exception('Failed to send urgent SMS: ${response.body}');
     }
+  }
+
+  Future<Map<String, dynamic>> sendUrgentSmsToEmployeesWithResult(
+    String message,
+  ) async {
+    final response = await HttpUtil()
+        .post(
+          '$_basePath/urgent',
+          body: <String, dynamic>{'message': message},
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) {
+      throw Exception('Failed to send urgent SMS: ${response.body}');
+    }
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {}
+    return <String, dynamic>{};
   }
 
   /// Send task assignment notification SMS
@@ -35,16 +58,18 @@ class NotificationService {
   }) async {
     final message =
         'New Task: $taskTitle - $taskDescription. Check your app for details.';
-    final response = await HttpUtil().post(
-      '$_basePath/task-assignment',
-      body: <String, dynamic>{
-        'employeeId': employeeId,
-        'taskTitle': taskTitle,
-        'taskDescription': taskDescription,
-        'message': message,
-      },
-      headers: await _headers(),
-    );
+    final response = await HttpUtil()
+        .post(
+          '$_basePath/task-assignment',
+          body: <String, dynamic>{
+            'employeeId': employeeId,
+            'taskTitle': taskTitle,
+            'taskDescription': taskDescription,
+            'message': message,
+          },
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw Exception('Failed to send task assignment SMS: ${response.body}');
     }
@@ -58,16 +83,18 @@ class NotificationService {
   }) async {
     final message =
         'URGENT: Task "$taskTitle" is $hoursOverdue hours overdue. Please complete or update status immediately.';
-    final response = await HttpUtil().post(
-      '$_basePath/overdue-task',
-      body: <String, dynamic>{
-        'employeeId': employeeId,
-        'taskTitle': taskTitle,
-        'hoursOverdue': hoursOverdue,
-        'message': message,
-      },
-      headers: await _headers(),
-    );
+    final response = await HttpUtil()
+        .post(
+          '$_basePath/overdue-task',
+          body: <String, dynamic>{
+            'employeeId': employeeId,
+            'taskTitle': taskTitle,
+            'hoursOverdue': hoursOverdue,
+            'message': message,
+          },
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw Exception('Failed to send overdue task SMS: ${response.body}');
     }
@@ -83,17 +110,19 @@ class NotificationService {
     final action = isCheckIn ? 'Checked In' : 'Checked Out';
     final message =
         '$action at $geofenceName on $timestamp. Your attendance has been recorded.';
-    final response = await HttpUtil().post(
-      '$_basePath/attendance',
-      body: <String, dynamic>{
-        'employeeId': employeeId,
-        'isCheckIn': isCheckIn,
-        'geofenceName': geofenceName,
-        'timestamp': timestamp,
-        'message': message,
-      },
-      headers: await _headers(),
-    );
+    final response = await HttpUtil()
+        .post(
+          '$_basePath/attendance',
+          body: <String, dynamic>{
+            'employeeId': employeeId,
+            'isCheckIn': isCheckIn,
+            'geofenceName': geofenceName,
+            'timestamp': timestamp,
+            'message': message,
+          },
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw Exception('Failed to send attendance SMS: ${response.body}');
     }

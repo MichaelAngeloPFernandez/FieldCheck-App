@@ -15,6 +15,9 @@ import 'package:field_check/screens/forgot_password_screen.dart';
 import 'package:field_check/screens/reset_password_screen.dart';
 import 'package:field_check/screens/admin_dashboard_screen.dart';
 import 'package:field_check/screens/enhanced_admin_dashboard_screen.dart';
+import 'package:field_check/screens/employee_login_screen.dart';
+import 'package:field_check/screens/admin_login_screen.dart';
+import 'package:field_check/screens/landing_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/app_theme.dart';
 
@@ -143,6 +146,9 @@ class MyAppState extends State<MyApp> {
         themeMode: _themeMode,
         home: const SplashScreen(),
         routes: {
+          '/landing': (context) => const LandingScreen(),
+          '/employee-login': (context) => const EmployeeLoginScreen(),
+          '/admin-login': (context) => const AdminLoginScreen(),
           '/login': (context) => const LoginScreen(),
           '/register': (context) => const RegistrationScreen(),
           '/forgot-password': (context) => const ForgotPasswordScreen(),

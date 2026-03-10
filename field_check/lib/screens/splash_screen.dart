@@ -43,7 +43,7 @@ class _SplashScreenState extends State<SplashScreen> {
     } else {
       // User not logged in, go to login screen
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/login');
+      Navigator.of(context).pushReplacementNamed('/landing');
     }
   }
 

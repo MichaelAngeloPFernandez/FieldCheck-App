@@ -8,7 +8,6 @@ import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/settings_screen.dart';
 import 'package:field_check/screens/employee_task_list_screen.dart';
 import 'package:field_check/screens/employee_profile_screen.dart';
-import 'package:field_check/screens/login_screen.dart';
 import 'package:field_check/providers/auth_provider.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
@@ -470,11 +469,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+    Navigator.of(context).pushNamedAndRemoveUntil('/landing', (route) => false);
   }
 
   Future<void> _logout() async {

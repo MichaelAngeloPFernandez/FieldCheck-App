@@ -1,17 +1,16 @@
 // ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
-import 'package:field_check/screens/login_screen.dart';
-import 'package:field_check/services/user_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/main.dart';
-import 'package:field_check/models/user_model.dart';
+import 'package:field_check/services/user_service.dart';
+import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/widgets/app_widgets.dart';
+import 'package:field_check/models/user_model.dart';
 import 'package:field_check/widgets/app_page.dart';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/utils/manila_time.dart';
-import 'package:field_check/widgets/app_widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -260,11 +259,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     await _userService.logout();
     if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-      (route) => false,
-    );
+    Navigator.of(context).pushNamedAndRemoveUntil('/landing', (route) => false);
   }
 
   void _showEditProfileDialog() async {
