@@ -47,12 +47,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<AutoCheckoutEvent>? _autoCheckoutSub;
   StreamSubscription<Map<String, dynamic>>? _taskEventsSub;
   StreamSubscription<Map<String, dynamic>>? _unreadCountsSub;
+  StreamSubscription<Map<String, dynamic>>? _notificationSub;
   Timer? _taskBadgeDebounce;
   String? _userModelId;
   bool _loadingUserId = true;
   bool _isTrackingLocation = true;
 
   int _tasksBadgeCount = 0;
+  int _notificationsBadgeCount = 0;
 
   @override
   void initState() {
@@ -126,23 +128,70 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _subscribeToTaskEvents();
     _subscribeToUnreadCounts();
+    _subscribeToEmployeeNotifications();
   }
 
   void _subscribeToUnreadCounts() {
     _unreadCountsSub?.cancel();
     _unreadCountsSub = _realtimeService.unreadCountsStream.listen((counts) {
-      final raw = counts['tasks'];
-      final next = raw is int
-          ? raw
-          : raw is num
-          ? raw.toInt()
-          : int.tryParse(raw?.toString() ?? '') ?? 0;
+      final rawTasks = counts['tasks'];
+      final nextTasks = rawTasks is int
+          ? rawTasks
+          : rawTasks is num
+          ? rawTasks.toInt()
+          : int.tryParse(rawTasks?.toString() ?? '') ?? 0;
+
+      final rawTotal = counts['total'];
+      final nextTotal = rawTotal is int
+          ? rawTotal
+          : rawTotal is num
+          ? rawTotal.toInt()
+          : int.tryParse(rawTotal?.toString() ?? '') ?? 0;
 
       if (!mounted) return;
       setState(() {
-        _tasksBadgeCount = next;
+        _tasksBadgeCount = nextTasks;
+        _notificationsBadgeCount = nextTotal;
       });
     });
+  }
+
+  void _subscribeToEmployeeNotifications() {
+    _notificationSub?.cancel();
+    _notificationSub = _realtimeService.notificationStream.listen((data) {
+      // When a notification is created, unreadCounts will also be emitted.
+      // Keep this hook for future snackbars if needed.
+      if (!mounted) return;
+    });
+  }
+
+  Future<void> _refreshNotificationsBadge() async {
+    try {
+      final total = await TaskService().fetchTotalUnreadCount();
+      if (!mounted) return;
+      setState(() {
+        _notificationsBadgeCount = total;
+      });
+    } catch (_) {}
+  }
+
+  void _openNotificationsInbox() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: _EmployeeNotificationsSheet(
+              taskService: TaskService(),
+              onChanged: _refreshNotificationsBadge,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _subscribeToTaskEvents() {
@@ -302,6 +351,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _taskBadgeDebounce?.cancel();
     _taskEventsSub?.cancel();
     _unreadCountsSub?.cancel();
+    _notificationSub?.cancel();
     super.dispose();
   }
 
@@ -667,6 +717,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: isMobile
             ? []
             : [
+                Stack(
+                  children: [
+                    _buildAppBarIconButton(
+                      tooltip: 'Notifications',
+                      icon: Icons.notifications,
+                      onPressed: _openNotificationsInbox,
+                      color: appBarForeground,
+                    ),
+                    if (_notificationsBadgeCount > 0)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.error,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          child: Text(
+                            _notificationsBadgeCount > 99
+                                ? '99+'
+                                : '$_notificationsBadgeCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
                 _buildAppBarIconButton(
                   tooltip: _isTrackingLocation
                       ? 'Share live location with admin: ON'
@@ -779,6 +868,142 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _EmployeeNotificationsSheet extends StatefulWidget {
+  final TaskService taskService;
+  final VoidCallback onChanged;
+
+  const _EmployeeNotificationsSheet({
+    required this.taskService,
+    required this.onChanged,
+  });
+
+  @override
+  State<_EmployeeNotificationsSheet> createState() =>
+      _EmployeeNotificationsSheetState();
+}
+
+class _EmployeeNotificationsSheetState
+    extends State<_EmployeeNotificationsSheet> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _items = <Map<String, dynamic>>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final items = await widget.taskService.listAppNotifications(limit: 50);
+      if (!mounted) return;
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _items = <Map<String, dynamic>>[];
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _markRead(String id) async {
+    try {
+      await widget.taskService.markNotificationIdsRead([id]);
+    } catch (_) {}
+    await _load();
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Notifications',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: _loading ? null : _load,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'No notifications yet',
+              style: TextStyle(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          )
+        else
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: _items.length,
+              separatorBuilder: (context, index) => const Divider(height: 1),
+              itemBuilder: (context, i) {
+                final n = _items[i];
+                final title = (n['title'] ?? 'Notification').toString();
+                final message = (n['message'] ?? '').toString();
+                final scope = (n['scope'] ?? '').toString();
+                final readAt = n['readAt'];
+                final isRead = readAt != null && readAt.toString().isNotEmpty;
+                final id = (n['id'] ?? '').toString();
+
+                IconData icon = Icons.notifications;
+                if (scope == 'tasks') icon = Icons.assignment_turned_in;
+                if (scope == 'geofences') icon = Icons.location_on;
+                if (scope == 'announcements') icon = Icons.campaign;
+
+                return ListTile(
+                  leading: Icon(icon),
+                  title: Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: isRead ? FontWeight.w600 : FontWeight.w900,
+                    ),
+                  ),
+                  subtitle: message.trim().isEmpty ? null : Text(message),
+                  trailing: isRead
+                      ? null
+                      : TextButton(
+                          onPressed: id.length == 24
+                              ? () => _markRead(id)
+                              : null,
+                          child: const Text('Mark read'),
+                        ),
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 }

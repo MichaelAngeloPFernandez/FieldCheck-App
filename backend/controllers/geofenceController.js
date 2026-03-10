@@ -2,6 +2,8 @@ const asyncHandler = require('express-async-handler');
 const Geofence = require('../models/Geofence');
 const Attendance = require('../models/Attendance');
 const Report = require('../models/Report');
+const appNotificationService = require('../services/appNotificationService');
+
 const { io } = require('../server');
 
 async function populateReportById(reportId) {
@@ -50,11 +52,34 @@ const createGeofence = asyncHandler(async (req, res) => {
 
   try {
     const createdGeofence = await geofence.save();
+
     // Populate before emitting
     const populatedGeofence = await Geofence.findById(createdGeofence._id)
       .populate('assignedEmployees', '_id name email role');
     // Emit real-time geofence creation
     io.emit('geofenceCreated', populatedGeofence);
+
+    // Notify initially assigned employees
+    if (Array.isArray(createdGeofence.assignedEmployees) && createdGeofence.assignedEmployees.length) {
+      setImmediate(async () => {
+        try {
+          for (const employeeId of createdGeofence.assignedEmployees) {
+            try {
+              await appNotificationService.createNotification({
+                recipientUserId: employeeId,
+                scope: 'geofences',
+                type: 'info',
+                action: 'geofence_assigned',
+                title: 'New assigned location',
+                message: `You were assigned to geofence: ${createdGeofence.name}`,
+                payload: { geofenceId: String(createdGeofence._id) },
+              });
+            } catch (_) {}
+          }
+        } catch (_) {}
+      });
+    }
+
     res.status(201).json(populatedGeofence);
   } catch (error) {
     res.status(400);
@@ -97,6 +122,7 @@ const updateGeofence = asyncHandler(async (req, res) => {
     const previousEmployeeIds = geofence.assignedEmployees.map(id => id.toString());
     const newEmployeeIds = Array.isArray(assignedEmployees) ? assignedEmployees.map(id => id.toString()) : [];
     const removedEmployeeIds = previousEmployeeIds.filter(id => !newEmployeeIds.includes(id));
+    const addedEmployeeIds = newEmployeeIds.filter(id => !previousEmployeeIds.includes(id));
 
     // Update all fields with proper null/undefined handling
     if (name !== undefined && name !== null) geofence.name = name;
@@ -110,6 +136,27 @@ const updateGeofence = asyncHandler(async (req, res) => {
     if (Array.isArray(assignedEmployees)) geofence.assignedEmployees = assignedEmployees;
 
     const updatedGeofence = await geofence.save();
+
+    // Notify newly assigned employees
+    if (addedEmployeeIds.length > 0) {
+      setImmediate(async () => {
+        try {
+          for (const employeeId of addedEmployeeIds) {
+            try {
+              await appNotificationService.createNotification({
+                recipientUserId: employeeId,
+                scope: 'geofences',
+                type: 'info',
+                action: 'geofence_assigned',
+                title: 'New assigned location',
+                message: `You were assigned to geofence: ${updatedGeofence.name}`,
+                payload: { geofenceId: String(updatedGeofence._id) },
+              });
+            } catch (_) {}
+          }
+        } catch (_) {}
+      });
+    }
 
     // Auto-checkout employees removed from this geofence
     if (removedEmployeeIds.length > 0) {

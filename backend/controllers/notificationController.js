@@ -1,6 +1,8 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const notificationService = require('../services/notificationService');
+const sendEmail = require('../utils/emailService');
+const appNotificationService = require('../services/appNotificationService');
 
 // @desc Send urgent SMS notification to users
 // @route POST /api/notifications/urgent
@@ -238,6 +240,92 @@ const sendBatchSms = asyncHandler(async (req, res) => {
 
 module.exports = {
   sendUrgentNotification,
+  // Multichannel (email + in-app) urgent announcement
+  sendUrgentMultichannel: asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    let { message, sendEmail: doEmail, sendInApp, recipientMode } = body;
+
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      res.status(400);
+      throw new Error('message is required');
+    }
+
+    message = message.toString().trim();
+    if (message.length > 320) {
+      message = message.slice(0, 320);
+    }
+
+    const emailEnabled = doEmail === true;
+    const inAppEnabled = sendInApp !== false;
+
+    const mode = (recipientMode || 'all_with_numbers_and_emails').toString();
+    const base = { role: 'employee', isActive: true };
+
+    const query = { ...base };
+    if (mode === 'all_with_emails') {
+      query.email = { $exists: true, $ne: '' };
+    } else if (mode === 'all_with_numbers') {
+      query.phone = { $exists: true, $ne: '' };
+    } else {
+      // all_with_numbers_and_emails
+      query.$or = [
+        { phone: { $exists: true, $ne: '' } },
+        { email: { $exists: true, $ne: '' } },
+      ];
+    }
+
+    const users = await User.find(query).select('_id name email phone');
+    if (!users.length) {
+      return res.status(200).json({ targets: 0, email: { attempted: 0, sent: 0, failed: 0 }, inApp: { created: 0 } });
+    }
+
+    let emailAttempted = 0;
+    let emailSent = 0;
+    let emailFailed = 0;
+    let inAppCreated = 0;
+
+    if (inAppEnabled) {
+      for (const u of users) {
+        try {
+          await appNotificationService.createNotification({
+            recipientUserId: u._id,
+            scope: 'announcements',
+            type: 'warning',
+            action: 'urgent',
+            title: 'Urgent announcement',
+            message,
+            payload: {},
+          });
+          inAppCreated += 1;
+        } catch (_) {}
+      }
+    }
+
+    if (emailEnabled) {
+      const subject = 'FieldCheck: Urgent announcement';
+      for (const u of users) {
+        const to = (u.email || '').toString().trim();
+        if (!to) continue;
+        emailAttempted += 1;
+        try {
+          await sendEmail({
+            email: to,
+            subject,
+            message: `<p><strong>[URGENT]</strong> ${message}</p>`,
+          });
+          emailSent += 1;
+        } catch (e) {
+          emailFailed += 1;
+        }
+      }
+    }
+
+    res.status(200).json({
+      targets: users.length,
+      email: { attempted: emailAttempted, sent: emailSent, failed: emailFailed },
+      inApp: { created: inAppCreated },
+    });
+  }),
   sendTaskAssignmentSms,
   sendOverdueTaskSms,
   sendAttendanceSms,

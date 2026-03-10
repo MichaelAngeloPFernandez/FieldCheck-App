@@ -50,6 +50,37 @@ class NotificationService {
     return <String, dynamic>{};
   }
 
+  Future<Map<String, dynamic>> sendUrgentMultichannel({
+    required String message,
+    required bool sendEmail,
+    required bool sendInApp,
+    required String recipientMode,
+  }) async {
+    final response = await HttpUtil()
+        .post(
+          '$_basePath/urgent-multichannel',
+          body: <String, dynamic>{
+            'message': message,
+            'sendEmail': sendEmail,
+            'sendInApp': sendInApp,
+            'recipientMode': recipientMode,
+          },
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to send urgent notification: ${response.body}');
+    }
+
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return decoded.cast<String, dynamic>();
+    } catch (_) {}
+    return <String, dynamic>{};
+  }
+
   /// Send task assignment notification SMS
   Future<void> sendTaskAssignmentSms({
     required String employeeId,

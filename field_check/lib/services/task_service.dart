@@ -19,6 +19,80 @@ class TaskService {
     return headers;
   }
 
+  Future<int> fetchTotalUnreadCount() async {
+    final counts = await fetchUnreadCounts();
+    final raw = counts['total'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '') ?? 0;
+  }
+
+  Future<List<Map<String, dynamic>>> listAppNotifications({
+    String? scope,
+    bool unreadOnly = false,
+    int limit = 50,
+    int page = 1,
+  }) async {
+    final params = <String, String>{
+      'limit': limit.toString(),
+      'page': page.toString(),
+      'unreadOnly': unreadOnly ? 'true' : 'false',
+    };
+    if (scope != null && scope.trim().isNotEmpty) {
+      params['scope'] = scope.trim();
+    }
+
+    final uri = Uri.parse(
+      _appNotificationsBaseUrl,
+    ).replace(queryParameters: params);
+    final response = await http
+        .get(uri, headers: await _headers(jsonContent: false))
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load notifications');
+    }
+
+    if (response.body.isEmpty) return <Map<String, dynamic>>[];
+    final decoded = json.decode(response.body);
+    if (decoded is List) {
+      return decoded
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  Future<int> markNotificationIdsRead(List<String> ids) async {
+    final clean = ids
+        .map((e) => e.trim())
+        .where((e) => e.length == 24)
+        .toList();
+    if (clean.isEmpty) return 0;
+
+    final response = await http
+        .post(
+          Uri.parse('$_appNotificationsBaseUrl/mark-read'),
+          headers: await _headers(),
+          body: json.encode({'ids': clean}),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark notifications read');
+    }
+
+    if (response.body.isEmpty) return 0;
+    final decoded = json.decode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      final raw = decoded['updated'];
+      if (raw is int) return raw;
+      if (raw is num) return raw.toInt();
+    }
+    return 0;
+  }
+
   Future<Task> getTaskById(String taskId) async {
     final response = await http
         .get(

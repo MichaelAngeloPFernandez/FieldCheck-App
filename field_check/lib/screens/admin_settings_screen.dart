@@ -16,6 +16,7 @@ import '../utils/export_util_stub.dart'
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/settings_service.dart';
 import '../services/sms_outbox_service.dart';
+import 'package:field_check/services/notification_service.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_page.dart';
@@ -46,9 +47,14 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   final UserService _userService = UserService();
   final SettingsService _settingsService = SettingsService();
   final SmsOutboxService _smsOutboxService = SmsOutboxService();
+  final NotificationService _notificationService = NotificationService();
   final TextEditingController _urgentMessageController =
       TextEditingController();
   bool _isSendingUrgent = false;
+
+  String _urgentRecipientMode = 'all_with_numbers_and_emails';
+  bool _urgentSendEmail = true;
+  bool _urgentSendInApp = true;
 
   List<UserModel> _urgentEmployees = <UserModel>[];
   UserModel? _selectedUrgentEmployee;
@@ -964,56 +970,117 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     title: 'Urgent Notifications',
                     icon: Icons.sms_failed_outlined,
                     children: [
-                      const Text(
-                        'Send urgent SMS to one employee (device composer)',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<UserModel>(
-                        initialValue: _selectedUrgentEmployee,
+                      DropdownButtonFormField<String>(
+                        initialValue: _urgentRecipientMode,
                         isExpanded: true,
-                        items: _urgentEmployees
-                            .map(
-                              (e) => DropdownMenuItem<UserModel>(
-                                value: e,
-                                child: Text(
-                                  '${e.name} (${e.phone})',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: _isLoadingUrgentEmployees
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _selectedUrgentEmployee = value;
-                                });
-                              },
-                        decoration: InputDecoration(
-                          labelText: 'Recipient',
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            tooltip: 'Refresh employee list',
-                            onPressed: _isLoadingUrgentEmployees
-                                ? null
-                                : _loadUrgentEmployees,
-                            icon: _isLoadingUrgentEmployees
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.refresh),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'single_employee',
+                            child: Text(
+                              'Single employee (SMS composer supported)',
+                            ),
                           ),
+                          DropdownMenuItem(
+                            value: 'all_with_numbers',
+                            child: Text('All employees with phone numbers'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'all_with_emails',
+                            child: Text('All employees with email addresses'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'all_with_numbers_and_emails',
+                            child: Text(
+                              'All employees with phone numbers or emails',
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _urgentRecipientMode = value;
+                            if (_urgentRecipientMode != 'single_employee') {
+                              _selectedUrgentEmployee = null;
+                            }
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Recipients',
+                          border: OutlineInputBorder(),
                         ),
                       ),
                       const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: const Text('Email'),
+                              value: _urgentSendEmail,
+                              onChanged: (v) => setState(() {
+                                _urgentSendEmail = v == true;
+                              }),
+                            ),
+                          ),
+                          Expanded(
+                            child: CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: const Text('In-app'),
+                              value: _urgentSendInApp,
+                              onChanged: (v) => setState(() {
+                                _urgentSendInApp = v == true;
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      if (_urgentRecipientMode == 'single_employee') ...[
+                        DropdownButtonFormField<UserModel>(
+                          initialValue: _selectedUrgentEmployee,
+                          isExpanded: true,
+                          items: _urgentEmployees
+                              .map(
+                                (e) => DropdownMenuItem<UserModel>(
+                                  value: e,
+                                  child: Text(
+                                    '${e.name} (${e.phone})',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: _isLoadingUrgentEmployees
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _selectedUrgentEmployee = value;
+                                  });
+                                },
+                          decoration: InputDecoration(
+                            labelText: 'Recipient employee (for SMS composer)',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              tooltip: 'Refresh employee list',
+                              onPressed: _isLoadingUrgentEmployees
+                                  ? null
+                                  : _loadUrgentEmployees,
+                              icon: _isLoadingUrgentEmployees
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.refresh),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       TextField(
                         controller: _urgentMessageController,
                         maxLines: 3,
@@ -1033,62 +1100,97 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                   _urgentMessageController.text
                                       .trim()
                                       .isEmpty ||
-                                  _selectedUrgentEmployee == null
+                                  (!_urgentSendEmail && !_urgentSendInApp)
                               ? null
                               : () async {
                                   final text = _urgentMessageController.text
                                       .trim();
-                                  final recipient = _selectedUrgentEmployee;
-                                  final phone = recipient?.phone;
-                                  if (recipient == null || phone == null) {
-                                    return;
-                                  }
-                                  final ok =
-                                      await showDialog<bool>(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          title: const Text('Send Urgent SMS'),
-                                          content: Text(
-                                            'Open SMS composer for ${recipient.name} (${phone.trim()})?\n\n$text',
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, false),
-                                              child: const Text('Cancel'),
-                                            ),
-                                            ElevatedButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, true),
-                                              child: const Text('Send'),
-                                            ),
-                                          ],
-                                        ),
-                                      ) ??
-                                      false;
-                                  if (!ok) return;
-
                                   setState(() {
                                     _isSendingUrgent = true;
                                   });
                                   try {
-                                    if (kIsWeb) {
-                                      await _showCopyDialog(
-                                        phone: phone.trim(),
-                                        message: text,
-                                      );
-                                    } else {
-                                      await _smsOutboxService
-                                          .openDeviceComposer(
+                                    Map<String, dynamic> result =
+                                        <String, dynamic>{};
+
+                                    if (_urgentSendEmail || _urgentSendInApp) {
+                                      result = await _notificationService
+                                          .sendUrgentMultichannel(
                                             message: text,
-                                            phoneNumber: phone.trim(),
+                                            sendEmail: _urgentSendEmail,
+                                            sendInApp: _urgentSendInApp,
+                                            recipientMode: _urgentRecipientMode,
                                           );
                                     }
+
+                                    if (_urgentRecipientMode ==
+                                        'single_employee') {
+                                      final recipient = _selectedUrgentEmployee;
+                                      final phone = recipient?.phone;
+                                      final canUseComposer =
+                                          !kIsWeb &&
+                                          (defaultTargetPlatform ==
+                                                  TargetPlatform.android ||
+                                              defaultTargetPlatform ==
+                                                  TargetPlatform.iOS);
+
+                                      if (recipient != null &&
+                                          phone != null &&
+                                          canUseComposer) {
+                                        final ok =
+                                            await showDialog<bool>(
+                                              context: context,
+                                              builder: (ctx) => AlertDialog(
+                                                title: const Text(
+                                                  'Send SMS via device',
+                                                ),
+                                                content: Text(
+                                                  'Open SMS composer for ${recipient.name} (${phone.trim()})?\n\n$text',
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                          ctx,
+                                                          false,
+                                                        ),
+                                                    child: const Text('Cancel'),
+                                                  ),
+                                                  ElevatedButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                          ctx,
+                                                          true,
+                                                        ),
+                                                    child: const Text('Open'),
+                                                  ),
+                                                ],
+                                              ),
+                                            ) ??
+                                            false;
+                                        if (ok) {
+                                          await _smsOutboxService
+                                              .openDeviceComposer(
+                                                message: text,
+                                                phoneNumber: phone.trim(),
+                                              );
+                                        }
+                                      } else if (recipient != null &&
+                                          phone != null &&
+                                          kIsWeb) {
+                                        await _showCopyDialog(
+                                          phone: phone.trim(),
+                                          message: text,
+                                        );
+                                      }
+                                    }
+
                                     if (!mounted) return;
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
-                                          'SMS composer opened. Tap Send to deliver the message.',
+                                          (result.isNotEmpty)
+                                              ? 'Urgent notification sent: ${jsonEncode(result)}'
+                                              : 'Urgent notification sent.',
                                         ),
                                       ),
                                     );
@@ -1098,7 +1200,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          'Failed to open SMS composer: $e',
+                                          'Failed to send urgent notification: $e',
                                         ),
                                         backgroundColor: Colors.red,
                                       ),

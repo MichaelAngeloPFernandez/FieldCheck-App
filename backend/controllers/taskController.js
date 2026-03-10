@@ -7,6 +7,7 @@ const Report = require('../models/Report');
 const Attendance = require('../models/Attendance');
 const Settings = require('../models/Settings');
 const notificationService = require('../services/notificationService');
+const appNotificationService = require('../services/appNotificationService');
 
 async function getMaxActiveTasksPerEmployee() {
   return 3;
@@ -508,6 +509,17 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
     try {
       const user = await User.findById(userId);
       if (user) {
+        try {
+          await appNotificationService.createNotification({
+            recipientUserId: userId,
+            scope: 'tasks',
+            type: 'info',
+            action: 'task_assigned',
+            title: 'New task assigned',
+            message: `You were assigned: ${task.title}`,
+            payload: { taskId: String(task._id) },
+          });
+        } catch (_) {}
         await notificationService.notifyTaskAssigned(user, task);
       }
     } catch (e) {
@@ -651,6 +663,17 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
           try {
             const user = await User.findById(userId);
             if (user) {
+              try {
+                await appNotificationService.createNotification({
+                  recipientUserId: userId,
+                  scope: 'tasks',
+                  type: 'info',
+                  action: 'task_assigned',
+                  title: 'New task assigned',
+                  message: `You were assigned: ${task.title}`,
+                  payload: { taskId: String(task._id) },
+                });
+              } catch (_) {}
               await notificationService.notifyTaskAssigned(user, task);
             }
           } catch (e) {

@@ -3,6 +3,7 @@ const router = express.Router();
 const { protect, admin } = require('../middleware/authMiddleware');
 const {
   sendUrgentNotification,
+  sendUrgentMultichannel,
   sendTaskAssignmentSms,
   sendOverdueTaskSms,
   sendAttendanceSms,
@@ -14,6 +15,7 @@ const {
 
 // Admin endpoints
 router.post('/urgent', protect, admin, sendUrgentNotification);
+router.post('/urgent-multichannel', protect, admin, sendUrgentMultichannel);
 router.post('/task-assignment', protect, admin, sendTaskAssignmentSms);
 router.post('/overdue-task', protect, admin, sendOverdueTaskSms);
 router.post('/attendance', protect, sendAttendanceSms);
