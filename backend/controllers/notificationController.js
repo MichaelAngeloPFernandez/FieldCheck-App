@@ -276,14 +276,13 @@ module.exports = {
 
     const users = await User.find(query).select('_id name email phone');
     if (!users.length) {
-      return res.status(200).json({ targets: 0, email: { attempted: 0, sent: 0, failed: 0 }, inApp: { created: 0 } });
+      return res
+        .status(200)
+        .json({ targets: 0, email: { attempted: 0, sent: 0, failed: 0 }, inApp: { created: 0 } });
     }
 
-    let emailAttempted = 0;
-    let emailSent = 0;
-    let emailFailed = 0;
+    // Create in-app notifications first (this should be fast and ensures the bell updates).
     let inAppCreated = 0;
-
     if (inAppEnabled) {
       for (const u of users) {
         try {
@@ -301,30 +300,44 @@ module.exports = {
       }
     }
 
-    if (emailEnabled) {
-      const subject = 'FieldCheck: Urgent announcement';
-      for (const u of users) {
-        const to = (u.email || '').toString().trim();
-        if (!to) continue;
-        emailAttempted += 1;
-        try {
-          await sendEmail({
-            email: to,
-            subject,
-            message: `<p><strong>[URGENT]</strong> ${message}</p>`,
-          });
-          emailSent += 1;
-        } catch (e) {
-          emailFailed += 1;
-        }
-      }
+    // Respond immediately to avoid client/Render timeouts.
+    // Email delivery will be attempted in the background and may fail due to SMTP network restrictions.
+    let emailAttempted = 0;
+    for (const u of users) {
+      const to = (u.email || '').toString().trim();
+      if (!to) continue;
+      emailAttempted += 1;
     }
 
     res.status(200).json({
       targets: users.length,
-      email: { attempted: emailAttempted, sent: emailSent, failed: emailFailed },
+      email: {
+        attempted: emailAttempted,
+        sent: 0,
+        failed: 0,
+        status: emailEnabled ? 'queued' : 'disabled',
+      },
       inApp: { created: inAppCreated },
     });
+
+    if (emailEnabled) {
+      const subject = 'FieldCheck: Urgent announcement';
+      setImmediate(async () => {
+        for (const u of users) {
+          const to = (u.email || '').toString().trim();
+          if (!to) continue;
+          try {
+            await sendEmail({
+              email: to,
+              subject,
+              message: `<p><strong>[URGENT]</strong> ${message}</p>`,
+            });
+          } catch (_) {
+            // Errors are logged by emailService; do not throw.
+          }
+        }
+      });
+    }
   }),
   sendTaskAssignmentSms,
   sendOverdueTaskSms,
