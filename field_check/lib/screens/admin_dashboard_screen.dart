@@ -173,6 +173,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   String _employeeStatusFilter = 'all';
   Timer? _employeeSearchDebounce;
 
+  bool _notifDetailsOpen = false;
+
   static final Color _panelBorderBlue = Colors.blue.shade200;
   static const Color _adminMarkerColor = Color(0xFF5C4EF5);
   static const Color _panelTextPrimary = Colors.black87;
@@ -1062,6 +1064,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _showNotificationDetails(DashboardNotification notif) async {
+    if (_notifDetailsOpen) return;
+    _notifDetailsOpen = true;
     final payload = notif.payload ?? const <String, dynamic>{};
     final ts = formatManila(notif.timestamp, 'yyyy-MM-dd HH:mm:ss');
 
@@ -1163,6 +1167,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: Text(notif.title),
         content: SingleChildScrollView(
@@ -1280,7 +1285,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      _notifDetailsOpen = false;
+    });
   }
 
   Widget _buildNotificationsPanel() {
@@ -2504,10 +2511,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _adminNotifSub?.cancel();
     _adminNotifSub = _realtimeService.notificationStream.listen((data) {
       try {
-        final action = (data['action'] ?? '') as String;
+        final Map<String, dynamic> merged = Map<String, dynamic>.from(data);
+
+        try {
+          final inner = merged['payload'];
+          if (inner is Map) {
+            merged.addAll(Map<String, dynamic>.from(inner));
+          }
+        } catch (_) {}
+
+        final action = (merged['action'] ?? '') as String;
         if (action == 'employeeOnline') {
-          final employeeName = (data['name'] ?? 'Employee') as String;
-          final employeeCode = (data['employeeId'] ?? '').toString();
+          final employeeName = (merged['name'] ?? 'Employee') as String;
+          final employeeCode = (merged['employeeId'] ?? '').toString();
           final displayName = employeeCode.isNotEmpty
               ? '$employeeName ($employeeCode)'
               : employeeName;
@@ -2524,7 +2540,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 message: '$displayName is now online.',
                 type: 'employee',
                 timestamp: DateTime.now(),
-                payload: data,
+                payload: merged,
               ),
             );
 

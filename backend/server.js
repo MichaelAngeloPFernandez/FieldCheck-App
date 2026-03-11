@@ -939,6 +939,16 @@ io.on('connection', (socket) => {
               return;
             }
 
+            let employeeName = '';
+            let employeeCode = '';
+            try {
+              const u = await User.findById(userId).select('name employeeId role').lean();
+              if (u) {
+                employeeName = u.name ? String(u.name) : '';
+                employeeCode = u.employeeId ? String(u.employeeId) : '';
+              }
+            } catch (_) {}
+
             try {
               const updated = await User.findOneAndUpdate(
                 { _id: userId, role: 'employee' },
@@ -963,30 +973,17 @@ io.on('connection', (socket) => {
             } catch (_) {}
 
             try {
-              let employeeName = (data && data.name ? String(data.name) : '').trim();
-          let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
-
-          if ((!employeeName || !employeeCode) && typeof userId === 'string' && userId.length === 24) {
-            try {
-              const u = await User.findById(userId).select('name employeeId').lean();
-              if (u) {
-                if (!employeeName && u.name) employeeName = String(u.name);
-                if (!employeeCode && u.employeeId) employeeCode = String(u.employeeId);
-              }
-            } catch (_) {}
-          }
-
-          io.emit('employeeOffline', {
-            employeeId: String(userId),
-            name: employeeName || 'Employee',
-            employeeCode: employeeCode || '',
-            timestamp: new Date().toISOString(),
-          });
+              io.emit('employeeOffline', {
+                employeeId: String(userId),
+                name: (employeeName || 'Employee').trim() || 'Employee',
+                employeeCode: (employeeCode || '').trim(),
+                timestamp: new Date().toISOString(),
+              });
             } catch (_) {}
 
             try {
               const appNotificationService = require('./services/appNotificationService');
-              const name = (await User.findById(userId).select('name'))?.name || 'Employee';
+              const name = (employeeName || 'Employee').trim() || 'Employee';
               await appNotificationService.createForAdmins({
                 excludeUserId: userId,
                 type: 'employee',
@@ -996,6 +993,8 @@ io.on('connection', (socket) => {
                 payload: {
                   userId,
                   name,
+                  employeeId: employeeCode,
+                  employeeCode,
                   timestamp: new Date().toISOString(),
                 },
               });
