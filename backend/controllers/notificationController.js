@@ -243,7 +243,7 @@ module.exports = {
   // Multichannel (email + in-app) urgent announcement
   sendUrgentMultichannel: asyncHandler(async (req, res) => {
     const body = req.body || {};
-    let { message, sendEmail: doEmail, sendInApp, recipientMode } = body;
+    let { message, sendEmail: doEmail, sendInApp, recipientMode, employeeId } = body;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       res.status(400);
@@ -258,20 +258,17 @@ module.exports = {
     const emailEnabled = doEmail === true;
     const inAppEnabled = sendInApp !== false;
 
-    const mode = (recipientMode || 'all_with_numbers_and_emails').toString();
+    const mode = (recipientMode || 'all').toString();
     const base = { role: 'employee', isActive: true };
 
     const query = { ...base };
-    if (mode === 'all_with_emails') {
-      query.email = { $exists: true, $ne: '' };
-    } else if (mode === 'all_with_numbers') {
-      query.phone = { $exists: true, $ne: '' };
-    } else {
-      // all_with_numbers_and_emails
-      query.$or = [
-        { phone: { $exists: true, $ne: '' } },
-        { email: { $exists: true, $ne: '' } },
-      ];
+    if (mode === 'single_employee') {
+      const id = (employeeId || '').toString().trim();
+      if (!id) {
+        res.status(400);
+        throw new Error('employeeId is required for single_employee');
+      }
+      query._id = id;
     }
 
     const users = await User.find(query).select('_id name email phone');

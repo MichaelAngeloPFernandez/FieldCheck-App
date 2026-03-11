@@ -15,7 +15,6 @@ import '../utils/export_util_stub.dart'
     as export_util;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../services/settings_service.dart';
-import '../services/sms_outbox_service.dart';
 import 'package:field_check/services/notification_service.dart';
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/app_theme.dart';
@@ -46,15 +45,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
   final UserService _userService = UserService();
   final SettingsService _settingsService = SettingsService();
-  final SmsOutboxService _smsOutboxService = SmsOutboxService();
   final NotificationService _notificationService = NotificationService();
   final TextEditingController _urgentMessageController =
       TextEditingController();
   bool _isSendingUrgent = false;
 
-  String _urgentRecipientMode = 'all_with_numbers_and_emails';
-  bool _urgentSendEmail = true;
-  bool _urgentSendInApp = true;
+  String _urgentRecipientMode = 'all';
 
   List<UserModel> _urgentEmployees = <UserModel>[];
   UserModel? _selectedUrgentEmployee;
@@ -76,7 +72,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     super.initState();
     _initSocket();
     _loadSettings();
-    _smsOutboxService.init();
     _loadUrgentEmployees();
   }
 
@@ -89,16 +84,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     try {
       final employees = await _userService.fetchEmployees();
       if (!mounted) return;
-      final withPhones = employees
-          .where((e) => (e.phone ?? '').toString().trim().isNotEmpty)
-          .toList();
-      withPhones.sort(
+      employees.sort(
         (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       );
       setState(() {
-        _urgentEmployees = withPhones;
+        _urgentEmployees = employees;
         if (_selectedUrgentEmployee != null) {
-          final match = withPhones
+          final match = employees
               .where((e) => e.id == _selectedUrgentEmployee!.id)
               .cast<UserModel?>()
               .firstWhere((_) => true, orElse: () => null);
@@ -114,41 +106,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         _isLoadingUrgentEmployees = false;
       });
     }
-  }
-
-  Future<void> _showCopyDialog({
-    required String phone,
-    required String message,
-  }) async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Copy SMS details'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Phone number'),
-            const SizedBox(height: 6),
-            SelectableText(phone),
-            const SizedBox(height: 12),
-            const Text('Message'),
-            const SizedBox(height: 6),
-            SelectableText(message),
-            const SizedBox(height: 12),
-            const Text(
-              'On Windows/Web the app cannot send SMS. Use your phone to send this message to the number above.',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _initSocket() {
@@ -237,7 +194,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   @override
   void dispose() {
     _socket.dispose();
-    _smsOutboxService.dispose();
     _urgentMessageController.dispose();
     super.dispose();
   }
@@ -880,85 +836,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: cardShell(
-                    title: 'SMS Automation',
-                    icon: Icons.tune,
-                    children: [
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Task assignment SMS'),
-                        subtitle: const Text(
-                          'Send SMS when a task is assigned to an employee.',
-                        ),
-                        value: _smsTaskAssignmentEnabled,
-                        onChanged: (value) async {
-                          setState(() => _smsTaskAssignmentEnabled = value);
-                          try {
-                            await _settingsService.updateSetting(
-                              SettingsService.smsTaskAssignmentEnabledKey,
-                              value,
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to save: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Attendance SMS'),
-                        subtitle: const Text(
-                          'Send SMS confirmation on check-in/out.',
-                        ),
-                        value: _smsAttendanceEnabled,
-                        onChanged: (value) async {
-                          setState(() => _smsAttendanceEnabled = value);
-                          try {
-                            await _settingsService.updateSetting(
-                              SettingsService.smsAttendanceEnabledKey,
-                              value,
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to save: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Overdue task SMS'),
-                        subtitle: const Text(
-                          'Send SMS reminders when tasks are overdue (cooldown applies).',
-                        ),
-                        value: _smsOverdueEnabled,
-                        onChanged: (value) async {
-                          setState(() => _smsOverdueEnabled = value);
-                          try {
-                            await _settingsService.updateSetting(
-                              SettingsService.smsOverdueEnabledKey,
-                              value,
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to save: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        },
+                    title: 'In-app Notifications',
+                    icon: Icons.notifications_active_outlined,
+                    children: const [
+                      Text(
+                        'Urgent messages are delivered inside the app (notification bell). Employees must open the app to see them.',
                       ),
                     ],
                   ),
@@ -976,23 +858,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                         items: const [
                           DropdownMenuItem(
                             value: 'single_employee',
-                            child: Text(
-                              'Single employee (SMS composer supported)',
-                            ),
+                            child: Text('Single employee'),
                           ),
                           DropdownMenuItem(
-                            value: 'all_with_numbers',
-                            child: Text('All employees with phone numbers'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'all_with_emails',
-                            child: Text('All employees with email addresses'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'all_with_numbers_and_emails',
-                            child: Text(
-                              'All employees with phone numbers or emails',
-                            ),
+                            value: 'all',
+                            child: Text('All active employees'),
                           ),
                         ],
                         onChanged: (value) {
@@ -1010,33 +880,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: CheckboxListTile(
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                              title: const Text('Email'),
-                              value: _urgentSendEmail,
-                              onChanged: (v) => setState(() {
-                                _urgentSendEmail = v == true;
-                              }),
-                            ),
-                          ),
-                          Expanded(
-                            child: CheckboxListTile(
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                              title: const Text('In-app'),
-                              value: _urgentSendInApp,
-                              onChanged: (v) => setState(() {
-                                _urgentSendInApp = v == true;
-                              }),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
                       if (_urgentRecipientMode == 'single_employee') ...[
                         DropdownButtonFormField<UserModel>(
                           initialValue: _selectedUrgentEmployee,
@@ -1046,7 +889,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                 (e) => DropdownMenuItem<UserModel>(
                                   value: e,
                                   child: Text(
-                                    '${e.name} (${e.phone})',
+                                    e.name,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -1100,7 +943,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                   _urgentMessageController.text
                                       .trim()
                                       .isEmpty ||
-                                  (!_urgentSendEmail && !_urgentSendInApp)
+                                  (_urgentRecipientMode == 'single_employee' &&
+                                      _selectedUrgentEmployee == null)
                               ? null
                               : () async {
                                   final text = _urgentMessageController.text
@@ -1109,80 +953,18 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                     _isSendingUrgent = true;
                                   });
                                   try {
-                                    Map<String, dynamic> result =
-                                        <String, dynamic>{};
+                                    final employeeId =
+                                        _urgentRecipientMode ==
+                                            'single_employee'
+                                        ? _selectedUrgentEmployee?.id
+                                        : null;
 
-                                    if (_urgentSendEmail || _urgentSendInApp) {
-                                      result = await _notificationService
-                                          .sendUrgentMultichannel(
-                                            message: text,
-                                            sendEmail: _urgentSendEmail,
-                                            sendInApp: _urgentSendInApp,
-                                            recipientMode: _urgentRecipientMode,
-                                          );
-                                    }
-
-                                    if (_urgentRecipientMode ==
-                                        'single_employee') {
-                                      final recipient = _selectedUrgentEmployee;
-                                      final phone = recipient?.phone;
-                                      final canUseComposer =
-                                          !kIsWeb &&
-                                          (defaultTargetPlatform ==
-                                                  TargetPlatform.android ||
-                                              defaultTargetPlatform ==
-                                                  TargetPlatform.iOS);
-
-                                      if (recipient != null &&
-                                          phone != null &&
-                                          canUseComposer) {
-                                        final ok =
-                                            await showDialog<bool>(
-                                              context: context,
-                                              builder: (ctx) => AlertDialog(
-                                                title: const Text(
-                                                  'Send SMS via device',
-                                                ),
-                                                content: Text(
-                                                  'Open SMS composer for ${recipient.name} (${phone.trim()})?\n\n$text',
-                                                ),
-                                                actions: [
-                                                  TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(
-                                                          ctx,
-                                                          false,
-                                                        ),
-                                                    child: const Text('Cancel'),
-                                                  ),
-                                                  ElevatedButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(
-                                                          ctx,
-                                                          true,
-                                                        ),
-                                                    child: const Text('Open'),
-                                                  ),
-                                                ],
-                                              ),
-                                            ) ??
-                                            false;
-                                        if (ok) {
-                                          await _smsOutboxService
-                                              .openDeviceComposer(
-                                                message: text,
-                                                phoneNumber: phone.trim(),
-                                              );
-                                        }
-                                      } else if (recipient != null &&
-                                          phone != null &&
-                                          kIsWeb) {
-                                        await _showCopyDialog(
-                                          phone: phone.trim(),
+                                    final result = await _notificationService
+                                        .sendUrgentInAppOnly(
                                           message: text,
+                                          recipientMode: _urgentRecipientMode,
+                                          employeeId: employeeId,
                                         );
-                                      }
-                                    }
 
                                     if (!mounted) return;
                                     ScaffoldMessenger.of(context).showSnackBar(
