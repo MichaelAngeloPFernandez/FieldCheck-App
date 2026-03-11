@@ -14,6 +14,7 @@ class LocationSyncService {
 
   final UserService _userService = UserService();
   late io.Socket _socket;
+  String? _lastAuthToken;
 
   final ValueNotifier<bool> _connected = ValueNotifier<bool>(false);
   final ValueNotifier<String?> _lastError = ValueNotifier<String?>(null);
@@ -46,10 +47,22 @@ class LocationSyncService {
   /// Initialize Socket.io connection for real-time updates
   Future<void> initializeSocket() async {
     try {
-      if (_initialized) {
+      final token = await _userService.getToken();
+      final tokenChanged = (token ?? '') != (_lastAuthToken ?? '');
+
+      if (_initialized && !tokenChanged) {
         return;
       }
-      final token = await _userService.getToken();
+
+      if (_initialized && tokenChanged) {
+        try {
+          _socket.disconnect();
+          _socket.dispose();
+        } catch (_) {}
+        _initialized = false;
+      }
+
+      _lastAuthToken = token;
       final options = io.OptionBuilder()
           .setTransports(kIsWeb ? ['polling'] : ['websocket', 'polling'])
           .enableAutoConnect()

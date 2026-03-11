@@ -113,6 +113,7 @@ class EmployeeLocationService {
 
   final UserService _userService = UserService();
   io.Socket? _socket;
+  String? _lastAuthToken;
 
   // Streams
   final _employeeLocationsController =
@@ -138,7 +139,9 @@ class EmployeeLocationService {
 
   /// Initialize socket connection for real-time location updates
   Future<void> initialize() async {
-    if (_socket != null && _isConnected) return;
+    final token = await _userService.getToken();
+    final tokenChanged = (token ?? '') != (_lastAuthToken ?? '');
+    if (_socket != null && _isConnected && !tokenChanged) return;
 
     try {
       try {
@@ -150,7 +153,7 @@ class EmployeeLocationService {
       _socket = null;
       _isConnected = false;
 
-      final token = await _userService.getToken();
+      _lastAuthToken = token;
       final options = io.OptionBuilder()
           .setTransports(['websocket', 'polling'])
           .setExtraHeaders({

@@ -270,6 +270,11 @@ const forgotPassword = asyncHandler(async (req, res) => {
     return res.status(202).json({
       message: 'Reset token created but email could not be sent. Please try again later.',
       emailDelivery: 'failed',
+      emailError: {
+        message: error && error.message ? String(error.message) : 'Unknown error',
+        code: error && error.code ? String(error.code) : null,
+        responseCode: error && error.responseCode ? Number(error.responseCode) : null,
+      },
     });
   }
 });

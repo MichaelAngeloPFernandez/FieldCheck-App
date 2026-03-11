@@ -16,7 +16,12 @@ function buildTransportConfig() {
 
   const host = process.env.EMAIL_HOST || (useGmailDefaults ? 'smtp.gmail.com' : undefined);
   const portRaw = process.env.EMAIL_PORT || (useGmailDefaults ? '587' : undefined);
-  const secure = process.env.EMAIL_SECURE === 'true';
+  const secureExplicit = process.env.EMAIL_SECURE;
+  const port = Number(portRaw || 587);
+  const secure =
+    typeof secureExplicit === 'string'
+      ? secureExplicit === 'true'
+      : port === 465;
 
   const hasSmtp = Boolean(host && username && password);
   return {
@@ -24,12 +29,14 @@ function buildTransportConfig() {
     hasSmtp,
     smtp: {
       host,
-      port: Number(portRaw || 587),
+      port,
       secure,
       auth: {
         user: username,
         pass: password,
       },
+      // Gmail commonly requires STARTTLS on 587.
+      ...(useGmailDefaults ? { requireTLS: true } : {}),
       tls: {
         minVersion: 'TLSv1.2',
       },
@@ -83,7 +90,11 @@ const sendEmail = async (options) => {
   try {
     transporter = config.disableEmail || !config.hasSmtp
       ? nodemailer.createTransport({ jsonTransport: true })
-      : nodemailer.createTransport(config.smtp);
+      : nodemailer.createTransport({
+          ...config.smtp,
+          logger: process.env.EMAIL_DEBUG === 'true',
+          debug: process.env.EMAIL_DEBUG === 'true',
+        });
   } catch (e) {
     console.error('Email: failed to create transporter', {
       mode: transportMode,
@@ -94,6 +105,25 @@ const sendEmail = async (options) => {
       error: e && e.message ? e.message : String(e),
     });
     throw e;
+  }
+
+  // Optional: verify SMTP connectivity/credentials (useful on Render).
+  if (transportMode === 'smtp' && process.env.EMAIL_VERIFY === 'true') {
+    try {
+      await withTimeout(transporter.verify(), 12000, 'smtpVerify');
+    } catch (e) {
+      console.error('Email: transporter.verify failed', {
+        host: config.smtp && config.smtp.host,
+        port: config.smtp && config.smtp.port,
+        secure: config.smtp && config.smtp.secure,
+        user: config.smtp && config.smtp.auth && config.smtp.auth.user,
+        error: e && e.message ? e.message : String(e),
+        code: e && e.code ? e.code : undefined,
+        response: e && e.response ? e.response : undefined,
+        responseCode: e && e.responseCode ? e.responseCode : undefined,
+      });
+      throw e;
+    }
   }
 
   let html = options.message || '';
