@@ -7,12 +7,16 @@ let didLogEmailMode = false;
 function buildTransportConfig() {
   const disableEmail = process.env.DISABLE_EMAIL === 'true';
 
-  const host = process.env.EMAIL_HOST;
-  const portRaw = process.env.EMAIL_PORT;
-  const secure = process.env.EMAIL_SECURE === 'true';
-
   const username = process.env.EMAIL_USERNAME || process.env.EMAIL_USER;
   const password = process.env.EMAIL_PASSWORD || process.env.EMAIL_PASS;
+
+  const useGmailDefaults =
+    (process.env.EMAIL_PROVIDER || '').toString().trim().toLowerCase() === 'gmail' ||
+    (typeof username === 'string' && username.toLowerCase().includes('@gmail.com'));
+
+  const host = process.env.EMAIL_HOST || (useGmailDefaults ? 'smtp.gmail.com' : undefined);
+  const portRaw = process.env.EMAIL_PORT || (useGmailDefaults ? '587' : undefined);
+  const secure = process.env.EMAIL_SECURE === 'true';
 
   const hasSmtp = Boolean(host && username && password);
   return {
@@ -25,6 +29,9 @@ function buildTransportConfig() {
       auth: {
         user: username,
         pass: password,
+      },
+      tls: {
+        minVersion: 'TLSv1.2',
       },
     },
   };

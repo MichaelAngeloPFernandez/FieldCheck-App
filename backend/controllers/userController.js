@@ -260,11 +260,17 @@ const forgotPassword = asyncHandler(async (req, res) => {
     });
     return res.status(200).json({ message: 'Password reset email sent' });
   } catch (error) {
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    await user.save();
-    res.status(500);
-    throw new Error('Email could not be sent');
+    // Do not fail the entire flow if SMTP is temporarily broken.
+    // Keep the reset token so the user can retry later.
+    console.error('forgotPassword: email send failed', {
+      userId: user && user._id ? String(user._id) : undefined,
+      email: user && user.email ? String(user.email) : undefined,
+      error: error && error.message ? error.message : String(error),
+    });
+    return res.status(202).json({
+      message: 'Reset token created but email could not be sent. Please try again later.',
+      emailDelivery: 'failed',
+    });
   }
 });
 
@@ -567,24 +573,30 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
 // @route   PUT /api/users/:id/reset-password-admin
 // @access  Private/Admin
 const resetUserPasswordByAdmin = asyncHandler(async (req, res) => {
-  const { password } = req.body;
-  if (typeof password !== 'string' || password.trim().length < 6) {
-    res.status(400);
-    throw new Error('Password must be at least 6 characters');
-  }
+  const rawPassword = req.body ? req.body.password : undefined;
+  const trimmed = typeof rawPassword === 'string' ? rawPassword.trim() : '';
 
+  const _generateTempPassword = () => {
+    const crypto = require('crypto');
+    const base = crypto.randomBytes(9).toString('base64').replace(/[^a-zA-Z0-9]/g, '');
+    const suffix = crypto.randomBytes(3).toString('hex');
+    return `Fc@${base}${suffix}`.slice(0, 16);
+  };
+
+  const tempPassword = trimmed.length >= 6 ? trimmed : _generateTempPassword();
   const user = await User.findById(req.params.id);
   if (!user) {
     res.status(404);
     throw new Error('User not found');
   }
 
-  user.password = password.trim();
+  user.password = tempPassword;
   user.tokenVersion = (user.tokenVersion || 0) + 1; // revoke refresh tokens
   await user.save();
 
   res.json({
     message: 'Password reset successful',
+    tempPassword,
     user: {
       _id: user._id,
       name: user.name,

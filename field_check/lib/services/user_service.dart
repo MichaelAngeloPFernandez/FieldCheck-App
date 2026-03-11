@@ -628,9 +628,9 @@ class UserService {
   }
 
   // Admin-only operations
-  Future<void> resetUserPasswordByAdmin(
+  Future<String> resetUserPasswordByAdmin(
     String userModelId,
-    String password,
+    String? password,
   ) async {
     final token = await getToken();
     final response = await http.put(
@@ -643,7 +643,16 @@ class UserService {
     );
 
     if (response.statusCode == 200) {
-      return;
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          final tp = decoded['tempPassword'];
+          if (tp is String && tp.trim().isNotEmpty) {
+            return tp.trim();
+          }
+        }
+      } catch (_) {}
+      return '';
     }
 
     String message = 'Failed to reset password';

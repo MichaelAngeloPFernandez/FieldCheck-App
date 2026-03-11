@@ -1,5 +1,6 @@
 // ignore_for_file: unnecessary_underscores
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/user_service.dart';
 import '../services/realtime_service.dart';
 import '../models/user_model.dart';
@@ -29,6 +30,76 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     super.initState();
     _employeesFuture = _userService.fetchEmployees();
     _initializeRealtimeSync();
+  }
+
+  Future<void> _resetPassword(UserModel user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Text(
+          'Reset password for ${user.name}? A temporary password will be generated.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      final tempPassword = await _userService.resetUserPasswordByAdmin(
+        user.id,
+        null,
+      );
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Temporary Password'),
+          content: SelectableText(
+            tempPassword.isNotEmpty
+                ? tempPassword
+                : 'Password reset successfully. (No temporary password returned)',
+          ),
+          actions: [
+            if (tempPassword.isNotEmpty)
+              TextButton(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: tempPassword));
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Temporary password copied')),
+                  );
+                },
+                child: const Text('Copy'),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to reset password',
+        ),
+      );
+    }
   }
 
   void _initializeRealtimeSync() {
@@ -760,6 +831,9 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                     case 'edit':
                                       _edit(user);
                                       break;
+                                    case 'reset_password':
+                                      _resetPassword(user);
+                                      break;
                                     case 'deactivate':
                                       _deactivate(user);
                                       break;
@@ -775,6 +849,10 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                   const PopupMenuItem(
                                     value: 'edit',
                                     child: Text('Edit'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'reset_password',
+                                    child: Text('Reset Password'),
                                   ),
                                   PopupMenuItem(
                                     value: user.isActive
