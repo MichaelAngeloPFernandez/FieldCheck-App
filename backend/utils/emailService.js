@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const https = require('https');
 const accountActivationEmail = require('./templates/accountActivationEmail');
 const passwordResetEmail = require('./templates/passwordResetEmail');
 
@@ -73,6 +74,51 @@ function withTimeout(promise, ms, label) {
     t = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
   });
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(t));
+}
+
+function _sendWithResend({ from, to, subject, html }) {
+  return new Promise((resolve, reject) => {
+    const apiKey = (process.env.RESEND_API_KEY || '').toString().trim();
+    if (!apiKey) {
+      return reject(new Error('RESEND_API_KEY not set'));
+    }
+
+    const payload = JSON.stringify({
+      from,
+      to,
+      subject,
+      html,
+    });
+
+    const req = https.request(
+      {
+        method: 'POST',
+        hostname: 'api.resend.com',
+        path: '/emails',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            return resolve({ statusCode: res.statusCode, body });
+          }
+          return reject(new Error(`Resend failed (${res.statusCode}): ${body}`));
+        });
+      },
+    );
+
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
 }
 
 const sendEmail = async (options) => {
@@ -153,6 +199,7 @@ const sendEmail = async (options) => {
       30000,
       'sendMail',
     );
+
     if (transportMode !== 'smtp') {
       console.warn('Email: sent using non-SMTP transport (no delivery)', {
         mode: transportMode,
@@ -163,6 +210,38 @@ const sendEmail = async (options) => {
     }
     return info;
   } catch (e) {
+    const code = e && e.code ? String(e.code) : '';
+    const msg = e && e.message ? String(e.message) : '';
+
+    const isTimeout =
+      code === 'ETIMEDOUT' ||
+      msg.toLowerCase().includes('timed out') ||
+      msg.toLowerCase().includes('timeout');
+
+    // If SMTP is blocked (common on some hosts), optionally fall back to Resend.
+    if (transportMode === 'smtp' && isTimeout && (process.env.RESEND_API_KEY || '').toString().trim()) {
+      try {
+        const from = mailOptions.from;
+        const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
+        await withTimeout(
+          _sendWithResend({ from, to, subject: mailOptions.subject, html }),
+          12000,
+          'resend',
+        );
+        console.warn('Email: SMTP timed out; delivered via Resend fallback', {
+          to: mailOptions.to,
+          subject: mailOptions.subject,
+        });
+        return { fallback: 'resend' };
+      } catch (fallbackErr) {
+        console.error('Email: Resend fallback failed', {
+          to: mailOptions.to,
+          subject: mailOptions.subject,
+          error: fallbackErr && fallbackErr.message ? fallbackErr.message : String(fallbackErr),
+        });
+      }
+    }
+
     console.error('Email: sendMail failed', {
       mode: transportMode,
       host: config.smtp && config.smtp.host,

@@ -174,6 +174,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Timer? _employeeSearchDebounce;
 
   bool _notifDetailsOpen = false;
+  final Set<String> _seenNotificationIds = <String>{};
 
   static final Color _panelBorderBlue = Colors.blue.shade200;
   static const Color _adminMarkerColor = Color(0xFF5C4EF5);
@@ -1066,228 +1067,251 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _showNotificationDetails(DashboardNotification notif) async {
     if (_notifDetailsOpen) return;
     _notifDetailsOpen = true;
-    final payload = notif.payload ?? const <String, dynamic>{};
-    final ts = formatManila(notif.timestamp, 'yyyy-MM-dd HH:mm:ss');
-
-    String? employeeName;
-    String? employeeId;
-    String? action;
-
-    String? userId;
-
-    Map<String, dynamic>? employeeObj;
-    try {
-      final raw = payload['employee'];
-      if (raw is Map<String, dynamic>) {
-        employeeObj = raw;
-      } else if (raw is Map) {
-        employeeObj = Map<String, dynamic>.from(raw);
-      } else if (raw != null) {
-        userId = raw.toString();
-      }
-    } catch (_) {
-      employeeObj = null;
-    }
 
     try {
-      if (userId == null) {
-        final rawId = employeeObj?['_id'] ?? employeeObj?['id'];
-        userId = rawId?.toString();
-      }
-    } catch (_) {
-      userId = userId;
-    }
+      if (!mounted) return;
+      final payload = notif.payload ?? const <String, dynamic>{};
+      final ts = formatManila(notif.timestamp, 'yyyy-MM-dd HH:mm:ss');
 
-    try {
-      employeeName = (payload['name'] ?? payload['employeeName']) as String?;
-    } catch (_) {
-      employeeName = null;
-    }
+      String? employeeName;
+      String? employeeId;
+      String? action;
 
-    employeeName ??= employeeObj?['name'] as String?;
+      String? userId;
 
-    String? employeeCode;
-    try {
-      employeeCode = payload['employeeId'] as String?;
-    } catch (_) {
-      employeeCode = null;
-    }
-    employeeCode ??= employeeObj?['employeeId']?.toString();
-
-    final uid = userId;
-    final canonicalId = uid == null ? null : _canonicalUserId(uid);
-    if ((employeeName == null || employeeName.trim().isEmpty) &&
-        canonicalId != null &&
-        canonicalId.trim().isNotEmpty) {
-      await _ensureEmployeeLoaded(canonicalId);
-    }
-
-    final resolved = canonicalId == null ? null : _employees[canonicalId];
-    employeeName ??= resolved?.name;
-    employeeCode ??= resolved?.employeeId;
-
-    try {
-      employeeId = (payload['userId'] ?? payload['employeeUserId']) as String?;
-    } catch (_) {
-      employeeId = null;
-    }
-
-    if (employeeId == null) {
+      Map<String, dynamic>? employeeObj;
       try {
-        employeeId = canonicalId;
+        final raw = payload['employee'];
+        if (raw is Map<String, dynamic>) {
+          employeeObj = raw;
+        } else if (raw is Map) {
+          employeeObj = Map<String, dynamic>.from(raw);
+        } else if (raw != null) {
+          userId = raw.toString();
+        }
+      } catch (_) {
+        employeeObj = null;
+      }
+
+      try {
+        if (userId == null) {
+          final rawId = employeeObj?['_id'] ?? employeeObj?['id'];
+          userId = rawId?.toString();
+        }
+      } catch (_) {
+        userId = userId;
+      }
+
+      try {
+        employeeName = (payload['name'] ?? payload['employeeName']) as String?;
+      } catch (_) {
+        employeeName = null;
+      }
+
+      employeeName ??= employeeObj?['name'] as String?;
+
+      String? employeeCode;
+      try {
+        employeeCode = payload['employeeId'] as String?;
+      } catch (_) {
+        employeeCode = null;
+      }
+      employeeCode ??= employeeObj?['employeeId']?.toString();
+
+      final uid = userId;
+      final canonicalId = uid == null ? null : _canonicalUserId(uid);
+      if ((employeeName == null || employeeName.trim().isEmpty) &&
+          canonicalId != null &&
+          canonicalId.trim().isNotEmpty) {
+        await _ensureEmployeeLoaded(canonicalId);
+      }
+
+      final resolved = canonicalId == null ? null : _employees[canonicalId];
+      employeeName ??= resolved?.name;
+      employeeCode ??= resolved?.employeeId;
+
+      try {
+        employeeId =
+            (payload['userId'] ?? payload['employeeUserId']) as String?;
       } catch (_) {
         employeeId = null;
       }
-    }
 
-    // Prefer displaying the employee's readable employeeId/code if available.
-    employeeId = employeeCode ?? employeeId;
-    try {
-      action = payload['action'] as String?;
-    } catch (_) {
-      action = null;
-    }
-
-    // Check if this is a grouped online employees notification
-    final isGroupedOnline =
-        action == 'seedOnlineSnapshot' && payload['employees'] != null;
-    List<Map<String, dynamic>> employeesList = [];
-    if (isGroupedOnline) {
-      try {
-        final rawList = payload['employees'];
-        if (rawList is List) {
-          employeesList = rawList.map((e) {
-            if (e is Map<String, dynamic>) return e;
-            if (e is Map) return Map<String, dynamic>.from(e);
-            return <String, dynamic>{};
-          }).toList();
+      if (employeeId == null) {
+        try {
+          employeeId = canonicalId;
+        } catch (_) {
+          employeeId = null;
         }
-      } catch (_) {}
-    }
+      }
 
-    showDialog<void>(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: Text(notif.title),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                notif.message,
-                style: const TextStyle(
-                  fontSize: AppTheme.fontSizeMd,
-                  height: 1.35,
-                  color: AppTheme.textPrimaryColor,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildDetailRow('Type:', notif.type),
-              _buildDetailRow('Action:', action ?? '-'),
-              if (!isGroupedOnline) ...[
-                _buildDetailRow('Employee:', employeeName ?? '-'),
-                _buildDetailRow('Employee ID:', employeeId ?? '-'),
-              ],
-              _buildDetailRow('Time:', ts),
-              if (isGroupedOnline && employeesList.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Divider(),
-                const SizedBox(height: 8),
+      // Prefer displaying the employee's readable employeeId/code if available.
+      employeeId = employeeCode ?? employeeId;
+      try {
+        action = payload['action'] as String?;
+      } catch (_) {
+        action = null;
+      }
+
+      // Check if this is a grouped online employees notification
+      final isGroupedOnline =
+          action == 'seedOnlineSnapshot' && payload['employees'] != null;
+      List<Map<String, dynamic>> employeesList = [];
+      if (isGroupedOnline) {
+        try {
+          final rawList = payload['employees'];
+          if (rawList is List) {
+            employeesList = rawList.map((e) {
+              if (e is Map<String, dynamic>) return e;
+              if (e is Map) return Map<String, dynamic>.from(e);
+              return <String, dynamic>{};
+            }).toList();
+          }
+        } catch (_) {}
+      }
+
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        builder: (ctx) => AlertDialog(
+          title: Text(notif.title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  'Online Employees (${employeesList.length}):',
+                  notif.message,
                   style: const TextStyle(
                     fontSize: AppTheme.fontSizeMd,
-                    fontWeight: FontWeight.bold,
+                    height: 1.35,
                     color: AppTheme.textPrimaryColor,
                   ),
                 ),
-                const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 300),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: employeesList.length,
-                    itemBuilder: (context, index) {
-                      final emp = employeesList[index];
-                      final name = emp['name']?.toString() ?? 'Unknown';
-                      final code = emp['employeeCode']?.toString() ?? '';
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: Colors.green.withValues(alpha: 0.15),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${index + 1}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
+                const SizedBox(height: 12),
+                _buildDetailRow('Type:', notif.type),
+                _buildDetailRow('Action:', action ?? '-'),
+                if (!isGroupedOnline) ...[
+                  _buildDetailRow('Employee:', employeeName ?? '-'),
+                  _buildDetailRow('Employee ID:', employeeId ?? '-'),
+                ],
+                _buildDetailRow('Time:', ts),
+                if (isGroupedOnline && employeesList.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Online Employees (${employeesList.length}):',
+                    style: const TextStyle(
+                      fontSize: AppTheme.fontSizeMd,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: employeesList.length,
+                      itemBuilder: (context, index) {
+                        final emp = employeesList[index];
+                        final name = emp['name']?.toString() ?? 'Unknown';
+                        final code = emp['employeeCode']?.toString() ?? '';
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                code.isNotEmpty ? '$name ($code)' : name,
-                                style: const TextStyle(
-                                  fontSize: AppTheme.fontSizeSm,
-                                  color: AppTheme.textPrimaryColor,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  code.isNotEmpty ? '$name ($code)' : name,
+                                  style: const TextStyle(
+                                    fontSize: AppTheme.fontSizeSm,
+                                    color: AppTheme.textPrimaryColor,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
+                ],
               ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+            if (notif.type == 'report')
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _selectedIndex = 4;
+                  });
+                },
+                icon: const Icon(Icons.description),
+                label: const Text('Go to reports'),
+              ),
+            if (notif.type == 'report')
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _selectedIndex = 4;
+                  });
+                  AdminReportsHubScreen.selectInitialTab(1);
+                },
+                icon: const Icon(Icons.insights),
+                label: const Text('Analytics'),
+              ),
+          ],
+        ),
+      );
+    } catch (e) {
+      try {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          useRootNavigator: true,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Notification'),
+            content: Text('Unable to open notification details.\n\n$e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-          if (notif.type == 'report')
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                setState(() {
-                  _selectedIndex = 4;
-                });
-              },
-              icon: const Icon(Icons.description),
-              label: const Text('Go to reports'),
-            ),
-          if (notif.type == 'report')
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                setState(() {
-                  _selectedIndex = 4;
-                });
-                AdminReportsHubScreen.selectInitialTab(1);
-              },
-              icon: const Icon(Icons.insights),
-              label: const Text('Analytics'),
-            ),
-        ],
-      ),
-    ).whenComplete(() {
+        );
+      } catch (_) {}
+    } finally {
       _notifDetailsOpen = false;
-    });
+    }
   }
 
   Widget _buildNotificationsPanel() {
@@ -2513,6 +2537,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       try {
         final Map<String, dynamic> merged = Map<String, dynamic>.from(data);
 
+        // Deduplicate persisted notifications (replay + reconnect safety).
+        // `notificationCreated` includes a stable `id`.
+        final incomingId = (merged['id'] ?? merged['_id'] ?? '')
+            .toString()
+            .trim();
+        if (incomingId.isNotEmpty) {
+          if (_seenNotificationIds.contains(incomingId)) return;
+          _seenNotificationIds.add(incomingId);
+        }
+
         try {
           final inner = merged['payload'];
           if (inner is Map) {
@@ -2535,7 +2569,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _notifications.insert(
               0,
               DashboardNotification(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                id: incomingId.isNotEmpty
+                    ? incomingId
+                    : DateTime.now().millisecondsSinceEpoch.toString(),
                 title: 'Employee Online',
                 message: '$displayName is now online.',
                 type: 'employee',
@@ -2579,7 +2615,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _notifications.insert(
               0,
               DashboardNotification(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                id: incomingId.isNotEmpty
+                    ? incomingId
+                    : DateTime.now().millisecondsSinceEpoch.toString(),
                 title: title,
                 message: message,
                 type: 'attendance',
@@ -2619,7 +2657,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _notifications.insert(
               0,
               DashboardNotification(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                id: incomingId.isNotEmpty
+                    ? incomingId
+                    : DateTime.now().millisecondsSinceEpoch.toString(),
                 title: 'Task overdue',
                 message: 'Task "$taskTitle" is now overdue.',
                 type: 'task',

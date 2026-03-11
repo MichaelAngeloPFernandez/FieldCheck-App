@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const mongoose = require('mongoose');
 
 /**
  * Generate a sequential employee or admin ID with gap filling.
@@ -10,40 +11,44 @@ const User = require('../models/User');
  */
 async function generateSequentialId(role = 'employee') {
   const prefix = role === 'admin' ? 'AD' : 'EN';
-  
-  // Find all users with IDs matching the pattern (prefix + digits)
-  const regex = new RegExp(`^${prefix}\\d+$`, 'i');
-  const users = await User.find({
-    employeeId: { $regex: regex },
-    role: role
-  }).select('employeeId').lean();
 
-  // Extract numeric parts and find gaps
-  const usedNumbers = new Set();
-  let maxNumber = 0;
+  const Counter =
+    mongoose.models.IdCounter ||
+    mongoose.model(
+      'IdCounter',
+      new mongoose.Schema(
+        {
+          key: { type: String, required: true, unique: true },
+          seq: { type: Number, required: true, default: 0 },
+        },
+        { timestamps: true },
+      ),
+    );
 
-  for (const user of users) {
-    const id = (user.employeeId || '').toUpperCase();
-    const numStr = id.replace(prefix.toUpperCase(), '');
-    const num = parseInt(numStr, 10);
-    if (!isNaN(num) && num > 0) {
-      usedNumbers.add(num);
-      if (num > maxNumber) maxNumber = num;
+  const key = `employeeId:${prefix}`;
+
+  // Concurrency-safe allocation:
+  // - Atomically increments a counter
+  // - Then checks for collisions (e.g., when enabling this on an existing DB)
+  // - Loops until an unused code is found
+  for (let attempt = 0; attempt < 2500; attempt++) {
+    const counterDoc = await Counter.findOneAndUpdate(
+      { key },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+
+    const nextNumber = counterDoc && typeof counterDoc.seq === 'number' ? counterDoc.seq : 1;
+    const paddedNumber = String(nextNumber).padStart(3, '0');
+    const candidate = `${prefix}${paddedNumber}`;
+
+    const exists = await User.exists({ role, employeeId: { $regex: `^${candidate}$`, $options: 'i' } });
+    if (!exists) {
+      return candidate;
     }
   }
 
-  // Find the first gap, or use next number after max
-  let nextNumber = 1;
-  for (let i = 1; i <= maxNumber + 1; i++) {
-    if (!usedNumbers.has(i)) {
-      nextNumber = i;
-      break;
-    }
-  }
-
-  // Format with leading zeros (3 digits minimum)
-  const paddedNumber = String(nextNumber).padStart(3, '0');
-  return `${prefix}${paddedNumber}`;
+  throw new Error('Unable to allocate a unique employeeId');
 }
 
 /**
