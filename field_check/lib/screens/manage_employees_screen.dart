@@ -61,6 +61,16 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     });
   }
 
+  void _applyLocalEmployeeUpdate(UserModel updated) {
+    setState(() {
+      _employeesFuture = _employeesFuture.then((employees) {
+        return employees
+            .map((e) => e.id == updated.id ? updated : e)
+            .toList(growable: false);
+      });
+    });
+  }
+
   List<UserModel> _filterEmployees(List<UserModel> employees) {
     List<UserModel> filtered = employees;
 
@@ -478,6 +488,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
         debugPrint(
           'ManageEmployees: updateUserByAdmin returned isVerified=${updated.isVerified}',
         );
+        _applyLocalEmployeeUpdate(updated);
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,

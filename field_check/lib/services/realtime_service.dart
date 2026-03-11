@@ -11,6 +11,7 @@ class RealtimeService {
   RealtimeService._internal();
 
   io.Socket? _socket;
+  String? _lastAuthToken;
   final StreamController<Map<String, dynamic>> _eventController =
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<int> _onlineCountController =
@@ -53,7 +54,14 @@ class RealtimeService {
   bool get isConnected => _isConnected;
 
   Future<void> initialize() async {
-    if (_socket != null && _isConnected) return;
+    final token = await UserService().getToken();
+
+    // Important: RealtimeService is a singleton. If the user logs out and logs in
+    // as a different account without a full restart, we must rebuild the socket
+    // with the new token so the backend joins the correct `user:<id>` room.
+    final tokenChanged = (token ?? '') != (_lastAuthToken ?? '');
+
+    if (_socket != null && _isConnected && !tokenChanged) return;
 
     try {
       try {
@@ -65,7 +73,7 @@ class RealtimeService {
       _socket = null;
       _isConnected = false;
 
-      final token = await UserService().getToken();
+      _lastAuthToken = token;
       final options = io.OptionBuilder()
           .setTransports(kIsWeb ? ['polling'] : ['websocket', 'polling'])
           .setExtraHeaders({
