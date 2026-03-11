@@ -37,6 +37,10 @@ function buildTransportConfig() {
       },
       // Gmail commonly requires STARTTLS on 587.
       ...(useGmailDefaults ? { requireTLS: true } : {}),
+      // Avoid hanging connections on providers that are slow or blocked.
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 30000,
       tls: {
         minVersion: 'TLSv1.2',
       },
@@ -146,7 +150,7 @@ const sendEmail = async (options) => {
   try {
     const info = await withTimeout(
       transporter.sendMail(mailOptions),
-      15000,
+      30000,
       'sendMail',
     );
     if (transportMode !== 'smtp') {

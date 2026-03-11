@@ -226,6 +226,15 @@ io.on('connection', (socket) => {
           try {
             await appNotificationService.emitUnreadCounts(userIdFromToken);
           } catch (_) {}
+
+          // Replay recent unread notifications so the dashboard bell is
+          // immediately populated even if the client missed events while offline.
+          try {
+            await appNotificationService.emitUnreadNotifications(userIdFromToken, {
+              scope: 'adminFeed',
+              limit: 20,
+            });
+          } catch (_) {}
         } catch (_) {}
       });
     }
