@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/availability_service.dart';
-import 'package:field_check/services/settings_service.dart';
-import 'package:field_check/services/notification_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -28,8 +26,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   final TaskService _taskService = TaskService();
   final UserService _userService = UserService();
   final AvailabilityService _availabilityService = AvailabilityService();
-  final SettingsService _settingsService = SettingsService();
-  final NotificationService _notificationService = NotificationService();
   List<Task> _tasks = [];
   List<Task> _archivedTasks = [];
   bool _isLoading = true;
@@ -1248,27 +1244,11 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                         );
                       }
 
-                      // Best-effort SMS for newly assigned employees (admin toggle)
-                      try {
-                        final smsEnabled = await _settingsService
-                            .getSmsTaskAssignmentEnabled();
-                        if (smsEnabled && idsToAssign.isNotEmpty) {
-                          for (final employeeId in idsToAssign) {
-                            try {
-                              await _notificationService.sendTaskAssignmentSms(
-                                employeeId: employeeId,
-                                taskTitle: task.title,
-                                taskDescription: task.description,
-                              );
-                            } catch (e) {
-                              debugPrint(
-                                'Task assignment SMS failed for $employeeId: $e',
-                              );
-                            }
-                          }
-                        }
-                      } catch (e) {
-                        debugPrint('Task assignment SMS skipped: $e');
+                      if (_socket.connected) {
+                        _socket.emit('taskAssigned', {
+                          'taskId': task.id,
+                          'employeeIds': idsToAssign,
+                        });
                       }
 
                       _fetchTasks();

@@ -1,5 +1,6 @@
 // ignore_for_file: avoid_print, library_prefixes
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
@@ -66,11 +67,11 @@ class RealtimeService {
 
       final token = await UserService().getToken();
       final options = io.OptionBuilder()
-          .setTransports(['websocket', 'polling'])
+          .setTransports(kIsWeb ? ['polling'] : ['websocket', 'polling'])
           .setExtraHeaders({
             if (token != null) 'Authorization': 'Bearer $token',
           })
-          .setTimeout(20000)
+          .setTimeout(60000)
           .build();
 
       if (token != null) {

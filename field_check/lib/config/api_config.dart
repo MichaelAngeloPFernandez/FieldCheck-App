@@ -10,9 +10,10 @@ class ApiConfig {
       defaultValue: false,
     );
 
+    if (useLocal) return 'http://localhost:3002';
+
     if (kReleaseMode) return 'https://fieldcheck-app.onrender.com';
     if (kIsWeb) return 'https://fieldcheck-app.onrender.com';
-    if (useLocal) return 'http://localhost:3002';
     return 'https://fieldcheck-app.onrender.com';
   }
 

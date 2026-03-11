@@ -13,8 +13,6 @@ async function getMaxActiveTasksPerEmployee() {
   return 3;
 }
 
-// --- Task status helpers ----------------------------------------------------
-
 const TERMINAL_TASK_STATUSES = ['completed', 'reviewed', 'closed'];
 
 function normalizeTaskStatus(status) {
@@ -105,13 +103,10 @@ function canTransitionTaskStatus(fromStatus, toStatus) {
   const to = normalizeTaskStatus(toStatus);
 
   if (from === to) return true;
-
-  // Prevent going back from any terminal/done state to an active state
   if (isTerminalTaskStatus(from) && !isTerminalTaskStatus(to)) {
     return false;
   }
 
-  // Otherwise allow the transition for now (future phases can tighten rules)
   return true;
 }
 
@@ -121,7 +116,8 @@ function recalculateChecklistProgress(taskDoc) {
   }
 
   const total = taskDoc.checklist.length;
-  const completed = taskDoc.checklist.filter((item) => item && item.isCompleted).length;
+  const completed = taskDoc.checklist.filter((item) => item && item.isCompleted)
+    .length;
   if (!total) {
     return;
   }
@@ -132,7 +128,6 @@ function recalculateChecklistProgress(taskDoc) {
   }
 }
 
-// Map Task mongoose doc to Flutter-friendly shape
 function toTaskJson(doc, userTaskId) {
   const now = new Date();
   const isOverdue =
@@ -143,8 +138,6 @@ function toTaskJson(doc, userTaskId) {
 
   const rawStatus = normalizeTaskStatus(doc.status);
 
-  // Map rich lifecycle statuses into the legacy 3-state UI model
-  // so existing Flutter UI (pending / in_progress / completed) keeps working.
   let uiStatus = rawStatus || 'pending';
   if (['created', 'assigned', 'accepted'].includes(rawStatus)) {
     uiStatus = 'pending';
@@ -154,7 +147,6 @@ function toTaskJson(doc, userTaskId) {
     uiStatus = 'completed';
   }
 
-  // Keep progressPercent in sync with checklist completion when a checklist exists
   recalculateChecklistProgress(doc);
 
   const progressPercent =
@@ -178,7 +170,6 @@ function toTaskJson(doc, userTaskId) {
     difficulty: doc.difficulty || 'medium',
     isArchived: !!doc.isArchived,
     isOverdue,
-    // Expose richer fields for future UI without breaking current clients
     rawStatus,
     progressPercent,
     checklist: Array.isArray(doc.checklist)
@@ -197,8 +188,6 @@ function toTaskJson(doc, userTaskId) {
   };
 }
 
-// @route GET /api/tasks/:id
-// @access Private
 const getTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const task = await Task.findById(id);
@@ -209,9 +198,6 @@ const getTask = asyncHandler(async (req, res) => {
   res.json(toTaskJson(task));
 });
 
-// @route GET /api/tasks
-// @access Private (admin or employee)
-// Optional query: archived=true|false (default false)
 const getTasks = asyncHandler(async (req, res) => {
   const { archived } = req.query;
 
@@ -219,7 +205,6 @@ const getTasks = asyncHandler(async (req, res) => {
   if (archived === 'true') {
     filter.isArchived = true;
   } else if (archived === 'false' || archived === undefined) {
-    // Default to current (non-archived) tasks when not specified
     filter.isArchived = { $ne: true };
   }
 
@@ -227,22 +212,16 @@ const getTasks = asyncHandler(async (req, res) => {
   res.json(tasks.map((t) => toTaskJson(t)));
 });
 
-// @route GET /api/tasks/current
-// @access Private/Admin
 const getCurrentTasks = asyncHandler(async (req, res) => {
   const tasks = await Task.find({ isArchived: { $ne: true } }).sort({ createdAt: -1 });
   res.json(tasks.map((t) => toTaskJson(t)));
 });
 
-// @route GET /api/tasks/archived
-// @access Private/Admin
 const getArchivedTasks = asyncHandler(async (req, res) => {
   const tasks = await Task.find({ isArchived: true }).sort({ createdAt: -1 });
   res.json(tasks.map((t) => toTaskJson(t)));
 });
 
-// @route POST /api/tasks
-// @access Private/Admin
 const createTask = asyncHandler(async (req, res) => {
   const { title, description, dueDate, status, geofenceId, type, difficulty } = req.body;
 
@@ -258,6 +237,7 @@ const createTask = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Description is too long (max 5000 characters)');
   }
+
   const taskData = {
     title,
     description: description || '',
@@ -268,10 +248,10 @@ const createTask = asyncHandler(async (req, res) => {
     type: type || 'general',
     difficulty: difficulty || 'medium',
   };
+
   const task = await Task.create(taskData);
-  io.emit('newTask', toTaskJson(task)); // Emit real-time event
-  
-  // Emit admin notification for new task
+  io.emit('newTask', toTaskJson(task));
+
   io.emit('adminNotification', {
     type: 'task',
     action: 'created',
@@ -282,12 +262,10 @@ const createTask = asyncHandler(async (req, res) => {
     message: `New task: "${task.title}" created by ${req.user.name}`,
     severity: 'info',
   });
-  
+
   res.status(201).json(toTaskJson(task));
 });
 
-// @route PUT /api/tasks/:id
-// @access Private/Admin
 const updateTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const task = await Task.findById(id);
@@ -295,15 +273,20 @@ const updateTask = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Task not found');
   }
+
   if (req.body.title && typeof req.body.title === 'string' && req.body.title.length > 200) {
     res.status(400);
     throw new Error('Title is too long (max 200 characters)');
   }
-  if (req.body.description && typeof req.body.description === 'string' && req.body.description.length > 5000) {
+  if (
+    req.body.description &&
+    typeof req.body.description === 'string' &&
+    req.body.description.length > 5000
+  ) {
     res.status(400);
     throw new Error('Description is too long (max 5000 characters)');
   }
-  // Only update if values are explicitly provided (not undefined)
+
   if (req.body.title !== undefined) task.title = req.body.title;
   if (req.body.description !== undefined) task.description = req.body.description;
   if (req.body.status !== undefined) {
@@ -331,8 +314,7 @@ const updateTask = asyncHandler(async (req, res) => {
 
   const updated = await task.save();
   io.emit('updatedTask', toTaskJson(updated));
-  
-  // Emit admin notification for task update
+
   io.emit('adminNotification', {
     type: 'task',
     action: 'updated',
@@ -344,27 +326,22 @@ const updateTask = asyncHandler(async (req, res) => {
     message: `Task "${updated.title}" updated by ${req.user.name}`,
     severity: 'info',
   });
-  
+
   res.json(toTaskJson(updated));
 });
 
-// @route DELETE /api/tasks/:id
-// @access Private/Admin
 const deleteTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const task = await Task.findById(id);
   if (!task) {
     return res.status(404).json({ message: 'Task not found' });
   }
-  // Also remove any user-task assignments
   await UserTask.deleteMany({ taskId: task._id });
   await task.deleteOne();
-  io.emit('deletedTask', id); // Emit real-time event
+  io.emit('deletedTask', id);
   res.status(204).send();
 });
 
-// @route PUT /api/tasks/:id/archive
-// @access Private/Admin
 const archiveTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const task = await Task.findById(id);
@@ -378,8 +355,6 @@ const archiveTask = asyncHandler(async (req, res) => {
   res.json(toTaskJson(updated));
 });
 
-// @route PUT /api/tasks/:id/restore
-// @access Private/Admin
 const restoreTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const task = await Task.findById(id);
@@ -393,8 +368,6 @@ const restoreTask = asyncHandler(async (req, res) => {
   res.json(toTaskJson(updated));
 });
 
-// @route GET /api/tasks/user/:userId
-// @access Private
 const getUserTasks = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const list = await UserTask.find({ userId }).sort({ assignedAt: -1 });
@@ -412,13 +385,9 @@ const getUserTasks = asyncHandler(async (req, res) => {
   );
 });
 
-// @route GET /api/tasks/assigned/:userId
-// @access Private
 const getAssignedTasks = asyncHandler(async (req, res) => {
   const { userId } = req.params;
-
-  const archived =
-    String(req.query.archived || 'false').trim().toLowerCase() === 'true';
+  const archived = String(req.query.archived || 'false').trim().toLowerCase() === 'true';
 
   const assignments = await UserTask.find({
     userId,
@@ -426,9 +395,7 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
   });
   const taskIds = assignments.map((a) => a.taskId);
   const tasks = await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } });
-  const assignmentByTaskId = new Map(
-    assignments.map((a) => [a.taskId.toString(), a]),
-  );
+  const assignmentByTaskId = new Map(assignments.map((a) => [a.taskId.toString(), a]));
 
   res.json(
     tasks.map((t) => {
@@ -436,16 +403,10 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
       const base = {
         ...toTaskJson(t, a ? a._id.toString() : undefined),
         userTaskStatus: a ? a.status : undefined,
-        userTaskAssignedAt:
-          a && a.assignedAt ? a.assignedAt.toISOString() : undefined,
-        userTaskCompletedAt:
-          a && a.completedAt ? a.completedAt.toISOString() : undefined,
+        userTaskAssignedAt: a && a.assignedAt ? a.assignedAt.toISOString() : undefined,
+        userTaskCompletedAt: a && a.completedAt ? a.completedAt.toISOString() : undefined,
       };
 
-      // IMPORTANT:
-      // - For checklist tasks, progress is derived from Task.checklist completion (global).
-      // - For non-checklist tasks, progress must be per-assignee (UserTask.progressPercent)
-      //   so the employee list/overview matches what the assignee sees in their report screen.
       if (a && (!Array.isArray(t.checklist) || t.checklist.length === 0)) {
         const p = typeof a.progressPercent === 'number' ? a.progressPercent : 0;
         base.progressPercent = Math.max(0, Math.min(100, Math.round(p)));
@@ -504,7 +465,7 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
     io.emit('updatedTask', toTaskJson(task));
   }
 
-  // Fire-and-forget SMS notification for new assignment
+  // Fire-and-forget in-app notification for new assignment
   (async () => {
     try {
       const user = await User.findById(userId);
@@ -520,10 +481,9 @@ const assignTaskToUser = asyncHandler(async (req, res) => {
             payload: { taskId: String(task._id) },
           });
         } catch (_) {}
-        await notificationService.notifyTaskAssigned(user, task);
       }
     } catch (e) {
-      console.error('Failed to send task assignment SMS:', e.message || e);
+      console.error('Failed to create task assignment notification:', e.message || e);
     }
   })();
 
@@ -658,7 +618,7 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
         const ut = await UserTask.create({ taskId, userId });
         activeCounts.set(userId, currentActive + 1);
 
-        // Fire-and-forget SMS per newly assigned user
+        // Fire-and-forget in-app notification per newly assigned user
         (async () => {
           try {
             const user = await User.findById(userId);
@@ -674,10 +634,9 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
                   payload: { taskId: String(task._id) },
                 });
               } catch (_) {}
-              await notificationService.notifyTaskAssigned(user, task);
             }
           } catch (e) {
-            console.error('Failed to send multi-assign SMS:', e.message || e);
+            console.error('Failed to create task assignment notification:', e.message || e);
           }
         })();
 

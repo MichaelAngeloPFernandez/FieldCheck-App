@@ -6,8 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'notification_service.dart';
-
 enum SmsJobType { urgent, taskAssignment, overdueTask, attendance }
 
 class SmsSendResult {
@@ -31,7 +29,6 @@ class SmsOutboxService {
   factory SmsOutboxService() => _instance;
   SmsOutboxService._internal();
 
-  final NotificationService _notificationService = NotificationService();
   StreamSubscription<dynamic>? _connectivitySub;
   bool _retryInProgress = false;
 
@@ -123,20 +120,13 @@ class SmsOutboxService {
   }
 
   Future<SmsSendResult> sendUrgentWithFallback(String message) async {
-    try {
-      final resp = await _notificationService
-          .sendUrgentSmsToEmployeesWithResult(message);
-      return SmsSendResult(success: true, queued: false, backendResponse: resp);
-    } catch (e) {
-      await enqueue(
-        type: SmsJobType.urgent,
-        payload: {'message': message},
-        message: message,
-        lastError: e.toString(),
-      );
-      await openDeviceComposer(message: message);
-      return SmsSendResult(success: false, queued: true, error: e.toString());
-    }
+    await enqueue(
+      type: SmsJobType.urgent,
+      payload: {'message': message},
+      message: message,
+      lastError: 'SMS removed',
+    );
+    return SmsSendResult(success: false, queued: true, error: 'SMS removed');
   }
 
   Future<void> retryPending() async {
@@ -160,45 +150,11 @@ class SmsOutboxService {
           continue;
         }
 
-        final type = (job['type'] ?? '').toString();
-        final payload = (job['payload'] is Map)
-            ? (job['payload'] as Map).cast<String, dynamic>()
-            : <String, dynamic>{};
-
-        try {
-          if (type == SmsJobType.urgent.name) {
-            await _notificationService.sendUrgentSmsToEmployees(
-              (payload['message'] ?? job['message'] ?? '').toString(),
-            );
-          } else if (type == SmsJobType.taskAssignment.name) {
-            await _notificationService.sendTaskAssignmentSms(
-              employeeId: (payload['employeeId'] ?? '').toString(),
-              taskTitle: (payload['taskTitle'] ?? '').toString(),
-              taskDescription: (payload['taskDescription'] ?? '').toString(),
-            );
-          } else if (type == SmsJobType.overdueTask.name) {
-            await _notificationService.sendOverdueTaskSms(
-              employeeId: (payload['employeeId'] ?? '').toString(),
-              taskTitle: (payload['taskTitle'] ?? '').toString(),
-              hoursOverdue: (payload['hoursOverdue'] as int?) ?? 0,
-            );
-          } else if (type == SmsJobType.attendance.name) {
-            await _notificationService.sendAttendanceSms(
-              employeeId: (payload['employeeId'] ?? '').toString(),
-              isCheckIn: (payload['isCheckIn'] as bool?) ?? true,
-              geofenceName: (payload['geofenceName'] ?? '').toString(),
-              timestamp: (payload['timestamp'] ?? '').toString(),
-            );
-          } else {
-            throw Exception('Unknown job type: $type');
-          }
-        } catch (e) {
-          final next = Map<String, dynamic>.from(job);
-          next['attemptCount'] = attemptCount + 1;
-          next['lastAttemptAt'] = DateTime.now().toIso8601String();
-          next['lastError'] = e.toString();
-          remaining.add(next);
-        }
+        final next = Map<String, dynamic>.from(job);
+        next['attemptCount'] = attemptCount + 1;
+        next['lastAttemptAt'] = DateTime.now().toIso8601String();
+        next['lastError'] = 'SMS removed';
+        remaining.add(next);
       }
 
       await _saveJobs(remaining);

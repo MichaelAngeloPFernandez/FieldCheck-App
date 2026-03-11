@@ -187,11 +187,22 @@ const registerUser = asyncHandler(async (req, res) => {
       message: 'Verification email sent',
     });
   } catch (error) {
-    user.verificationToken = undefined;
-    user.verificationTokenExpires = undefined;
-    await user.save();
-    res.status(500);
-    throw new Error('Email could not be sent');
+    // Do not fail registration if email delivery fails.
+    // Keep the verification token so an admin can re-send or verify manually.
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      employeeId: user.employeeId,
+      avatarUrl: user.avatarUrl,
+      role: user.role,
+      message: 'User created but verification email could not be sent',
+      emailDelivery: 'failed',
+      requiresVerification: true,
+      verificationUrl,
+    });
   }
 });
 
@@ -519,6 +530,15 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
   }
   if (req.body.role) user.role = req.body.role;
   if (typeof req.body.isActive !== 'undefined') user.isActive = req.body.isActive;
+  if (typeof req.body.isVerified !== 'undefined') {
+    const raw = req.body.isVerified;
+    const nextVerified = raw === true || raw === 'true' || raw === 1 || raw === '1';
+    user.isVerified = nextVerified;
+    if (nextVerified) {
+      user.verificationToken = undefined;
+      user.verificationTokenExpires = undefined;
+    }
+  }
 
   if (user.role === 'employee') {
     const existingId = (user.employeeId || '').toString().trim();
@@ -539,6 +559,7 @@ const updateUserByAdmin = asyncHandler(async (req, res) => {
     avatarUrl: updatedUser.avatarUrl,
     role: updatedUser.role,
     isActive: updatedUser.isActive,
+    isVerified: updatedUser.isVerified,
   });
 });
 

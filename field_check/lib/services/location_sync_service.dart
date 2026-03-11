@@ -51,9 +51,9 @@ class LocationSyncService {
       }
       final token = await _userService.getToken();
       final options = io.OptionBuilder()
-          .setTransports(['websocket', 'polling'])
+          .setTransports(kIsWeb ? ['polling'] : ['websocket', 'polling'])
           .enableAutoConnect()
-          .setTimeout(20000)
+          .setTimeout(60000)
           .setExtraHeaders({
             if (token != null) 'Authorization': 'Bearer $token',
           })

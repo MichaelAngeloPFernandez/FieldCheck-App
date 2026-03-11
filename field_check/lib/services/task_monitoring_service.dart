@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'package:field_check/models/task_model.dart' as task_model;
 import 'package:field_check/services/task_service.dart';
-import 'package:field_check/services/notification_service.dart';
-import 'package:field_check/services/settings_service.dart';
 import 'package:flutter/foundation.dart';
 
 class TaskMonitoringService {
@@ -16,8 +14,6 @@ class TaskMonitoringService {
   TaskMonitoringService._internal();
 
   final TaskService _taskService = TaskService();
-  final NotificationService _notificationService = NotificationService();
-  final SettingsService _settingsService = SettingsService();
 
   Timer? _monitoringTimer;
   final Map<String, DateTime> _lastNotificationTime = {};
@@ -44,16 +40,8 @@ class TaskMonitoringService {
   /// Check for overdue tasks and notify
   Future<void> _checkForOverdueTasks() async {
     try {
-      bool smsEnabled = true;
-      try {
-        smsEnabled = await _settingsService.getSmsOverdueEnabled();
-      } catch (_) {
-        smsEnabled = true;
-      }
-      if (!smsEnabled) return;
-
-      final tasks = await _taskService.getCurrentTasks();
       final now = DateTime.now();
+      final tasks = await _taskService.getCurrentTasks();
 
       for (final task in tasks) {
         if (task.status == 'completed') continue;
@@ -71,23 +59,10 @@ class TaskMonitoringService {
         // Calculate hours overdue
         final hoursOverdue = now.difference(task.dueDate).inHours;
 
-        // Send SMS notification
-        try {
-          final employeeId = task.assignedTo?.id;
-          if (employeeId == null || employeeId.trim().isEmpty) continue;
-          await _notificationService.sendOverdueTaskSms(
-            employeeId: employeeId,
-            taskTitle: task.title,
-            hoursOverdue: hoursOverdue,
-          );
-          _lastNotificationTime[task.id] = now;
-          debugPrint('📱 Overdue notification sent for task: ${task.title}');
-        } catch (e) {
-          debugPrint('❌ Failed to send overdue notification: $e');
-        }
+        debugPrint('Task ${task.title} is overdue by $hoursOverdue hours');
       }
     } catch (e) {
-      debugPrint('❌ Error checking for overdue tasks: $e');
+      debugPrint('Error checking for overdue tasks: $e');
     }
   }
 

@@ -695,6 +695,7 @@ class UserService {
     String? email,
     String? role,
     bool? isActive,
+    bool? isVerified,
     String? username,
     String? employeeId,
     String? phone,
@@ -705,6 +706,7 @@ class UserService {
     if (email != null) payload['email'] = email;
     if (role != null) payload['role'] = role;
     if (isActive != null) payload['isActive'] = isActive;
+    if (isVerified != null) payload['isVerified'] = isVerified;
     if (username != null) payload['username'] = username;
     if (employeeId != null) payload['employeeId'] = employeeId;
     if (phone != null) payload['phone'] = phone;

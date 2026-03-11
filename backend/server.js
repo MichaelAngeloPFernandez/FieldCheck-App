@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const User = require('./models/User');
 const EmployeeLocation = require('./models/EmployeeLocation');
-const notificationService = require('./services/notificationService');
+const appNotificationService = require('./services/appNotificationService');
 
 console.log(' Starting server initialization...');
 
@@ -92,6 +92,10 @@ const OFFLINE_GRACE_MS = 15000;
 // Throttle rapid "sharing enabled" wakeups so toggling doesn't spam the admin UI.
 const lastSharingWakeEmitAt = new Map(); // { userId: number }
 const SHARING_WAKE_THROTTLE_MS = 2000;
+
+// Throttle presence notifications so brief reconnects / concurrent emits don't duplicate.
+const lastEmployeeOnlineNotifyAt = new Map(); // { userId: number }
+const EMPLOYEE_ONLINE_NOTIFY_THROTTLE_MS = 10000;
 
 let _cachedMaxActivePerEmployee = null;
 let _cachedMaxActivePerEmployeeAt = 0;
@@ -220,7 +224,6 @@ io.on('connection', (socket) => {
           }
 
           try {
-            const appNotificationService = require('./services/appNotificationService');
             await appNotificationService.emitUnreadCounts(userIdFromToken);
           } catch (_) {}
         } catch (_) {}
@@ -371,7 +374,6 @@ io.on('connection', (socket) => {
           batteryLevel: null,
         });
       }
-
       socket.emit('employeeLocationsUpdate', snapshot);
     } catch (_) {}
   });
@@ -398,6 +400,19 @@ io.on('connection', (socket) => {
       let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
       const timestamp = data && data.timestamp ? data.timestamp : new Date().toISOString();
 
+      let shouldNotifyAdmins = true;
+      if (typeof userId === 'string' && userId.length === 24) {
+        try {
+          const nowMs = Date.now();
+          const prevMs = lastEmployeeOnlineNotifyAt.get(userId) || 0;
+          if (nowMs - prevMs < EMPLOYEE_ONLINE_NOTIFY_THROTTLE_MS) {
+            shouldNotifyAdmins = false;
+          } else {
+            lastEmployeeOnlineNotifyAt.set(userId, nowMs);
+          }
+        } catch (_) {}
+      }
+
       if (typeof userId === 'string' && userId.length === 24) {
         try {
           await User.findByIdAndUpdate(userId, { isOnline: true });
@@ -414,34 +429,26 @@ io.on('connection', (socket) => {
         }
       }
 
-      io.emit('adminNotification', {
-        type: 'employee',
-        action: 'employeeOnline',
-        userId,
-        employeeId: employeeCode,
-        name: name || 'Employee',
-        timestamp,
-        message: `${name || 'Employee'} is now online.`,
-      });
-
       try {
-        const appNotificationService = require('./services/appNotificationService');
-        await appNotificationService.createForAdmins({
-          excludeUserId: userId,
-          type: 'employee',
-          action: 'employeeOnline',
-          title: 'Employee Online',
-          message: `${name || 'Employee'} is now online.`,
-          payload: {
-            userId,
-            employeeId: employeeCode,
-            name: name || 'Employee',
-            timestamp,
-          },
-        });
+        if (shouldNotifyAdmins) {
+          await appNotificationService.createForAdmins({
+            excludeUserId: userId,
+            type: 'employee',
+            action: 'employeeOnline',
+            title: 'Employee Online',
+            message: `${name || 'Employee'} is now online.`,
+            payload: {
+              userId,
+              employeeId: employeeCode,
+              name: name || 'Employee',
+              timestamp,
+            },
+          });
+        }
       } catch (_) {}
     } catch (_) {}
   });
+
   socket.on('employeeOffline', async (data) => {
     try {
       const payloadId =
@@ -775,10 +782,6 @@ io.on('connection', (socket) => {
                 if (!isWithinCheckedInGeofence) {
                   setImmediate(async () => {
                     try {
-                      await notificationService.notifyLocationWarning(
-                        user,
-                        `Outside geofence boundary${currentGeofence ? ` of ${currentGeofence}` : ''}`,
-                      );
                     } catch (_) {}
                   });
                 }
@@ -855,11 +858,6 @@ io.on('connection', (socket) => {
 
                   setImmediate(async () => {
                     try {
-                      await notificationService.notifyWorkloadWarning(
-                        user,
-                        activeTaskCount,
-                        maxActive,
-                      );
                     } catch (_) {}
                   });
                 }

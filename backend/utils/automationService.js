@@ -13,7 +13,6 @@ const UserTask = require('../models/UserTask');
 const Attendance = require('../models/Attendance');
 const Report = require('../models/Report');
 const Settings = require('../models/Settings');
-const notificationService = require('../services/notificationService');
 
 async function populateReportById(reportId) {
   return await Report.findById(reportId)
@@ -181,12 +180,6 @@ const autoCheckoutOfflineEmployees = async () => {
 
           // Optional: notification service (SMS/email) if configured
           try {
-            if (notificationService.notifyAutoCheckoutWarning) {
-              await notificationService.notifyAutoCheckoutWarning(
-                employee,
-                minutesRemaining,
-              );
-            }
           } catch (_) {}
 
           record.checkoutWarningSent = true;
@@ -293,10 +286,6 @@ const notifyOverdueTasks = async () => {
 
         const userIds = assignments.map((a) => a.userId);
         const users = await User.find({ _id: { $in: userIds } });
-
-        await Promise.all(
-          users.map((u) => notificationService.notifyTaskOverdue(u, task))
-        );
 
         try {
           if (global.io) {

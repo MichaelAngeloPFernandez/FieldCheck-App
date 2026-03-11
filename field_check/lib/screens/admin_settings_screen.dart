@@ -39,10 +39,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   bool _settingsLoadedFromBackend = true;
   bool _isSavingSettings = false;
 
-  bool _smsTaskAssignmentEnabled = true;
-  bool _smsAttendanceEnabled = true;
-  bool _smsOverdueEnabled = true;
-
   final UserService _userService = UserService();
   final SettingsService _settingsService = SettingsService();
   final NotificationService _notificationService = NotificationService();
@@ -213,16 +209,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               (settings['geofenceRadius'] as num?)?.toInt() ?? _geofenceRadius;
           _syncFrequency = settings['syncFrequency'] ?? _syncFrequency;
           _settingsLoadedFromBackend = true;
-
-          _smsTaskAssignmentEnabled =
-              settings[SettingsService.smsTaskAssignmentEnabledKey] ??
-              _smsTaskAssignmentEnabled;
-          _smsAttendanceEnabled =
-              settings[SettingsService.smsAttendanceEnabledKey] ??
-              _smsAttendanceEnabled;
-          _smsOverdueEnabled =
-              settings[SettingsService.smsOverdueEnabledKey] ??
-              _smsOverdueEnabled;
         });
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('allowOfflineMode', _allowOfflineMode);

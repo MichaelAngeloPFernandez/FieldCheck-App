@@ -13,8 +13,6 @@ import '../services/user_service.dart';
 import '../utils/http_util.dart';
 import '../services/autosave_service.dart';
 import '../services/attendance_service.dart';
-import '../services/notification_service.dart';
-import '../services/settings_service.dart';
 import '../widgets/location_tracker_indicator.dart';
 import '../widgets/checkin_timer_widget.dart';
 import 'package:uuid/uuid.dart';
@@ -34,8 +32,6 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   final GeofenceService _geofenceService = GeofenceService();
   final UserService _userService = UserService();
   final AttendanceService _attendanceService = AttendanceService();
-  final NotificationService _notificationService = NotificationService();
-  final SettingsService _settingsService = SettingsService();
 
   bool _isCheckedIn = false;
   bool _isLoading = false;
@@ -821,23 +817,6 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
             geofenceName: _currentGeofence?.name,
           ),
         );
-
-        // Best-effort SMS confirmation (admin toggle)
-        try {
-          final enabled = await _settingsService.getSmsAttendanceEnabled();
-          if (enabled) {
-            final profile =
-                _userService.currentUser ?? await _userService.getProfile();
-            await _notificationService.sendAttendanceSms(
-              employeeId: profile.id,
-              isCheckIn: !_isCheckedIn,
-              geofenceName: _currentGeofence?.name ?? 'Unknown location',
-              timestamp: now.toIso8601String(),
-            );
-          }
-        } catch (e) {
-          debugPrint('Attendance SMS skipped/failed: $e');
-        }
 
         // Success - clear the autosave entry now.
         await _autosaveService.clearData(storageKey);

@@ -357,99 +357,126 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     final emailController = TextEditingController(text: user.email);
     final phoneController = TextEditingController(text: user.phone ?? '');
     String role = user.role;
+    bool isVerified = user.isVerified;
     final formKey = GlobalKey<FormState>();
     final existingEmployeeId = (user.employeeId ?? '').toString().trim();
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Employee'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Full Name'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                TextFormField(
-                  controller: usernameController,
-                  decoration: const InputDecoration(labelText: 'Username'),
-                ),
-                TextFormField(
-                  controller: employeeIdController,
-                  readOnly: true,
-                  decoration: InputDecoration(
-                    labelText: 'Employee ID',
-                    hintText: existingEmployeeId.isEmpty
-                        ? 'Auto-generated'
-                        : null,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit Employee'),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Full Name',
+                        ),
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      ),
+                      TextFormField(
+                        controller: usernameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Username',
+                        ),
+                      ),
+                      TextFormField(
+                        controller: employeeIdController,
+                        readOnly: true,
+                        decoration: InputDecoration(
+                          labelText: 'Employee ID',
+                          hintText: existingEmployeeId.isEmpty
+                              ? 'Auto-generated'
+                              : null,
+                        ),
+                      ),
+                      TextFormField(
+                        controller: emailController,
+                        decoration: const InputDecoration(labelText: 'Email'),
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (v) => (v == null || !v.contains('@'))
+                            ? 'Enter a valid email'
+                            : null,
+                      ),
+                      TextFormField(
+                        controller: phoneController,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone (SMS)',
+                          hintText: '+63...',
+                        ),
+                        keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: role,
+                        decoration: const InputDecoration(labelText: 'Role'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'employee',
+                            child: Text('Employee'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'admin',
+                            child: Text('Admin'),
+                          ),
+                        ],
+                        onChanged: (v) => role = v ?? role,
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Verified'),
+                        value: isVerified,
+                        onChanged: (v) {
+                          setDialogState(() => isVerified = v);
+                        },
+                      ),
+                    ],
                   ),
                 ),
-                TextFormField(
-                  controller: emailController,
-                  decoration: const InputDecoration(labelText: 'Email'),
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (v) => (v == null || !v.contains('@'))
-                      ? 'Enter a valid email'
-                      : null,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
                 ),
-                TextFormField(
-                  controller: phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone (SMS)',
-                    hintText: '+63...',
-                  ),
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: role,
-                  decoration: const InputDecoration(labelText: 'Role'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'employee',
-                      child: Text('Employee'),
-                    ),
-                    DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                  ],
-                  onChanged: (v) => role = v ?? role,
+                ElevatedButton(
+                  onPressed: () {
+                    if (formKey.currentState!.validate()) {
+                      Navigator.pop(ctx, true);
+                    }
+                  },
+                  child: const Text('Save'),
                 ),
               ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(ctx, true);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+            );
+          },
+        );
+      },
     );
 
     if (ok == true) {
       try {
         final nextUsername = usernameController.text.trim();
-        await _userService.updateUserByAdmin(
+        final updated = await _userService.updateUserByAdmin(
           user.id,
           name: nameController.text.trim(),
           email: emailController.text.trim(),
           role: role,
           username: nextUsername.isEmpty ? null : nextUsername,
           phone: phoneController.text.trim(),
+          isVerified: isVerified,
+        );
+        debugPrint(
+          'ManageEmployees: updateUserByAdmin returned isVerified=${updated.isVerified}',
         );
         if (!mounted) return;
         ScaffoldMessenger.of(

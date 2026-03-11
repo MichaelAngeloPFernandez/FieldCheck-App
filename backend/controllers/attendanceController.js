@@ -6,7 +6,6 @@ const Report = require('../models/Report');
 const User = require('../models/User');
 const UserTask = require('../models/UserTask');
 const appNotificationService = require('../services/appNotificationService');
-const notificationService = require('../services/notificationService');
 
 async function populateReportById(reportId) {
   return await Report.findById(reportId)
@@ -24,9 +23,6 @@ const checkIn = asyncHandler(async (req, res) => {
   
   // Validate location coordinates
   if (isNaN(latitude) || isNaN(longitude) || latitude === undefined || longitude === undefined) {
-    notificationService
-      .notifyLocationWarning(req.user, 'Invalid latitude or longitude')
-      .catch(() => {});
     res.status(400);
     throw new Error('Invalid latitude or longitude');
   }
@@ -55,12 +51,6 @@ const checkIn = asyncHandler(async (req, res) => {
   };
   const distanceMeters = haversineMeters(geofence.latitude, geofence.longitude, latitude, longitude);
   if (distanceMeters > geofence.radius) {
-    notificationService
-      .notifyLocationWarning(
-        req.user,
-        `Outside geofence boundary of ${geofence.name}`,
-      )
-      .catch(() => {});
     res.status(403);
     throw new Error('Outside geofence boundary');
   }
@@ -113,11 +103,6 @@ const checkIn = asyncHandler(async (req, res) => {
 
       setImmediate(async () => {
         try {
-          await notificationService.notifyAutoCheckoutWarning(
-            req.user,
-            null,
-            priorOpen.geofence?.name || null,
-          );
         } catch (_) {}
       });
     } catch (e) {
@@ -227,12 +212,6 @@ const checkIn = asyncHandler(async (req, res) => {
     });
   } catch (_) {}
 
-  setImmediate(async () => {
-    try {
-      await notificationService.notifyAttendanceCheckIn(req.user, geofence);
-    } catch (_) {}
-  });
-
   // Populate and emit full data asynchronously (don't block response)
   setImmediate(async () => {
     try {
@@ -281,9 +260,6 @@ const checkOut = asyncHandler(async (req, res) => {
 
   // Validate location coordinates
   if (isNaN(latitude) || isNaN(longitude) || latitude === undefined || longitude === undefined) {
-    notificationService
-      .notifyLocationWarning(req.user, 'Invalid latitude or longitude')
-      .catch(() => {});
     res.status(400);
     throw new Error('Invalid latitude or longitude');
   }
@@ -450,18 +426,13 @@ const checkOut = asyncHandler(async (req, res) => {
     });
   } catch (_) {}
 
-  setImmediate(async () => {
-    try {
-      await notificationService.notifyAttendanceCheckOut(req.user, geofence);
-    } catch (_) {}
-  });
-
   // Populate and emit full data asynchronously (don't block response)
   setImmediate(async () => {
     try {
       const populatedAttendance = await Attendance.findById(updated._id)
         .populate('employee', 'name email')
         .populate('geofence', 'name');
+
       io.emit('updatedAttendanceRecord', populatedAttendance);
     } catch (e) {
       console.error('Error populating attendance:', e);
