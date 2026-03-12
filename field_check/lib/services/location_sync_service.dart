@@ -228,10 +228,20 @@ class LocationSyncService {
 
       await _ensureIdentityLoaded();
 
+      // Emit last known position immediately (if we have one) to minimize
+      // delays after toggling sharing on, especially on web where
+      // getCurrentPosition can be slow.
+      final cached = _lastPosition.value;
+      if (cached != null) {
+        try {
+          _syncLocationToBackend(cached);
+        } catch (_) {}
+      }
+
       final pos = await geolocator.Geolocator.getCurrentPosition(
         locationSettings: const geolocator.LocationSettings(
           accuracy: geolocator.LocationAccuracy.best,
-          timeLimit: Duration(seconds: 20),
+          timeLimit: Duration(seconds: 8),
         ),
       );
       _lastPosition.value = pos;
