@@ -510,6 +510,17 @@ class RealtimeService {
     _isConnected = false;
   }
 
+  /// Hard reset for logout flows.
+  ///
+  /// RealtimeService is a singleton, so without an explicit reset a user can log
+  /// out and log back in as another account and still carry stale rooms/token.
+  void reset() {
+    disconnect();
+    _lastAuthToken = null;
+    _rooms.clear();
+    _reconnectAttempts = 0;
+  }
+
   void dispose() {
     disconnect();
     _eventController.close();

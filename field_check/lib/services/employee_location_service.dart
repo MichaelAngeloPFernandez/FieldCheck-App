@@ -366,6 +366,23 @@ class EmployeeLocationService {
     }
   }
 
+  /// Hard reset for logout flows.
+  ///
+  /// EmployeeLocationService is a singleton used by admin screens.
+  /// On logout we must clear the socket and cached locations, but we should
+  /// NOT close stream controllers (those are shared across the app lifetime).
+  void reset() {
+    try {
+      _socket?.disconnect();
+      _socket?.dispose();
+    } catch (_) {}
+    _socket = null;
+    _isConnected = false;
+    _lastAuthToken = null;
+    _cachedLocations.clear();
+    _locationHistory.clear();
+  }
+
   /// Request admin to manually update employee status
   void requestStatusUpdate(String employeeId, EmployeeStatus newStatus) {
     final socket = _socket;
@@ -378,14 +395,9 @@ class EmployeeLocationService {
   }
 
   void dispose() {
+    reset();
     _employeeLocationsController.close();
     _singleLocationController.close();
     _statusChangeController.close();
-    try {
-      _socket?.disconnect();
-      _socket?.dispose();
-    } catch (_) {}
-    _socket = null;
-    _isConnected = false;
   }
 }

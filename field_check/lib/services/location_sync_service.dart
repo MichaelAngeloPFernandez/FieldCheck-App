@@ -59,6 +59,13 @@ class LocationSyncService {
           _socket.disconnect();
           _socket.dispose();
         } catch (_) {}
+        // Token changed means a different user session; clear any cached
+        // identity so we don't emit location updates as the previous employee.
+        _employeeId = null;
+        _employeeName = null;
+        _lastPosition.value = null;
+        _lastEmitted.value = null;
+        _lastSharedAt.value = null;
         _initialized = false;
       }
 
@@ -432,6 +439,12 @@ class LocationSyncService {
       _isTracking = false;
       _isCheckedIn = false;
       _pendingEmitOnConnect = false;
+      _lastAuthToken = null;
+      _employeeId = null;
+      _employeeName = null;
+      _lastPosition.value = null;
+      _lastEmitted.value = null;
+      _lastSharedAt.value = null;
     } catch (e) {
       // Error disposing - ignored
     }

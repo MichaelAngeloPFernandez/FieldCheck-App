@@ -185,6 +185,9 @@ class UserService {
           await prefs.setString('refresh_token', refreshToken);
         }
         _cachedProfile = UserModel.fromJson(data);
+        try {
+          _profileController.add(_cachedProfile);
+        } catch (_) {}
         return _cachedProfile!;
       } else {
         // Parse server error into a friendly message
@@ -603,6 +606,9 @@ class UserService {
     await prefs.remove('auth_token');
     await prefs.remove('refresh_token');
     _cachedProfile = null;
+    try {
+      _profileController.add(null);
+    } catch (_) {}
   }
 
   /// Explicitly mark the current employee as offline for presence tracking.

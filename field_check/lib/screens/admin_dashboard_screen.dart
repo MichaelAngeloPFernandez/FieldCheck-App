@@ -20,13 +20,14 @@ import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/employee_location_service.dart';
 import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/services/location_service.dart';
-import 'package:field_check/models/dashboard_model.dart';
-import 'package:field_check/models/user_model.dart';
-import 'package:field_check/models/geofence_model.dart';
+import 'package:field_check/services/employee_tracking_service.dart';
+import 'package:field_check/services/location_sync_service.dart';
+import 'package:field_check/widgets/loading_widget.dart';
+import 'package:field_check/widgets/app_drawer.dart';
+import 'package:field_check/widgets/app_page.dart';
 import 'package:field_check/widgets/admin_info_modal.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/app_theme.dart';
-import 'package:field_check/services/employee_tracking_service.dart';
 import 'package:field_check/utils/http_util.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -3649,6 +3650,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                     try {
                       await _userService.markOffline();
+                    } catch (_) {}
+
+                    try {
+                      _realtimeService.reset();
+                    } catch (_) {}
+
+                    try {
+                      LocationSyncService().dispose();
+                    } catch (_) {}
+
+                    try {
+                      EmployeeLocationService().reset();
                     } catch (_) {}
 
                     await _userService.logout();

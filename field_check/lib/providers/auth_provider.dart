@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 import '../services/user_service.dart';
+import '../services/realtime_service.dart';
+import '../services/location_sync_service.dart';
+import '../services/employee_location_service.dart';
 
 /// AuthProvider manages authentication state globally
 /// - Tracks login state
@@ -242,6 +245,18 @@ class AuthProvider with ChangeNotifier {
 
       // Clear backend token
       await _userService.logout();
+
+      try {
+        RealtimeService().reset();
+      } catch (_) {}
+
+      try {
+        LocationSyncService().dispose();
+      } catch (_) {}
+
+      try {
+        EmployeeLocationService().reset();
+      } catch (_) {}
 
       await _prefs?.remove('auth_token');
       await _prefs?.remove('refresh_token');
