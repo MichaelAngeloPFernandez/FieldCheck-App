@@ -144,6 +144,27 @@ class RealtimeService {
       }
     });
 
+    _socket!.on('seedOnlineSnapshot', (data) {
+      print('RealtimeService: Seed online snapshot: $data');
+      try {
+        if (data is Map<String, dynamic>) {
+          _eventController.add({
+            'type': 'presence',
+            'action': 'seedOnlineSnapshot',
+            'data': data,
+          });
+        } else if (data is Map) {
+          _eventController.add({
+            'type': 'presence',
+            'action': 'seedOnlineSnapshot',
+            'data': Map<String, dynamic>.from(data),
+          });
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing seedOnlineSnapshot: $e');
+      }
+    });
+
     // Attendance events
     _socket!.on('newAttendanceRecord', (data) {
       print('RealtimeService: New attendance record: $data');

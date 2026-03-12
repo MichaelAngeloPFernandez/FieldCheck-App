@@ -937,7 +937,61 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final List<DashboardNotification> _notifications = [];
   final Set<String> _snackDedupKeys = {};
 
-  bool _seededInitialOnlineNotification = false;
+  String? _onlineEmployeesNotificationId;
+  final Map<String, Map<String, dynamic>> _onlineEmployeesByUserId =
+      <String, Map<String, dynamic>>{};
+
+  void _upsertOnlineEmployeesGroupedNotification() {
+    if (!mounted) return;
+
+    final online = _onlineEmployeesByUserId.values
+        .where((e) => (e['userId'] ?? '').toString().trim().isNotEmpty)
+        .toList();
+    final count = online.length;
+
+    final payload = <String, dynamic>{
+      'action': 'seedOnlineSnapshot',
+      'count': count,
+      'employees': online,
+    };
+
+    setState(() {
+      final id = _onlineEmployeesNotificationId ?? 'presence:onlineEmployees';
+      _onlineEmployeesNotificationId = id;
+
+      final idx = _notifications.indexWhere((n) => n.id == id);
+      final title = 'Online employees';
+      final message = count == 0
+          ? 'No employees online.'
+          : count == 1
+          ? '1 employee is online.'
+          : '$count employees are online.';
+
+      if (idx >= 0) {
+        _notifications[idx] = DashboardNotification(
+          id: id,
+          title: title,
+          message: message,
+          type: 'employee',
+          timestamp: DateTime.now(),
+          payload: payload,
+          isRead: _notifications[idx].isRead,
+        );
+      } else {
+        _notifications.insert(
+          0,
+          DashboardNotification(
+            id: id,
+            title: title,
+            message: message,
+            type: 'employee',
+            timestamp: DateTime.now(),
+            payload: payload,
+          ),
+        );
+      }
+    });
+  }
 
   StreamSubscription<Map<String, dynamic>>? _adminNotifSub;
 
@@ -2401,131 +2455,53 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       await _locationService.initialize();
       _employeeLocationsSnapshotSub?.cancel();
-      _employeeLocationsSnapshotSub = _locationService.employeeLocationsStream.listen((
-        locations,
-      ) {
-        if (!mounted) return;
+      _employeeLocationsSnapshotSub = _locationService.employeeLocationsStream
+          .listen((locations) {
+            if (!mounted) return;
 
-        if (!_seededInitialOnlineNotification) {
-          _seededInitialOnlineNotification = true;
-          try {
-            // Only notify about employees that are online AND have valid GPS coordinates
-            final online = locations
-                .where(
-                  (l) => l.isOnline && l.latitude != 0.0 && l.longitude != 0.0,
-                )
-                .toList();
-            if (online.isNotEmpty) {
-              final count = online.length;
-              final key = 'seedOnlineSnapshot:$count';
-              if (!_snackDedupKeys.contains(key)) {
-                _snackDedupKeys.add(key);
+            _employeeLocations
+              ..clear()
+              ..addEntries(
+                locations.map(
+                  (loc) => MapEntry(_canonicalUserId(loc.employeeId), loc),
+                ),
+              );
 
-                // Build grouped employee list with names and IDs
-                final employeeList = online
-                    .asMap()
-                    .entries
-                    .map((entry) {
-                      final idx = entry.key + 1;
-                      final emp = entry.value;
-                      final empCode = emp.employeeCode ?? '';
-                      return '$idx. ${emp.name}${empCode.isNotEmpty ? ' ($empCode)' : ''}';
-                    })
-                    .join('\n');
+            for (final loc in locations) {
+              final id = _canonicalUserId(loc.employeeId);
+              if (id.isEmpty) continue;
 
-                setState(() {
-                  _notifications.insert(
-                    0,
-                    DashboardNotification(
-                      id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      title: 'Online employees',
-                      message: count == 1
-                          ? '${online.first.name} is online.'
-                          : '$count employees are online.',
-                      type: 'employee',
-                      timestamp: DateTime.now(),
-                      payload: {
-                        'action': 'seedOnlineSnapshot',
-                        'count': count,
-                        'employeeList': employeeList,
-                        'employees': online
-                            .map(
-                              (e) => {
-                                'name': e.name,
-                                'employeeCode': e.employeeCode ?? '',
-                                'employeeId': e.employeeId,
-                              },
-                            )
-                            .toList(),
-                      },
-                    ),
-                  );
-
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        count == 1
-                            ? '${online.first.name} is online'
-                            : '$count employees are online',
-                      ),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                });
-
-                Future<void>.delayed(const Duration(seconds: 6)).then((_) {
-                  if (!mounted) return;
-                  _snackDedupKeys.remove(key);
-                });
+              if (loc.isOnline) {
+                _liveLocations[id] = LatLng(loc.latitude, loc.longitude);
+                _lastGpsUpdate[id] = loc.timestamp;
+              } else {
+                _liveLocations.remove(id);
+                _lastGpsUpdate.remove(id);
+                _trails.remove(id);
               }
             }
-          } catch (_) {}
-        }
 
-        _employeeLocations
-          ..clear()
-          ..addEntries(
-            locations.map(
-              (loc) => MapEntry(_canonicalUserId(loc.employeeId), loc),
-            ),
-          );
+            final onlineIds = <String>{
+              for (final loc in locations)
+                if (loc.isOnline) _canonicalUserId(loc.employeeId),
+            }..removeWhere((id) => id.trim().isEmpty);
 
-        for (final loc in locations) {
-          final id = _canonicalUserId(loc.employeeId);
-          if (id.isEmpty) continue;
-
-          if (loc.isOnline) {
-            _liveLocations[id] = LatLng(loc.latitude, loc.longitude);
-            _lastGpsUpdate[id] = loc.timestamp;
-          } else {
-            _liveLocations.remove(id);
-            _lastGpsUpdate.remove(id);
-            _trails.remove(id);
-          }
-        }
-
-        final onlineIds = <String>{
-          for (final loc in locations)
-            if (loc.isOnline) _canonicalUserId(loc.employeeId),
-        }..removeWhere((id) => id.trim().isEmpty);
-
-        // Prune any markers/trails that are no longer online.
-        // This prevents "ghost" markers that persist after logout.
-        if (_liveLocations.isNotEmpty) {
-          final ids = _liveLocations.keys.toList();
-          for (final id in ids) {
-            if (!onlineIds.contains(id)) {
-              _liveLocations.remove(id);
-              _lastGpsUpdate.remove(id);
-              _trails.remove(id);
+            // Prune any markers/trails that are no longer online.
+            // This prevents "ghost" markers that persist after logout.
+            if (_liveLocations.isNotEmpty) {
+              final ids = _liveLocations.keys.toList();
+              for (final id in ids) {
+                if (!onlineIds.contains(id)) {
+                  _liveLocations.remove(id);
+                  _lastGpsUpdate.remove(id);
+                  _trails.remove(id);
+                }
+              }
             }
-          }
-        }
 
-        _liveLocationDirty = true;
-        _scheduleLiveLocationUiUpdate();
-      });
+            _liveLocationDirty = true;
+            _scheduleLiveLocationUiUpdate();
+          });
 
       _subscribeToLocations();
     } catch (_) {}
@@ -2555,45 +2531,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         } catch (_) {}
 
         final action = (merged['action'] ?? '') as String;
-        if (action == 'employeeOnline') {
-          final employeeName = (merged['name'] ?? 'Employee') as String;
-          final employeeCode = (merged['employeeId'] ?? '').toString();
-          final displayName = employeeCode.isNotEmpty
-              ? '$employeeName ($employeeCode)'
-              : employeeName;
-          final key = 'employeeOnline:$employeeName:$employeeCode';
-          if (_snackDedupKeys.contains(key)) return;
-          _snackDedupKeys.add(key);
-
-          setState(() {
-            _notifications.insert(
-              0,
-              DashboardNotification(
-                id: incomingId.isNotEmpty
-                    ? incomingId
-                    : DateTime.now().millisecondsSinceEpoch.toString(),
-                title: 'Employee Online',
-                message: '$displayName is now online.',
-                type: 'employee',
-                timestamp: DateTime.now(),
-                payload: merged,
-              ),
-            );
-
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('$displayName is online'),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          });
-
-          if (mounted) {
-            setState(() {});
-          }
-          return;
-        }
 
         if ((data['type'] == 'attendance') &&
             (action == 'check-in' || action == 'check-out')) {
@@ -2746,8 +2683,31 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         final rawId = (data['employeeId'] ?? data['userId'] ?? '').toString();
         final employeeId = _canonicalUserId(rawId);
 
+        if (action == 'seedOnlineSnapshot') {
+          try {
+            final list = data['employees'];
+            _onlineEmployeesByUserId.clear();
+            if (list is List) {
+              for (final item in list) {
+                if (item is Map) {
+                  final m = Map<String, dynamic>.from(item);
+                  final uid = (m['userId'] ?? m['employeeId'] ?? '').toString();
+                  final cid = _canonicalUserId(uid);
+                  if (cid.trim().isEmpty) continue;
+                  _onlineEmployeesByUserId[cid] = m;
+                }
+              }
+            }
+          } catch (_) {}
+
+          _upsertOnlineEmployeesGroupedNotification();
+          return;
+        }
+
         if (employeeId.trim().isNotEmpty) {
           if (action == 'employeeOffline') {
+            _onlineEmployeesByUserId.remove(employeeId);
+            _upsertOnlineEmployeesGroupedNotification();
             // Immediately remove employee from map markers and caches
             setState(() {
               _liveLocations.remove(employeeId);
@@ -2798,32 +2758,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               });
             }
           } else if (action == 'employeeOnline') {
+            try {
+              final name = (data['name'] ?? '').toString();
+              final code = (data['employeeCode'] ?? data['employeeId'] ?? '')
+                  .toString();
+              _onlineEmployeesByUserId[employeeId] = {
+                'userId': employeeId,
+                'name': name,
+                'employeeCode': code,
+              };
+            } catch (_) {}
+
+            _upsertOnlineEmployeesGroupedNotification();
+
             // Add to online set and trigger refresh to get location
             setState(() {
               _onlineEmployeeIds.add(employeeId);
             });
             _scheduleOnlineEmployeeRefresh();
-
-            // Show notification with employee name and display ID
-            final employeeName = (data['name'] ?? 'Employee').toString();
-            final employeeCode =
-                (data['employeeCode'] ?? data['employeeId'] ?? '').toString();
-            final displayName = employeeCode.isNotEmpty
-                ? '$employeeName ($employeeCode)'
-                : employeeName;
-            final key = 'employeeOnline:$employeeId';
-            if (!_snackDedupKeys.contains(key)) {
-              _snackDedupKeys.add(key);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('$displayName is now online'),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-              Future.delayed(const Duration(seconds: 6), () {
-                _snackDedupKeys.remove(key);
-              });
-            }
           }
         }
         return;

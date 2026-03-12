@@ -149,6 +149,7 @@ const _getMaxActivePerEmployee = async () => {
 let lastBroadcastCount = 0;
 io.on('connection', (socket) => {
   let userIdFromToken = socket.id;
+
   const _trackSocketForUser = (userId) => {
     if (typeof userId !== 'string' || userId.length !== 24) return;
     let set = userSockets.get(userId);
@@ -216,6 +217,27 @@ io.on('connection', (socket) => {
           const u = await User.findById(userIdFromToken).select('role');
           if (u && u.role === 'admin') {
             socket.join('role:admin');
+
+            // Seed a presence snapshot for the grouped "Online employees" notification.
+            try {
+              const online = await User.find({ role: 'employee', isOnline: true })
+                .select('name employeeId')
+                .lean();
+
+              const employees = (online || [])
+                .map((emp) => ({
+                  userId: emp && emp._id ? String(emp._id) : '',
+                  name: emp && emp.name ? String(emp.name) : 'Employee',
+                  employeeCode: emp && emp.employeeId ? String(emp.employeeId) : '',
+                }))
+                .filter((e) => e.userId && e.userId.length === 24);
+
+              socket.emit('seedOnlineSnapshot', {
+                employees,
+                count: employees.length,
+                timestamp: new Date().toISOString(),
+              });
+            } catch (_) {}
           } else if (u && u.role === 'employee') {
             socket.join('role:employee');
             try {
@@ -400,51 +422,19 @@ io.on('connection', (socket) => {
       let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
       const timestamp = data && data.timestamp ? data.timestamp : new Date().toISOString();
 
-      let shouldNotifyAdmins = true;
-      if (typeof userId === 'string' && userId.length === 24) {
-        try {
-          const nowMs = Date.now();
-          const prevMs = lastEmployeeOnlineNotifyAt.get(userId) || 0;
-          if (nowMs - prevMs < EMPLOYEE_ONLINE_NOTIFY_THROTTLE_MS) {
-            shouldNotifyAdmins = false;
-          } else {
-            lastEmployeeOnlineNotifyAt.set(userId, nowMs);
-          }
-        } catch (_) {}
-      }
-
-      if (typeof userId === 'string' && userId.length === 24) {
-        try {
-          await User.findByIdAndUpdate(userId, { isOnline: true });
-        } catch (_) {}
-
-        if (!name || !employeeCode) {
-          try {
-            const u = await User.findById(userId).select('name employeeId');
-            if (u) {
-              if (!name && u.name) name = String(u.name);
-              if (!employeeCode && u.employeeId) employeeCode = String(u.employeeId);
-            }
-          } catch (_) {}
-        }
-      }
+      // Option B: Presence should be handled as a grouped UI item on the admin.
+      // Emit a realtime presence event to admins; do not persist per-employee bell notifications.
+      try {
+        io.to('role:admin').emit('employeeOnline', {
+          employeeId: String(userId),
+          name: name || 'Employee',
+          employeeCode: employeeCode,
+          timestamp,
+        });
+      } catch (_) {}
 
       try {
-        if (shouldNotifyAdmins) {
-          await appNotificationService.createForAdmins({
-            excludeUserId: userId,
-            type: 'employee',
-            action: 'employeeOnline',
-            title: 'Employee Online',
-            message: `${name || 'Employee'} is now online.`,
-            payload: {
-              userId,
-              employeeId: employeeCode,
-              name: name || 'Employee',
-              timestamp,
-            },
-          });
-        }
+        // Intentionally no persisted appNotificationService call for employeeOnline.
       } catch (_) {}
     } catch (_) {}
   });
