@@ -1229,89 +1229,92 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         useRootNavigator: true,
         builder: (ctx) => AlertDialog(
           title: Text(notif.title),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  notif.message,
-                  style: const TextStyle(
-                    fontSize: AppTheme.fontSizeMd,
-                    height: 1.35,
-                    color: AppTheme.textPrimaryColor,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _buildDetailRow('Type:', notif.type),
-                _buildDetailRow('Action:', action ?? '-'),
-                if (!isGroupedOnline) ...[
-                  _buildDetailRow('Employee:', employeeName ?? '-'),
-                  _buildDetailRow('Employee ID:', employeeId ?? '-'),
-                ],
-                _buildDetailRow('Time:', ts),
-                if (isGroupedOnline && employeesList.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  const Divider(),
-                  const SizedBox(height: 8),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    'Online Employees (${employeesList.length}):',
+                    notif.message,
                     style: const TextStyle(
                       fontSize: AppTheme.fontSizeMd,
-                      fontWeight: FontWeight.bold,
+                      height: 1.35,
                       color: AppTheme.textPrimaryColor,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 300),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: employeesList.length,
-                      itemBuilder: (context, index) {
-                        final emp = employeesList[index];
-                        final name = emp['name']?.toString() ?? 'Unknown';
-                        final code = emp['employeeCode']?.toString() ?? '';
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 24,
-                                height: 24,
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withValues(alpha: 0.15),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '${index + 1}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green,
+                  const SizedBox(height: 12),
+                  _buildDetailRow('Type:', notif.type),
+                  _buildDetailRow('Action:', action ?? '-'),
+                  if (!isGroupedOnline) ...[
+                    _buildDetailRow('Employee:', employeeName ?? '-'),
+                    _buildDetailRow('Employee ID:', employeeId ?? '-'),
+                  ],
+                  _buildDetailRow('Time:', ts),
+                  if (isGroupedOnline && employeesList.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Online Employees (${employeesList.length}):',
+                      style: const TextStyle(
+                        fontSize: AppTheme.fontSizeMd,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 300,
+                      child: ListView.builder(
+                        itemCount: employeesList.length,
+                        itemBuilder: (context, index) {
+                          final emp = employeesList[index];
+                          final name = emp['name']?.toString() ?? 'Unknown';
+                          final code = emp['employeeCode']?.toString() ?? '';
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.15),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '${index + 1}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  code.isNotEmpty ? '$name ($code)' : name,
-                                  style: const TextStyle(
-                                    fontSize: AppTheme.fontSizeSm,
-                                    color: AppTheme.textPrimaryColor,
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    code.isNotEmpty ? '$name ($code)' : name,
+                                    style: const TextStyle(
+                                      fontSize: AppTheme.fontSizeSm,
+                                      color: AppTheme.textPrimaryColor,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           actions: [
