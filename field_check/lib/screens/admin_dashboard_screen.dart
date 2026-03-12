@@ -1292,7 +1292,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: employeesList.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          separatorBuilder: (_, _) => const Divider(height: 1),
                           itemBuilder: (context, index) {
                             final emp = employeesList[index];
                             final name = emp['name']?.toString() ?? 'Unknown';
