@@ -1224,6 +1224,118 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         } catch (_) {}
       }
 
+      if (isGroupedOnline) {
+        await showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          useSafeArea: true,
+          builder: (bctx) {
+            final theme = Theme.of(bctx);
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 8,
+                bottom: 16 + MediaQuery.of(bctx).viewInsets.bottom,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            notif.title,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(bctx),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      notif.message,
+                      style: const TextStyle(
+                        fontSize: AppTheme.fontSizeMd,
+                        height: 1.35,
+                        color: AppTheme.textPrimaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow('Type:', notif.type),
+                    _buildDetailRow('Action:', action ?? '-'),
+                    _buildDetailRow('Time:', ts),
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Online Employees (${employeesList.length}):',
+                      style: const TextStyle(
+                        fontSize: AppTheme.fontSizeMd,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (employeesList.isEmpty)
+                      const Text('No employees online.')
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: employeesList.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final emp = employeesList[index];
+                            final name = emp['name']?.toString() ?? 'Unknown';
+                            final code = emp['employeeCode']?.toString() ?? '';
+                            final label = code.isNotEmpty
+                                ? '$name ($code)'
+                                : name;
+                            return ListTile(
+                              dense: true,
+                              leading: CircleAvatar(
+                                radius: 14,
+                                backgroundColor: Colors.green.withValues(
+                                  alpha: 0.15,
+                                ),
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                label,
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontSizeSm,
+                                  color: AppTheme.textPrimaryColor,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+        return;
+      }
+
       await showDialog<void>(
         context: context,
         useRootNavigator: true,
