@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const https = require('https');
+const { OAuth2Client } = require('google-auth-library');
 const accountActivationEmail = require('./templates/accountActivationEmail');
 const passwordResetEmail = require('./templates/passwordResetEmail');
 
@@ -121,6 +122,82 @@ function _sendWithResend({ from, to, subject, html }) {
   });
 }
 
+function _sendWithGmailApi({ from, to, subject, html }) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const clientId = (process.env.CLIENT_ID || '').toString().trim();
+      const clientSecret = (process.env.CLIENT_SECRET || '').toString().trim();
+      const refreshToken = (process.env.REFRESH_TOKEN || '').toString().trim();
+      const emailUser = (process.env.EMAIL_USER || process.env.EMAIL_USERNAME || '').toString().trim();
+
+      if (!clientId || !clientSecret || !refreshToken || !emailUser) {
+        return reject(new Error('Gmail API OAuth env not fully set (CLIENT_ID/CLIENT_SECRET/REFRESH_TOKEN/EMAIL_USER)'));
+      }
+
+      const oauth2Client = new OAuth2Client(clientId, clientSecret);
+      oauth2Client.setCredentials({ refresh_token: refreshToken });
+
+      const accessTokenResponse = await oauth2Client.getAccessToken();
+      const accessToken =
+        accessTokenResponse && typeof accessTokenResponse === 'object'
+          ? accessTokenResponse.token
+          : accessTokenResponse;
+
+      if (!accessToken) {
+        return reject(new Error('Failed to obtain Gmail API access token'));
+      }
+
+      const rawLines = [
+        `From: ${from}`,
+        `To: ${to}`,
+        `Subject: ${subject}`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset="UTF-8"',
+        'Content-Transfer-Encoding: 7bit',
+        '',
+        html || '',
+      ];
+      const raw = rawLines.join('\r\n');
+      const encodedMessage = Buffer.from(raw)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+
+      const payload = JSON.stringify({ raw: encodedMessage });
+      const req = https.request(
+        {
+          method: 'POST',
+          hostname: 'gmail.googleapis.com',
+          path: '/gmail/v1/users/me/messages/send',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+          },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk;
+          });
+          res.on('end', () => {
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              return resolve({ statusCode: res.statusCode, body });
+            }
+            return reject(new Error(`Gmail API failed (${res.statusCode}): ${body}`));
+          });
+        },
+      );
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    } catch (e) {
+      return reject(e);
+    }
+  });
+}
+
 const sendEmail = async (options) => {
   // Dev bypass: allow disabling emails entirely
   const config = buildTransportConfig();
@@ -193,7 +270,25 @@ const sendEmail = async (options) => {
     attachments: options.attachments || [],
   };
 
+  const provider = (process.env.EMAIL_PROVIDER || '').toString().trim().toLowerCase();
+  const preferGmailApi = provider === 'gmail_api' || provider === 'gmailapi' || provider === 'gmail-api';
+
   try {
+    if (!config.disableEmail && preferGmailApi) {
+      const from = mailOptions.from;
+      const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
+      await withTimeout(
+        _sendWithGmailApi({ from, to, subject: mailOptions.subject, html }),
+        12000,
+        'gmailApi',
+      );
+      console.log('Email: delivered via Gmail API', {
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+      });
+      return { provider: 'gmail_api' };
+    }
+
     const info = await withTimeout(
       transporter.sendMail(mailOptions),
       30000,
@@ -235,6 +330,35 @@ const sendEmail = async (options) => {
         return { fallback: 'resend' };
       } catch (fallbackErr) {
         console.error('Email: Resend fallback failed', {
+          to: mailOptions.to,
+          subject: mailOptions.subject,
+          error: fallbackErr && fallbackErr.message ? fallbackErr.message : String(fallbackErr),
+        });
+      }
+    }
+
+    if (
+      transportMode === 'smtp' &&
+      isTimeout &&
+      (process.env.CLIENT_ID || '').toString().trim() &&
+      (process.env.CLIENT_SECRET || '').toString().trim() &&
+      (process.env.REFRESH_TOKEN || '').toString().trim()
+    ) {
+      try {
+        const from = mailOptions.from;
+        const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
+        await withTimeout(
+          _sendWithGmailApi({ from, to, subject: mailOptions.subject, html }),
+          12000,
+          'gmailApiFallback',
+        );
+        console.warn('Email: SMTP timed out; delivered via Gmail API fallback', {
+          to: mailOptions.to,
+          subject: mailOptions.subject,
+        });
+        return { fallback: 'gmail_api' };
+      } catch (fallbackErr) {
+        console.error('Email: Gmail API fallback failed', {
           to: mailOptions.to,
           subject: mailOptions.subject,
           error: fallbackErr && fallbackErr.message ? fallbackErr.message : String(fallbackErr),
