@@ -22,10 +22,10 @@ import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/services/location_service.dart';
 import 'package:field_check/services/employee_tracking_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
-import 'package:field_check/widgets/loading_widget.dart';
-import 'package:field_check/widgets/app_drawer.dart';
-import 'package:field_check/widgets/app_page.dart';
 import 'package:field_check/widgets/admin_info_modal.dart';
+import 'package:field_check/models/dashboard_model.dart';
+import 'package:field_check/models/user_model.dart';
+import 'package:field_check/models/geofence_model.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/http_util.dart';
@@ -196,6 +196,60 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       return mapped.trim();
     }
     return id;
+  }
+
+  void _removePresenceEverywhere({
+    required String canonicalId,
+    String? rawId,
+    String? employeeCode,
+  }) {
+    if (canonicalId.trim().isEmpty && (rawId ?? '').trim().isEmpty) {
+      return;
+    }
+
+    final keysToRemove = <String>{};
+    final raw = rawId?.trim();
+    final code = employeeCode?.trim();
+    if (canonicalId.trim().isNotEmpty) {
+      keysToRemove.add(canonicalId.trim());
+    }
+    if (raw != null && raw.isNotEmpty) {
+      keysToRemove.add(raw);
+      keysToRemove.add(_canonicalUserId(raw));
+    }
+    if (code != null && code.isNotEmpty) {
+      keysToRemove.add(code);
+      keysToRemove.add(_canonicalUserId(code));
+    }
+
+    // Also remove any entries stored under an alias that maps to this canonical id.
+    if (_employeeIdAlias.isNotEmpty && canonicalId.trim().isNotEmpty) {
+      final liveKeys = _liveLocations.keys.toList();
+      for (final k in liveKeys) {
+        if (_canonicalUserId(k) == canonicalId) {
+          keysToRemove.add(k);
+        }
+      }
+    }
+
+    for (final k in keysToRemove) {
+      _onlineEmployeesByUserId.remove(k);
+      _onlineEmployeeIds.remove(k);
+      _lastGpsUpdate.remove(k);
+      _liveLocations.remove(k);
+      _trails.remove(k);
+    }
+  }
+
+  int get _onlinePresenceCount {
+    // Prefer the authoritative snapshot/presence set.
+    if (_onlineEmployeesByUserId.isNotEmpty) {
+      return _onlineEmployeesByUserId.length;
+    }
+    if (_onlineEmployeeIds.isNotEmpty) {
+      return _onlineEmployeeIds.length;
+    }
+    return _gpsOnlineCount;
   }
 
   String _selectedEmployeeLabel() {
@@ -1280,7 +1334,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     Text(
                       'Online Employees (${employeesList.length}):',
                       style: const TextStyle(
-                        fontSize: AppTheme.fontSizeMd,
+                        fontSize: AppTheme.fontSizeLg,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.textPrimaryColor,
                       ),
@@ -1298,6 +1352,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             final emp = employeesList[index];
                             final name = emp['name']?.toString() ?? 'Unknown';
                             final code = emp['employeeCode']?.toString() ?? '';
+                            final userId = emp['userId']?.toString() ?? '';
+                            final displayCode = code.trim().isNotEmpty
+                                ? code.trim()
+                                : (_employees[_canonicalUserId(userId)]
+                                              ?.employeeId ??
+                                          '')
+                                      .trim();
                             final label = code.isNotEmpty
                                 ? '$name ($code)'
                                 : name;
@@ -1320,10 +1381,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               title: Text(
                                 label,
                                 style: const TextStyle(
-                                  fontSize: AppTheme.fontSizeSm,
+                                  fontSize: AppTheme.fontSizeMd,
                                   color: AppTheme.textPrimaryColor,
                                 ),
                               ),
+                              subtitle:
+                                  (displayCode.isEmpty && userId.trim().isEmpty)
+                                  ? null
+                                  : Text(
+                                      displayCode.isNotEmpty
+                                          ? 'Employee ID: $displayCode'
+                                          : 'Employee ID: -',
+                                      style: const TextStyle(
+                                        fontSize: AppTheme.fontSizeSm,
+                                        color: AppTheme.textSecondaryColor,
+                                      ),
+                                    ),
                             );
                           },
                         ),
@@ -2822,14 +2895,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         if (employeeId.trim().isNotEmpty) {
           if (action == 'employeeOffline') {
-            _onlineEmployeesByUserId.remove(employeeId);
-            _upsertOnlineEmployeesGroupedNotification();
-            // Immediately remove employee from map markers and caches
+            final rawCode = (data['employeeCode'] ?? '').toString();
+            // Immediately remove employee from map markers and caches (including aliases)
             setState(() {
-              _liveLocations.remove(employeeId);
-              _trails.remove(employeeId);
-              _lastGpsUpdate.remove(employeeId);
-              _onlineEmployeeIds.remove(employeeId);
+              _removePresenceEverywhere(
+                canonicalId: employeeId,
+                rawId: rawId,
+                employeeCode: rawCode,
+              );
 
               // Update the employee location record to offline
               final loc = _employeeLocations[employeeId];
@@ -2854,9 +2927,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               }
             });
 
+            _upsertOnlineEmployeesGroupedNotification();
+
+            // Immediately refresh authoritative online snapshot so any missed
+            // offline events still clear ghost markers.
+            _scheduleOnlineEmployeeRefresh();
+
             // Show notification with employee name and display ID
             final employeeName = (data['name'] ?? 'Employee').toString();
-            final employeeCode = (data['employeeId'] ?? '').toString();
+            final employeeCode = rawCode.trim().isNotEmpty
+                ? rawCode.trim()
+                : (_employees[employeeId]?.employeeId ?? '').trim();
             final displayName = employeeCode.isNotEmpty
                 ? '$employeeName ($employeeCode)'
                 : employeeName;
@@ -3630,13 +3711,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     clipBehavior: Clip.none,
                     children: [
                       const Icon(Icons.notifications),
-                      if (_notifications.any((n) => !n.isRead))
+                      if (_onlinePresenceCount > 0)
                         Positioned(
                           right: -2,
                           top: -2,
-                          child: _buildNotificationBadge(
-                            _notifications.where((n) => !n.isRead).length,
-                          ),
+                          child: _buildNotificationBadge(_onlinePresenceCount),
                         ),
                     ],
                   ),
@@ -5924,6 +6003,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       setState(() {
         final wasEmpty = _liveLocations.isEmpty;
         final adminId = _currentAdminId();
+
+        // Build next online set from the snapshot so we can aggressively prune
+        // any markers that didn't receive an explicit offline event.
+        final nextOnlineIds = <String>{};
+        for (final loc in locations) {
+          final id = _canonicalUserId(loc.employeeId);
+          if (id.trim().isEmpty) continue;
+          if (loc.isOnline) {
+            nextOnlineIds.add(id);
+          }
+        }
+
+        // Prune ghost markers/trails not present in the latest snapshot.
+        final existingMarkerIds = _liveLocations.keys.toList();
+        for (final id in existingMarkerIds) {
+          if (adminId != null && id == adminId) {
+            continue;
+          }
+          if (!nextOnlineIds.contains(id)) {
+            _liveLocations.remove(id);
+            _lastGpsUpdate.remove(id);
+            _trails.remove(id);
+            _onlineEmployeeIds.remove(id);
+          }
+        }
+
         for (final empLoc in locations) {
           final pos = LatLng(empLoc.latitude, empLoc.longitude);
           final id = _canonicalUserId(empLoc.employeeId);

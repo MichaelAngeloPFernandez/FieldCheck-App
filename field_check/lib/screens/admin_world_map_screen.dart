@@ -35,10 +35,6 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   final Map<String, List<LatLng>> _trails = {};
   final List<EmployeeLocation> _employeeLocations = [];
 
-  // Track offline employees with timestamp for transition period (gray icon)
-  final Map<String, DateTime> _offlineTimestamps = {};
-  static const Duration _offlineTransitionDuration = Duration(seconds: 60);
-
   final Map<String, _WorldAvailability> _availability = {};
 
   StreamSubscription<List<EmployeeLocation>>? _employeeLocationSub;
@@ -111,8 +107,6 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   void _applyLocations(List<EmployeeLocation> locations) {
     if (!mounted) return;
 
-    final now = DateTime.now();
-
     // Only include online employees in the nextIds set
     final nextIds = <String>{};
     for (final loc in locations) {
@@ -121,47 +115,23 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
       }
     }
 
-    // Track newly offline employees for transition period
-    final existingIds = _liveLocations.keys.toSet();
-    for (final id in existingIds) {
-      if (!nextIds.contains(id) && !_offlineTimestamps.containsKey(id)) {
-        // Employee just went offline - record timestamp for transition
-        _offlineTimestamps[id] = now;
-      }
-    }
-
-    // Remove employees who have been offline longer than transition period
-    final expiredOfflineIds = <String>[];
-    _offlineTimestamps.forEach((id, offlineTime) {
-      if (now.difference(offlineTime) > _offlineTransitionDuration) {
-        expiredOfflineIds.add(id);
-      }
-    });
-    for (final id in expiredOfflineIds) {
-      _offlineTimestamps.remove(id);
-      _liveLocations.remove(id);
-      _trails.remove(id);
-    }
-
     setState(() {
       _employeeLocations
         ..clear()
         ..addAll(locations);
 
-      // Remove employees that are no longer online (but keep in offlineTimestamps for transition)
+      // Remove employees that are no longer online.
       if (_liveLocations.isNotEmpty) {
         final existing = _liveLocations.keys.toList();
         for (final id in existing) {
-          if (!nextIds.contains(id) && !_offlineTimestamps.containsKey(id)) {
+          if (!nextIds.contains(id)) {
             _liveLocations.remove(id);
             _trails.remove(id);
           }
         }
       }
 
-      if (_selectedUserId != null &&
-          !nextIds.contains(_selectedUserId) &&
-          !_offlineTimestamps.containsKey(_selectedUserId)) {
+      if (_selectedUserId != null && !nextIds.contains(_selectedUserId)) {
         _selectedUserId = null;
         _selectedUserTasks = const [];
       }
@@ -169,15 +139,12 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
       // Only add live locations for online employees
       for (final empLoc in locations) {
         if (!empLoc.isOnline || empLoc.status == EmployeeStatus.offline) {
-          // Don't add to live locations, but keep existing for transition period
+          // Don't add to live locations.
           continue;
         }
 
         final pos = LatLng(empLoc.latitude, empLoc.longitude);
         _liveLocations[empLoc.employeeId] = pos;
-
-        // Clear offline timestamp if they came back online
-        _offlineTimestamps.remove(empLoc.employeeId);
 
         final trail = _trails[empLoc.employeeId] ?? <LatLng>[];
         if (trail.isEmpty || trail.last != pos) {
@@ -926,15 +893,9 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
 
     // Add online employees
     for (final loc in filteredLocations) {
-      if (_liveLocations.containsKey(loc.employeeId)) {
-        filteredLive[loc.employeeId] = _liveLocations[loc.employeeId]!;
-      }
-    }
-
-    // Add offline employees during transition period (they have location but are offline)
-    for (final offlineId in _offlineTimestamps.keys) {
-      if (_liveLocations.containsKey(offlineId)) {
-        filteredLive[offlineId] = _liveLocations[offlineId]!;
+      final pos = _liveLocations[loc.employeeId];
+      if (pos != null) {
+        filteredLive[loc.employeeId] = pos;
       }
     }
 
@@ -1107,40 +1068,27 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                                 ),
                               );
 
-                              // Check if employee is in offline transition period
-                              final isInOfflineTransition = _offlineTimestamps
-                                  .containsKey(entry.key);
-
                               Color markerColor;
-                              IconData markerIcon;
-                              double opacity = 1.0;
 
-                              if (isInOfflineTransition) {
-                                // Show gray icon for offline employees in transition
-                                markerColor = Colors.grey;
-                                markerIcon = Icons.cloud_off;
-                                opacity =
-                                    0.6; // Reduced opacity for offline state
-                              } else {
-                                switch (empLocation.status) {
-                                  case EmployeeStatus.available:
-                                    markerColor = Colors.green;
-                                    markerIcon = Icons.check_circle;
-                                    break;
-                                  case EmployeeStatus.moving:
-                                    markerColor = Colors.blue;
-                                    markerIcon = Icons.directions_run;
-                                    break;
-                                  case EmployeeStatus.busy:
-                                    markerColor = Colors.red;
-                                    markerIcon = Icons.schedule;
-                                    break;
-                                  case EmployeeStatus.offline:
-                                    markerColor = Colors.grey;
-                                    markerIcon = Icons.cloud_off;
-                                    opacity = 0.6;
-                                    break;
-                                }
+                              final IconData markerIcon;
+
+                              switch (empLocation.status) {
+                                case EmployeeStatus.available:
+                                  markerColor = Colors.green;
+                                  markerIcon = Icons.check_circle;
+                                  break;
+                                case EmployeeStatus.moving:
+                                  markerColor = Colors.blue;
+                                  markerIcon = Icons.directions_run;
+                                  break;
+                                case EmployeeStatus.busy:
+                                  markerColor = Colors.red;
+                                  markerIcon = Icons.schedule;
+                                  break;
+                                case EmployeeStatus.offline:
+                                  markerColor = Colors.grey;
+                                  markerIcon = Icons.person;
+                                  break;
                               }
 
                               return Marker(
@@ -1149,51 +1097,48 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                                 height: 54,
                                 child: GestureDetector(
                                   onTap: () => _onEmployeeTap(entry.key),
-                                  child: Opacity(
-                                    opacity: opacity,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: markerColor,
-                                        border: Border.all(
-                                          color: Colors.white,
-                                          width: 3,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: markerColor.withValues(
-                                              alpha: 0.35,
-                                            ),
-                                            blurRadius: 16,
-                                            offset: const Offset(0, 10),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: markerColor,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 3,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: markerColor.withValues(
+                                            alpha: 0.35,
                                           ),
-                                        ],
-                                      ),
-                                      child: Center(
-                                        child:
-                                            (user != null &&
-                                                (user.avatarUrl ?? '')
-                                                    .trim()
-                                                    .isNotEmpty)
-                                            ? AppWidgets.userAvatar(
-                                                radius: 17,
-                                                avatarUrl: user.avatarUrl,
-                                                initials:
-                                                    user.name.trim().isNotEmpty
-                                                    ? user.name.characters.first
-                                                          .toUpperCase()
-                                                    : '?',
-                                                backgroundColor:
-                                                    Colors.transparent,
-                                                foregroundColor: Colors.white,
-                                                fallbackIcon: markerIcon,
-                                              )
-                                            : Icon(
-                                                markerIcon,
-                                                color: Colors.white,
-                                                size: 22,
-                                              ),
-                                      ),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 10),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Center(
+                                      child:
+                                          (user != null &&
+                                              (user.avatarUrl ?? '')
+                                                  .trim()
+                                                  .isNotEmpty)
+                                          ? AppWidgets.userAvatar(
+                                              radius: 17,
+                                              avatarUrl: user.avatarUrl,
+                                              initials:
+                                                  user.name.trim().isNotEmpty
+                                                  ? user.name.characters.first
+                                                        .toUpperCase()
+                                                  : '?',
+                                              backgroundColor:
+                                                  Colors.transparent,
+                                              foregroundColor: Colors.white,
+                                              fallbackIcon: markerIcon,
+                                            )
+                                          : Icon(
+                                              markerIcon,
+                                              color: Colors.white,
+                                              size: 22,
+                                            ),
                                     ),
                                   ),
                                 ),

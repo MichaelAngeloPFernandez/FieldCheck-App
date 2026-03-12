@@ -13,10 +13,12 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
-import 'package:field_check/services/attendance_service.dart';
+import 'package:field_check/services/autosave_service.dart';
+import 'package:field_check/services/checkout_notification_service.dart';
+import 'package:field_check/utils/logger.dart';
+import 'package:field_check/utils/manila_time.dart';
+import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_widgets.dart';
-import 'package:field_check/widgets/offline_banner.dart';
-import 'package:field_check/widgets/task_assignment_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
