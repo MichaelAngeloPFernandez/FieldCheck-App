@@ -159,9 +159,16 @@ class LocationSyncService {
   /// This powers the admin map "online/roaming" status.
   void startSharing() {
     _sharingEnabled = true;
+    _lastSyncTime = null;
     if (!_isTracking) {
       _isTracking = true;
       _startLocationStream();
+    } else {
+      // Sharing may have been toggled off which cancels the position stream.
+      // If tracking is still true but the subscription is gone, restart it.
+      if (_positionSubscription == null) {
+        _startLocationStream();
+      }
     }
     _ensureIdentityLoaded().then((_) => _emitAfterIdentityReady());
     if (!_initialized) {
@@ -275,6 +282,7 @@ class LocationSyncService {
       _isTracking = false;
       try {
         _positionSubscription?.cancel();
+        _positionSubscription = null;
       } catch (_) {}
     }
   }
