@@ -271,6 +271,22 @@ class LocationSyncService {
         final profile = _userService.currentUser;
         final id = (profile?.id ?? _employeeId)?.trim();
         if (id != null && id.isNotEmpty) {
+          try {
+            final lastPos = _lastPosition.value;
+            if (lastPos != null) {
+              _socket.emit('employeeLocationUpdate', {
+                'employeeId': id,
+                'name': (profile?.name ?? _employeeName),
+                'latitude': lastPos.latitude,
+                'longitude': lastPos.longitude,
+                'accuracy': lastPos.accuracy,
+                'timestamp': DateTime.now().toIso8601String(),
+                'isCheckedIn': _isCheckedIn,
+                'sharingEnabled': false,
+              });
+            }
+          } catch (_) {}
+
           _socket.emit('employeeOffline', {
             'employeeId': id,
             'timestamp': DateTime.now().toIso8601String(),
@@ -283,6 +299,14 @@ class LocationSyncService {
       try {
         _positionSubscription?.cancel();
         _positionSubscription = null;
+      } catch (_) {}
+
+      // If not checked-in, disconnect socket to avoid stale identity across
+      // logins on web where services are singletons.
+      try {
+        if (_initialized && _socket.connected) {
+          _socket.disconnect();
+        }
       } catch (_) {}
     }
   }
