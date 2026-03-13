@@ -88,6 +88,18 @@ class AuthProvider with ChangeNotifier {
       _error = null;
       notifyListeners();
 
+      // Clear any singleton sockets/caches from a previous session before logging in.
+      // This prevents identity leakage (old user emitting live location under a new login).
+      try {
+        RealtimeService().reset();
+      } catch (_) {}
+      try {
+        LocationSyncService().dispose();
+      } catch (_) {}
+      try {
+        EmployeeLocationService().reset();
+      } catch (_) {}
+
       // Call backend login
       final user = await _userService.loginIdentifier(identifier, password);
 

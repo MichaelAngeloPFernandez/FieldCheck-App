@@ -5787,6 +5787,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         setState(() {
           final adminId = _currentAdminId();
           final seenOnlineIds = <String>{};
+
+          _onlineEmployeesByUserId.clear();
           for (final emp in response) {
             final rawId =
                 (emp['userId'] ?? emp['employeeId'] ?? emp['id'] ?? '')
@@ -5806,6 +5808,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             final lat = (emp['latitude'] as num?)?.toDouble();
             final lng = (emp['longitude'] as num?)?.toDouble();
             final name = emp['name'] ?? 'Unknown';
+
+            if (userId.isNotEmpty) {
+              final employeeCode =
+                  (emp['employeeCode'] ?? emp['employeeId'] ?? '').toString();
+              _onlineEmployeesByUserId[userId] = {
+                'userId': userId,
+                'name': name.toString(),
+                'employeeCode': employeeCode,
+              };
+            }
 
             final nextActiveTaskCount =
                 (emp['activeTaskCount'] as num?)?.toInt() ?? 0;
@@ -5941,6 +5953,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ..clear()
             ..addAll(seenOnlineIds);
 
+          _upsertOnlineEmployeesGroupedNotification();
+
           // Prune anything not present in the authoritative online list.
           final existingIds = _liveLocations.keys.toList();
           for (final id in existingIds) {
@@ -5985,7 +5999,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void _scheduleOnlineEmployeeRefresh() {
     _onlineEmployeesReloadDebounce?.cancel();
     _onlineEmployeesReloadDebounce = Timer(
-      const Duration(milliseconds: 600),
+      const Duration(milliseconds: 150),
       () {
         if (!mounted) return;
         if (_selectedIndex != 0) return;

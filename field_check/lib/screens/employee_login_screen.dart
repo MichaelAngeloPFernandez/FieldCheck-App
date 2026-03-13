@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:field_check/main.dart';
 import 'package:field_check/screens/dashboard_screen.dart';
 import 'package:field_check/services/user_service.dart';
+import 'package:field_check/services/realtime_service.dart';
+import 'package:field_check/services/location_sync_service.dart';
+import 'package:field_check/services/employee_location_service.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/logger.dart';
 import 'package:field_check/widgets/app_widgets.dart';
@@ -36,7 +39,21 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
       final user = _usernameController.text.trim();
       final pass = _passwordController.text;
 
-      AppLogger.info(AppLogger.tagAuth, 'Employee login attempt for user: $user');
+      AppLogger.info(
+        AppLogger.tagAuth,
+        'Employee login attempt for user: $user',
+      );
+
+      // Ensure we don't reuse stale sockets/caches from a previous login in the same app session.
+      try {
+        RealtimeService().reset();
+      } catch (_) {}
+      try {
+        LocationSyncService().dispose();
+      } catch (_) {}
+      try {
+        EmployeeLocationService().reset();
+      } catch (_) {}
 
       final loggedIn = await _userService.loginIdentifier(user, pass);
       if (!mounted) return;
@@ -259,7 +276,9 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
                           child: AppWidgets.textButton(
                             label: 'Forgot Password?',
                             onPressed: () {
-                              Navigator.of(context).pushNamed('/forgot-password');
+                              Navigator.of(
+                                context,
+                              ).pushNamed('/forgot-password');
                             },
                             icon: Icons.help_outline,
                           ),

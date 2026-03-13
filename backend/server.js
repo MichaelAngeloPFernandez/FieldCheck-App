@@ -78,6 +78,7 @@ let adminNearbyState = {
   geofenceId: null,
   radiusMeters: null,
   updatedAt: null,
+  setByUserId: null,
 };
 
 // Throttle admin notifications for overtasked employees
@@ -87,7 +88,7 @@ const overtaskNotified = new Map(); // { userId: { count: number, at: number } }
 // We only mark a user offline when their *last* socket disconnects.
 const userSockets = new Map(); // { userId: Set(socketId) }
 const pendingOfflineTimers = new Map(); // { userId: Timeout }
-const OFFLINE_GRACE_MS = 15000;
+const OFFLINE_GRACE_MS = 3000;
 
 // Throttle rapid "sharing enabled" wakeups so toggling doesn't spam the admin UI.
 const lastSharingWakeEmitAt = new Map(); // { userId: number }
@@ -286,28 +287,6 @@ io.on('connection', (socket) => {
 
       const employeeIds = employees.map((e) => e._id);
 
-      const inProgress = await (async () => {
-        try {
-          const UserTask = require('./models/UserTask');
-          return await UserTask.find({
-            userId: { $in: employeeIds },
-            isArchived: { $ne: true },
-            status: 'in_progress',
-          })
-            .select('userId')
-            .lean();
-        } catch (_) {
-          return [];
-        }
-      })();
-
-      const inProgressCount = new Map();
-      for (const ut of inProgress) {
-        const key = ut && ut.userId ? String(ut.userId) : '';
-        if (!key) continue;
-        inProgressCount.set(key, (inProgressCount.get(key) || 0) + 1);
-      }
-
       const openAttendanceByUser = await (async () => {
         try {
           const Attendance = require('./models/Attendance');
@@ -363,10 +342,11 @@ io.on('connection', (socket) => {
           openAttendance && openAttendance.geofence
             ? openAttendance.geofence.name || null
             : null;
-        const startedCount = inProgressCount.get(userId) || 0;
+        const activeTaskCount =
+          typeof emp.activeTaskCount === 'number' ? emp.activeTaskCount : 0;
 
         let status = 'moving';
-        if (startedCount > 0) {
+        if (activeTaskCount > 0) {
           status = 'busy';
         } else if (openAttendance) {
           status = 'available';
@@ -388,7 +368,7 @@ io.on('connection', (socket) => {
                 ? new Date(emp.lastLocationUpdate).toISOString()
                 : new Date().toISOString()
           ),
-          activeTaskCount: typeof emp.activeTaskCount === 'number' ? emp.activeTaskCount : 0,
+          activeTaskCount,
           workloadScore: 0,
           currentGeofence: geofenceName,
           distanceToNearestTask: null,
@@ -415,8 +395,8 @@ io.on('connection', (socket) => {
         userId = payloadId;
       }
 
-      socket.data.userId = userIdFromToken;
-      _trackSocketForUser(userIdFromToken);
+      socket.data.userId = userId;
+      _trackSocketForUser(userId);
 
       let name = (data && data.name ? String(data.name) : '').trim();
       let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
@@ -516,6 +496,7 @@ io.on('connection', (socket) => {
         geofenceId,
         radiusMeters,
         updatedAt: new Date().toISOString(),
+        setByUserId: mode === 'off' ? null : requesterId,
       };
 
       try {
@@ -917,6 +898,37 @@ io.on('connection', (socket) => {
       socket && socket.data && socket.data.userId
         ? String(socket.data.userId)
         : (typeof userIdFromToken === 'string' ? userIdFromToken : '');
+
+    // If the admin who last enabled nearby mode disconnects, clear the admin marker
+    // for employees immediately so it doesn't persist after refresh.
+    try {
+      if (
+        adminNearbyState &&
+        adminNearbyState.mode !== 'off' &&
+        adminNearbyState.setByUserId &&
+        String(adminNearbyState.setByUserId) === String(userId)
+      ) {
+        setImmediate(async () => {
+          try {
+            const u = await User.findById(userId).select('role').lean();
+            if (u && u.role === 'admin') {
+              adminNearbyState = {
+                mode: 'off',
+                latitude: null,
+                longitude: null,
+                geofenceId: null,
+                radiusMeters: null,
+                updatedAt: new Date().toISOString(),
+                setByUserId: null,
+              };
+              try {
+                io.to('role:employee').emit('adminNearbyMode', adminNearbyState);
+              } catch (_) {}
+            }
+          } catch (_) {}
+        });
+      }
+    } catch (_) {}
 
     const remaining = _untrackSocketForUser(userId);
     if (remaining === 0 && typeof userId === 'string' && userId.length === 24) {

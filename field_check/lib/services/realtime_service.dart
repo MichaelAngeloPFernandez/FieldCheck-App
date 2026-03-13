@@ -1,6 +1,5 @@
 // ignore_for_file: avoid_print, library_prefixes
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
@@ -75,7 +74,7 @@ class RealtimeService {
 
       _lastAuthToken = token;
       final options = io.OptionBuilder()
-          .setTransports(kIsWeb ? ['polling'] : ['websocket', 'polling'])
+          .setTransports(['websocket', 'polling'])
           .setExtraHeaders({
             if (token != null) 'Authorization': 'Bearer $token',
           })
@@ -91,6 +90,11 @@ class RealtimeService {
       options['reconnectionDelay'] = 500;
       options['reconnectionDelayMax'] = 5000;
       options['randomizationFactor'] = 0.5;
+
+      // Critical for Flutter Web: ensure we do not reuse a cached Socket.IO
+      // manager that may still carry the previous user's auth token.
+      options['forceNew'] = true;
+      options['force new connection'] = true;
 
       _socket = io.io(ApiConfig.baseUrl, options);
 

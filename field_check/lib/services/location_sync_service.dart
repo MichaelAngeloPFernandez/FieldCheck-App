@@ -40,6 +40,8 @@ class LocationSyncService {
 
   String? _employeeId;
   String? _employeeName;
+  String? _employeeCode;
+  String? _employeeUsername;
 
   static const double _webAccuracyThresholdMeters = 1000.0;
   static const double _defaultAccuracyThresholdMeters = 100.0;
@@ -63,6 +65,8 @@ class LocationSyncService {
         // identity so we don't emit location updates as the previous employee.
         _employeeId = null;
         _employeeName = null;
+        _employeeCode = null;
+        _employeeUsername = null;
         _lastPosition.value = null;
         _lastEmitted.value = null;
         _lastSharedAt.value = null;
@@ -71,7 +75,7 @@ class LocationSyncService {
 
       _lastAuthToken = token;
       final options = io.OptionBuilder()
-          .setTransports(kIsWeb ? ['polling'] : ['websocket', 'polling'])
+          .setTransports(['websocket', 'polling'])
           .enableAutoConnect()
           .setTimeout(60000)
           .setExtraHeaders({
@@ -86,6 +90,11 @@ class LocationSyncService {
       options['reconnection'] = true;
       options['reconnectionAttempts'] = 999999;
       options['reconnectionDelay'] = 500;
+
+      // Critical for Flutter Web: do not reuse a cached Socket.IO manager that
+      // may still carry a previous user's auth token.
+      options['forceNew'] = true;
+      options['force new connection'] = true;
 
       _socketUrl = ApiConfig.baseUrl;
       _socket = io.io(_socketUrl, options);
@@ -147,9 +156,8 @@ class LocationSyncService {
     }
     _ensureIdentityLoaded().then((_) => _emitAfterIdentityReady());
     if (!_initialized) {
-      _lastError.value =
-          'socket_not_initialized: call initializeSocket() first';
       _pendingEmitOnConnect = true;
+      initializeSocket();
       return;
     }
     if (!_socket.connected) {
@@ -179,9 +187,8 @@ class LocationSyncService {
     }
     _ensureIdentityLoaded().then((_) => _emitAfterIdentityReady());
     if (!_initialized) {
-      _lastError.value =
-          'socket_not_initialized: call initializeSocket() first';
       _pendingEmitOnConnect = true;
+      initializeSocket();
       return;
     }
     if (!_socket.connected) {
@@ -287,6 +294,8 @@ class LocationSyncService {
       if (_initialized && _socket.connected) {
         final profile = _userService.currentUser;
         final id = (profile?.id ?? _employeeId)?.trim();
+        final employeeCode = (profile?.employeeId ?? _employeeCode)?.trim();
+        final username = (profile?.username ?? _employeeUsername)?.trim();
         if (id != null && id.isNotEmpty) {
           try {
             final lastPos = _lastPosition.value;
@@ -294,6 +303,8 @@ class LocationSyncService {
               _socket.emit('employeeLocationUpdate', {
                 'employeeId': id,
                 'name': (profile?.name ?? _employeeName),
+                'username': username,
+                'employeeCode': employeeCode,
                 'latitude': lastPos.latitude,
                 'longitude': lastPos.longitude,
                 'accuracy': lastPos.accuracy,
@@ -306,6 +317,9 @@ class LocationSyncService {
 
           _socket.emit('employeeOffline', {
             'employeeId': id,
+            'name': (profile?.name ?? _employeeName),
+            'username': username,
+            'employeeCode': employeeCode,
             'timestamp': DateTime.now().toIso8601String(),
           });
         }
@@ -398,6 +412,8 @@ class LocationSyncService {
       final profile = _userService.currentUser;
       final employeeId = profile?.id ?? _employeeId;
       final name = profile?.name ?? _employeeName;
+      final employeeCode = profile?.employeeId ?? _employeeCode;
+      final username = profile?.username ?? _employeeUsername;
       if (employeeId == null || employeeId.trim().isEmpty) {
         _ensureIdentityLoaded();
         return;
@@ -405,6 +421,8 @@ class LocationSyncService {
       final locationData = {
         'employeeId': employeeId,
         'name': name,
+        'username': username,
+        'employeeCode': employeeCode,
         'latitude': position.latitude,
         'longitude': position.longitude,
         'accuracy': position.accuracy,
@@ -442,6 +460,8 @@ class LocationSyncService {
       _lastAuthToken = null;
       _employeeId = null;
       _employeeName = null;
+      _employeeCode = null;
+      _employeeUsername = null;
       _lastPosition.value = null;
       _lastEmitted.value = null;
       _lastSharedAt.value = null;
@@ -474,10 +494,14 @@ class LocationSyncService {
     final id = (profile?.id ?? _employeeId)?.trim();
     if (id == null || id.isEmpty) return;
     final name = (profile?.name ?? _employeeName)?.trim();
+    final employeeCode = (profile?.employeeId ?? _employeeCode)?.trim();
+    final username = (profile?.username ?? _employeeUsername)?.trim();
     _socket.emit('employeeOnline', {
       'employeeId': id,
       'userId': id,
       'name': name,
+      'username': username,
+      'employeeCode': employeeCode,
       'timestamp': DateTime.now().toIso8601String(),
     });
   }
@@ -488,12 +512,16 @@ class LocationSyncService {
     if (profile != null) {
       _employeeId = profile.id;
       _employeeName = profile.name;
+      _employeeCode = profile.employeeId;
+      _employeeUsername = profile.username;
       return;
     }
     try {
       final fetched = await _userService.getProfile();
       _employeeId = fetched.id;
       _employeeName = fetched.name;
+      _employeeCode = fetched.employeeId;
+      _employeeUsername = fetched.username;
       _emitAfterIdentityReady();
     } catch (_) {}
   }

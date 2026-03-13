@@ -172,6 +172,11 @@ class EmployeeLocationService {
       options['reconnectionDelayMax'] = 5000;
       options['randomizationFactor'] = 0.5;
 
+      // Critical for Flutter Web: ensure a brand-new manager/handshake so
+      // auth headers are not reused across logins.
+      options['forceNew'] = true;
+      options['force new connection'] = true;
+
       _socket = io.io(ApiConfig.baseUrl, options);
 
       _socket!.onConnect((_) {
