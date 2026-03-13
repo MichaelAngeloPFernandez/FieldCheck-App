@@ -59,6 +59,7 @@ const cleanupUnverifiedUsers = async () => {
     const result = await User.deleteMany({
       isVerified: false,
       createdAt: { $lt: twentyFourHoursAgo },
+      verificationTokenExpires: { $exists: true },
     });
 
     console.log(`✅ Cleanup complete: Deleted ${result.deletedCount} unverified users`);
@@ -338,13 +339,28 @@ const cleanupExpiredTokens = async () => {
   try {
     console.log('🔍 Checking for expired verification tokens...');
 
-    const result = await User.deleteMany({
-      isVerified: false,
-      verificationTokenExpires: { $lt: Date.now() },
-    });
+    const result = await User.updateMany(
+      {
+        isVerified: false,
+        verificationTokenExpires: { $lt: Date.now() },
+      },
+      {
+        $unset: {
+          verificationToken: 1,
+          verificationTokenExpires: 1,
+        },
+      },
+    );
 
-    if (result.deletedCount > 0) {
-      console.log(`✅ Deleted ${result.deletedCount} users with expired tokens`);
+    const modified =
+      typeof result.modifiedCount === 'number'
+        ? result.modifiedCount
+        : typeof result.nModified === 'number'
+          ? result.nModified
+          : undefined;
+
+    if (modified && modified > 0) {
+      console.log(`✅ Cleared expired verification tokens for ${modified} user(s)`);
     }
   } catch (error) {
     console.error('❌ Token cleanup failed:', error.message);

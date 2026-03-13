@@ -58,6 +58,12 @@ const io = new Server(server, { // Initialize socket.io
   }
 });
 
+// Render (and most PaaS) sits behind a reverse proxy that sets X-Forwarded-* headers.
+// Use a safe hop count (NOT true) so req.ip and rate limiting work correctly.
+if ((process.env.NODE_ENV || '').trim() === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Export io for use in other modules
 module.exports.io = io;
 
