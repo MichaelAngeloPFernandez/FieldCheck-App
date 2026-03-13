@@ -142,6 +142,62 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     });
   }
 
+  Future<void> _resendVerification(UserModel user) async {
+    try {
+      await _userService.resendVerificationByAdmin(user.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Verification email sent')));
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to resend verification',
+        ),
+      );
+    }
+  }
+
+  Future<void> _markVerified(UserModel user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Verify Account'),
+        content: Text('Mark ${user.name} as verified?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Verify'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      final updated = await _userService.verifyUserByAdmin(user.id);
+      if (!mounted) return;
+      _applyLocalEmployeeUpdate(updated);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('User verified')));
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to verify user'),
+      );
+    }
+  }
+
   List<UserModel> _filterEmployees(List<UserModel> employees) {
     List<UserModel> filtered = employees;
 
@@ -834,6 +890,12 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                     case 'reset_password':
                                       _resetPassword(user);
                                       break;
+                                    case 'resend_verification':
+                                      _resendVerification(user);
+                                      break;
+                                    case 'mark_verified':
+                                      _markVerified(user);
+                                      break;
                                     case 'deactivate':
                                       _deactivate(user);
                                       break;
@@ -854,6 +916,16 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                     value: 'reset_password',
                                     child: Text('Reset Password'),
                                   ),
+                                  if (!user.isVerified)
+                                    const PopupMenuItem(
+                                      value: 'resend_verification',
+                                      child: Text('Resend Verification'),
+                                    ),
+                                  if (!user.isVerified)
+                                    const PopupMenuItem(
+                                      value: 'mark_verified',
+                                      child: Text('Mark Verified'),
+                                    ),
                                   PopupMenuItem(
                                     value: user.isActive
                                         ? 'deactivate'

@@ -123,6 +123,49 @@ class UserService {
     }
   }
 
+  Future<void> resendVerificationByAdmin(String userId) async {
+    final token = await getToken();
+    final response = await http.post(
+      Uri.parse('$_baseUrl/users/$userId/resend-verification'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to resend verification email'),
+    );
+  }
+
+  Future<UserModel> verifyUserByAdmin(String userId) async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$_baseUrl/users/$userId/verify'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final user = decoded['user'];
+        if (user is Map<String, dynamic>) {
+          return UserModel.fromJson(user);
+        }
+      }
+      throw Exception('Verify succeeded but no user returned');
+    }
+
+    throw Exception(_extractErrorMessage(response, 'Failed to verify user'));
+  }
+
   Future<List<UserModel>> fetchAllUsers({String? role}) async {
     final token = await getToken();
     final uri = Uri.parse(

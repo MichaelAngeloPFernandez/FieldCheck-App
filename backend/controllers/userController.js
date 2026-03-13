@@ -6,6 +6,13 @@ const { generateToken, generateRefreshToken, verifyRefreshToken } = require('../
 const { v4: uuidv4 } = require('uuid');
 const { generateSequentialId } = require('../utils/idGenerator');
 
+function normalizeFrontendBaseUrl(raw) {
+  const candidate = (raw || '').toString().trim();
+  if (!candidate) return '';
+  if (!/^https?:\/\//i.test(candidate)) return '';
+  return candidate.replace(/\/$/, '');
+}
+
 function escapeRegExp(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -248,8 +255,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
   user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
   await user.save();
 
-  const frontendBase = (process.env.FRONTEND_URL || '').toString().trim();
-  const resetUrl = frontendBase ? `${frontendBase.replace(/\/$/, '')}/reset-password?token=${resetToken}` : '';
+  const frontendBase = normalizeFrontendBaseUrl(process.env.FRONTEND_URL);
+  const resetUrl = frontendBase ? `${frontendBase}/reset-password?token=${resetToken}` : '';
 
   try {
     await sendEmail({
@@ -615,6 +622,72 @@ const resetUserPasswordByAdmin = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Admin resend verification email
+// @route   POST /api/users/:id/resend-verification
+// @access  Private/Admin
+const resendVerificationByAdmin = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  if (user.isVerified) {
+    return res.status(200).json({ message: 'User is already verified' });
+  }
+
+  const verificationToken = uuidv4();
+  user.verificationToken = verificationToken;
+  user.verificationTokenExpires = Date.now() + 3600000; // 1 hour
+  await user.save();
+
+  const verificationUrl = `${req.protocol}://${req.get('host')}/api/users/verify/${verificationToken}`;
+
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: 'Activate your FieldCheck account',
+      templateName: 'accountActivation',
+      templateData: { name: user.name, activationLink: verificationUrl },
+    });
+  } catch (e) {
+    res.status(502);
+    throw new Error('Verification email could not be sent');
+  }
+
+  return res.status(200).json({ message: 'Verification email sent' });
+});
+
+// @desc    Admin manually verify user
+// @route   PUT /api/users/:id/verify
+// @access  Private/Admin
+const verifyUserByAdmin = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  user.isVerified = true;
+  user.verificationToken = undefined;
+  user.verificationTokenExpires = undefined;
+  await user.save();
+
+  return res.status(200).json({
+    message: 'User verified',
+    user: {
+      _id: user._id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+    },
+  });
+});
+
 // @desc    Import users from JSON (admin)
 // @route   POST /api/users/import
 // @access  Private/Admin
@@ -800,6 +873,8 @@ module.exports = {
   getUsers,
   updateUserByAdmin,
   resetUserPasswordByAdmin,
+  resendVerificationByAdmin,
+  verifyUserByAdmin,
   importUsers,
   refreshAccessToken,
   logout,

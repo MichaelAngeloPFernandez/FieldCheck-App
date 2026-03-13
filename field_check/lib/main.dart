@@ -144,8 +144,9 @@ class MyAppState extends State<MyApp> {
         theme: _lightTheme(),
         darkTheme: _darkTheme(),
         themeMode: _themeMode,
-        home: const SplashScreen(),
+        initialRoute: '/',
         routes: {
+          '/': (context) => const SplashScreen(),
           '/landing': (context) => const LandingScreen(),
           '/employee-login': (context) => const EmployeeLoginScreen(),
           '/admin-login': (context) => const AdminLoginScreen(),
@@ -157,6 +158,17 @@ class MyAppState extends State<MyApp> {
           '/admin-overview': (context) => const EnhancedAdminDashboardScreen(),
         },
         onGenerateRoute: (settings) {
+          final rawName = settings.name;
+          if (rawName != null && rawName.contains('?')) {
+            final uri = Uri.parse(rawName);
+            if (uri.path == '/reset-password') {
+              final token = uri.queryParameters['token'];
+              return MaterialPageRoute(
+                builder: (context) => ResetPasswordScreen(token: token),
+                settings: settings,
+              );
+            }
+          }
           if (settings.name == '/dashboard') {
             final int? initialIndex = settings.arguments as int?;
             return MaterialPageRoute(
