@@ -416,13 +416,14 @@ class UserService {
 
   Future<void> forgotPassword(String email) async {
     try {
+      await _warmUpBackend(maxWait: const Duration(seconds: 25));
       final response = await http
           .post(
             Uri.parse('$_baseUrl/users/forgot-password'),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'email': email}),
           )
-          .timeout(const Duration(seconds: 35));
+          .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200 || response.statusCode == 202) return;
 
