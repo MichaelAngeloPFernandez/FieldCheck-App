@@ -23,6 +23,9 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
   String _filterStatus = 'all'; // all, active, inactive, verified, unverified
   final Set<String> _selectedEmployeeIds = {};
   bool _isSelectMode = false;
+  bool _isEditIdsMode = false;
+  bool _isSavingIds = false;
+  final Map<String, TextEditingController> _employeeIdControllers = {};
   late StreamSubscription<Map<String, dynamic>> _userEventSubscription;
 
   @override
@@ -120,6 +123,10 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    for (final c in _employeeIdControllers.values) {
+      c.dispose();
+    }
+    _employeeIdControllers.clear();
     _userEventSubscription.cancel();
     super.dispose();
   }
@@ -129,7 +136,106 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
       _employeesFuture = _userService.fetchEmployees();
       _selectedEmployeeIds.clear();
       _isSelectMode = false;
+      _isEditIdsMode = false;
+      _isSavingIds = false;
+      for (final c in _employeeIdControllers.values) {
+        c.dispose();
+      }
+      _employeeIdControllers.clear();
     });
+  }
+
+  TextEditingController _employeeIdControllerFor(UserModel user) {
+    return _employeeIdControllers.putIfAbsent(
+      user.id,
+      () => TextEditingController(text: (user.employeeId ?? '').toString()),
+    );
+  }
+
+  String _normalizeEmployeeId(String raw) {
+    return raw.trim().toUpperCase();
+  }
+
+  Set<String> _findDuplicateEmployeeIds(List<UserModel> employees) {
+    final Map<String, int> counts = {};
+    for (final e in employees) {
+      final controller = _employeeIdControllerFor(e);
+      final normalized = _normalizeEmployeeId(controller.text);
+      if (normalized.isEmpty) continue;
+      counts[normalized] = (counts[normalized] ?? 0) + 1;
+    }
+    return counts.entries
+        .where((entry) => entry.value > 1)
+        .map((entry) => entry.key)
+        .toSet();
+  }
+
+  Future<void> _saveAllEmployeeIds(List<UserModel> employees) async {
+    if (_isSavingIds) return;
+
+    final duplicates = _findDuplicateEmployeeIds(employees);
+    if (duplicates.isNotEmpty) {
+      AppWidgets.showErrorSnackbar(
+        context,
+        'Duplicate Employee ID(s): ${duplicates.join(', ')}',
+      );
+      return;
+    }
+
+    final changes = <UserModel, String>{};
+    for (final e in employees) {
+      final next = _normalizeEmployeeId(_employeeIdControllerFor(e).text);
+      final current = _normalizeEmployeeId((e.employeeId ?? '').toString());
+      if (next != current) {
+        if (next.isEmpty) {
+          AppWidgets.showErrorSnackbar(
+            context,
+            'Employee ID cannot be empty (${e.name})',
+          );
+          return;
+        }
+        changes[e] = next;
+      }
+    }
+
+    if (changes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No Employee ID changes to save')),
+      );
+      return;
+    }
+
+    setState(() => _isSavingIds = true);
+    int ok = 0;
+    try {
+      for (final entry in changes.entries) {
+        final user = entry.key;
+        final nextId = entry.value;
+        final updated = await _userService.updateUserByAdmin(
+          user.id,
+          employeeId: nextId,
+        );
+        ok += 1;
+        _applyLocalEmployeeUpdate(updated);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saved $ok Employee ID(s)')));
+      await _refresh();
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to save Employee IDs',
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingIds = false);
+    }
   }
 
   void _applyLocalEmployeeUpdate(UserModel updated) {
@@ -527,13 +633,17 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                       ),
                       TextFormField(
                         controller: employeeIdController,
-                        readOnly: true,
                         decoration: InputDecoration(
                           labelText: 'Employee ID',
                           hintText: existingEmployeeId.isEmpty
                               ? 'Auto-generated'
                               : null,
                         ),
+                        validator: (v) {
+                          final next = (v ?? '').toString().trim();
+                          if (next.isEmpty) return 'Required';
+                          return null;
+                        },
                       ),
                       TextFormField(
                         controller: emailController,
@@ -603,12 +713,14 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     if (ok == true) {
       try {
         final nextUsername = usernameController.text.trim();
+        final nextEmployeeId = employeeIdController.text.trim();
         final updated = await _userService.updateUserByAdmin(
           user.id,
           name: nameController.text.trim(),
           email: emailController.text.trim(),
           role: role,
           username: nextUsername.isEmpty ? null : nextUsername,
+          employeeId: nextEmployeeId,
           phone: phoneController.text.trim(),
           isVerified: isVerified,
         );
@@ -793,7 +905,25 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                       onPressed: () {
                         setState(() {
                           _isSelectMode = !_isSelectMode;
+                          if (_isSelectMode) {
+                            _isEditIdsMode = false;
+                          }
                           if (!_isSelectMode) {
+                            _selectedEmployeeIds.clear();
+                          }
+                        });
+                      },
+                    ),
+                    TextButton.icon(
+                      icon: Icon(_isEditIdsMode ? Icons.edit_off : Icons.edit),
+                      label: Text(
+                        _isEditIdsMode ? 'Exit Edit IDs' : 'Edit IDs',
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isEditIdsMode = !_isEditIdsMode;
+                          if (_isEditIdsMode) {
+                            _isSelectMode = false;
                             _selectedEmployeeIds.clear();
                           }
                         });
@@ -825,6 +955,16 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                   final employees = snapshot.data ?? [];
                   final filtered = _filterEmployees(employees);
 
+                  if (_isEditIdsMode) {
+                    for (final e in employees) {
+                      _employeeIdControllerFor(e);
+                    }
+                  }
+
+                  final duplicates = _isEditIdsMode
+                      ? _findDuplicateEmployeeIds(employees)
+                      : <String>{};
+
                   if (filtered.isEmpty) {
                     return Center(
                       child: Text(
@@ -835,7 +975,7 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                     );
                   }
 
-                  return ListView.separated(
+                  final listView = ListView.separated(
                     padding: const EdgeInsets.all(12),
                     itemCount: filtered.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
@@ -874,12 +1014,40 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                                 ).colorScheme.primary,
                               ),
                         title: Text(displayName),
-                        subtitle: Text(
-                          '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        subtitle: _isEditIdsMode
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  SizedBox(
+                                    width: 160,
+                                    child: TextField(
+                                      controller: _employeeIdControllerFor(
+                                        user,
+                                      ),
+                                      enabled: !_isSavingIds,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Employee ID',
+                                        isDense: true,
+                                      ),
+                                      onChanged: (_) => setState(() {}),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                         trailing: _isSelectMode
+                            ? null
+                            : _isEditIdsMode
                             ? null
                             : PopupMenuButton<String>(
                                 onSelected: (value) {
@@ -955,6 +1123,50 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                             : null,
                       );
                     },
+                  );
+
+                  if (!_isEditIdsMode) return listView;
+
+                  return Column(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.03),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: duplicates.isEmpty
+                                  ? const Text(
+                                      'Edit Employee IDs, then Save All',
+                                    )
+                                  : Text(
+                                      'Duplicate IDs: ${duplicates.join(', ')}',
+                                      style: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
+                                    ),
+                            ),
+                            FilledButton(
+                              onPressed: _isSavingIds
+                                  ? null
+                                  : () => _saveAllEmployeeIds(employees),
+                              child: Text(
+                                _isSavingIds ? 'Saving...' : 'Save All',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(child: listView),
+                    ],
                   );
                 },
               ),
