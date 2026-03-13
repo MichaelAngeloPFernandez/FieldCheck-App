@@ -422,9 +422,9 @@ class UserService {
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'email': email}),
           )
-          .timeout(const Duration(seconds: 20));
+          .timeout(const Duration(seconds: 35));
 
-      if (response.statusCode == 200) return;
+      if (response.statusCode == 200 || response.statusCode == 202) return;
 
       final message = _extractErrorMessage(
         response,

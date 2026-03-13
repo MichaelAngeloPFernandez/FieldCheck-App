@@ -258,32 +258,28 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const frontendBase = normalizeFrontendBaseUrl(process.env.FRONTEND_URL);
   const resetUrl = frontendBase ? `${frontendBase}/reset-password?token=${resetToken}` : '';
 
-  try {
-    await sendEmail({
-      email: user.email,
-      subject: 'Reset your FieldCheck password',
-      templateName: 'passwordReset',
-      templateData: { name: user.name, resetLink: resetUrl, resetToken },
-    });
-    return res.status(200).json({ message: 'Password reset email sent' });
-  } catch (error) {
-    // Do not fail the entire flow if SMTP is temporarily broken.
-    // Keep the reset token so the user can retry later.
-    console.error('forgotPassword: email send failed', {
-      userId: user && user._id ? String(user._id) : undefined,
-      email: user && user.email ? String(user.email) : undefined,
-      error: error && error.message ? error.message : String(error),
-    });
-    return res.status(202).json({
-      message: 'Reset token created but email could not be sent. Please try again later.',
-      emailDelivery: 'failed',
-      emailError: {
-        message: error && error.message ? String(error.message) : 'Unknown error',
-        code: error && error.code ? String(error.code) : null,
-        responseCode: error && error.responseCode ? Number(error.responseCode) : null,
-      },
-    });
-  }
+  // Respond immediately so clients don't time out waiting for email delivery.
+  // Email delivery will be attempted in the background.
+  res.status(200).json({ message: 'Password reset initiated. Check your email.' });
+
+  setImmediate(async () => {
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Reset your FieldCheck password',
+        templateName: 'passwordReset',
+        templateData: { name: user.name, resetLink: resetUrl, resetToken },
+      });
+    } catch (error) {
+      // Do not fail the entire flow if SMTP is temporarily broken.
+      // Keep the reset token so the user can retry later.
+      console.error('forgotPassword: email send failed', {
+        userId: user && user._id ? String(user._id) : undefined,
+        email: user && user.email ? String(user.email) : undefined,
+        error: error && error.message ? error.message : String(error),
+      });
+    }
+  });
 });
 
 // @desc    Reset password
