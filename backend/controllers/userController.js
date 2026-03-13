@@ -44,12 +44,21 @@ const authUser = asyncHandler(async (req, res) => {
   }
 
   if (!user) {
+    console.warn('authUser: invalid credentials (user not found)', {
+      identifier: value,
+    });
     res.status(401);
     throw new Error('Invalid email/username or password');
   }
 
   const passwordMatch = await user.matchPassword(password);
   if (!passwordMatch) {
+    console.warn('authUser: invalid credentials (password mismatch)', {
+      identifier: value,
+      userId: user && user._id ? String(user._id) : undefined,
+      email: user && user.email ? String(user.email) : undefined,
+      role: user && user.role ? String(user.role) : undefined,
+    });
     res.status(401);
     throw new Error('Invalid email/username or password');
   }
