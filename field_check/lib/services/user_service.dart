@@ -416,7 +416,7 @@ class UserService {
 
   Future<void> forgotPassword(String email) async {
     try {
-      await _warmUpBackend(maxWait: const Duration(seconds: 25));
+      await _warmUpBackend(maxWait: const Duration(seconds: 8));
       final response = await http
           .post(
             Uri.parse('$_baseUrl/users/forgot-password'),
