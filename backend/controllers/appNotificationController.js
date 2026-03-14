@@ -81,6 +81,36 @@ const markRead = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Mark notifications as unread by IDs
+// @route   POST /api/app-notifications/mark-unread
+// @access  Private
+const markUnread = asyncHandler(async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const clean = ids
+    .map((id) => String(id || '').trim())
+    .filter((id) => id.length === 24);
+
+  if (!clean.length) {
+    return res.json({ updated: 0 });
+  }
+
+  const result = await AppNotification.updateMany(
+    { recipientUser: req.user._id, _id: { $in: clean }, readAt: { $ne: null } },
+    { $set: { readAt: null } },
+  );
+
+  await appNotificationService.emitUnreadCounts(req.user._id);
+
+  res.json({
+    updated:
+      typeof result.modifiedCount === 'number'
+        ? result.modifiedCount
+        : typeof result.nModified === 'number'
+          ? result.nModified
+          : 0,
+  });
+});
+
 // @desc    Mark notifications as read by scope
 // @route   POST /api/app-notifications/mark-read-scope
 // @access  Private
@@ -112,5 +142,6 @@ module.exports = {
   getUnreadCount,
   listNotifications,
   markRead,
+  markUnread,
   markReadScope,
 };

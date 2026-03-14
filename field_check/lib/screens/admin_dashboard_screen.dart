@@ -2262,6 +2262,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               }
             }
           });
+
+          // Persist read/unread state without blocking the UI.
+          if (read) {
+            TaskService().markNotificationIdsRead(ids.toList()).ignore();
+          } else {
+            TaskService().markNotificationIdsUnread(ids.toList()).ignore();
+          }
         }
 
         void deleteByIds(Set<String> ids) {
@@ -2289,6 +2296,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 final theme = Theme.of(context);
                 final items = activeItems();
                 final unreadCount = items.where((n) => !n.isRead).length;
+                final notificationsUnread = _notifications
+                    .where((n) => n.type != 'messages' && !n.isRead)
+                    .length;
+                final messagesUnread = _notifications
+                    .where((n) => n.type == 'messages' && !n.isRead)
+                    .length;
                 final selectedCount = selectedIds.length;
                 final allSelected =
                     items.isNotEmpty && selectedCount == items.length;
@@ -2611,12 +2624,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       const SizedBox(height: 12),
                       SegmentedButton<int>(
-                        segments: const <ButtonSegment<int>>[
+                        segments: <ButtonSegment<int>>[
                           ButtonSegment<int>(
                             value: 0,
-                            label: Text('Notifications'),
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('Notifications'),
+                                if (notificationsUnread > 0) ...[
+                                  const SizedBox(width: 6),
+                                  _buildNotificationBadge(notificationsUnread),
+                                ],
+                              ],
+                            ),
                           ),
-                          ButtonSegment<int>(value: 1, label: Text('Messages')),
+                          ButtonSegment<int>(
+                            value: 1,
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('Messages'),
+                                if (messagesUnread > 0) ...[
+                                  const SizedBox(width: 6),
+                                  _buildNotificationBadge(messagesUnread),
+                                ],
+                              ],
+                            ),
+                          ),
                         ],
                         selected: <int>{tabIndex},
                         onSelectionChanged: (selection) {
@@ -6637,9 +6671,17 @@ class _ChatPreviewDrawerState extends State<_ChatPreviewDrawer> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
                         )
-                      : const Icon(Icons.send),
+                      : Icon(
+                          Icons.send_rounded,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
                 ),
               ],
             ),

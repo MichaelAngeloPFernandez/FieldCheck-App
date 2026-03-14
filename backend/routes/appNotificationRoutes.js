@@ -6,12 +6,14 @@ const {
   getUnreadCount,
   listNotifications,
   markRead,
+  markUnread,
   markReadScope,
 } = require('../controllers/appNotificationController');
 
 router.get('/unread-count', protect, getUnreadCount);
 router.get('/', protect, listNotifications);
 router.post('/mark-read', protect, markRead);
+router.post('/mark-unread', protect, markUnread);
 router.post('/mark-read-scope', protect, markReadScope);
 
 module.exports = router;

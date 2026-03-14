@@ -290,9 +290,17 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
                           )
-                        : const Icon(Icons.send),
+                        : Icon(
+                            Icons.send_rounded,
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          ),
                   ),
                 ],
               ),

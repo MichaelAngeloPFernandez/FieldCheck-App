@@ -93,6 +93,35 @@ class TaskService {
     return 0;
   }
 
+  Future<int> markNotificationIdsUnread(List<String> ids) async {
+    final clean = ids
+        .map((e) => e.trim())
+        .where((e) => e.length == 24)
+        .toList();
+    if (clean.isEmpty) return 0;
+
+    final response = await http
+        .post(
+          Uri.parse('$_appNotificationsBaseUrl/mark-unread'),
+          headers: await _headers(),
+          body: json.encode({'ids': clean}),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark notifications unread');
+    }
+
+    if (response.body.isEmpty) return 0;
+    final decoded = json.decode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      final raw = decoded['updated'];
+      if (raw is int) return raw;
+      if (raw is num) return raw.toInt();
+    }
+    return 0;
+  }
+
   Future<Task> getTaskById(String taskId) async {
     final response = await http
         .get(
