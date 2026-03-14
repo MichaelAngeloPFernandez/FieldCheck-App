@@ -21,6 +21,7 @@ import 'package:field_check/screens/employee_login_screen.dart';
 import 'package:field_check/screens/admin_login_screen.dart';
 import 'package:field_check/screens/landing_screen.dart';
 import 'package:field_check/screens/verify_email_screen.dart';
+import 'package:field_check/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/app_theme.dart';
 
@@ -191,6 +192,7 @@ class MyAppState extends State<MyApp> {
           '/verify': (context) => const VerifyEmailScreen(),
           '/admin-dashboard': (context) => const AdminDashboardScreen(),
           '/admin-overview': (context) => const EnhancedAdminDashboardScreen(),
+          '/chat': (context) => const ChatScreen(),
         },
         onGenerateRoute: (settings) {
           final rawName = settings.name;
@@ -207,6 +209,15 @@ class MyAppState extends State<MyApp> {
               final token = uri.queryParameters['token'];
               return MaterialPageRoute(
                 builder: (context) => VerifyEmailScreen(token: token),
+                settings: settings,
+              );
+            }
+
+            if (uri.path == '/chat') {
+              final conversationId = uri.queryParameters['conversationId'];
+              return MaterialPageRoute(
+                builder: (context) =>
+                    ChatScreen(initialConversationId: conversationId),
                 settings: settings,
               );
             }

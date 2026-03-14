@@ -25,6 +25,8 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _notificationController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _chatController =
+      StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _unreadCountsController =
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _adminNearbyController =
@@ -45,6 +47,7 @@ class RealtimeService {
   Stream<Map<String, dynamic>> get locationStream => _locationController.stream;
   Stream<Map<String, dynamic>> get notificationStream =>
       _notificationController.stream;
+  Stream<Map<String, dynamic>> get chatStream => _chatController.stream;
   Stream<Map<String, dynamic>> get unreadCountsStream =>
       _unreadCountsController.stream;
   Stream<Map<String, dynamic>> get adminNearbyStream =>
@@ -456,6 +459,29 @@ class RealtimeService {
         print('Error processing unreadCounts: $e');
       }
     });
+
+    _socket!.on('chatMessage', (data) {
+      try {
+        if (data is Map<String, dynamic>) {
+          _chatController.add(data);
+          _eventController.add({
+            'type': 'chat',
+            'action': 'message',
+            'data': data,
+          });
+        } else if (data is Map) {
+          final mapped = Map<String, dynamic>.from(data);
+          _chatController.add(mapped);
+          _eventController.add({
+            'type': 'chat',
+            'action': 'message',
+            'data': mapped,
+          });
+        }
+      } catch (e) {
+        print('Error processing chatMessage: $e');
+      }
+    });
   }
 
   void _scheduleReconnect() {
@@ -534,6 +560,7 @@ class RealtimeService {
     _userController.close();
     _locationController.close();
     _notificationController.close();
+    _chatController.close();
     _adminNearbyController.close();
   }
 }

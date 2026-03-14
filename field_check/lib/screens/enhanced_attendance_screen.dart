@@ -52,6 +52,8 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   DateTime? _lastLocationUpdate;
   Timer? _locationUpdateTimer;
   StreamSubscription? _attendanceSub;
+  StreamSubscription<Map<String, dynamic>>? _unreadCountsSub;
+  int _unreadMessageCount = 0;
 
   String? _locationIssueMessage;
   bool _locationPermissionDeniedForever = false;
@@ -68,12 +70,27 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   void dispose() {
     _locationUpdateTimer?.cancel();
     _attendanceSub?.cancel();
+    _unreadCountsSub?.cancel();
     super.dispose();
   }
 
   Future<void> _initializeServices() async {
     // Initialize realtime service in background (don't block UI)
     _realtimeService.initialize().ignore();
+
+    _unreadCountsSub?.cancel();
+    _unreadCountsSub = _realtimeService.unreadCountsStream.listen((data) {
+      try {
+        final raw = data['messages'];
+        final next = raw is int
+            ? raw
+            : int.tryParse(raw?.toString() ?? '') ?? 0;
+        if (!mounted) return;
+        setState(() {
+          _unreadMessageCount = next;
+        });
+      } catch (_) {}
+    });
 
     // Listen for attendance updates relevant to this user and refresh status
     _attendanceSub = _realtimeService.attendanceStream.listen((event) {
@@ -112,6 +129,92 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     // Note: Location updates only happen on-demand when user taps check-in/out
     // Do NOT call _startLocationUpdates() - it causes unnecessary location polling
     await _loadPendingSyncCount();
+  }
+
+  void _openChat() {
+    Navigator.of(context).pushNamed('/chat');
+  }
+
+  Widget _buildChatQuickAccessCard() {
+    final theme = Theme.of(context);
+    final badgeCount = _unreadMessageCount;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: _openChat,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.chat_bubble_outline,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Chat',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      badgeCount > 0
+                          ? 'You have $badgeCount unread message${badgeCount == 1 ? '' : 's'}'
+                          : 'Message your admin',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (badgeCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.error,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    badgeCount > 99 ? '99+' : badgeCount.toString(),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onError,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 10),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadCurrentUser() async {
@@ -1114,6 +1217,8 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                 const SizedBox(height: 12),
                 // Informational: show all geofences
                 if (_allGeofences.isNotEmpty) _buildAllGeofencesCard(),
+                const SizedBox(height: 16),
+                _buildChatQuickAccessCard(),
               ],
             ),
           ),

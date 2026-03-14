@@ -22,14 +22,16 @@ import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/services/location_service.dart';
 import 'package:field_check/services/employee_tracking_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
+import 'package:field_check/services/task_service.dart';
+import 'package:field_check/services/chat_service.dart';
 import 'package:field_check/widgets/admin_info_modal.dart';
 import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/models/geofence_model.dart';
+import 'package:field_check/screens/chat_conversation_screen.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/http_util.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class _AdminNavIntent extends Intent {
   final int index;
@@ -69,6 +71,8 @@ Color _notificationTypeColor(String type) {
       return Colors.teal;
     case 'geofence':
       return Colors.green;
+    case 'messages':
+      return Colors.indigo;
     default:
       return Colors.grey;
   }
@@ -343,6 +347,112 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final pos = await _deviceLocationService.getCurrentLocation();
       _setAdminMarkerLocation(LatLng(pos.latitude, pos.longitude));
     } catch (_) {}
+  }
+
+  Future<void> _openChatWithEmployee(String employeeUserId) async {
+    if (!mounted) return;
+    final theme = Theme.of(context);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+            ),
+          ),
+          child: const SizedBox(
+            width: 46,
+            height: 46,
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final convoId = await ChatService().getOrCreateConversation(
+        otherUserId: employeeUserId,
+      );
+      if (!mounted) return;
+
+      Navigator.of(context, rootNavigator: true).pop();
+      final user = _employees[employeeUserId];
+      final title = (user?.name ?? 'Employee').trim().isNotEmpty
+          ? (user!.name).trim()
+          : 'Employee';
+
+      _showChatPreviewDrawer(conversationId: convoId, title: title);
+    } catch (e) {
+      if (!mounted) return;
+      try {
+        Navigator.of(context, rootNavigator: true).pop();
+      } catch (_) {}
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to open chat: $e')));
+    }
+  }
+
+  void _showChatPreviewDrawer({
+    required String conversationId,
+    required String title,
+  }) {
+    if (!mounted) return;
+    final theme = Theme.of(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final drawerWidth = width >= 980 ? 420.0 : width;
+
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Chat preview',
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (ctx, anim, secondaryAnim) {
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Material(
+              color: theme.colorScheme.surface,
+              child: SizedBox(
+                width: drawerWidth,
+                height: double.infinity,
+                child: _ChatPreviewDrawer(
+                  conversationId: conversationId,
+                  title: title,
+                  onOpenFull: () {
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ChatConversationScreen(
+                          conversationId: conversationId,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (ctx, anim, secondaryAnim, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOut);
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        );
+      },
+    );
   }
 
   void _broadcastAdminNearbyMode() {
@@ -696,19 +806,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Future<void> _launchExternalUri(Uri uri) async {
-    try {
-      final ok = await canLaunchUrl(uri);
-      if (!ok) {
-        debugPrint('Cannot launch uri: $uri');
-        return;
-      }
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('Error launching uri $uri: $e');
-    }
-  }
-
   void _openInspectionSheet() {
     showModalBottomSheet<void>(
       context: context,
@@ -960,6 +1057,53 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _scheduleLiveLocationUiUpdate();
       } catch (_) {}
     });
+  }
+
+  Future<void> _prefetchMessageNotifications() async {
+    try {
+      final items = await TaskService().listAppNotifications(
+        scope: 'messages',
+        unreadOnly: false,
+        limit: 50,
+        page: 1,
+      );
+      if (!mounted) return;
+      if (items.isEmpty) return;
+
+      final toInsert = <DashboardNotification>[];
+      for (final raw in items) {
+        final id = (raw['id'] ?? raw['_id'] ?? '').toString().trim();
+        if (id.isEmpty) continue;
+        if (_seenNotificationIds.contains(id)) continue;
+        _seenNotificationIds.add(id);
+
+        final title = (raw['title'] ?? 'New message').toString();
+        final message = (raw['message'] ?? '').toString();
+        final createdAtRaw = (raw['createdAt'] ?? '').toString();
+        final parsedTs = DateTime.tryParse(createdAtRaw);
+
+        toInsert.add(
+          DashboardNotification(
+            id: id,
+            title: title,
+            message: message,
+            type: 'messages',
+            timestamp: parsedTs ?? DateTime.now(),
+            payload: raw,
+            isRead: (raw['readAt'] ?? '').toString().trim().isNotEmpty,
+          ),
+        );
+      }
+
+      if (toInsert.isEmpty) return;
+
+      setState(() {
+        _notifications.insertAll(0, toInsert);
+        if (_notifications.length > 50) {
+          _notifications.removeRange(50, _notifications.length);
+        }
+      });
+    } catch (_) {}
   }
 
   void _scheduleLiveLocationUiUpdate() {
@@ -2072,7 +2216,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  void _showNotificationsInbox() {
+  Future<void> _showNotificationsInbox() async {
+    await _prefetchMessageNotifications();
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -2080,6 +2225,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       builder: (ctx) {
         bool selectionMode = false;
         final selectedIds = <String>{};
+        int tabIndex = 0;
 
         Future<bool> confirmDelete(int count) async {
           final ok = await showDialog<bool>(
@@ -2126,19 +2272,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           });
         }
 
+        List<DashboardNotification> activeItems() {
+          final isMessages = tabIndex == 1;
+          return _notifications
+              .where(
+                (n) => isMessages ? n.type == 'messages' : n.type != 'messages',
+              )
+              .toList();
+        }
+
         return SafeArea(
           child: FractionallySizedBox(
             heightFactor: 0.85,
             child: StatefulBuilder(
               builder: (sheetCtx, setSheetState) {
                 final theme = Theme.of(context);
-                final unreadCount = _notifications
-                    .where((n) => !n.isRead)
-                    .length;
+                final items = activeItems();
+                final unreadCount = items.where((n) => !n.isRead).length;
                 final selectedCount = selectedIds.length;
                 final allSelected =
-                    _notifications.isNotEmpty &&
-                    selectedCount == _notifications.length;
+                    items.isNotEmpty && selectedCount == items.length;
                 final canBulk = selectionMode && selectedCount > 0;
 
                 void toggleSelected(String id) {
@@ -2158,7 +2311,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     } else {
                       selectedIds
                         ..clear()
-                        ..addAll(_notifications.map((n) => n.id));
+                        ..addAll(items.map((n) => n.id));
                     }
                   });
                 }
@@ -2183,6 +2336,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       onTap: () async {
                         if (selectionMode) {
                           toggleSelected(notif.id);
+                          return;
+                        }
+
+                        if (notif.type == 'messages') {
+                          final payload = notif.payload ?? <String, dynamic>{};
+                          final convoId =
+                              (payload['conversationId'] ??
+                                      payload['conversationID'] ??
+                                      '')
+                                  .toString();
+                          if (convoId.trim().isNotEmpty) {
+                            if (!mounted) return;
+                            setState(() {
+                              notif.isRead = true;
+                            });
+                            try {
+                              await ChatService().markConversationRead(convoId);
+                            } catch (_) {}
+                            if (!mounted) return;
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ChatConversationScreen(
+                                  conversationId: convoId,
+                                ),
+                              ),
+                            );
+                          }
                           return;
                         }
 
@@ -2212,7 +2392,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     ? Icons.access_time
                                     : (notif.type == 'report'
                                           ? Icons.description
-                                          : Icons.notifications),
+                                          : (notif.type == 'messages'
+                                                ? Icons.chat_bubble_outline
+                                                : Icons.notifications)),
                                 color: color,
                                 size: 18,
                               ),
@@ -2339,8 +2521,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 Flexible(
                                   child: Text(
                                     selectionMode
-                                        ? 'Select notifications'
-                                        : 'Notifications',
+                                        ? 'Select'
+                                        : (tabIndex == 1
+                                              ? 'Messages'
+                                              : 'Notifications'),
                                     style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
@@ -2376,9 +2560,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               tooltip: allSelected
                                   ? 'Clear selection'
                                   : 'Select all',
-                              onPressed: _notifications.isEmpty
-                                  ? null
-                                  : toggleSelectAll,
+                              onPressed: items.isEmpty ? null : toggleSelectAll,
                               icon: const Icon(Icons.select_all),
                             ),
                           IconButton(
@@ -2401,9 +2583,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 : (unreadCount > 0
                                       ? () {
                                           markReadByIds(
-                                            _notifications
-                                                .map((n) => n.id)
-                                                .toSet(),
+                                            items.map((n) => n.id).toSet(),
                                             read: true,
                                           );
                                         }
@@ -2430,11 +2610,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      SegmentedButton<int>(
+                        segments: const <ButtonSegment<int>>[
+                          ButtonSegment<int>(
+                            value: 0,
+                            label: Text('Notifications'),
+                          ),
+                          ButtonSegment<int>(value: 1, label: Text('Messages')),
+                        ],
+                        selected: <int>{tabIndex},
+                        onSelectionChanged: (selection) {
+                          final next = selection.isEmpty ? 0 : selection.first;
+                          setSheetState(() {
+                            tabIndex = next;
+                            selectionMode = false;
+                            selectedIds.clear();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
                       Expanded(
-                        child: _notifications.isEmpty
+                        child: items.isEmpty
                             ? Center(
                                 child: Text(
-                                  'No notifications',
+                                  tabIndex == 1
+                                      ? 'No messages'
+                                      : 'No notifications',
                                   style: TextStyle(
                                     color: Theme.of(context)
                                         .colorScheme
@@ -2444,9 +2645,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 ),
                               )
                             : ListView.builder(
-                                itemCount: _notifications.length,
+                                itemCount: items.length,
                                 itemBuilder: (context, index) {
-                                  final notif = _notifications[index];
+                                  final notif = items[index];
                                   return buildInboxItem(notif);
                                 },
                               ),
@@ -2720,6 +2921,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         } catch (_) {}
 
         final action = (merged['action'] ?? '') as String;
+
+        final scope = (merged['scope'] ?? '').toString().trim();
+        if (scope == 'messages') {
+          final title = (merged['title'] ?? 'New message').toString();
+          final message = (merged['message'] ?? '').toString();
+          final createdAtRaw =
+              (merged['createdAt'] ?? merged['timestamp'] ?? '').toString();
+          final parsedTs = DateTime.tryParse(createdAtRaw);
+          final notifTs = parsedTs ?? DateTime.now();
+
+          setState(() {
+            _notifications.insert(
+              0,
+              DashboardNotification(
+                id: incomingId.isNotEmpty
+                    ? incomingId
+                    : DateTime.now().millisecondsSinceEpoch.toString(),
+                title: title,
+                message: message,
+                type: 'messages',
+                timestamp: notifTs,
+                payload: merged,
+              ),
+            );
+            if (_notifications.length > 50) {
+              _notifications.removeLast();
+            }
+          });
+          return;
+        }
 
         if ((data['type'] == 'attendance') &&
             (action == 'check-in' || action == 'check-out')) {
@@ -3539,6 +3770,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           spacing: 8,
           runSpacing: 8,
           children: [
+            FilledButton.icon(
+              onPressed: () => _openChatWithEmployee(userId),
+              icon: const Icon(Icons.chat_bubble_outline),
+              label: const Text('Message Employee'),
+            ),
             FilledButton.tonalIcon(
               onPressed: email.isEmpty
                   ? null
@@ -3547,26 +3783,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               label: const Text('Copy Email'),
             ),
             FilledButton.tonalIcon(
-              onPressed: email.isEmpty
-                  ? null
-                  : () =>
-                        _launchExternalUri(Uri(scheme: 'mailto', path: email)),
-              icon: const Icon(Icons.email_outlined),
-              label: const Text('Email'),
-            ),
-            FilledButton.tonalIcon(
               onPressed: phone.isEmpty
                   ? null
                   : () => _copyToClipboard(label: 'Phone', value: phone),
               icon: const Icon(Icons.copy),
               label: const Text('Copy Phone'),
-            ),
-            FilledButton.tonalIcon(
-              onPressed: phone.isEmpty
-                  ? null
-                  : () => _launchExternalUri(Uri(scheme: 'tel', path: phone)),
-              icon: const Icon(Icons.call_outlined),
-              label: const Text('Call'),
             ),
           ],
         ),
@@ -6091,5 +6312,340 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }
       });
     });
+  }
+}
+
+class _ChatPreviewDrawer extends StatefulWidget {
+  final String conversationId;
+  final String title;
+  final VoidCallback onOpenFull;
+
+  const _ChatPreviewDrawer({
+    required this.conversationId,
+    required this.title,
+    required this.onOpenFull,
+  });
+
+  @override
+  State<_ChatPreviewDrawer> createState() => _ChatPreviewDrawerState();
+}
+
+class _ChatPreviewDrawerState extends State<_ChatPreviewDrawer> {
+  final ChatService _chatService = ChatService();
+  final RealtimeService _realtimeService = RealtimeService();
+  final UserService _userService = UserService();
+
+  final TextEditingController _composer = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  StreamSubscription<Map<String, dynamic>>? _chatSub;
+
+  bool _loading = true;
+  bool _sending = false;
+  String? _error;
+  List<Map<String, dynamic>> _messages = <Map<String, dynamic>>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+
+    _chatSub = _realtimeService.chatStream.listen((event) {
+      try {
+        final convoId = (event['conversationId'] ?? '').toString();
+        if (convoId != widget.conversationId) return;
+
+        final id = (event['id'] ?? '').toString();
+        if (id.isEmpty) return;
+        final exists = _messages.any(
+          (m) => (m['id'] ?? '').toString().trim() == id,
+        );
+        if (exists) return;
+
+        if (!mounted) return;
+        setState(() {
+          _messages.add({
+            'id': id,
+            'conversationId': convoId,
+            'body': (event['body'] ?? '').toString(),
+            'createdAt': (event['createdAt'] ?? '').toString(),
+            'senderUser': {'id': (event['senderUserId'] ?? '').toString()},
+          });
+        });
+
+        _markReadImmediate();
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _scrollToBottom();
+        });
+      } catch (_) {}
+    });
+  }
+
+  Future<void> _markReadImmediate() async {
+    try {
+      await _chatService.markConversationRead(widget.conversationId);
+    } catch (_) {}
+  }
+
+  Future<void> _load() async {
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final items = await _chatService.listMessages(
+        widget.conversationId,
+        limit: 25,
+      );
+      if (!mounted) return;
+      setState(() {
+        _messages = items;
+        _loading = false;
+      });
+
+      await _markReadImmediate();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scrollToBottom();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    final max = _scrollController.position.maxScrollExtent;
+    _scrollController.jumpTo(max);
+  }
+
+  Future<void> _send() async {
+    final text = _composer.text.trim();
+    if (text.isEmpty) return;
+    if (!mounted) return;
+
+    setState(() {
+      _sending = true;
+    });
+
+    try {
+      final sent = await _chatService.sendMessage(
+        widget.conversationId,
+        body: text,
+      );
+      _composer.clear();
+
+      final sentId = (sent['id'] ?? '').toString();
+      if (sentId.isNotEmpty) {
+        final exists = _messages.any(
+          (m) => (m['id'] ?? '').toString() == sentId,
+        );
+        if (!exists && mounted) {
+          setState(() {
+            _messages.add(sent);
+          });
+        }
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scrollToBottom();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to send: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _chatSub?.cancel();
+    _composer.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final me = _userService.currentUser;
+    final myId = (me?.id ?? '').toString();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Chat preview',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.65,
+                        ),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Open full chat',
+                onPressed: widget.onOpenFull,
+                icon: const Icon(Icons.open_in_new),
+              ),
+              IconButton(
+                tooltip: 'Close',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : (_error != null)
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Failed to load',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _error!,
+                          style: theme.textTheme.bodySmall,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: _load,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                  itemCount: _messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = _messages[index];
+                    final sender = msg['senderUser'];
+                    final senderId = sender is Map
+                        ? (sender['id'] ?? '').toString()
+                        : (msg['senderUserId'] ?? '').toString();
+                    final mine = senderId.isNotEmpty && senderId == myId;
+                    return Align(
+                      alignment: mine
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: mine
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.08,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          (msg['body'] ?? '').toString(),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: mine
+                                ? theme.colorScheme.onPrimary
+                                : theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        const Divider(height: 1),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _composer,
+                    minLines: 1,
+                    maxLines: 3,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _send(),
+                    decoration: const InputDecoration(
+                      hintText: 'Type a message…',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: _sending ? null : _send,
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

@@ -11,7 +11,7 @@ const appNotificationSchema = new mongoose.Schema(
     scope: {
       type: String,
       required: true,
-      enum: ['tasks', 'adminFeed', 'announcements', 'geofences'],
+      enum: ['tasks', 'adminFeed', 'announcements', 'geofences', 'messages'],
       index: true,
     },
     type: {

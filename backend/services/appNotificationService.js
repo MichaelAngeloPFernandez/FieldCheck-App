@@ -2,11 +2,12 @@ const AppNotification = require('../models/AppNotification');
 const User = require('../models/User');
 
 async function getUnreadCountsForUser(userId) {
-  const [tasks, adminFeed, announcements, geofences] = await Promise.all([
+  const [tasks, adminFeed, announcements, geofences, messages] = await Promise.all([
     AppNotification.countDocuments({ recipientUser: userId, scope: 'tasks', readAt: null }),
     AppNotification.countDocuments({ recipientUser: userId, scope: 'adminFeed', readAt: null }),
     AppNotification.countDocuments({ recipientUser: userId, scope: 'announcements', readAt: null }),
     AppNotification.countDocuments({ recipientUser: userId, scope: 'geofences', readAt: null }),
+    AppNotification.countDocuments({ recipientUser: userId, scope: 'messages', readAt: null }),
   ]);
 
   return {
@@ -14,7 +15,8 @@ async function getUnreadCountsForUser(userId) {
     adminFeed,
     announcements,
     geofences,
-    total: tasks + adminFeed + announcements + geofences,
+    messages,
+    total: tasks + adminFeed + announcements + geofences + messages,
   };
 }
 
