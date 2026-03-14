@@ -284,8 +284,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  IconButton.filled(
+                  IconButton(
                     onPressed: _sending ? null : _send,
+                    style: IconButton.styleFrom(
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: theme.colorScheme.primary
+                          .withValues(alpha: 0.4),
+                      disabledForegroundColor: theme.colorScheme.onPrimary
+                          .withValues(alpha: 0.85),
+                    ),
                     icon: _sending
                         ? const SizedBox(
                             width: 18,
@@ -297,10 +305,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                               ),
                             ),
                           )
-                        : Icon(
-                            Icons.send_rounded,
-                            color: Theme.of(context).colorScheme.onPrimary,
-                          ),
+                        : Icon(Icons.send_rounded, color: Colors.white),
                   ),
                 ],
               ),

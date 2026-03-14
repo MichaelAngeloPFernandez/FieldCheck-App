@@ -2252,16 +2252,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return ok == true;
         }
 
-        void markReadByIds(Set<String> ids, {required bool read}) {
+        void markReadByIds(
+          Set<String> ids, {
+          required bool read,
+          void Function(void Function())? notifySheet,
+        }) {
           if (ids.isEmpty) return;
-          if (!mounted) return;
-          setState(() {
-            for (final n in _notifications) {
-              if (ids.contains(n.id)) {
-                n.isRead = read;
-              }
+          for (final n in _notifications) {
+            if (ids.contains(n.id)) {
+              n.isRead = read;
             }
-          });
+          }
+          if (notifySheet != null) {
+            notifySheet(() {});
+          } else if (mounted) {
+            setState(() {});
+          }
 
           // Persist read/unread state without blocking the UI.
           if (read) {
@@ -2360,8 +2366,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       '')
                                   .toString();
                           if (convoId.trim().isNotEmpty) {
-                            if (!mounted) return;
-                            setState(() {
+                            setSheetState(() {
                               notif.isRead = true;
                             });
                             try {
@@ -2379,8 +2384,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           return;
                         }
 
-                        if (!mounted) return;
-                        setState(() {
+                        setSheetState(() {
                           notif.isRead = true;
                         });
                         await _showNotificationDetails(notif);
@@ -2482,10 +2486,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   onSelected: (value) async {
                                     switch (value) {
                                       case 'markRead':
-                                        markReadByIds({notif.id}, read: true);
+                                        markReadByIds(
+                                          {notif.id},
+                                          read: true,
+                                          notifySheet: setSheetState,
+                                        );
                                         return;
                                       case 'markUnread':
-                                        markReadByIds({notif.id}, read: false);
+                                        markReadByIds(
+                                          {notif.id},
+                                          read: false,
+                                          notifySheet: setSheetState,
+                                        );
                                         return;
                                       case 'delete':
                                         final ok = await confirmDelete(1);
@@ -2586,6 +2598,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                           markReadByIds(
                                             selectedIds,
                                             read: true,
+                                            notifySheet: setSheetState,
                                           );
                                           setSheetState(() {
                                             selectedIds.clear();
@@ -2598,6 +2611,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                           markReadByIds(
                                             items.map((n) => n.id).toSet(),
                                             read: true,
+                                            notifySheet: setSheetState,
                                           );
                                         }
                                       : null),
@@ -6667,6 +6681,16 @@ class _ChatPreviewDrawerState extends State<_ChatPreviewDrawer> {
                 const SizedBox(width: 8),
                 IconButton.filled(
                   onPressed: _sending ? null : _send,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.4),
+                    disabledForegroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onPrimary.withValues(alpha: 0.85),
+                  ),
                   icon: _sending
                       ? const SizedBox(
                           width: 18,
@@ -6678,10 +6702,7 @@ class _ChatPreviewDrawerState extends State<_ChatPreviewDrawer> {
                             ),
                           ),
                         )
-                      : Icon(
-                          Icons.send_rounded,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                        ),
+                      : Icon(Icons.send_rounded, color: Colors.white),
                 ),
               ],
             ),
