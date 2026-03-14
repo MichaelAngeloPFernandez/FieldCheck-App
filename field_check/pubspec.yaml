@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
   http: ^1.5.0
   shared_preferences: ^2.2.2
   provider: ^6.0.0
