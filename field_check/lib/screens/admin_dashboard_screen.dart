@@ -3794,26 +3794,145 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final email = (user?.email ?? '').trim();
     final phone = (user?.phone ?? '').trim();
 
+    final displayName = (user?.name ?? 'Employee').trim();
+    String initialsFromName(String name) {
+      final parts = name
+          .split(RegExp(r'\s+'))
+          .where((p) => p.trim().isNotEmpty)
+          .toList();
+      if (parts.isEmpty) return '?';
+      final first = parts.first.trim();
+      final last = parts.length > 1 ? parts.last.trim() : '';
+      final a = first.isNotEmpty ? first[0].toUpperCase() : '?';
+      final b = last.isNotEmpty ? last[0].toUpperCase() : '';
+      return (a + b).trim();
+    }
+
+    final statusLabel = isBusy
+        ? 'Busy'
+        : loc?.status == EmployeeStatus.available
+        ? 'Checked In'
+        : loc?.status == EmployeeStatus.offline
+        ? 'Offline'
+        : _liveLocations.containsKey(userId)
+        ? 'Online'
+        : 'Offline';
+
+    final statusColor = loc?.status == EmployeeStatus.busy
+        ? Colors.red
+        : loc?.status == EmployeeStatus.available
+        ? Colors.green
+        : loc?.status == EmployeeStatus.offline
+        ? Colors.grey
+        : isOnline
+        ? Colors.blue
+        : Colors.grey;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          user?.name ?? 'Employee',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: onSurface.withValues(alpha: 0.92),
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: theme.colorScheme.primary.withValues(
+                alpha: 0.12,
+              ),
+              foregroundColor: theme.colorScheme.primary,
+              child: Text(
+                initialsFromName(displayName),
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          displayName,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: onSurface.withValues(alpha: 0.92),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: statusColor.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: statusColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              statusLabel,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: statusColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (email.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      email,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (phone.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      phone,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          user?.email ?? '',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: muted,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -3840,6 +3959,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ],
         ),
         const SizedBox(height: 12),
+        Divider(color: theme.dividerColor.withValues(alpha: 0.35)),
+        const SizedBox(height: 12),
         Text(
           'Details',
           style: theme.textTheme.labelLarge?.copyWith(
@@ -3861,27 +3982,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        _buildStatusRow(
-          'Online Status',
-          isBusy
-              ? 'Busy'
-              : loc?.status == EmployeeStatus.available
-              ? 'Checked In'
-              : loc?.status == EmployeeStatus.offline
-              ? 'Offline'
-              : _liveLocations.containsKey(userId)
-              ? 'Online'
-              : 'Offline',
-          loc?.status == EmployeeStatus.busy
-              ? Colors.red
-              : loc?.status == EmployeeStatus.available
-              ? Colors.green
-              : loc?.status == EmployeeStatus.offline
-              ? Colors.grey
-              : isOnline
-              ? Colors.blue
-              : Colors.grey,
-        ),
+        _buildStatusRow('Online Status', statusLabel, statusColor),
         _buildStatusRow(
           'Active Tasks',
           '$activeTaskCount / $_taskLimitPerEmployee',
@@ -3910,6 +4011,47 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               fontWeight: FontWeight.w600,
             ),
           ),
+        const SizedBox(height: 14),
+        Text(
+          'Chat',
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: onSurface.withValues(alpha: 0.9),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          color: theme.colorScheme.surface,
+          child: ListTile(
+            onTap: () => _openChatWithEmployee(userId),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.chat_bubble_outline,
+                color: theme.colorScheme.primary,
+                size: 18,
+              ),
+            ),
+            title: const Text('Chat'),
+            subtitle: Text(
+              'Open conversation preview',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+          ),
+        ),
       ],
     );
   }
