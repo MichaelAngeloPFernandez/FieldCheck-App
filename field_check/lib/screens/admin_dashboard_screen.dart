@@ -455,6 +455,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  Widget _buildActionsAndStatsPanel() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader(
+              title: 'Quick Actions',
+              subtitle: 'Shortcuts and overview',
+            ),
+            const SizedBox(height: 12),
+            _buildQuickActions(wrapInCard: false),
+            const SizedBox(height: 16),
+            _buildStatsGrid(),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _broadcastAdminNearbyMode() {
     final adminPos = _adminMarkerLocation;
     final geofence = _selectedNearbyGeofence;
@@ -4450,18 +4474,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                 const SizedBox(height: 24),
 
-                // Statistics Cards
-                _buildStatsGrid(),
-
-                const SizedBox(height: 24),
-
                 // Recent Activities
                 _buildRecentActivities(),
 
                 const SizedBox(height: 24),
 
-                // Quick Actions
-                _buildQuickActions(),
+                _buildActionsAndStatsPanel(),
 
                 const SizedBox(height: 24),
 
@@ -4817,7 +4835,95 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildQuickActions() {
+  Widget _buildQuickActions({bool wrapInCard = true}) {
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final crossAxisCount = width >= 980
+            ? 3
+            : width >= 640
+            ? 2
+            : 1;
+
+        final actions = <Widget>[
+          _buildQuickActionButton(
+            icon: Icons.people,
+            label: 'Manage Employees',
+            color: Colors.blue,
+            onTap: () {
+              setState(() {
+                _selectedIndex = 1; // Employees tab
+              });
+            },
+          ),
+          _buildQuickActionButton(
+            icon: Icons.admin_panel_settings,
+            label: 'Manage Admins',
+            color: Colors.red,
+            onTap: () {
+              setState(() {
+                _selectedIndex = 2; // Admins tab
+              });
+            },
+          ),
+          _buildQuickActionButton(
+            icon: Icons.location_on,
+            label: 'Add Geofence',
+            color: Colors.green,
+            onTap: () {
+              setState(() {
+                _selectedIndex = 3; // Geofences tab
+              });
+            },
+          ),
+          _buildQuickActionButton(
+            icon: Icons.task,
+            label: 'Create Task',
+            color: Colors.orange,
+            onTap: () {
+              setState(() {
+                _selectedIndex = 6; // Tasks tab
+              });
+            },
+          ),
+          _buildQuickActionButton(
+            icon: Icons.assessment,
+            label: 'View Reports',
+            color: Colors.purple,
+            onTap: () {
+              setState(() {
+                _selectedIndex = 4; // Reports tab
+              });
+            },
+          ),
+          _buildQuickActionButton(
+            icon: Icons.settings,
+            label: 'Settings',
+            color: Colors.teal,
+            onTap: () {
+              setState(() {
+                _selectedIndex = 5; // Settings tab
+              });
+            },
+          ),
+        ];
+
+        return GridView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: crossAxisCount == 1 ? 4.2 : 3.4,
+          ),
+          children: actions,
+        );
+      },
+    );
+
+    if (!wrapInCard) return content;
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -4829,91 +4935,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           children: [
             _buildSectionHeader(title: 'Quick Actions'),
             const SizedBox(height: 12),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                final crossAxisCount = width >= 980
-                    ? 3
-                    : width >= 640
-                    ? 2
-                    : 1;
-
-                final actions = <Widget>[
-                  _buildQuickActionButton(
-                    icon: Icons.people,
-                    label: 'Manage Employees',
-                    color: Colors.blue,
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 1; // Employees tab
-                      });
-                    },
-                  ),
-                  _buildQuickActionButton(
-                    icon: Icons.admin_panel_settings,
-                    label: 'Manage Admins',
-                    color: Colors.red,
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 2; // Admins tab
-                      });
-                    },
-                  ),
-                  _buildQuickActionButton(
-                    icon: Icons.location_on,
-                    label: 'Add Geofence',
-                    color: Colors.green,
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 3; // Geofences tab
-                      });
-                    },
-                  ),
-                  _buildQuickActionButton(
-                    icon: Icons.task,
-                    label: 'Create Task',
-                    color: Colors.orange,
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 6; // Tasks tab
-                      });
-                    },
-                  ),
-                  _buildQuickActionButton(
-                    icon: Icons.assessment,
-                    label: 'View Reports',
-                    color: Colors.purple,
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 4; // Reports tab
-                      });
-                    },
-                  ),
-                  _buildQuickActionButton(
-                    icon: Icons.settings,
-                    label: 'Settings',
-                    color: Colors.teal,
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 5; // Settings tab
-                      });
-                    },
-                  ),
-                ];
-
-                return GridView(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: crossAxisCount == 1 ? 4.2 : 3.4,
-                  ),
-                  children: actions,
-                );
-              },
-            ),
+            content,
           ],
         ),
       ),
