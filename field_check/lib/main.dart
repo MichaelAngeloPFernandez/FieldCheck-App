@@ -1,6 +1,7 @@
 // ignore_for_file: library_private_types_in_public_api
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:provider/provider.dart';
 import 'package:field_check/providers/auth_provider.dart';
 import 'package:field_check/screens/login_screen.dart';
@@ -24,6 +25,8 @@ import 'package:field_check/utils/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  usePathUrlStrategy();
 
   // Initialize only essential services immediately
   final syncService = SyncService();
