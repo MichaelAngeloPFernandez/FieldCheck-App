@@ -181,7 +181,10 @@ const registerUser = asyncHandler(async (req, res) => {
     });
   }
 
-  const verificationUrl = `${req.protocol}://${req.get('host')}/api/users/verify/${verificationToken}`;
+  const frontendBase = normalizeFrontendBaseUrl(process.env.FRONTEND_URL);
+  const verificationUrl = frontendBase
+    ? `${frontendBase}/verify?token=${verificationToken}`
+    : `${req.protocol}://${req.get('host')}/api/users/verify/${verificationToken}`;
 
   try {
     await sendEmail({
@@ -646,7 +649,10 @@ const resendVerificationByAdmin = asyncHandler(async (req, res) => {
   user.verificationTokenExpires = Date.now() + 3600000; // 1 hour
   await user.save();
 
-  const verificationUrl = `${req.protocol}://${req.get('host')}/api/users/verify/${verificationToken}`;
+  const frontendBase = normalizeFrontendBaseUrl(process.env.FRONTEND_URL);
+  const verificationUrl = frontendBase
+    ? `${frontendBase}/verify?token=${verificationToken}`
+    : `${req.protocol}://${req.get('host')}/api/users/verify/${verificationToken}`;
 
   try {
     await sendEmail({

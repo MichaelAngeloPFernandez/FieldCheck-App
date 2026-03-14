@@ -36,6 +36,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     }
   }
 
+  bool get _tokenFromLink => (widget.token ?? '').trim().isNotEmpty;
+
   @override
   void dispose() {
     _tokenController.dispose();
@@ -46,9 +48,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   Future<void> _resetPassword() async {
     // Validation
-    if (_tokenController.text.isEmpty) {
+    if (_tokenController.text.trim().isEmpty) {
       setState(() {
-        _errorMessage = 'Please enter the reset token from your email';
+        _errorMessage = _tokenFromLink
+            ? 'Reset link is missing a token. Please open the latest email link again.'
+            : 'Please enter the reset token from your email';
       });
       return;
     }
@@ -89,7 +93,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
     try {
       await _userService.resetPassword(
-        _tokenController.text,
+        _tokenController.text.trim(),
         _passwordController.text,
       );
 
@@ -215,7 +219,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           ),
           const SizedBox(height: AppTheme.md),
           Text(
-            'Enter the reset token from your email and create a strong new password.',
+            _tokenFromLink
+                ? 'You opened a secure reset link. Choose a strong new password below.'
+                : 'Paste the reset token from your email and create a strong new password.',
             style: AppTheme.bodySm,
             textAlign: TextAlign.center,
           ),
@@ -285,18 +291,51 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       ],
                     ),
                   ),
-                Text('Reset Token', style: AppTheme.labelLg),
-                const SizedBox(height: AppTheme.sm),
-                TextField(
-                  controller: _tokenController,
-                  enabled: !_isLoading && _successMessage == null,
-                  decoration: const InputDecoration(
-                    hintText: 'Paste the token from your email',
-                    prefixIcon: Icon(Icons.vpn_key_outlined),
+                if (!_tokenFromLink) ...[
+                  Text('Reset Token', style: AppTheme.labelLg),
+                  const SizedBox(height: AppTheme.sm),
+                  TextField(
+                    controller: _tokenController,
+                    enabled: !_isLoading && _successMessage == null,
+                    decoration: const InputDecoration(
+                      hintText: 'Paste the token from your email',
+                      prefixIcon: Icon(Icons.vpn_key_outlined),
+                    ),
+                    maxLines: 2,
                   ),
-                  maxLines: 2,
-                ),
-                const SizedBox(height: AppTheme.lg),
+                  const SizedBox(height: AppTheme.lg),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(AppTheme.md),
+                    margin: const EdgeInsets.only(bottom: AppTheme.lg),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryLight.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      border: Border.all(
+                        color: AppTheme.primaryLight.withValues(alpha: 0.28),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.verified_user_outlined,
+                          color: AppTheme.primaryColor,
+                          size: 20,
+                        ),
+                        const SizedBox(width: AppTheme.md),
+                        Expanded(
+                          child: Text(
+                            'Secure link detected. Your token was applied automatically.',
+                            style: AppTheme.bodySm.copyWith(
+                              color: AppTheme.primaryColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 Text('New Password', style: AppTheme.labelLg),
                 const SizedBox(height: AppTheme.sm),
                 TextField(

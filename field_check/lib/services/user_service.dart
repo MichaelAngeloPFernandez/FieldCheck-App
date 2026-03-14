@@ -448,6 +448,41 @@ class UserService {
     }
   }
 
+  Future<void> verifyEmail(String token) async {
+    final trimmed = token.trim();
+    if (trimmed.isEmpty) {
+      throw Exception('Missing verification token');
+    }
+
+    try {
+      await _warmUpBackend(maxWait: const Duration(seconds: 8));
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/users/verify/$trimmed'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) return;
+
+      final message = _extractErrorMessage(response, 'Failed to verify email');
+      throw Exception(message);
+    } catch (e) {
+      if (e is http.ClientException) {
+        throw Exception('Server unreachable. Please try again later.');
+      }
+      if (e is SocketException) {
+        throw Exception(
+          'Network error. Please confirm you are online and try again.',
+        );
+      }
+      if (e is TimeoutException) {
+        throw Exception('Request timed out. Please try again.');
+      }
+      rethrow;
+    }
+  }
+
   Future<void> resetPassword(String token, String newPassword) async {
     try {
       final response = await http

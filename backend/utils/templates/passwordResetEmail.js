@@ -23,10 +23,7 @@ module.exports = (name, resetLink, resetToken) => {
             <div class="content">
                 <p>Hello ${name},</p>
                 <p>We received a request to reset your FieldCheck password.</p>
-                ${resetLink ? `<p>Click the button below to proceed:</p><a href="${resetLink}" class="button">Reset Password</a><p>If the button above does not work, please copy and paste the following link into your web browser:</p><p>${resetLink}</p>` : ''}
-                <p>Reset Token:</p>
-                <p><strong>${resetToken || ''}</strong></p>
-                <p>Open the FieldCheck app, go to Reset Password, and paste the token above.</p>
+                ${resetLink ? `<p>Click the button below to choose a new password:</p><a href="${resetLink}" class="button">Reset Password</a><p>If the button above does not work, please copy and paste this link into your web browser:</p><p>${resetLink}</p>` : `<p><strong>Reset link unavailable.</strong></p><p>Use the token below in the FieldCheck app (Reset Password screen):</p><p><strong>${resetToken || ''}</strong></p>`}
                 <p>If you did not request this, you can ignore this email.</p>
                 <p>Best regards,<br/>The FieldCheck Team</p>
             </div>
