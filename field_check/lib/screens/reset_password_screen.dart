@@ -99,30 +99,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
       setState(() {
         _isLoading = false;
-        _successMessage = 'Password reset successfully!';
+        _successMessage =
+            'Password reset successfully! You may close this page now.';
       });
-
-      // Show success dialog
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Password Reset Successful'),
-          content: const Text(
-            'Your password has been reset successfully. '
-            'Please log in with your new password.',
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context);
-                Navigator.pop(context);
-              },
-              child: const Text('Go to Login'),
-            ),
-          ],
-        ),
-      );
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -440,6 +419,19 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   icon: Icons.lock_reset,
                   width: double.infinity,
                 ),
+                if (_successMessage != null) ...[
+                  const SizedBox(height: AppTheme.md),
+                  AppWidgets.primaryButton(
+                    label: 'Go to Login',
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).pushNamedAndRemoveUntil('/landing', (route) => false),
+                    isLoading: false,
+                    isEnabled: true,
+                    icon: Icons.login,
+                    width: double.infinity,
+                  ),
+                ],
                 const SizedBox(height: AppTheme.lg),
                 Center(
                   child: AppWidgets.textButton(
