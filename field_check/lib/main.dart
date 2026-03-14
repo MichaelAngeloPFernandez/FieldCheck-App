@@ -1,5 +1,6 @@
 // ignore_for_file: library_private_types_in_public_api
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:provider/provider.dart';
@@ -148,6 +149,36 @@ class MyAppState extends State<MyApp> {
         theme: _lightTheme(),
         darkTheme: _darkTheme(),
         themeMode: _themeMode,
+        onGenerateInitialRoutes: (initialRoute) {
+          if (kIsWeb) {
+            final uri = Uri.base;
+            if (uri.path == '/reset-password') {
+              final token = uri.queryParameters['token'];
+              return [
+                MaterialPageRoute(
+                  builder: (context) => ResetPasswordScreen(token: token),
+                  settings: RouteSettings(name: uri.toString()),
+                ),
+              ];
+            }
+            if (uri.path == '/verify') {
+              final token = uri.queryParameters['token'];
+              return [
+                MaterialPageRoute(
+                  builder: (context) => VerifyEmailScreen(token: token),
+                  settings: RouteSettings(name: uri.toString()),
+                ),
+              ];
+            }
+          }
+
+          return [
+            MaterialPageRoute(
+              builder: (context) => const SplashScreen(),
+              settings: const RouteSettings(name: '/'),
+            ),
+          ];
+        },
         routes: {
           '/': (context) => const SplashScreen(),
           '/landing': (context) => const LandingScreen(),
