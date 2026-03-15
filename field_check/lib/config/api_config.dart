@@ -12,9 +12,9 @@ class ApiConfig {
 
     if (useLocal) return 'http://localhost:3002';
 
-    if (kReleaseMode) return 'https://fieldcheck-app.onrender.com';
-    if (kIsWeb) return 'https://fieldcheck-app.onrender.com';
-    return 'https://fieldcheck-app.onrender.com';
+    if (kReleaseMode) return 'https://fieldcheck-app-mwk3.onrender.com';
+    if (kIsWeb) return 'https://fieldcheck-app-mwk3.onrender.com';
+    return 'https://fieldcheck-app-mwk3.onrender.com';
   }
 
   static String get uploadsBaseUrl {
