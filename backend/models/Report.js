@@ -7,6 +7,7 @@ const reportSchema = new mongoose.Schema(
       enum: ['task', 'attendance'],
       required: true,
     },
+
     task: { type: mongoose.Schema.Types.ObjectId, ref: 'Task' },
     attendance: { type: mongoose.Schema.Types.ObjectId, ref: 'Attendance' },
     employee: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -17,6 +18,10 @@ const reportSchema = new mongoose.Schema(
       type: String,
       enum: ['submitted', 'reviewed'],
       default: 'submitted',
+    },
+    grade: {
+      type: String,
+      enum: ['poor', 'good', 'excellent'],
     },
     submittedAt: { type: Date, default: Date.now },
     resubmitUntil: { type: Date },

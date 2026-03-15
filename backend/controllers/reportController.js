@@ -196,6 +196,62 @@ const listReports = asyncHandler(async (req, res) => {
   res.json(payload);
 });
 
+// @desc List reports that contain legacy attachment values (not GridFS URLs)
+// @route GET /api/reports/legacy-attachments
+// @access Private/Admin
+const listLegacyAttachments = asyncHandler(async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+  const skip = Math.max(Number(req.query.skip) || 0, 0);
+  const type = String(req.query.type || '').trim().toLowerCase();
+
+  const gridfsMarker = '/api/reports/attachments/';
+  const markerRegex = new RegExp(gridfsMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+  const filter = {
+    attachments: {
+      $elemMatch: {
+        $not: markerRegex,
+      },
+    },
+  };
+
+  if (type && ['task', 'attendance'].includes(type)) {
+    filter.type = type;
+  }
+
+  const reports = await Report.find(filter)
+    .select('type employee task attendance submittedAt attachments isArchived')
+    .populate('employee', 'name email employeeId')
+    .populate('task', 'title')
+    .sort({ submittedAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+
+  const items = (reports || []).map((r) => {
+    const attachments = Array.isArray(r.attachments) ? r.attachments : [];
+    const legacy = attachments
+      .map((a) => String(a || '').trim())
+      .filter(Boolean)
+      .filter((a) => !a.includes(gridfsMarker));
+
+    return {
+      id: String(r._id),
+      type: r.type,
+      submittedAt: r.submittedAt,
+      isArchived: !!r.isArchived,
+      employee: r.employee || null,
+      task: r.task || null,
+      attendance: r.attendance || null,
+      legacyAttachments: legacy,
+      legacyCount: legacy.length,
+      totalAttachments: attachments.length,
+    };
+  });
+
+  res.json({ items, skip, limit, returned: items.length });
+});
+
 // @desc Get report by id
 // @route GET /api/reports/:id
 // @access Private/Admin
@@ -502,6 +558,7 @@ const resubmitReport = asyncHandler(async (req, res) => {
 module.exports = {
   createReport,
   listReports,
+  listLegacyAttachments,
   getReportById,
   replaceReportAttachments,
   updateReportStatus,

@@ -8,6 +8,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:field_check/screens/admin_geofence_screen.dart';
 import 'package:field_check/screens/admin_reports_hub_screen.dart';
+import 'package:field_check/screens/admin_reports_screen.dart';
 import 'package:field_check/screens/admin_settings_screen.dart';
 import 'package:field_check/screens/admin_task_management_screen.dart';
 import 'package:field_check/screens/admin_world_map_screen.dart';
@@ -1680,9 +1681,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  setState(() {
-                    _selectedIndex = 4;
-                  });
+                  final payload = notif.payload ?? <String, dynamic>{};
+                  final reportId =
+                      (payload['reportId'] ?? payload['reportID'] ?? '')
+                          .toString();
+                  if (reportId.trim().isNotEmpty) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => AdminReportsScreen(
+                          embedded: false,
+                          initialReportId: reportId,
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AdminReportsScreen(embedded: false),
+                    ),
+                  );
                 },
                 icon: const Icon(Icons.description),
                 label: const Text('Go to reports'),
@@ -1691,10 +1710,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               OutlinedButton.icon(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  setState(() {
-                    _selectedIndex = 4;
-                  });
                   AdminReportsHubScreen.selectInitialTab(1);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AdminReportsHubScreen(),
+                    ),
+                  );
                 },
                 icon: const Icon(Icons.insights),
                 label: const Text('Analytics'),
@@ -1857,6 +1878,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } catch (_) {}
   }
 
+  List<CircleMarker> _buildActiveGeofenceCircles() {
+    if (_geofences.isEmpty) return const [];
+    return _geofences.where((g) => g.isActive).map((g) {
+      final center = LatLng(g.latitude, g.longitude);
+      return CircleMarker(
+        point: center,
+        useRadiusInMeter: true,
+        radius: g.radius,
+        color: Colors.green.withValues(alpha: 0.12),
+        borderColor: Colors.green.withValues(alpha: 0.65),
+        borderStrokeWidth: 2,
+      );
+    }).toList();
+  }
+
+  CircleMarker? _buildNearbyRadiusCircle() {
+    final center = _nearbyCenter();
+    if (center == null) return null;
+    if (_nearbyMode == 'off') return null;
+
+    return CircleMarker(
+      point: center,
+      useRadiusInMeter: true,
+      radius: _nearbyRadiusMeters,
+      color: _adminMarkerColor.withValues(alpha: 0.08),
+      borderColor: _adminMarkerColor.withValues(alpha: 0.55),
+      borderStrokeWidth: 2,
+    );
+  }
+
   LatLngBounds? _boundsForLiveLocations() {
     if (_liveLocations.isEmpty) return null;
     final points = _liveLocations.values.toList();
@@ -1998,6 +2049,82 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
   }
 
+  String? _bestEmployeeMatchId(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return null;
+
+    final candidates = _liveLocations.keys
+        .where(_passesEmployeeFilters)
+        .toList();
+    if (candidates.isEmpty) return null;
+
+    int scoreFor(String userId) {
+      final user = _employees[userId];
+      final name = (user?.name ?? '').trim().toLowerCase();
+      final email = (user?.email ?? '').trim().toLowerCase();
+      final username = (user?.username ?? '').trim().toLowerCase();
+      final code = (user?.employeeId ?? '').trim().toLowerCase();
+
+      if (code == q || email == q || username == q) return 400;
+      if (name == q) return 350;
+
+      if (code.startsWith(q)) return 300;
+      if (name.startsWith(q)) return 250;
+      if (email.startsWith(q)) return 200;
+      if (username.startsWith(q)) return 180;
+
+      if (code.contains(q)) return 160;
+      if (name.contains(q)) return 140;
+      if (email.contains(q)) return 120;
+      if (username.contains(q)) return 110;
+
+      return 0;
+    }
+
+    String? bestId;
+    int bestScore = -1;
+    for (final id in candidates) {
+      final s = scoreFor(id);
+      if (s > bestScore) {
+        bestScore = s;
+        bestId = id;
+      }
+    }
+
+    if (bestScore <= 0) return null;
+    return bestId;
+  }
+
+  void _selectEmployeeFromSearch({bool openSheetIfMobile = true}) {
+    final query = _employeeSearchController.text;
+    final matchId = _bestEmployeeMatchId(query);
+    if (matchId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No matching employee found on the map'),
+          duration: Duration(milliseconds: 1200),
+        ),
+      );
+      return;
+    }
+
+    final pos = _liveLocations[matchId];
+    if (pos == null) return;
+
+    _pushInspection(matchId);
+    _panTo(pos, zoom: 16);
+
+    if (openSheetIfMobile) {
+      final width = MediaQuery.sizeOf(context).width;
+      final isWide = width >= 980;
+      if (!isWide) {
+        _openInspectionSheet();
+      }
+    }
+  }
+
   Widget _buildMapControls() {
     final hasNearbyCenter = _nearbyCenter() != null;
     return Column(
@@ -2005,6 +2132,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       children: [
         TextField(
           controller: _employeeSearchController,
+          textInputAction: TextInputAction.search,
           decoration: InputDecoration(
             hintText: 'Search employee…',
             prefixIcon: const Icon(Icons.search),
@@ -2026,6 +2154,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             fontSize: _controlFontSize,
           ),
           onChanged: (_) => _onEmployeeSearchChanged(),
+          onSubmitted: (_) => _selectEmployeeFromSearch(),
         ),
         const SizedBox(height: 10),
         Wrap(
@@ -3026,6 +3155,39 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             }
           });
           return;
+        }
+
+        if (scope == 'adminFeed') {
+          final ntype = (merged['type'] ?? '').toString().trim().toLowerCase();
+          final isReport = ntype == 'report' || action.contains('report');
+          if (isReport) {
+            final title = (merged['title'] ?? 'New report').toString();
+            final message = (merged['message'] ?? '').toString();
+            final createdAtRaw =
+                (merged['createdAt'] ?? merged['timestamp'] ?? '').toString();
+            final parsedTs = DateTime.tryParse(createdAtRaw);
+            final notifTs = parsedTs ?? DateTime.now();
+
+            setState(() {
+              _notifications.insert(
+                0,
+                DashboardNotification(
+                  id: incomingId.isNotEmpty
+                      ? incomingId
+                      : DateTime.now().millisecondsSinceEpoch.toString(),
+                  title: title,
+                  message: message,
+                  type: 'report',
+                  timestamp: notifTs,
+                  payload: merged,
+                ),
+              );
+              if (_notifications.length > 50) {
+                _notifications.removeLast();
+              }
+            });
+            return;
+          }
         }
 
         if ((data['type'] == 'attendance') &&
@@ -5142,6 +5304,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                         subdomains: const ['a', 'b', 'c'],
                         userAgentPackageName: 'field_check',
+                      ),
+                      CircleLayer(
+                        circles: [
+                          ..._buildActiveGeofenceCircles(),
+                          if (_buildNearbyRadiusCircle() != null)
+                            _buildNearbyRadiusCircle()!,
+                        ],
                       ),
                       PolylineLayer(
                         polylines: _trails.entries.map((e) {

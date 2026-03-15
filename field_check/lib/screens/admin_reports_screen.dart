@@ -24,8 +24,14 @@ import 'package:flutter/services.dart';
 class AdminReportsScreen extends StatefulWidget {
   final String? employeeId;
   final bool embedded;
+  final String? initialReportId;
 
-  const AdminReportsScreen({super.key, this.employeeId, this.embedded = false});
+  const AdminReportsScreen({
+    super.key,
+    this.employeeId,
+    this.embedded = false,
+    this.initialReportId,
+  });
 
   @override
   State<AdminReportsScreen> createState() => _AdminReportsScreenState();
@@ -63,6 +69,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Timer? _debounce;
   Timer? _realtimeRefreshDebounce;
 
+  bool _didOpenInitialReport = false;
+
   final AttendanceService _attendanceService = AttendanceService();
   final TaskService _taskService = TaskService();
 
@@ -76,6 +84,25 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ),
       ),
     );
+  }
+
+  void _maybeOpenInitialReportAfterFetch() {
+    if (_didOpenInitialReport) return;
+    final targetId = (widget.initialReportId ?? '').trim();
+    if (targetId.isEmpty) return;
+
+    final combined = <ReportModel>[..._taskReports, ..._archivedTaskReports];
+    final match = combined.where((r) => r.id == targetId).toList();
+    if (match.isEmpty) return;
+
+    _didOpenInitialReport = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_viewMode != 'task') {
+        _setReportViewMode('task');
+      }
+      _showReportDetails(match.first);
+    });
   }
 
   Future<void> _setReportViewMode(String mode) async {
@@ -1624,6 +1651,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           _archivedTaskReports = reports;
           _isLoadingTaskReports = false;
         });
+
+        _maybeOpenInitialReportAfterFetch();
       } else {
         final reports = await ReportService().getCurrentReports(type: 'task');
         final overdueCount = reports
@@ -1636,6 +1665,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           _taskReports = reports;
           _isLoadingTaskReports = false;
         });
+
+        _maybeOpenInitialReportAfterFetch();
       }
     } catch (e) {
       debugPrint('Error fetching task reports: $e');
@@ -2520,6 +2551,25 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         final dialogWidth = _dialogWidthFor(ctx);
         final isWide = MediaQuery.sizeOf(ctx).width >= 900;
         final actionSize = isWide ? 44.0 : 36.0;
+
+        String? grade = r.grade;
+
+        String labelForGrade(String? value) {
+          final v = (value ?? '').trim().toLowerCase();
+          if (v == 'poor') return 'Poor';
+          if (v == 'good') return 'Good';
+          if (v == 'excellent') return 'Excellent';
+          return 'Not graded';
+        }
+
+        Color gradeColor(String? value) {
+          final v = (value ?? '').trim().toLowerCase();
+          if (v == 'poor') return theme.colorScheme.error;
+          if (v == 'good') return Colors.orange;
+          if (v == 'excellent') return Colors.green;
+          return theme.colorScheme.onSurface.withValues(alpha: 0.7);
+        }
+
         return AlertDialog(
           insetPadding: const EdgeInsets.all(16),
           shape: RoundedRectangleBorder(
@@ -2543,6 +2593,26 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     runSpacing: 8,
                     children: [
                       _buildReportStatusChip(r.status),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: gradeColor(grade).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: gradeColor(grade).withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          labelForGrade(grade),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: gradeColor(grade),
+                          ),
+                        ),
+                      ),
                       if (r.taskIsOverdue)
                         _buildMetaChip(
                           'Overdue',
@@ -2553,6 +2623,127 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       ),
                       _buildMetaChip('Attachments: ${r.attachments.length}'),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: StatefulBuilder(
+                      builder: (ctx2, setDialogState) {
+                        Future<void> saveGrade(String? next) async {
+                          try {
+                            final updated = await ReportService()
+                                .updateReportStatusWithGrade(
+                                  r.id,
+                                  r.status,
+                                  grade: next,
+                                );
+                            if (!mounted) return;
+                            setDialogState(() {
+                              grade = updated.grade;
+                            });
+                            await _fetchTaskReports();
+                          } catch (e) {
+                            if (!mounted) return;
+                            AppWidgets.showErrorSnackbar(
+                              context,
+                              AppWidgets.friendlyErrorMessage(
+                                e,
+                                fallback: 'Failed to save grade',
+                              ),
+                            );
+                          }
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Grade',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            PopupMenuButton<String>(
+                              tooltip: 'Set grade',
+                              onSelected: (value) {
+                                switch (value) {
+                                  case 'clear':
+                                    saveGrade(null);
+                                    return;
+                                  case 'poor':
+                                  case 'good':
+                                  case 'excellent':
+                                    saveGrade(value);
+                                    return;
+                                }
+                              },
+                              itemBuilder: (_) =>
+                                  const <PopupMenuEntry<String>>[
+                                    PopupMenuItem(
+                                      value: 'excellent',
+                                      child: Text('Excellent'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'good',
+                                      child: Text('Good'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'poor',
+                                      child: Text('Poor'),
+                                    ),
+                                    PopupMenuDivider(),
+                                    PopupMenuItem(
+                                      value: 'clear',
+                                      child: Text('Clear grade'),
+                                    ),
+                                  ],
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: theme.colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.grade,
+                                      size: 18,
+                                      color: gradeColor(grade),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      labelForGrade(grade),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Icon(Icons.expand_more, size: 18),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -2577,6 +2768,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           r.taskTitle ?? (r.taskId ?? '-'),
                         ),
                         _buildDetailRow('Status:', r.status),
+                        _buildDetailRow('Grade:', labelForGrade(grade)),
                         _buildDetailRow(
                           'Submitted:',
                           formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),

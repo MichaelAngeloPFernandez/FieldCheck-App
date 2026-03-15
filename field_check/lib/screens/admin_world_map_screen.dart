@@ -12,8 +12,10 @@ import 'package:field_check/services/task_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/services/availability_service.dart';
 import 'package:field_check/services/employee_location_service.dart';
+import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/widgets/app_widgets.dart';
+import 'package:field_check/models/geofence_model.dart';
 
 class AdminWorldMapScreen extends StatefulWidget {
   const AdminWorldMapScreen({super.key});
@@ -27,6 +29,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
   final TaskService _taskService = TaskService();
   final AvailabilityService _availabilityService = AvailabilityService();
   final EmployeeLocationService _locationService = EmployeeLocationService();
+  final GeofenceService _geofenceService = GeofenceService();
   final RealtimeService _realtimeService = RealtimeService();
   final MapController _mapController = MapController();
 
@@ -57,6 +60,9 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
 
   String _adminNearbyMode = 'off';
   LatLng? _adminNearbyLatLng;
+  double _adminNearbyRadiusMeters = 2000;
+
+  List<Geofence> _geofences = const [];
 
   static const LatLng _defaultCenter = LatLng(14.5995, 120.9842); // Manila
 
@@ -73,6 +79,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     // while waiting for the next socket event.
     _applyLocations(_locationService.getAllLocations());
     await _initAdminNearby();
+    await _loadGeofences();
     await _loadEmployees();
     await _refreshAvailability();
 
@@ -90,8 +97,10 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
       final mode = (data['mode'] ?? 'off').toString();
       final lat = data['latitude'];
       final lng = data['longitude'];
+      final radius = data['radiusMeters'];
       final nextLat = lat is num ? lat.toDouble() : null;
       final nextLng = lng is num ? lng.toDouble() : null;
+      final nextRadius = radius is num ? radius.toDouble() : null;
 
       if (!mounted) return;
       setState(() {
@@ -100,8 +109,54 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
             (mode != 'off' && nextLat != null && nextLng != null)
             ? LatLng(nextLat, nextLng)
             : null;
+        if (nextRadius != null && nextRadius > 0) {
+          _adminNearbyRadiusMeters = nextRadius;
+        }
       });
     });
+  }
+
+  Future<void> _loadGeofences() async {
+    try {
+      final fences = await _geofenceService.fetchGeofences();
+      if (!mounted) return;
+      setState(() {
+        _geofences = fences;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _geofences = const [];
+      });
+    }
+  }
+
+  List<CircleMarker> _buildActiveGeofenceCircles() {
+    if (_geofences.isEmpty) return const [];
+    return _geofences.where((g) => g.isActive).map((g) {
+      return CircleMarker(
+        point: LatLng(g.latitude, g.longitude),
+        useRadiusInMeter: true,
+        radius: g.radius,
+        color: Colors.green.withValues(alpha: 0.12),
+        borderColor: Colors.green.withValues(alpha: 0.65),
+        borderStrokeWidth: 2,
+      );
+    }).toList();
+  }
+
+  CircleMarker? _buildAdminNearbyRadiusCircle() {
+    if (_adminNearbyMode == 'off') return null;
+    final center = _adminNearbyLatLng;
+    if (center == null) return null;
+    return CircleMarker(
+      point: center,
+      useRadiusInMeter: true,
+      radius: _adminNearbyRadiusMeters,
+      color: const Color(0xFF5C4EF5).withValues(alpha: 0.08),
+      borderColor: const Color(0xFF5C4EF5).withValues(alpha: 0.55),
+      borderStrokeWidth: 2,
+    );
   }
 
   void _applyLocations(List<EmployeeLocation> locations) {
@@ -230,6 +285,99 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     } catch (_) {
       _mapController.move(bounds.center, 4);
     }
+  }
+
+  List<String> _visibleEmployeeIds() {
+    final filteredLocations = _employeeLocations.where(_passesFilters).toList();
+    final ids = <String>[];
+    for (final loc in filteredLocations) {
+      final pos = _liveLocations[loc.employeeId];
+      if (pos != null) {
+        ids.add(loc.employeeId);
+      }
+    }
+
+    ids.sort((a, b) {
+      final an = (_employees[a]?.name ?? '').toLowerCase();
+      final bn = (_employees[b]?.name ?? '').toLowerCase();
+      return an.compareTo(bn);
+    });
+    return ids;
+  }
+
+  void _panToEmployee(String userId) {
+    final visible = _visibleLiveLocations();
+    final pos = visible[userId];
+    if (pos == null) return;
+    _mapController.move(pos, 15);
+  }
+
+  void _selectPrevEmployee() {
+    final ids = _visibleEmployeeIds();
+    if (ids.isEmpty) return;
+
+    final currentIndex = _selectedUserId == null
+        ? -1
+        : ids.indexWhere((id) => id == _selectedUserId);
+    final nextIndex = currentIndex <= 0 ? (ids.length - 1) : (currentIndex - 1);
+    final nextId = ids[nextIndex];
+
+    setState(() {
+      _selectedUserId = nextId;
+    });
+    _onEmployeeTap(nextId);
+    _panToEmployee(nextId);
+  }
+
+  void _selectNextEmployee() {
+    final ids = _visibleEmployeeIds();
+    if (ids.isEmpty) return;
+
+    final currentIndex = _selectedUserId == null
+        ? -1
+        : ids.indexWhere((id) => id == _selectedUserId);
+    final nextIndex = (currentIndex < 0 || currentIndex >= ids.length - 1)
+        ? 0
+        : (currentIndex + 1);
+    final nextId = ids[nextIndex];
+
+    setState(() {
+      _selectedUserId = nextId;
+    });
+    _onEmployeeTap(nextId);
+    _panToEmployee(nextId);
+  }
+
+  Widget _buildPrevNextControls({required double top}) {
+    final ids = _visibleEmployeeIds();
+    if (ids.length < 2) return const SizedBox.shrink();
+
+    return Positioned(
+      top: top,
+      right: 16,
+      child: Card(
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Previous employee',
+                onPressed: _selectPrevEmployee,
+                icon: const Icon(Icons.chevron_left),
+              ),
+              IconButton(
+                tooltip: 'Next employee',
+                onPressed: _selectNextEmployee,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _focusOnSelection() {
@@ -1004,6 +1152,13 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                               'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                           subdomains: const ['a', 'b', 'c'],
                         ),
+                        CircleLayer(
+                          circles: [
+                            ..._buildActiveGeofenceCircles(),
+                            if (_buildAdminNearbyRadiusCircle() != null)
+                              _buildAdminNearbyRadiusCircle()!,
+                          ],
+                        ),
                         PolylineLayer(
                           polylines: _trails.entries.map((e) {
                             return Polyline(
@@ -1096,7 +1251,10 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                                 width: 54,
                                 height: 54,
                                 child: GestureDetector(
-                                  onTap: () => _onEmployeeTap(entry.key),
+                                  onTap: () {
+                                    _onEmployeeTap(entry.key);
+                                    _panToEmployee(entry.key);
+                                  },
                                   child: Container(
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
@@ -1137,7 +1295,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                                           : Icon(
                                               markerIcon,
                                               color: Colors.white,
-                                              size: 22,
+                                              size: 24,
                                             ),
                                     ),
                                   ),
@@ -1148,6 +1306,7 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                         ),
                       ],
                     ),
+                    _buildPrevNextControls(top: overlayTop + 108),
                     Positioned(
                       top: overlayTop,
                       right: 14,

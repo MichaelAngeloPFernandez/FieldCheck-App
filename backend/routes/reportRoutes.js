@@ -3,6 +3,8 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const { GridFSBucket, ObjectId } = require('mongodb');
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 const { protect, admin } = require('../middleware/authMiddleware');
 
 const Report = require('../models/Report');
@@ -11,6 +13,7 @@ const Task = require('../models/Task');
 const {
   createReport,
   listReports,
+  listLegacyAttachments,
   getReportById,
   replaceReportAttachments,
   updateReportStatus,
@@ -226,6 +229,118 @@ router.get('/attachments/:id', protect, async (req, res) => {
 router.get('/', protect, listReports);
 
 // Admin-only report management
+router.get('/legacy-attachments', protect, admin, listLegacyAttachments);
+router.post('/legacy-attachments/migrate', protect, admin, async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+  const dryRun = String(req.query.dryRun || '').trim().toLowerCase() === 'true';
+
+  if (!mongoose.connection || !mongoose.connection.db) {
+    return res.status(503).json({ message: 'Database not ready' });
+  }
+
+  const uploadsDir = path.join(__dirname, '..', 'uploads');
+  const legacyPrefix = '/uploads/';
+
+  const reports = await Report.find({
+    attachments: { $elemMatch: { $regex: /\/uploads\// } },
+  })
+    .sort({ submittedAt: -1 })
+    .limit(limit);
+
+  const bucket = new GridFSBucket(mongoose.connection.db, {
+    bucketName: 'reportAttachments',
+  });
+
+  let scannedReports = 0;
+  let updatedReports = 0;
+  let migratedFiles = 0;
+  let missingFiles = 0;
+
+  const details = [];
+
+  const uploadToGridFs = (absolutePath, originalName) =>
+    new Promise((resolve, reject) => {
+      const safeName = String(originalName || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storedName = `${Date.now()}-${safeName}`;
+
+      const uploadStream = bucket.openUploadStream(storedName, {
+        contentType: 'application/octet-stream',
+        metadata: {
+          originalName,
+          migratedFrom: absolutePath,
+          uploadedBy: req.user ? String(req.user._id) : undefined,
+        },
+      });
+
+      uploadStream.on('error', reject);
+      uploadStream.on('finish', (file) => {
+        const rawId = (file && file._id) || uploadStream.id;
+        const fileId = rawId ? String(rawId) : null;
+        if (!fileId) return reject(new Error('Missing GridFS id'));
+        const qp = new URLSearchParams({ filename: originalName }).toString();
+        return resolve(`/api/reports/attachments/${fileId}?${qp}`);
+      });
+
+      fs.createReadStream(absolutePath).pipe(uploadStream);
+    });
+
+  for (const rep of reports) {
+    scannedReports += 1;
+    const before = Array.isArray(rep.attachments) ? [...rep.attachments] : [];
+    let changed = false;
+
+    for (let i = 0; i < before.length; i += 1) {
+      const a = String(before[i] || '').trim();
+      if (!a.startsWith(legacyPrefix)) continue;
+
+      const rel = a.slice(legacyPrefix.length);
+      const normalizedRel = path.normalize(rel).replace(/^([\\/])+/, '');
+      const abs = path.join(uploadsDir, normalizedRel);
+
+      if (!abs.startsWith(uploadsDir)) {
+        continue;
+      }
+
+      if (!fs.existsSync(abs)) {
+        missingFiles += 1;
+        details.push({ reportId: String(rep._id), attachment: a, status: 'missing' });
+        continue;
+      }
+
+      if (dryRun) {
+        migratedFiles += 1;
+        details.push({ reportId: String(rep._id), attachment: a, status: 'dry_run' });
+        continue;
+      }
+
+      const originalName = path.basename(abs);
+      try {
+        const newUrl = await uploadToGridFs(abs, originalName);
+        rep.attachments[i] = newUrl;
+        migratedFiles += 1;
+        changed = true;
+        details.push({ reportId: String(rep._id), attachment: a, status: 'migrated', newUrl });
+      } catch (e) {
+        details.push({ reportId: String(rep._id), attachment: a, status: 'error', error: String(e?.message || e) });
+      }
+    }
+
+    if (changed) {
+      await rep.save();
+      updatedReports += 1;
+    }
+  }
+
+  return res.json({
+    dryRun,
+    scannedReports,
+    updatedReports,
+    migratedFiles,
+    missingFiles,
+    returnedDetails: details.length,
+    details,
+  });
+});
 router.get('/current', protect, admin, getCurrentReports);
 router.get('/archived', protect, admin, getArchivedReports);
 router.put('/:id/archive', protect, admin, archiveReport);

@@ -1007,6 +1007,64 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       });
                     },
                   ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              final ids = employees
+                                  .map((e) => e.id)
+                                  .where((id) => id.trim().isNotEmpty)
+                                  .where((id) {
+                                    final info = availability[id];
+                                    final employee = employees
+                                        .where((e) => e.id == id)
+                                        .cast<UserModel?>()
+                                        .firstWhere(
+                                          (_) => true,
+                                          orElse: () => null,
+                                        );
+                                    final activeCount =
+                                        [
+                                          info?.activeTasksCount ?? 0,
+                                          _employeeActiveTaskCount[id] ?? 0,
+                                          employee?.activeTaskCount ?? 0,
+                                        ].cast<int>().reduce(
+                                          (a, b) => a > b ? a : b,
+                                        );
+                                    final atLimit =
+                                        activeCount >= _taskLimitPerEmployee;
+                                    final isAlreadyAssigned =
+                                        initialSelectedEmployeeIds.contains(id);
+                                    return !atLimit || isAlreadyAssigned;
+                                  })
+                                  .toList();
+
+                              dialogSetState(() {
+                                selectedEmployeeIds
+                                  ..clear()
+                                  ..addAll(ids);
+                              });
+                            },
+                            icon: const Icon(Icons.select_all),
+                            label: const Text('Assign to All'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            dialogSetState(() {
+                              selectedEmployeeIds.clear();
+                            });
+                          },
+                          icon: const Icon(Icons.clear),
+                          label: const Text('Clear'),
+                        ),
+                      ],
+                    ),
+                  ),
                   const Divider(height: 1),
                   Expanded(
                     child: employees.isEmpty
@@ -1026,6 +1084,20 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                 _employeeActiveTaskCount[employee.id] ?? 0,
                                 employee.activeTaskCount ?? 0,
                               ].cast<int>().reduce((a, b) => a > b ? a : b);
+                              final double difficultyWeight = [
+                                _employeeDifficultyWeight[employee.id] ?? 0,
+                              ].cast<double>().reduce((a, b) => a > b ? a : b);
+                              final int overdueCount = [
+                                info?.overdueTasksCount ?? 0,
+                                _employeeOverdueCount[employee.id] ?? 0,
+                              ].cast<int>().reduce((a, b) => a > b ? a : b);
+
+                              final int workloadScore =
+                                  (activeCount * 10 +
+                                          difficultyWeight.round() * 5 +
+                                          overdueCount * 20)
+                                      .clamp(0, 9999)
+                                      .toInt();
                               final atLimit =
                                   activeCount >= _taskLimitPerEmployee;
                               final isAlreadyAssigned =
@@ -1059,6 +1131,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                     '${info.overdueTasksCount} overdue',
                                   );
                                 }
+                                parts.add('score $workloadScore');
                                 if (info.distanceMeters > 0) {
                                   if (info.distanceMeters >= 1000) {
                                     parts.add(
@@ -1072,6 +1145,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                 }
                                 subtitle =
                                     '${employee.email} · ${parts.join(' · ')}';
+                              } else {
+                                subtitle =
+                                    '${employee.email} · score $workloadScore';
                               }
 
                               if (atLimit &&

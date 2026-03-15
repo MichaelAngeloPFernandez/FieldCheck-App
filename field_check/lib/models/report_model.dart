@@ -7,6 +7,7 @@ class ReportModel {
   final String? geofenceId;
   final String content;
   final String status; // 'submitted' | 'reviewed'
+  final String? grade; // 'poor' | 'good' | 'excellent'
   final DateTime submittedAt;
   final DateTime? resubmitUntil;
   final String? employeeName;
@@ -27,6 +28,7 @@ class ReportModel {
     this.geofenceId,
     required this.content,
     required this.status,
+    this.grade,
     required this.submittedAt,
     this.resubmitUntil,
     this.employeeName,
@@ -44,8 +46,9 @@ class ReportModel {
     final task = json['task'];
     final geofence = json['geofence'];
     final resubmitRaw = json['resubmitUntil']?.toString();
-    final resubmitUntil =
-        resubmitRaw != null ? DateTime.tryParse(resubmitRaw) : null;
+    final resubmitUntil = resubmitRaw != null
+        ? DateTime.tryParse(resubmitRaw)
+        : null;
     return ReportModel(
       id: json['_id'] ?? json['id'] ?? '',
       type: json['type'] ?? 'task',
@@ -57,6 +60,7 @@ class ReportModel {
       geofenceId: geofence is Map ? geofence['_id'] : geofence,
       content: json['content'] ?? '',
       status: json['status'] ?? 'submitted',
+      grade: json['grade']?.toString(),
       submittedAt: DateTime.parse(
         json['submittedAt'] ??
             json['createdAt'] ??

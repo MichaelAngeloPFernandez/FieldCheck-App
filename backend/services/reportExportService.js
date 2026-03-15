@@ -168,6 +168,101 @@ class ReportExportService {
     return doc;
   }
 
+  static generateTaskReportPDF(rows, options = {}) {
+    const doc = new PDFDocument({
+      margin: 50,
+      size: 'A4',
+    });
+
+    doc.fontSize(20).font('Helvetica-Bold').text('Task Reports', { align: 'center' });
+    doc.moveDown(0.5);
+
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+    if (options.dateRange) {
+      doc.text(`Period: ${options.dateRange}`, { align: 'center' });
+    }
+    doc.moveDown(1);
+
+    const tableTop = doc.y;
+    const col1 = 50;
+    const col2 = 150;
+    const col3 = 300;
+    const col4 = 380;
+    const col5 = 450;
+    const col6 = 510;
+
+    doc.fontSize(10).font('Helvetica-Bold');
+    doc.text('Employee', col1, tableTop);
+    doc.text('Task', col2, tableTop);
+    doc.text('Submitted', col3, tableTop);
+    doc.text('Status', col4, tableTop);
+    doc.text('Grade', col5, tableTop);
+    doc.text('Overdue', col6, tableTop);
+
+    doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
+
+    let yPosition = tableTop + 25;
+    const pageHeight = doc.page.height;
+    const bottomMargin = 50;
+
+    doc.fontSize(9).font('Helvetica');
+
+    rows.forEach((r) => {
+      if (yPosition > pageHeight - bottomMargin) {
+        doc.addPage();
+        yPosition = 50;
+
+        doc.fontSize(10).font('Helvetica-Bold');
+        doc.text('Employee', col1, yPosition);
+        doc.text('Task', col2, yPosition);
+        doc.text('Submitted', col3, yPosition);
+        doc.text('Status', col4, yPosition);
+        doc.text('Grade', col5, yPosition);
+        doc.text('Overdue', col6, yPosition);
+        doc.moveTo(50, yPosition + 15).lineTo(550, yPosition + 15).stroke();
+        yPosition += 25;
+        doc.font('Helvetica');
+      }
+
+      const employee = r.employeeName || r.employeeEmail || 'N/A';
+      const taskTitle = r.taskTitle || 'N/A';
+      const submitted = r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '-';
+      const status = r.reportStatus || '-';
+      const grade = r.grade || '-';
+      const overdue = r.taskIsOverdue ? 'YES' : 'NO';
+
+      doc.text(employee, col1, yPosition, { width: col2 - col1 - 5 });
+      doc.text(taskTitle, col2, yPosition, { width: col3 - col2 - 5 });
+      doc.text(submitted, col3, yPosition, { width: col4 - col3 - 5 });
+      doc.text(status, col4, yPosition, { width: col5 - col4 - 5 });
+      doc.text(grade, col5, yPosition, { width: col6 - col5 - 5 });
+      doc.text(overdue, col6, yPosition, { width: 40 });
+
+      yPosition += 18;
+
+      const attachmentsRaw = (r.attachments || '').toString().trim();
+      if (attachmentsRaw) {
+        const lines = attachmentsRaw.split(/\r?\n/).filter(Boolean);
+        if (lines.length) {
+          const toShow = lines.slice(0, 3);
+          doc.fontSize(8).fillColor('gray');
+          doc.text(`Attachments: ${toShow.join(' | ')}${lines.length > 3 ? ' | ...' : ''}`, 50, yPosition, {
+            width: 500,
+          });
+          doc.fillColor('black').fontSize(9);
+          yPosition += 14;
+        }
+      }
+    });
+
+    doc.fontSize(8).font('Helvetica');
+    doc.text('FieldCheck - Task Reports', 50, pageHeight - 30, { align: 'center' });
+
+    doc.end();
+    return doc;
+  }
+
   /**
    * Generate PDF report for task records
    * @param {Array} tasks - Task records
@@ -362,6 +457,122 @@ class ReportExportService {
     }
 
     // Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    return buffer;
+  }
+
+  static async generateTaskReportExcel(rows, options = {}) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Task Reports', {
+      pageSetup: { paperSize: 9, orientation: 'landscape' },
+    });
+
+    const maxAttachments = rows.reduce((max, r) => {
+      const list = Array.isArray(r.attachments)
+        ? r.attachments
+        : String(r.attachments || '')
+            .split(/\r?\n/)
+            .filter(Boolean);
+      return Math.max(max, list.length);
+    }, 0);
+
+    const baseHeaders = [
+      'Report ID',
+      'Employee',
+      'Employee Email',
+      'Employee Code',
+      'Task',
+      'Task Difficulty',
+      'Submitted At',
+      'Report Status',
+      'Grade',
+      'Task Due Date',
+      'Overdue',
+      'Attachment Count',
+    ];
+    const attachmentHeaders = Array.from({ length: maxAttachments }, (_, i) => `Attachment ${i + 1}`);
+    const headers = [...baseHeaders, ...attachmentHeaders];
+
+    const lastColLetter = worksheet.getColumn(headers.length).letter;
+
+    worksheet.mergeCells(`A1:${lastColLetter}1`);
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'Task Reports';
+    titleCell.font = { bold: true, size: 14 };
+    titleCell.alignment = { horizontal: 'center', vertical: 'center' };
+
+    worksheet.mergeCells(`A2:${lastColLetter}2`);
+    const metaCell = worksheet.getCell('A2');
+    metaCell.value = `Generated: ${new Date().toLocaleString()}`;
+    metaCell.font = { size: 10 };
+    metaCell.alignment = { horizontal: 'center' };
+
+    const headerRow = worksheet.addRow(headers);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2688d4' } };
+    headerRow.alignment = { horizontal: 'center', vertical: 'center', wrapText: true };
+
+    rows.forEach((r) => {
+      const attachments = Array.isArray(r.attachments)
+        ? r.attachments
+        : String(r.attachments || '')
+            .split(/\r?\n/)
+            .filter(Boolean);
+
+      const submittedAt = r.submittedAt ? new Date(r.submittedAt) : null;
+      const dueDate = r.taskDueDate ? new Date(r.taskDueDate) : null;
+
+      const row = worksheet.addRow([
+        r.reportId || '',
+        r.employeeName || '',
+        r.employeeEmail || '',
+        r.employeeCode || '',
+        r.taskTitle || '',
+        r.taskDifficulty || '',
+        submittedAt || '',
+        r.reportStatus || '',
+        r.grade || '',
+        dueDate || '',
+        r.taskIsOverdue ? 'YES' : 'NO',
+        typeof r.attachmentCount === 'number' ? r.attachmentCount : attachments.length,
+        ...Array.from({ length: maxAttachments }, (_, i) => attachments[i] || ''),
+      ]);
+
+      row.alignment = { vertical: 'center', wrapText: true };
+
+      const submittedCell = row.getCell(baseHeaders.indexOf('Submitted At') + 1);
+      submittedCell.numFmt = 'yyyy-mm-dd hh:mm';
+      const dueCell = row.getCell(baseHeaders.indexOf('Task Due Date') + 1);
+      dueCell.numFmt = 'yyyy-mm-dd';
+
+      const overdueCell = row.getCell(baseHeaders.indexOf('Overdue') + 1);
+      if (r.taskIsOverdue) {
+        overdueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+      }
+
+      const firstAttachmentCol = baseHeaders.length + 1;
+      attachments.slice(0, maxAttachments).forEach((url, idx) => {
+        const cell = row.getCell(firstAttachmentCol + idx);
+        const value = String(url || '').trim();
+        if (!value) return;
+
+        const displayText = value.split('/').pop() || value;
+        cell.value = { text: displayText, hyperlink: value };
+        cell.font = { color: { argb: 'FF0563C1' }, underline: true };
+      });
+    });
+
+    worksheet.columns = headers.map((h, idx) => {
+      if (h.startsWith('Attachment ')) return { width: 28 };
+      if (idx === 0) return { width: 26 };
+      if (h === 'Employee') return { width: 20 };
+      if (h === 'Employee Email') return { width: 26 };
+      if (h === 'Task') return { width: 30 };
+      if (h === 'Submitted At') return { width: 20 };
+      if (h === 'Task Due Date') return { width: 15 };
+      return { width: 15 };
+    });
+
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer;
   }

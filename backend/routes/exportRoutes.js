@@ -18,6 +18,10 @@ router.get('/attendance/pdf', exportAttendancePDF);
 router.get('/attendance/excel', exportAttendanceExcel);
 
 // Task export routes
+// NOTE: `/task/*` is used by the mobile/web export preview screen for task *reports*.
+// `/tasks/*` remains the legacy task list export.
+router.get('/task/pdf', exportTasksPDF);
+router.get('/task/excel', exportTasksExcel);
 router.get('/tasks/pdf', exportTasksPDF);
 router.get('/tasks/excel', exportTasksExcel);
 
