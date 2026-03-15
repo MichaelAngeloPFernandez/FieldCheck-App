@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:field_check/screens/enhanced_attendance_screen.dart';
 import 'package:field_check/screens/history_screen.dart';
-import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/settings_screen.dart';
 import 'package:field_check/screens/employee_task_list_screen.dart';
 import 'package:field_check/screens/employee_profile_screen.dart';
@@ -548,7 +547,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() {
           _selectedIndex = index;
         });
-        if (index == 5) {
+        if (index == 4) {
           _clearTasksBadge();
         }
       },
@@ -574,20 +573,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
               icon: Icons.location_on,
               label: 'Attendance',
             ),
-            _buildDrawerNavItem(index: 1, icon: Icons.map, label: 'Map'),
-            _buildDrawerNavItem(index: 2, icon: Icons.person, label: 'Profile'),
+            _buildDrawerNavItem(index: 1, icon: Icons.person, label: 'Profile'),
             _buildDrawerNavItem(
-              index: 3,
+              index: 2,
               icon: Icons.history,
               label: 'History',
             ),
             _buildDrawerNavItem(
-              index: 4,
+              index: 3,
               icon: Icons.settings,
               label: 'Settings',
             ),
             _buildDrawerNavItem(
-              index: 5,
+              index: 4,
               icon: Icons.task,
               label: 'Tasks',
               leading: _buildBadge(
@@ -649,7 +647,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Navigation labels for better debugging
   static const List<String> _navLabels = [
     'Attendance',
-    'Map',
     'Profile',
     'History',
     'Settings',
@@ -667,7 +664,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary;
     final List<Widget> screens = [
       const EnhancedAttendanceScreen(),
-      const MapScreen(),
       const EmployeeProfileScreen(),
       const HistoryScreen(),
       const SettingsScreen(),
@@ -830,7 +826,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _selectedIndex = index;
                 });
 
-                if (index == 5) {
+                if (index == 4) {
                   // When user opens Tasks tab, refresh and clear badge noise.
                   _clearTasksBadge();
                 }
@@ -841,11 +837,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icon(Icons.location_on),
                   label: 'Attendance',
                   tooltip: 'Check in/out',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.map),
-                  label: 'Map',
-                  tooltip: 'View geofences',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.person),
