@@ -2390,12 +2390,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       '')
                                   .toString();
                           if (convoId.trim().isNotEmpty) {
-                            setSheetState(() {
-                              notif.isRead = true;
-                            });
-                            try {
-                              await ChatService().markConversationRead(convoId);
-                            } catch (_) {}
+                            markReadByIds(
+                              {notif.id},
+                              read: true,
+                              notifySheet: (fn) => setSheetState(fn),
+                            );
+                            // Persist conversation read state without blocking
+                            // navigation.
+                            ChatService()
+                                .markConversationRead(convoId)
+                                .ignore();
                             if (!mounted) return;
                             Navigator.of(context).push(
                               MaterialPageRoute(

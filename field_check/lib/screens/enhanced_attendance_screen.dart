@@ -132,6 +132,11 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   }
 
   void _openChat() {
+    if (mounted && _unreadMessageCount > 0) {
+      setState(() {
+        _unreadMessageCount = 0;
+      });
+    }
     Navigator.of(context).pushNamed('/chat');
   }
 
@@ -139,11 +144,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
     final theme = Theme.of(context);
     final badgeCount = _unreadMessageCount;
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return _buildSurfaceCard(
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         onTap: _openChat,
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -155,6 +158,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.18),
+                  ),
                 ),
                 child: Icon(
                   Icons.chat_bubble_outline,
@@ -196,6 +202,13 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                   decoration: BoxDecoration(
                     color: theme.colorScheme.error,
                     borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: theme.colorScheme.error.withValues(alpha: 0.22),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: Text(
                     badgeCount > 99 ? '99+' : badgeCount.toString(),
