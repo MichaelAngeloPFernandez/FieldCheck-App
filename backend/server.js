@@ -1169,8 +1169,6 @@ app.get('/api/uploads/proxy', (req, res) => {
   }
 });
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 const flutterWebBuildPath = path.join(__dirname, '..', 'field_check', 'build', 'web');
 let cachedAssetManifestJson = null;
 
@@ -1335,12 +1333,13 @@ app.use('/api/employee-tracking', employeeTrackingRoutes);
 app.use('/api/location', locationRoutes);
 
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+  if (req.path.startsWith('/api')) {
     return next();
   }
   if (path.extname(req.path || '') !== '') {
     return res.status(404).end();
   }
+
   res.setHeader('Cache-Control', 'no-cache');
   return res.sendFile(path.join(flutterWebBuildPath, 'index.html'));
 });
