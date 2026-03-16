@@ -64,6 +64,42 @@ class TaskService {
     return <Map<String, dynamic>>[];
   }
 
+  Future<List<Task>> listTasks({
+    bool? archived,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final params = <String, String>{};
+    if (archived != null) {
+      params['archived'] = archived ? 'true' : 'false';
+    }
+    if (startDate != null) {
+      params['startDate'] = startDate.toIso8601String();
+    }
+    if (endDate != null) {
+      params['endDate'] = endDate.toIso8601String();
+    }
+
+    final uri = Uri.parse(
+      _baseUrl,
+    ).replace(queryParameters: params.isEmpty ? null : params);
+
+    final response = await http
+        .get(uri, headers: await _headers(jsonContent: false))
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load tasks');
+    }
+
+    if (response.body.isEmpty) return <Task>[];
+    final decoded = json.decode(response.body);
+    if (decoded is List) {
+      return decoded.map((e) => Task.fromJson(e)).toList();
+    }
+    return <Task>[];
+  }
+
   Future<int> markNotificationIdsRead(List<String> ids) async {
     final clean = ids
         .map((e) => e.trim())
@@ -116,6 +152,35 @@ class TaskService {
     final decoded = json.decode(response.body);
     if (decoded is Map<String, dynamic>) {
       final raw = decoded['updated'];
+      if (raw is int) return raw;
+      if (raw is num) return raw.toInt();
+    }
+    return 0;
+  }
+
+  Future<int> deleteNotificationIds(List<String> ids) async {
+    final clean = ids
+        .map((e) => e.trim())
+        .where((e) => e.length == 24)
+        .toList();
+    if (clean.isEmpty) return 0;
+
+    final response = await http
+        .post(
+          Uri.parse('$_appNotificationsBaseUrl/delete'),
+          headers: await _headers(),
+          body: json.encode({'ids': clean}),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete notifications');
+    }
+
+    if (response.body.isEmpty) return 0;
+    final decoded = json.decode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      final raw = decoded['deleted'];
       if (raw is int) return raw;
       if (raw is num) return raw.toInt();
     }

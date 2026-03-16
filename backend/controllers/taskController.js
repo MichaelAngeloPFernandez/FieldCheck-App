@@ -199,13 +199,23 @@ const getTask = asyncHandler(async (req, res) => {
 });
 
 const getTasks = asyncHandler(async (req, res) => {
-  const { archived } = req.query;
+  const { archived, startDate, endDate } = req.query;
 
   const filter = {};
   if (archived === 'true') {
     filter.isArchived = true;
   } else if (archived === 'false' || archived === undefined) {
     filter.isArchived = { $ne: true };
+  }
+
+  if (startDate || endDate) {
+    filter.createdAt = {};
+    if (startDate) {
+      filter.createdAt.$gte = new Date(startDate);
+    }
+    if (endDate) {
+      filter.createdAt.$lte = new Date(endDate);
+    }
   }
 
   const tasks = await Task.find(filter).sort({ createdAt: -1 });

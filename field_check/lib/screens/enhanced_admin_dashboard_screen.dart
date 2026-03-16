@@ -12,6 +12,7 @@ import '../utils/app_theme.dart';
 import '../utils/http_util.dart';
 import '../widgets/app_page.dart';
 import '../widgets/app_widgets.dart';
+import 'admin_calendar_analytics_screen.dart';
 
 class EnhancedAdminDashboardScreen extends StatefulWidget {
   const EnhancedAdminDashboardScreen({super.key});
@@ -252,6 +253,34 @@ class _EnhancedAdminDashboardScreenState
     });
   }
 
+  Widget _buildNotificationBadge(BuildContext context, int count) {
+    final theme = Theme.of(context);
+    final text = count > 99 ? '99+' : '$count';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.error,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 1),
+      ),
+      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            text,
+            maxLines: 1,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onError,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadTaskStatistics() async {
     try {
       final stats = await _taskMonitoringService.getTaskStatistics();
@@ -336,29 +365,25 @@ class _EnhancedAdminDashboardScreenState
             ),
             if (_notificationBadgeCount > 0)
               Positioned(
-                right: AppTheme.sm,
-                top: AppTheme.sm,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.error,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  constraints: const BoxConstraints(
-                    minWidth: 20,
-                    minHeight: 20,
-                  ),
-                  child: Text(
-                    _notificationBadgeCount.toString(),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onError,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+                right: 6,
+                top: 6,
+                child: _buildNotificationBadge(
+                  context,
+                  _notificationBadgeCount,
                 ),
               ),
           ],
+        ),
+        IconButton(
+          tooltip: 'Calendar analytics',
+          icon: const Icon(Icons.calendar_month_outlined),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminCalendarAnalyticsScreen(),
+              ),
+            );
+          },
         ),
         IconButton(
           tooltip: 'Refresh',

@@ -7,6 +7,7 @@ import 'package:field_check/screens/history_screen.dart';
 import 'package:field_check/screens/settings_screen.dart';
 import 'package:field_check/screens/employee_task_list_screen.dart';
 import 'package:field_check/screens/employee_profile_screen.dart';
+import 'package:field_check/screens/employee_task_details_screen.dart';
 import 'package:field_check/providers/auth_provider.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
@@ -886,6 +887,9 @@ class _EmployeeNotificationsSheetState
   bool _loading = true;
   List<Map<String, dynamic>> _items = <Map<String, dynamic>>[];
 
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -918,6 +922,153 @@ class _EmployeeNotificationsSheetState
     widget.onChanged();
   }
 
+  Future<void> _markUnread(String id) async {
+    try {
+      await widget.taskService.markNotificationIdsUnread([id]);
+    } catch (_) {}
+    await _load();
+    widget.onChanged();
+  }
+
+  Future<void> _deleteIds(Set<String> ids) async {
+    if (ids.isEmpty) return;
+    final count = ids.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete notifications?'),
+        content: Text(
+          count == 1
+              ? 'This will remove it from the inbox.'
+              : 'This will remove $count notifications from the inbox.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await widget.taskService.deleteNotificationIds(ids.toList());
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+    await _load();
+    widget.onChanged();
+  }
+
+  Future<void> _bulkMark({required bool read}) async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+    try {
+      if (read) {
+        await widget.taskService.markNotificationIdsRead(ids);
+      } else {
+        await widget.taskService.markNotificationIdsUnread(ids);
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+    await _load();
+    widget.onChanged();
+  }
+
+  void _toggleSelection(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _toggleSelectAll() {
+    setState(() {
+      if (_items.isNotEmpty && _selectedIds.length == _items.length) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds
+          ..clear()
+          ..addAll(
+            _items
+                .map((e) => (e['id'] ?? '').toString())
+                .where((id) => id.length == 24),
+          );
+      }
+    });
+  }
+
+  Future<void> _openNotification(Map<String, dynamic> n) async {
+    final scope = (n['scope'] ?? '').toString();
+    final action = (n['action'] ?? '').toString();
+    final payload = n['payload'];
+
+    String readPayload(String key) {
+      if (payload is Map) {
+        return (payload[key] ?? '').toString();
+      }
+      return '';
+    }
+
+    // Mark read optimistically if needed.
+    final id = (n['id'] ?? '').toString();
+    final readAt = n['readAt'];
+    final isRead = readAt != null && readAt.toString().isNotEmpty;
+    if (!isRead && id.length == 24) {
+      widget.taskService.markNotificationIdsRead([id]).ignore();
+      widget.onChanged();
+    }
+
+    if (scope == 'tasks' && action == 'task_assigned') {
+      final taskId = readPayload('taskId');
+      if (taskId.length == 24) {
+        try {
+          final task = await TaskService().getTaskById(taskId);
+          if (!mounted) return;
+          Navigator.of(context).pop();
+
+          final employeeId = (UserService().currentUser?.id ?? '').toString();
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  EmployeeTaskDetailsScreen(task: task, employeeId: employeeId),
+            ),
+          );
+          return;
+        } catch (_) {
+          // fall through
+        }
+      }
+    }
+
+    if (scope == 'messages' && action == 'chatMessage') {
+      final convoId = readPayload('conversationId');
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      final encoded = Uri.encodeComponent(convoId);
+      Navigator.of(context).pushNamed('/chat?conversationId=$encoded');
+      return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -928,17 +1079,73 @@ class _EmployeeNotificationsSheetState
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                'Notifications',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                _selectionMode
+                    ? '${_selectedIds.length} selected'
+                    : 'Notifications',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
-            IconButton(
-              tooltip: 'Refresh',
-              onPressed: _loading ? null : _load,
-              icon: const Icon(Icons.refresh),
-            ),
+            if (_selectionMode) ...[
+              IconButton(
+                tooltip: 'Select all',
+                onPressed: _loading ? null : _toggleSelectAll,
+                icon: const Icon(Icons.select_all),
+              ),
+              IconButton(
+                tooltip: 'Mark read',
+                onPressed: _loading || _selectedIds.isEmpty
+                    ? null
+                    : () => _bulkMark(read: true),
+                icon: const Icon(Icons.done_all),
+              ),
+              IconButton(
+                tooltip: 'Mark unread',
+                onPressed: _loading || _selectedIds.isEmpty
+                    ? null
+                    : () => _bulkMark(read: false),
+                icon: const Icon(Icons.mark_email_unread_outlined),
+              ),
+              IconButton(
+                tooltip: 'Delete',
+                onPressed: _loading || _selectedIds.isEmpty
+                    ? null
+                    : () => _deleteIds(_selectedIds),
+                icon: const Icon(Icons.delete_outline),
+              ),
+              IconButton(
+                tooltip: 'Cancel',
+                onPressed: () {
+                  setState(() {
+                    _selectionMode = false;
+                    _selectedIds.clear();
+                  });
+                },
+                icon: const Icon(Icons.close),
+              ),
+            ] else ...[
+              IconButton(
+                tooltip: 'Select',
+                onPressed: _loading || _items.isEmpty
+                    ? null
+                    : () {
+                        setState(() {
+                          _selectionMode = true;
+                          _selectedIds.clear();
+                        });
+                      },
+                icon: const Icon(Icons.checklist),
+              ),
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: _loading ? null : _load,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 10),
@@ -972,13 +1179,40 @@ class _EmployeeNotificationsSheetState
                 final isRead = readAt != null && readAt.toString().isNotEmpty;
                 final id = (n['id'] ?? '').toString();
 
+                final selected = _selectedIds.contains(id);
+
                 IconData icon = Icons.notifications;
                 if (scope == 'tasks') icon = Icons.assignment_turned_in;
                 if (scope == 'geofences') icon = Icons.location_on;
                 if (scope == 'announcements') icon = Icons.campaign;
 
                 return ListTile(
-                  leading: Icon(icon),
+                  onLongPress: id.length == 24
+                      ? () {
+                          if (!_selectionMode) {
+                            setState(() {
+                              _selectionMode = true;
+                              _selectedIds.clear();
+                              _selectedIds.add(id);
+                            });
+                          }
+                        }
+                      : null,
+                  onTap: () {
+                    if (_selectionMode) {
+                      if (id.length == 24) _toggleSelection(id);
+                      return;
+                    }
+                    _openNotification(n);
+                  },
+                  leading: _selectionMode
+                      ? Checkbox(
+                          value: selected,
+                          onChanged: id.length == 24
+                              ? (_) => _toggleSelection(id)
+                              : null,
+                        )
+                      : Icon(icon),
                   title: Text(
                     title,
                     style: TextStyle(
@@ -986,14 +1220,21 @@ class _EmployeeNotificationsSheetState
                     ),
                   ),
                   subtitle: message.trim().isEmpty ? null : Text(message),
-                  trailing: isRead
+                  trailing: _selectionMode
                       ? null
-                      : TextButton(
-                          onPressed: id.length == 24
-                              ? () => _markRead(id)
-                              : null,
-                          child: const Text('Mark read'),
-                        ),
+                      : (isRead
+                            ? TextButton(
+                                onPressed: id.length == 24
+                                    ? () => _markUnread(id)
+                                    : null,
+                                child: const Text('Mark unread'),
+                              )
+                            : TextButton(
+                                onPressed: id.length == 24
+                                    ? () => _markRead(id)
+                                    : null,
+                                child: const Text('Mark read'),
+                              )),
                 );
               },
             ),

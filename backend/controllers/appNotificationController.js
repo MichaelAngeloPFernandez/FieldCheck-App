@@ -81,6 +81,36 @@ const markRead = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Delete notifications by IDs
+// @route   POST /api/app-notifications/delete
+// @access  Private
+const deleteByIds = asyncHandler(async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const clean = ids
+    .map((id) => String(id || '').trim())
+    .filter((id) => id.length === 24);
+
+  if (!clean.length) {
+    return res.json({ deleted: 0 });
+  }
+
+  const result = await AppNotification.deleteMany({
+    recipientUser: req.user._id,
+    _id: { $in: clean },
+  });
+
+  await appNotificationService.emitUnreadCounts(req.user._id);
+
+  res.json({
+    deleted:
+      typeof result.deletedCount === 'number'
+        ? result.deletedCount
+        : typeof result.n === 'number'
+          ? result.n
+          : 0,
+  });
+});
+
 // @desc    Mark notifications as unread by IDs
 // @route   POST /api/app-notifications/mark-unread
 // @access  Private
@@ -144,4 +174,5 @@ module.exports = {
   markRead,
   markUnread,
   markReadScope,
+  deleteByIds,
 };

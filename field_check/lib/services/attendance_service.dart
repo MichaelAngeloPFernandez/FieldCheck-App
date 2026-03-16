@@ -187,6 +187,8 @@ class AttendanceService {
 
   Future<List<AttendanceRecord>> getAttendanceRecords({
     DateTime? date,
+    DateTime? startDate,
+    DateTime? endDate,
     String? locationId,
     String? status,
     String? employeeId,
@@ -196,7 +198,15 @@ class AttendanceService {
       final token = await _userService.getToken();
       final queryParams = <String, String>{};
 
+      if (startDate != null) {
+        queryParams['startDate'] = startDate.toIso8601String();
+      }
+      if (endDate != null) {
+        queryParams['endDate'] = endDate.toIso8601String();
+      }
+
       if (date != null) {
+        // Backward-compatible day query
         queryParams['startDate'] = date.toIso8601String();
         queryParams['endDate'] = date
             .add(const Duration(days: 1))

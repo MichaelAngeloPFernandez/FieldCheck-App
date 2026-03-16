@@ -1035,17 +1035,6 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
             icon: const Icon(Icons.refresh),
             onPressed: _refreshTasks,
           ),
-          IconButton(
-            tooltip: 'Open Map',
-            icon: const Icon(Icons.map),
-            onPressed: () {
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                '/dashboard',
-                (route) => false,
-                arguments: 1,
-              );
-            },
-          ),
         ],
       ),
       body: RefreshIndicator(

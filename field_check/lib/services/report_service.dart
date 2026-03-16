@@ -23,6 +23,39 @@ class ReportService {
     }
   }
 
+  Future<List<ReportModel>> listReportsRange({
+    String? type,
+    bool? archived,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final queryParams = <String, String>{};
+    if (type != null && type.trim().isNotEmpty) {
+      queryParams['type'] = type.trim();
+    }
+    if (archived != null) {
+      queryParams['archived'] = archived ? 'true' : 'false';
+    }
+    if (startDate != null) {
+      queryParams['startDate'] = startDate.toIso8601String();
+    }
+    if (endDate != null) {
+      queryParams['endDate'] = endDate.toIso8601String();
+    }
+
+    final response = await HttpUtil().get(
+      _basePath,
+      queryParams: queryParams.isEmpty ? null : queryParams,
+      headers: await _headers(jsonContent: false),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch reports');
+    }
+    final list = json.decode(response.body) as List<dynamic>;
+    return list.map((e) => ReportModel.fromJson(e)).toList();
+  }
+
   Future<http.Response> _sendMultipartWithAuthRetry(
     http.MultipartRequest request,
   ) async {
