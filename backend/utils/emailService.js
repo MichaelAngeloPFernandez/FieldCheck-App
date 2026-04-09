@@ -203,7 +203,10 @@ const sendEmail = async (options) => {
   const config = buildTransportConfig();
   logEmailModeOnce(config);
 
-  if (!config.disableEmail && process.env.NODE_ENV === 'production' && !config.hasSmtp) {
+  const resendApiKey = (process.env.RESEND_API_KEY || '').toString().trim();
+  const hasResend = Boolean(resendApiKey);
+
+  if (!config.disableEmail && process.env.NODE_ENV === 'production' && !config.hasSmtp && !hasResend) {
     throw new Error('Email service not configured');
   }
 
@@ -274,6 +277,21 @@ const sendEmail = async (options) => {
   const preferGmailApi = provider === 'gmail_api' || provider === 'gmailapi' || provider === 'gmail-api';
 
   try {
+    if (!config.disableEmail && hasResend && !preferGmailApi) {
+      const from = mailOptions.from;
+      const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
+      await withTimeout(
+        _sendWithResend({ from, to, subject: mailOptions.subject, html }),
+        12000,
+        'resend',
+      );
+      console.log('Email: delivered via Resend', {
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+      });
+      return { provider: 'resend' };
+    }
+
     if (!config.disableEmail && preferGmailApi) {
       const from = mailOptions.from;
       const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
