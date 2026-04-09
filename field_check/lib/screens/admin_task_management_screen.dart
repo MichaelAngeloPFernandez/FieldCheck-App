@@ -1714,6 +1714,14 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                           visualDensity: VisualDensity.compact,
                                         ),
                                       ],
+                                      if (task.isLate) ...[
+                                        const SizedBox(width: 4),
+                                        Chip(
+                                          label: const Text('Late'),
+                                          visualDensity: VisualDensity.compact,
+                                          backgroundColor: Colors.orangeAccent,
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),

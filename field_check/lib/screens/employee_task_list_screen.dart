@@ -890,6 +890,12 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                       color: theme.colorScheme.error,
                       icon: Icons.warning_amber_rounded,
                     ),
+                  if (task.isLate)
+                    _buildStatusPill(
+                      label: 'Late',
+                      color: Colors.orange.shade800,
+                      icon: Icons.history_toggle_off,
+                    ),
                   if (_isDueSoon(task))
                     _buildStatusPill(
                       label: 'Due soon',

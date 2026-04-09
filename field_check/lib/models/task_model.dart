@@ -58,6 +58,7 @@ class Task {
   final List<String>? teamMembers; // List of team member IDs
   final bool isArchived;
   final bool isOverdue;
+  final bool isLate;
   final List<TaskChecklistItem> checklist;
   final String? blockReason;
 
@@ -88,6 +89,7 @@ class Task {
     this.teamMembers,
     this.isArchived = false,
     this.isOverdue = false,
+    this.isLate = false,
     this.checklist = const [],
     this.blockReason,
   });
@@ -193,6 +195,7 @@ class Task {
       teamMembers: teamMembers,
       isArchived: json['isArchived'] ?? false,
       isOverdue: json['isOverdue'] ?? false,
+      isLate: json['isLate'] ?? false,
       checklist: checklist,
       blockReason: json['blockReason'],
     );
@@ -226,6 +229,7 @@ class Task {
       'teamMembers': teamMembers,
       'isArchived': isArchived,
       'isOverdue': isOverdue,
+      'isLate': isLate,
       'checklist': checklist.map((c) => c.toJson()).toList(),
       'blockReason': blockReason,
     };
@@ -258,6 +262,7 @@ class Task {
     List<String>? teamMembers,
     bool? isArchived,
     bool? isOverdue,
+    bool? isLate,
     List<TaskChecklistItem>? checklist,
     String? blockReason,
   }) {
@@ -288,6 +293,7 @@ class Task {
       teamMembers: teamMembers ?? this.teamMembers,
       isArchived: isArchived ?? this.isArchived,
       isOverdue: isOverdue ?? this.isOverdue,
+      isLate: isLate ?? this.isLate,
       checklist: checklist ?? this.checklist,
       blockReason: blockReason ?? this.blockReason,
     );

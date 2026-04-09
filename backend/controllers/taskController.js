@@ -410,11 +410,30 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
   res.json(
     tasks.map((t) => {
       const a = assignmentByTaskId.get(t._id.toString());
+      const now = new Date();
+      const dueDate = t && t.dueDate ? new Date(t.dueDate) : null;
+      const assigneeStatus = a ? normalizeTaskStatus(a.status) : '';
+      const isAssigneeCompleted = assigneeStatus === 'completed';
+      const isOverdueForAssignee =
+        !!dueDate &&
+        dueDate < now &&
+        !isAssigneeCompleted &&
+        !t.isArchived;
+      const isLateForAssignee =
+        !!dueDate &&
+        isAssigneeCompleted &&
+        a &&
+        a.completedAt &&
+        new Date(a.completedAt) > dueDate;
+
       const base = {
         ...toTaskJson(t, a ? a._id.toString() : undefined),
         userTaskStatus: a ? a.status : undefined,
         userTaskAssignedAt: a && a.assignedAt ? a.assignedAt.toISOString() : undefined,
         userTaskCompletedAt: a && a.completedAt ? a.completedAt.toISOString() : undefined,
+        // Override task-level computed flags with per-assignee truth.
+        isOverdue: isOverdueForAssignee,
+        isLate: !!isLateForAssignee,
       };
 
       if (a && (!Array.isArray(t.checklist) || t.checklist.length === 0)) {
