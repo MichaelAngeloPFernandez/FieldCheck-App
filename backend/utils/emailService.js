@@ -275,24 +275,41 @@ const sendEmail = async (options) => {
 
   const provider = (process.env.EMAIL_PROVIDER || '').toString().trim().toLowerCase();
   const preferGmailApi = provider === 'gmail_api' || provider === 'gmailapi' || provider === 'gmail-api';
+  const hasGmailApiEnv =
+    (process.env.CLIENT_ID || '').toString().trim() &&
+    (process.env.CLIENT_SECRET || '').toString().trim() &&
+    (process.env.REFRESH_TOKEN || '').toString().trim() &&
+    (process.env.EMAIL_USER || process.env.EMAIL_USERNAME || '').toString().trim();
 
   try {
     if (!config.disableEmail && hasResend && !preferGmailApi) {
       const from = mailOptions.from;
       const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
-      await withTimeout(
-        _sendWithResend({ from, to, subject: mailOptions.subject, html }),
-        12000,
-        'resend',
-      );
-      console.log('Email: delivered via Resend', {
-        to: mailOptions.to,
-        subject: mailOptions.subject,
-      });
-      return { provider: 'resend' };
+
+      try {
+        await withTimeout(
+          _sendWithResend({ from, to, subject: mailOptions.subject, html }),
+          12000,
+          'resend',
+        );
+        console.log('Email: delivered via Resend', {
+          to: mailOptions.to,
+          subject: mailOptions.subject,
+        });
+        return { provider: 'resend' };
+      } catch (resendErr) {
+        const hasFallback = config.hasSmtp || preferGmailApi || !!hasGmailApiEnv;
+        if (!hasFallback) throw resendErr;
+
+        console.warn('Email: Resend failed; falling back to alternate provider', {
+          to: mailOptions.to,
+          subject: mailOptions.subject,
+          error: resendErr && resendErr.message ? resendErr.message : String(resendErr),
+        });
+      }
     }
 
-    if (!config.disableEmail && preferGmailApi) {
+    if (!config.disableEmail && (preferGmailApi || hasGmailApiEnv)) {
       const from = mailOptions.from;
       const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
       await withTimeout(
