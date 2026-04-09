@@ -184,19 +184,19 @@ class RealtimeService {
     // User account events for real-time sync
     _socket!.on('userCreated', (data) {
       print('RealtimeService: User created: $data');
-      _userController.add({'type': 'created', 'data': data});
+      _userController.add({'action': 'created', 'data': data});
       _eventController.add({'type': 'user', 'action': 'created', 'data': data});
     });
 
     _socket!.on('userDeleted', (data) {
       print('RealtimeService: User deleted: $data');
-      _userController.add({'type': 'deleted', 'data': data});
+      _userController.add({'action': 'deleted', 'data': data});
       _eventController.add({'type': 'user', 'action': 'deleted', 'data': data});
     });
 
     _socket!.on('userDeactivated', (data) {
       print('RealtimeService: User deactivated: $data');
-      _userController.add({'type': 'deactivated', 'data': data});
+      _userController.add({'action': 'deactivated', 'data': data});
       _eventController.add({
         'type': 'user',
         'action': 'deactivated',
@@ -206,7 +206,7 @@ class RealtimeService {
 
     _socket!.on('userReactivated', (data) {
       print('RealtimeService: User reactivated: $data');
-      _userController.add({'type': 'reactivated', 'data': data});
+      _userController.add({'action': 'reactivated', 'data': data});
       _eventController.add({
         'type': 'user',
         'action': 'reactivated',

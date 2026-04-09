@@ -383,36 +383,6 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
       ),
       body: Column(
         children: [
-          // Export format selection
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _isExporting ? null : _exportToPDF,
-                  icon: const Icon(Icons.picture_as_pdf),
-                  label: const Text('Export PDF'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey,
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _isExporting ? null : _exportToCSV,
-                  icon: const Icon(Icons.table_chart),
-                  label: const Text('Export Excel'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
           if (_isExporting)
             const Padding(
               padding: EdgeInsets.all(16.0),
@@ -841,6 +811,48 @@ class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
                   ],
                 ),
               ),
+            ),
+          ),
+
+          // Export buttons at the bottom — confirm after reviewing data
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ElevatedButton.icon(
+                      onPressed: _isExporting ? null : _exportToPDF,
+                      icon: const Icon(Icons.picture_as_pdf),
+                      label: const Text('Export PDF'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.grey,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: ElevatedButton.icon(
+                      onPressed: _isExporting ? null : _exportToCSV,
+                      icon: const Icon(Icons.table_chart),
+                      label: const Text('Export Excel'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.grey,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
