@@ -789,6 +789,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed('/forgot-password'),
+                    icon: const Icon(Icons.lock_reset),
+                    label: const Text('Change password'),
+                  ),
+                ),
+                const SizedBox(height: AppTheme.md),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
                     onPressed: _logout,
                     icon: const Icon(Icons.logout),
                     label: const Text('Logout'),

@@ -700,6 +700,18 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     children: [
                       ListTile(
                         contentPadding: EdgeInsets.zero,
+                        title: const Text('Change Password'),
+                        subtitle: const Text(
+                          'Send yourself a password reset link',
+                        ),
+                        leading: const Icon(Icons.lock_reset),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () =>
+                            Navigator.of(context).pushNamed('/forgot-password'),
+                      ),
+                      const Divider(height: 18),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
                         title: const Text('Manage Employees'),
                         subtitle: const Text(
                           'Add, edit, or remove employee accounts',
