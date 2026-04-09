@@ -30,6 +30,7 @@ import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/models/geofence_model.dart';
 import 'package:field_check/screens/chat_conversation_screen.dart';
+import 'package:field_check/screens/admin_chat_screen.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/http_util.dart';
@@ -1102,8 +1103,70 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         if (_seenNotificationIds.contains(id)) continue;
         _seenNotificationIds.add(id);
 
-        final title = (raw['title'] ?? 'New message').toString();
-        final message = (raw['message'] ?? '').toString();
+        final payload = raw['payload'];
+        final merged = <String, dynamic>{...raw};
+        if (payload is Map) {
+          try {
+            merged.addAll(Map<String, dynamic>.from(payload));
+          } catch (_) {}
+        }
+
+        String senderEmp =
+            (merged['senderEmployeeId'] ??
+                    merged['senderEmployeeNo'] ??
+                    merged['senderEmployeeCode'] ??
+                    merged['employeeNo'] ??
+                    merged['employeeCode'] ??
+                    merged['employeeId'] ??
+                    '')
+                .toString()
+                .trim();
+        String senderName =
+            (merged['senderName'] ??
+                    merged['senderFullName'] ??
+                    merged['employeeName'] ??
+                    merged['fullName'] ??
+                    '')
+                .toString()
+                .trim();
+        final username = (merged['senderUsername'] ?? merged['username'] ?? '')
+            .toString()
+            .trim();
+
+        final messageContent =
+            (merged['messageText'] ??
+                    merged['chatMessage'] ??
+                    merged['message'] ??
+                    '')
+                .toString()
+                .trim();
+
+        if ((senderEmp.isEmpty || senderName.isEmpty) &&
+            (merged['title'] ?? '').toString().trim().isNotEmpty) {
+          final t = (merged['title'] ?? '').toString();
+          final empMatch = RegExp(r'\(([^)]+)\)').firstMatch(t);
+          if (senderEmp.isEmpty && empMatch != null) {
+            senderEmp = (empMatch.group(1) ?? '').toString().trim();
+          }
+          if (senderName.isEmpty) {
+            final nameMatch = RegExp(r'from\s+(.+?)(\s*\(|$)').firstMatch(t);
+            if (nameMatch != null) {
+              senderName = (nameMatch.group(1) ?? '').toString().trim();
+            }
+          }
+        }
+
+        final displayUser = username.isNotEmpty
+            ? username
+            : (senderName.isNotEmpty ? senderName : 'User');
+
+        final displayName = senderName.isNotEmpty
+            ? senderName
+            : (username.isNotEmpty ? username : 'Unknown');
+
+        final title = 'New Chat Message Received';
+        final message =
+            'Employee No: ${senderEmp.isNotEmpty ? senderEmp : '-'}\nEmployee Name: $displayName\nUser: $displayUser\nMessage: "${messageContent.isNotEmpty ? messageContent : '-'}"';
         final createdAtRaw = (raw['createdAt'] ?? '').toString();
         final parsedTs = DateTime.tryParse(createdAtRaw);
 
@@ -1287,7 +1350,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ? Icons.access_time
                 : (notif.type == 'report'
                       ? Icons.description
-                      : Icons.notifications),
+                      : (notif.type == 'messages'
+                            ? Icons.chat_bubble_outline
+                            : Icons.notifications)),
             color: color,
             size: 18,
           ),
@@ -1673,10 +1738,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
-            ),
             if (notif.type == 'report')
               ElevatedButton.icon(
                 onPressed: () {
@@ -1720,6 +1781,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 icon: const Icon(Icons.insights),
                 label: const Text('Analytics'),
               ),
+            if (notif.type == 'messages')
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AdminChatScreen()),
+                  );
+                },
+                child: const Text('Go to Chats'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
           ],
         ),
       );
@@ -1853,6 +1929,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final email = (user?.email ?? '').toLowerCase();
       final username = (user?.username ?? '').toLowerCase();
       final employeeCode = (user?.employeeId ?? '').toLowerCase();
+
       if (!name.contains(q) &&
           !email.contains(q) &&
           !username.contains(q) &&
@@ -2061,9 +2138,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     int scoreFor(String userId) {
       final user = _employees[userId];
       final name = (user?.name ?? '').trim().toLowerCase();
-      final email = (user?.email ?? '').trim().toLowerCase();
-      final username = (user?.username ?? '').trim().toLowerCase();
-      final code = (user?.employeeId ?? '').trim().toLowerCase();
+      final email = (user?.email ?? '').toLowerCase();
+      final username = (user?.username ?? '').toLowerCase();
+      final code = (user?.employeeId ?? '').toLowerCase();
 
       if (code == q || email == q || username == q) return 400;
       if (name == q) return 350;
@@ -2522,7 +2599,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             markReadByIds(
                               {notif.id},
                               read: true,
-                              notifySheet: (fn) => setSheetState(fn),
+                              notifySheet: setSheetState,
                             );
                             // Persist conversation read state without blocking
                             // navigation.
@@ -2595,7 +2672,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 alpha: 0.75,
                               ),
                             ),
-                            maxLines: 2,
+                            maxLines: notif.type == 'messages' ? 4 : 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
@@ -3129,8 +3206,63 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         final scope = (merged['scope'] ?? '').toString().trim();
         if (scope == 'messages') {
-          final title = (merged['title'] ?? 'New message').toString();
-          final message = (merged['message'] ?? '').toString();
+          String senderEmp =
+              (merged['senderEmployeeId'] ??
+                      merged['senderEmployeeNo'] ??
+                      merged['senderEmployeeCode'] ??
+                      merged['employeeNo'] ??
+                      merged['employeeCode'] ??
+                      merged['employeeId'] ??
+                      '')
+                  .toString()
+                  .trim();
+          String senderName =
+              (merged['senderName'] ??
+                      merged['senderFullName'] ??
+                      merged['employeeName'] ??
+                      merged['fullName'] ??
+                      '')
+                  .toString()
+                  .trim();
+          final username =
+              (merged['senderUsername'] ?? merged['username'] ?? '')
+                  .toString()
+                  .trim();
+
+          final messageContent =
+              (merged['messageText'] ??
+                      merged['chatMessage'] ??
+                      merged['message'] ??
+                      '')
+                  .toString()
+                  .trim();
+
+          if ((senderEmp.isEmpty || senderName.isEmpty) &&
+              (merged['title'] ?? '').toString().trim().isNotEmpty) {
+            final t = (merged['title'] ?? '').toString();
+            final empMatch = RegExp(r'\(([^)]+)\)').firstMatch(t);
+            if (senderEmp.isEmpty && empMatch != null) {
+              senderEmp = (empMatch.group(1) ?? '').toString().trim();
+            }
+            if (senderName.isEmpty) {
+              final nameMatch = RegExp(r'from\s+(.+?)(\s*\(|$)').firstMatch(t);
+              if (nameMatch != null) {
+                senderName = (nameMatch.group(1) ?? '').toString().trim();
+              }
+            }
+          }
+
+          final displayUser = username.isNotEmpty
+              ? username
+              : (senderName.isNotEmpty ? senderName : 'User');
+
+          final displayName = senderName.isNotEmpty
+              ? senderName
+              : (username.isNotEmpty ? username : 'Unknown');
+
+          final title = 'New Chat Message Received';
+          final message =
+              'Employee No: ${senderEmp.isNotEmpty ? senderEmp : '-'}\nEmployee Name: $displayName\nUser: $displayUser\nMessage: "${messageContent.isNotEmpty ? messageContent : '-'}"';
           final createdAtRaw =
               (merged['createdAt'] ?? merged['timestamp'] ?? '').toString();
           final parsedTs = DateTime.tryParse(createdAtRaw);
@@ -3770,6 +3902,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading: const Icon(Icons.chat_bubble_outline),
+                title: const Text('Chat'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AdminChatScreen()),
+                  );
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('Admin Info'),
@@ -5005,13 +5148,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final content = LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final crossAxisCount = width >= 980
+        final columns = width >= 900
+            ? 6
+            : width >= 720
+            ? 4
+            : width >= 520
             ? 3
-            : width >= 640
+            : width >= 380
             ? 2
             : 1;
 
         final actions = <Widget>[
+          _buildQuickActionButton(
+            icon: Icons.chat_bubble_outline,
+            label: 'Admin Chat',
+            color: Colors.indigo,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminChatScreen()),
+              );
+            },
+          ),
           _buildQuickActionButton(
             icon: Icons.people,
             label: 'Manage Employees',
@@ -5078,10 +5235,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
+            crossAxisCount: columns,
             crossAxisSpacing: 10,
             mainAxisSpacing: 10,
-            childAspectRatio: crossAxisCount == 1 ? 4.2 : 3.4,
+            childAspectRatio: columns == 1 ? 4.2 : 3.4,
           ),
           children: actions,
         );

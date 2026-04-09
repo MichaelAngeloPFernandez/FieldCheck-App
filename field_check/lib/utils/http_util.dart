@@ -5,7 +5,9 @@ import '../config/api_config.dart';
 import '../services/user_service.dart';
 
 class HttpUtil {
-  final String _baseUrl = ApiConfig.baseUrl;
+  final String _baseUrl;
+
+  HttpUtil({String? baseUrl}) : _baseUrl = (baseUrl ?? ApiConfig.baseUrl);
 
   Future<Map<String, String>> _authHeaders(Map<String, String>? headers) async {
     final prefs = await SharedPreferences.getInstance();

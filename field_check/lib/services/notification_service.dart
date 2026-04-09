@@ -3,7 +3,7 @@ import 'package:field_check/services/user_service.dart';
 import 'dart:convert';
 
 class NotificationService {
-  static const String _basePath = '/api/notifications';
+  static const String _urgentBasePath = '/api/notifications';
 
   Future<Map<String, String>> _headers() async {
     final token = await UserService().getToken();
@@ -30,7 +30,7 @@ class NotificationService {
 
     final response = await HttpUtil()
         .post(
-          '$_basePath/urgent-multichannel',
+          '$_urgentBasePath/urgent-multichannel',
           body: body,
           headers: await _headers(),
         )
@@ -56,7 +56,7 @@ class NotificationService {
   }) async {
     final response = await HttpUtil()
         .post(
-          '$_basePath/urgent-multichannel',
+          '$_urgentBasePath/urgent-multichannel',
           body: <String, dynamic>{
             'message': message,
             'sendEmail': sendEmail,

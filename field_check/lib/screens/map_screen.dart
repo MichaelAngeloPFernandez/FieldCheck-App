@@ -9,8 +9,6 @@ import 'package:field_check/services/geofence_service.dart';
 import 'package:field_check/models/geofence_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/services/user_service.dart';
-import 'package:field_check/services/task_service.dart';
-import 'package:field_check/models/task_model.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/services/realtime_service.dart';
@@ -26,7 +24,6 @@ class _MapScreenState extends State<MapScreen> {
   final LocationService _locationService = LocationService();
   final GeofenceService _geofenceService = GeofenceService();
   final UserService _userService = UserService();
-  final TaskService _taskService = TaskService();
   final LocationSyncService _locationSyncService = LocationSyncService();
   final RealtimeService _realtimeService = RealtimeService();
 
@@ -34,15 +31,10 @@ class _MapScreenState extends State<MapScreen> {
   List<Geofence> _geofences = [];
   List<Geofence> _assignedGeofences = [];
   List<Geofence> _allGeofences = [];
-  List<Task> _tasksAssigned = [];
-  List<Task> _tasksAll = [];
-  List<Task> _visibleTasks = [];
   String? _userModelId;
   bool _showAssignedOnly = true;
   bool _outsideAnyGeofence = false;
   bool _loading = true;
-  bool _showTasks = false;
-  String _taskFilter = 'all';
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _locationSearchController =
@@ -53,9 +45,6 @@ class _MapScreenState extends State<MapScreen> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   late MapController _mapController;
-
-  // Geofence-based filtering
-  Geofence? _selectedGeofence;
 
   // Real-time location streaming
   late StreamSubscription<dynamic>? _locationSubscription;
@@ -122,9 +111,6 @@ class _MapScreenState extends State<MapScreen> {
                   }
                   return Text('error: $value');
                 },
-              ),
-              Text(
-                'tasks: assigned=${_tasksAssigned.length} all=${_tasksAll.length} vis=${_visibleTasks.length}',
               ),
             ],
           ),
@@ -224,40 +210,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildFilterChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onSelected,
-  }) {
-    final theme = Theme.of(context);
-    final activeColor = theme.colorScheme.primary;
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (value) {
-        if (!value) return;
-        onSelected();
-      },
-      labelStyle: theme.textTheme.labelMedium?.copyWith(
-        fontWeight: FontWeight.w700,
-        color: selected
-            ? activeColor
-            : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-      ),
-      selectedColor: activeColor.withValues(alpha: 0.16),
-      backgroundColor: theme.colorScheme.surface,
-      shape: StadiumBorder(
-        side: BorderSide(
-          color: selected
-              ? activeColor.withValues(alpha: 0.45)
-              : theme.dividerColor.withValues(alpha: 0.35),
-        ),
-      ),
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
   Widget _buildStatusBanner({
     required IconData icon,
     required String message,
@@ -352,26 +304,6 @@ class _MapScreenState extends State<MapScreen> {
             : null;
       });
     });
-  }
-
-  /// Compute GEO TASKS: tasks assigned to geofences
-  List<Task> _computeGeoTasks() {
-    // If a specific geofence is selected, show only its tasks
-    if (_selectedGeofence != null && _selectedGeofence!.id != null) {
-      return _tasksAll
-          .where((t) => t.geofenceId == _selectedGeofence!.id)
-          .where((t) {
-            if (_taskFilter == 'all') return true;
-            return t.status == _taskFilter;
-          })
-          .toList();
-    }
-
-    // Otherwise, show all tasks that have a geofence assignment
-    return _tasksAll.where((t) => t.geofenceId != null).where((t) {
-      if (_taskFilter == 'all') return true;
-      return t.status == _taskFilter;
-    }).toList();
   }
 
   @override
@@ -481,18 +413,8 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
-    if (_showTasks) {
-      for (final task in _visibleTasks) {
-        final lat = task.latitude;
-        final lng = task.longitude;
-        if (lat != null && lng != null) {
-          extendBounds(LatLng(lat, lng));
-        }
-      }
-    } else {
-      for (final geofence in _geofences) {
-        extendBounds(LatLng(geofence.latitude, geofence.longitude));
-      }
+    for (final geofence in _geofences) {
+      extendBounds(LatLng(geofence.latitude, geofence.longitude));
     }
 
     if (_userLatLng != null) {
@@ -532,11 +454,6 @@ class _MapScreenState extends State<MapScreen> {
                 );
                 return d <= g.radius;
               });
-            }
-
-            // Update GEO TASKS when tasks are visible
-            if (_showTasks) {
-              _visibleTasks = _computeGeoTasks();
             }
           });
         },
@@ -605,21 +522,13 @@ class _MapScreenState extends State<MapScreen> {
         });
       }
 
-      // Fetch tasks (assigned and all), filter to tasks that have location
       setState(() {
         _geofences = visible;
         _allGeofences = fences;
         _assignedGeofences = assigned;
         _userLatLng = user;
         _outsideAnyGeofence = outside;
-        // Keep any existing tasks; they will be refreshed in the background.
-        if (_showTasks) {
-          _visibleTasks = _computeGeoTasks();
-        }
       });
-
-      // Load tasks in the background so the map/geofences appear quickly.
-      _loadTasksInBackground();
     } catch (e) {
       // If location fails, still show geofences
       final fences = await _geofenceService.fetchGeofences();
@@ -665,14 +574,10 @@ class _MapScreenState extends State<MapScreen> {
         });
       }
 
-      // Even if tasks fail, safely set empty lists
       setState(() {
         _geofences = visible;
         _allGeofences = fences;
         _assignedGeofences = assigned;
-        _visibleTasks = [];
-        _tasksAssigned = [];
-        _tasksAll = [];
         _userLatLng = fallbackUser;
         _outsideAnyGeofence = outside;
       });
@@ -686,49 +591,6 @@ class _MapScreenState extends State<MapScreen> {
         });
       }
     }
-  }
-
-  Future<void> _loadTasksInBackground() async {
-    try {
-      List<Task> tasksAssigned = [];
-      List<Task> tasksAll = [];
-      try {
-        if (_userModelId != null) {
-          tasksAssigned = await _taskService.fetchAssignedTasks(
-            _userModelId!,
-            archived: false,
-          );
-        }
-        tasksAll = await _taskService.fetchAllTasks();
-      } catch (_) {}
-
-      // Include tasks that have coordinates OR are assigned to a geofence
-      List<Task> withLocAssigned = tasksAssigned
-          .where(
-            (t) =>
-                !t.isArchived &&
-                ((t.latitude != null && t.longitude != null) ||
-                    t.geofenceId != null),
-          )
-          .toList();
-      List<Task> withLocAll = tasksAll
-          .where(
-            (t) =>
-                !t.isArchived &&
-                ((t.latitude != null && t.longitude != null) ||
-                    t.geofenceId != null),
-          )
-          .toList();
-
-      if (!mounted) return;
-      setState(() {
-        _tasksAssigned = withLocAssigned;
-        _tasksAll = withLocAll;
-        if (_showTasks) {
-          _visibleTasks = _computeGeoTasks();
-        }
-      });
-    } catch (_) {}
   }
 
   @override
@@ -779,77 +641,23 @@ class _MapScreenState extends State<MapScreen> {
                             'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                         subdomains: const ['a', 'b', 'c'],
                       ),
-                      if (!_showTasks && _geofences.isNotEmpty)
+                      if (_geofences.isNotEmpty)
                         CircleLayer(
-                          circles: _geofences
-                              .where(
-                                (g) =>
-                                    _searchQuery.isEmpty ||
-                                    g.name.toLowerCase().contains(
-                                      _searchQuery,
-                                    ) ||
-                                    g.address.toLowerCase().contains(
-                                      _searchQuery,
-                                    ),
-                              )
-                              .map((g) {
-                                final center = LatLng(g.latitude, g.longitude);
-                                final color = g.isActive
-                                    ? Colors.green
-                                    : Theme.of(context).colorScheme.onSurface
-                                          .withValues(alpha: 0.55);
-                                return CircleMarker(
-                                  point: center,
-                                  color: color.withOpacity(0.2),
-                                  borderColor: color,
-                                  borderStrokeWidth: 2,
-                                  useRadiusInMeter: true,
-                                  radius: g.radius,
-                                );
-                              })
-                              .toList(),
-                        ),
-                      // Task markers - only show tasks with explicit coordinates
-                      if (_showTasks && _visibleTasks.isNotEmpty)
-                        MarkerLayer(
-                          markers: _visibleTasks
-                              .where(
-                                (t) =>
-                                    t.latitude != null && t.longitude != null,
-                              )
-                              .map((t) {
-                                final point = LatLng(t.latitude!, t.longitude!);
-                                final iconColor = t.status == 'completed'
-                                    ? Colors.green
-                                    : (t.status == 'in_progress'
-                                          ? Colors.orange
-                                          : Colors.deepPurple);
-                                return Marker(
-                                  point: point,
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(
-                                    Icons.assignment,
-                                    color: iconColor,
-                                    size: 36,
-                                  ),
-                                );
-                              })
-                              .toList(),
-                        ),
-                      // Accuracy circle around user location
-                      if (_userLatLng != null && _currentAccuracy != null)
-                        CircleLayer(
-                          circles: [
-                            CircleMarker(
-                              point: _userLatLng!,
-                              color: Colors.blue.withOpacity(0.1),
-                              borderColor: Colors.blue.withOpacity(0.5),
-                              borderStrokeWidth: 1,
+                          circles: _geofences.map((g) {
+                            final center = LatLng(g.latitude, g.longitude);
+                            final color = g.isActive
+                                ? Colors.green
+                                : Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.55);
+                            return CircleMarker(
+                              point: center,
+                              color: color.withOpacity(0.2),
+                              borderColor: color,
+                              borderStrokeWidth: 2,
                               useRadiusInMeter: true,
-                              radius: _currentAccuracy!,
-                            ),
-                          ],
+                              radius: g.radius,
+                            );
+                          }).toList(),
                         ),
                       // User location marker
                       if (_userLatLng != null)
@@ -1128,32 +936,6 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                       const SizedBox(height: 8),
                       Tooltip(
-                        message: _showTasks
-                            ? 'Show geofence areas'
-                            : 'Show GEO TASKS',
-                        child: FloatingActionButton.small(
-                          heroTag: 'toggleView',
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.surface,
-                          foregroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary,
-                          onPressed: () {
-                            setState(() {
-                              _showTasks = !_showTasks;
-                              if (_showTasks) {
-                                _visibleTasks = _computeGeoTasks();
-                              }
-                            });
-                          },
-                          child: Icon(
-                            _showTasks ? Icons.location_on : Icons.assignment,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Tooltip(
                         message: _showAssignedOnly
                             ? 'Show all geofences'
                             : 'Show assigned only',
@@ -1168,17 +950,9 @@ class _MapScreenState extends State<MapScreen> {
                           onPressed: () {
                             setState(() {
                               _showAssignedOnly = !_showAssignedOnly;
-                              if (_showTasks) {
-                                _visibleTasks = _computeGeoTasks();
-                              } else {
-                                _geofences = _showAssignedOnly
-                                    ? (_assignedGeofences.isNotEmpty
-                                          ? _assignedGeofences
-                                          : _allGeofences
-                                                .where((g) => g.isActive)
-                                                .toList())
-                                    : _allGeofences;
-                              }
+                              _geofences = _showAssignedOnly
+                                  ? _assignedGeofences
+                                  : _allGeofences;
                             });
                           },
                           child: Icon(
@@ -1197,15 +971,14 @@ class _MapScreenState extends State<MapScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (!_showTasks && _outsideAnyGeofence)
+                      if (_outsideAnyGeofence)
                         _buildStatusBanner(
                           icon: Icons.error,
                           message: 'You are outside the geofence area',
                           background: Theme.of(context).colorScheme.error,
                           foreground: Theme.of(context).colorScheme.onError,
                         ),
-                      if (!_showTasks && _outsideAnyGeofence)
-                        const SizedBox(height: 8),
+                      if (_outsideAnyGeofence) const SizedBox(height: 8),
                       _buildStatusBanner(
                         icon: _gpsConnected
                             ? Icons.gps_fixed
@@ -1230,16 +1003,14 @@ class _MapScreenState extends State<MapScreen> {
                         child: Row(
                           children: [
                             Icon(
-                              _showTasks ? Icons.assignment : Icons.location_on,
+                              Icons.location_on,
                               size: 16,
                               color: Theme.of(context).colorScheme.primary,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                _showTasks
-                                    ? 'View: GEO TASKS'
-                                    : 'View: Geofences',
+                                'View: Geofences',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       fontWeight: FontWeight.w600,
@@ -1251,8 +1022,7 @@ class _MapScreenState extends State<MapScreen> {
                               ),
                             ),
                             _buildStatusPill(
-                              label:
-                                  '${_showTasks ? _visibleTasks.length : _geofences.length} shown',
+                              label: '${_geofences.length} shown',
                               color: Theme.of(context).colorScheme.primary,
                             ),
                           ],
@@ -1370,9 +1140,7 @@ class _MapScreenState extends State<MapScreen> {
                                         ).colorScheme.onSurface,
                                       ),
                                   decoration: InputDecoration(
-                                    hintText: _showTasks
-                                        ? 'Search tasks...'
-                                        : 'Search geofences...',
+                                    hintText: 'Search geofences...',
                                     hintStyle: TextStyle(
                                       color: Theme.of(context)
                                           .colorScheme
@@ -1440,194 +1208,12 @@ class _MapScreenState extends State<MapScreen> {
                               ),
                               const SizedBox(height: 16),
                               _buildSectionHeader(
-                                _showTasks ? 'GEO TASKS' : 'Nearby Geofences',
-                                subtitle: _showTasks
-                                    ? 'Tasks with coordinates or assigned areas.'
-                                    : 'Tap a geofence to focus the map view.',
-                                trailing: Wrap(
-                                  spacing: 8,
-                                  children: [
-                                    _buildFilterChip(
-                                      label: 'Geofences',
-                                      selected: !_showTasks,
-                                      onSelected: () => setState(() {
-                                        _showTasks = false;
-                                      }),
-                                    ),
-                                    _buildFilterChip(
-                                      label: 'Tasks',
-                                      selected: _showTasks,
-                                      onSelected: () => setState(() {
-                                        _showTasks = true;
-                                        _visibleTasks = _computeGeoTasks();
-                                      }),
-                                    ),
-                                  ],
-                                ),
+                                'Nearby Geofences',
+                                subtitle:
+                                    'Tap a geofence to focus the map view.',
                               ),
                               const SizedBox(height: 12),
-                              if (_showTasks)
-                                SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children: [
-                                      _buildFilterChip(
-                                        label: 'All',
-                                        selected: _taskFilter == 'all',
-                                        onSelected: () => setState(() {
-                                          _taskFilter = 'all';
-                                          if (_showTasks) {
-                                            _visibleTasks = _computeGeoTasks();
-                                          }
-                                        }),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      _buildFilterChip(
-                                        label: 'Pending',
-                                        selected: _taskFilter == 'pending',
-                                        onSelected: () => setState(() {
-                                          _taskFilter = 'pending';
-                                          if (_showTasks) {
-                                            _visibleTasks = _computeGeoTasks();
-                                          }
-                                        }),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      _buildFilterChip(
-                                        label: 'In Progress',
-                                        selected: _taskFilter == 'in_progress',
-                                        onSelected: () => setState(() {
-                                          _taskFilter = 'in_progress';
-                                          if (_showTasks) {
-                                            _visibleTasks = _computeGeoTasks();
-                                          }
-                                        }),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      _buildFilterChip(
-                                        label: 'Completed',
-                                        selected: _taskFilter == 'completed',
-                                        onSelected: () => setState(() {
-                                          _taskFilter = 'completed';
-                                          if (_showTasks) {
-                                            _visibleTasks = _computeGeoTasks();
-                                          }
-                                        }),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              const SizedBox(height: 12),
-                              if (_showTasks && _visibleTasks.isNotEmpty)
-                                ..._visibleTasks.map((task) {
-                                  final geofence = _allGeofences.firstWhere(
-                                    (g) => g.id == task.geofenceId,
-                                    orElse: () => Geofence(
-                                      name: 'Unknown Area',
-                                      address: '',
-                                      latitude: _userLatLng?.latitude ?? 0.0,
-                                      longitude: _userLatLng?.longitude ?? 0.0,
-                                      radius: 50,
-                                    ),
-                                  );
-                                  final statusLabel = task.status.replaceAll(
-                                    '_',
-                                    ' ',
-                                  );
-                                  final statusColor = task.status == 'completed'
-                                      ? Colors.green
-                                      : (task.status == 'in_progress'
-                                            ? Colors.orange
-                                            : Theme.of(
-                                                context,
-                                              ).colorScheme.primary);
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 6,
-                                    ),
-                                    child: _buildSurfaceCard(
-                                      padding: EdgeInsets.zero,
-                                      child: ListTile(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 8,
-                                            ),
-                                        title: Text(
-                                          task.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        subtitle: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              task.description,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodySmall
-                                                  ?.copyWith(
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurface
-                                                        .withValues(
-                                                          alpha: 0.75,
-                                                        ),
-                                                  ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.place,
-                                                  size: 14,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurface
-                                                      .withValues(alpha: 0.65),
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Expanded(
-                                                  child: Text(
-                                                    geofence.name,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .bodySmall
-                                                        ?.copyWith(
-                                                          color:
-                                                              Theme.of(context)
-                                                                  .colorScheme
-                                                                  .onSurface
-                                                                  .withValues(
-                                                                    alpha: 0.75,
-                                                                  ),
-                                                        ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                        trailing: _buildStatusPill(
-                                          label: statusLabel.toUpperCase(),
-                                          color: statusColor,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
-                              if (!_showTasks && _geofences.isNotEmpty)
+                              if (_geofences.isNotEmpty)
                                 ..._geofences
                                     .where(
                                       (g) =>
@@ -1640,11 +1226,6 @@ class _MapScreenState extends State<MapScreen> {
                                           ),
                                     )
                                     .map((g) {
-                                      final statusColor = g.isActive
-                                          ? Colors.green
-                                          : Theme.of(
-                                              context,
-                                            ).colorScheme.tertiary;
                                       return Padding(
                                         padding: const EdgeInsets.symmetric(
                                           vertical: 6,
@@ -1709,7 +1290,11 @@ class _MapScreenState extends State<MapScreen> {
                                               label: g.isActive
                                                   ? 'ACTIVE'
                                                   : 'OFF',
-                                              color: statusColor,
+                                              color: g.isActive
+                                                  ? Colors.green
+                                                  : Theme.of(
+                                                      context,
+                                                    ).colorScheme.tertiary,
                                               icon: g.isActive
                                                   ? Icons.check_circle
                                                   : Icons.pause_circle,
@@ -1725,19 +1310,12 @@ class _MapScreenState extends State<MapScreen> {
                                       );
                                     }),
                               const SizedBox(height: 16),
-                              if (_showTasks && _visibleTasks.isEmpty)
-                                _buildStateCard(
-                                  icon: Icons.assignment_outlined,
-                                  title: 'No GEO TASKS found',
-                                  message:
-                                      'Try adjusting filters or check assigned areas.',
-                                ),
-                              if (!_showTasks && _geofences.isEmpty)
+                              if (_geofences.isEmpty)
                                 _buildStateCard(
                                   icon: Icons.location_off,
                                   title: 'No geofences available',
                                   message:
-                                      'You will see assigned geofences here once available.',
+                                      'No geofences are assigned or visible at the moment.',
                                 ),
                               const SizedBox(height: 24),
                             ],

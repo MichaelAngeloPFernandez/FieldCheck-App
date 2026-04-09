@@ -33,17 +33,59 @@ async function _assertCanChat(reqUser, otherUserId) {
   return other;
 }
 
+async function _assertEmployeeMayStartConversationWithAdmin(reqUser) {
+  if (!reqUser || reqUser.role !== 'employee') return;
+  const onlineAdmin = await User.findOne({ role: 'admin', isOnline: true, isActive: true })
+    .select('_id')
+    .lean();
+  if (!onlineAdmin) {
+    const err = new Error('No admin is currently online');
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
 async function _findOrCreateConversation(userIdA, userIdB) {
   const ids = [String(userIdA), String(userIdB)].sort();
-  let convo = await Conversation.findOne({ participants: { $all: ids, $size: 2 } });
+  let convo = await Conversation.findOne({
+    participants: { $all: ids, $size: 2 },
+    isGroup: false,
+  });
   if (convo) return convo;
 
   convo = await Conversation.create({
     participants: ids,
+    isGroup: false,
+    title: '',
+    createdBy: null,
     lastMessageAt: null,
     lastMessagePreview: '',
   });
   return convo;
+}
+
+function _asBool(v) {
+  if (v == null) return null;
+  const s = String(v).trim().toLowerCase();
+  if (s === 'true' || s === '1' || s === 'yes') return true;
+  if (s === 'false' || s === '0' || s === 'no') return false;
+  return null;
+}
+
+function _isArchivedFor(convo, userId) {
+  try {
+    return (convo.archivedBy || []).some((r) => String(r.userId) === String(userId));
+  } catch (_) {
+    return false;
+  }
+}
+
+function _isDeletedFor(convo, userId) {
+  try {
+    return (convo.deletedBy || []).some((r) => String(r.userId) === String(userId));
+  } catch (_) {
+    return false;
+  }
 }
 
 // @desc    List conversations for current user
@@ -51,7 +93,16 @@ async function _findOrCreateConversation(userIdA, userIdB) {
 // @access  Private
 const listConversations = asyncHandler(async (req, res) => {
   const userId = String(req.user._id);
-  const convos = await Conversation.find({ participants: userId })
+  const archivedQuery = _asBool(req.query.archived);
+  const includeArchived = archivedQuery === true;
+
+  const convos = await Conversation.find({
+    participants: userId,
+    'deletedBy.userId': { $ne: new mongoose.Types.ObjectId(userId) },
+    ...(includeArchived
+      ? { 'archivedBy.userId': new mongoose.Types.ObjectId(userId) }
+      : { 'archivedBy.userId': { $ne: new mongoose.Types.ObjectId(userId) } }),
+  })
     .sort({ lastMessageAt: -1, updatedAt: -1 })
     .limit(100)
     .lean();
@@ -89,10 +140,12 @@ const listConversations = asyncHandler(async (req, res) => {
   res.json(
     convos.map((c) => {
       const otherId = (c.participants || []).map(String).find((p) => p !== userId);
-      const other = otherId ? otherById.get(otherId) : null;
+      const other = (!c.isGroup && otherId) ? otherById.get(otherId) : null;
       return {
         id: String(c._id),
         participants: (c.participants || []).map(String),
+        isGroup: c.isGroup === true,
+        title: c.title || '',
         otherUser: other
           ? {
               id: String(other._id),
@@ -108,6 +161,7 @@ const listConversations = asyncHandler(async (req, res) => {
         lastMessageAt: c.lastMessageAt ? new Date(c.lastMessageAt).toISOString() : null,
         lastMessagePreview: c.lastMessagePreview || '',
         unreadCount: unreadByConvo.get(String(c._id)) || 0,
+        archived: _isArchivedFor(c, userId),
       };
     }),
   );
@@ -123,10 +177,308 @@ const getOrCreateConversation = asyncHandler(async (req, res) => {
     throw new Error('otherUserId is required');
   }
 
+  await _assertEmployeeMayStartConversationWithAdmin(req.user);
   await _assertCanChat(req.user, otherUserId);
 
   const convo = await _findOrCreateConversation(req.user._id, otherUserId);
   res.status(200).json({ id: String(convo._id) });
+});
+
+// @desc    List online admins (for employee CTA)
+// @route   GET /api/chat/admins/online
+// @access  Private
+const listOnlineAdmins = asyncHandler(async (req, res) => {
+  const admins = await User.find({ role: 'admin', isOnline: true, isActive: true })
+    .select('_id name employeeId email phone role avatarUrl isOnline')
+    .limit(50)
+    .lean();
+
+  res.json(
+    (admins || []).map((a) => ({
+      id: String(a._id),
+      name: a.name,
+      employeeId: a.employeeId,
+      email: a.email,
+      phone: a.phone,
+      role: a.role,
+      avatarUrl: a.avatarUrl,
+      isOnline: a.isOnline === true,
+    })),
+  );
+});
+
+// @desc    Archive conversation for current user
+// @route   POST /api/chat/conversations/:id/archive
+// @access  Private
+const archiveConversation = asyncHandler(async (req, res) => {
+  const convoId = _asId(req.params.id);
+  if (!convoId) {
+    res.status(400);
+    throw new Error('Invalid conversation id');
+  }
+
+  const convo = await Conversation.findById(convoId).select('participants isGroup').lean();
+  if (!convo) {
+    res.status(404);
+    throw new Error('Conversation not found');
+  }
+
+  const userId = String(req.user._id);
+  if (!(convo.participants || []).map(String).includes(userId)) {
+    res.status(403);
+    throw new Error('Not allowed');
+  }
+
+  // Employees cannot archive group chats.
+  if (req.user.role === 'employee' && convo.isGroup === true) {
+    res.status(403);
+    throw new Error('Not allowed');
+  }
+
+  await Conversation.findByIdAndUpdate(convoId, {
+    $pull: { deletedBy: { userId: req.user._id } },
+    $addToSet: { archivedBy: { userId: req.user._id, at: new Date() } },
+  });
+
+  res.json({ ok: true });
+});
+
+// @desc    Unarchive conversation for current user
+// @route   POST /api/chat/conversations/:id/unarchive
+// @access  Private
+const unarchiveConversation = asyncHandler(async (req, res) => {
+  const convoId = _asId(req.params.id);
+  if (!convoId) {
+    res.status(400);
+    throw new Error('Invalid conversation id');
+  }
+
+  const convo = await Conversation.findById(convoId).select('participants isGroup').lean();
+  if (!convo) {
+    res.status(404);
+    throw new Error('Conversation not found');
+  }
+
+  const userId = String(req.user._id);
+  if (!(convo.participants || []).map(String).includes(userId)) {
+    res.status(403);
+    throw new Error('Not allowed');
+  }
+
+  if (req.user.role === 'employee' && convo.isGroup === true) {
+    res.status(403);
+    throw new Error('Not allowed');
+  }
+
+  await Conversation.findByIdAndUpdate(convoId, {
+    $pull: { archivedBy: { userId: req.user._id } },
+  });
+
+  res.json({ ok: true });
+});
+
+// @desc    Delete (hide) conversation for current user
+// @route   POST /api/chat/conversations/:id/delete
+// @access  Private
+const deleteConversation = asyncHandler(async (req, res) => {
+  const convoId = _asId(req.params.id);
+  if (!convoId) {
+    res.status(400);
+    throw new Error('Invalid conversation id');
+  }
+
+  const convo = await Conversation.findById(convoId).select('participants isGroup').lean();
+  if (!convo) {
+    res.status(404);
+    throw new Error('Conversation not found');
+  }
+
+  const userId = String(req.user._id);
+  if (!(convo.participants || []).map(String).includes(userId)) {
+    res.status(403);
+    throw new Error('Not allowed');
+  }
+
+  // Employees cannot delete group chats.
+  if (req.user.role === 'employee' && convo.isGroup === true) {
+    res.status(403);
+    throw new Error('Not allowed');
+  }
+
+  await Conversation.findByIdAndUpdate(convoId, {
+    $pull: { archivedBy: { userId: req.user._id } },
+    $addToSet: { deletedBy: { userId: req.user._id, at: new Date() } },
+  });
+
+  res.json({ ok: true });
+});
+
+// @desc    Create a group conversation (admin only)
+// @route   POST /api/chat/group-conversations
+// @access  Private/Admin
+const createGroupConversation = asyncHandler(async (req, res) => {
+  const title = (req.body?.title || '').toString().trim();
+  const raw = Array.isArray(req.body?.participantUserIds)
+    ? req.body.participantUserIds
+    : [];
+  const participantIds = raw
+    .map(_asId)
+    .filter((v) => v)
+    .map(String);
+
+  if (!title) {
+    res.status(400);
+    throw new Error('title is required');
+  }
+  if (participantIds.length < 1) {
+    res.status(400);
+    throw new Error('participantUserIds must have at least 1 user');
+  }
+
+  // validate users exist
+  const users = await User.find({ _id: { $in: participantIds }, isActive: true })
+    .select('_id')
+    .lean();
+  if (users.length !== participantIds.length) {
+    res.status(400);
+    throw new Error('One or more participants are invalid');
+  }
+
+  const allParticipants = Array.from(
+    new Set([String(req.user._id), ...participantIds].filter((v) => v)),
+  );
+  if (allParticipants.length < 2) {
+    res.status(400);
+    throw new Error('Group conversation must have at least 2 participants');
+  }
+
+  const convo = await Conversation.create({
+    participants: allParticipants,
+    isGroup: true,
+    title,
+    createdBy: req.user._id,
+    lastMessageAt: null,
+    lastMessagePreview: '',
+  });
+
+  res.status(201).json({ id: String(convo._id) });
+});
+
+async function _assertAdminMayManageGroup(reqUser, convoId) {
+  const convo = await Conversation.findById(convoId)
+    .select('isGroup createdBy participants')
+    .lean();
+  if (!convo) {
+    const err = new Error('Conversation not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (convo.isGroup !== true) {
+    const err = new Error('Not a group conversation');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (String(convo.createdBy || '') !== String(reqUser._id)) {
+    const err = new Error('Only the creating admin may manage this group');
+    err.statusCode = 403;
+    throw err;
+  }
+  return convo;
+}
+
+// @desc    Add group members (admin only)
+// @route   POST /api/chat/group-conversations/:id/members/add
+// @access  Private/Admin
+const addGroupMembers = asyncHandler(async (req, res) => {
+  const convoId = _asId(req.params.id);
+  if (!convoId) {
+    res.status(400);
+    throw new Error('Invalid conversation id');
+  }
+
+  await _assertAdminMayManageGroup(req.user, convoId);
+
+  const raw = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+  const ids = raw.map(_asId).filter((v) => v).map(String);
+  if (ids.length === 0) {
+    res.status(400);
+    throw new Error('userIds is required');
+  }
+
+  const users = await User.find({ _id: { $in: ids }, isActive: true })
+    .select('_id role')
+    .lean();
+  if (users.length !== ids.length) {
+    res.status(400);
+    throw new Error('One or more users are invalid');
+  }
+  const bad = users.find((u) => u.role !== 'employee');
+  if (bad) {
+    res.status(400);
+    throw new Error('Group conversations can only include employees');
+  }
+
+  await Conversation.findByIdAndUpdate(convoId, {
+    $addToSet: { participants: { $each: ids } },
+  });
+
+  res.json({ ok: true });
+});
+
+// @desc    Remove group members (admin only)
+// @route   POST /api/chat/group-conversations/:id/members/remove
+// @access  Private/Admin
+const removeGroupMembers = asyncHandler(async (req, res) => {
+  const convoId = _asId(req.params.id);
+  if (!convoId) {
+    res.status(400);
+    throw new Error('Invalid conversation id');
+  }
+
+  const convo = await _assertAdminMayManageGroup(req.user, convoId);
+
+  const raw = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+  const ids = raw.map(_asId).filter((v) => v).map(String);
+  if (ids.length === 0) {
+    res.status(400);
+    throw new Error('userIds is required');
+  }
+
+  // employees only
+  const users = await User.find({ _id: { $in: ids }, isActive: true })
+    .select('_id role')
+    .lean();
+  if (users.length !== ids.length) {
+    res.status(400);
+    throw new Error('One or more users are invalid');
+  }
+  const bad = users.find((u) => u.role !== 'employee');
+  if (bad) {
+    res.status(400);
+    throw new Error('Group conversations can only include employees');
+  }
+
+  const currentParticipants = (convo.participants || []).map(String);
+  const nextParticipants = currentParticipants.filter((p) => !ids.includes(p));
+
+  if (nextParticipants.length <= 1) {
+    // prevent dangling groups by making it invisible (admin-only archive + delete)
+    await Conversation.findByIdAndUpdate(convoId, {
+      $set: { participants: nextParticipants },
+      $addToSet: {
+        archivedBy: { userId: req.user._id, at: new Date() },
+        deletedBy: { userId: req.user._id, at: new Date() },
+      },
+    });
+    res.json({ ok: true, archived: true, reason: 'group_size_too_small' });
+    return;
+  }
+
+  await Conversation.findByIdAndUpdate(convoId, {
+    $set: { participants: nextParticipants },
+  });
+
+  res.json({ ok: true });
 });
 
 // @desc    Get messages for a conversation
@@ -203,7 +555,9 @@ const sendMessage = asyncHandler(async (req, res) => {
     throw new Error('Message body is required');
   }
 
-  const convo = await Conversation.findById(convoId).select('participants').lean();
+  const convo = await Conversation.findById(convoId)
+    .select('participants isGroup title')
+    .lean();
   if (!convo) {
     res.status(404);
     throw new Error('Conversation not found');
@@ -216,13 +570,18 @@ const sendMessage = asyncHandler(async (req, res) => {
     throw new Error('Not allowed');
   }
 
-  // enforce admin<->employee rule
-  const otherId = participants.find((p) => p !== userId);
-  if (!otherId) {
-    res.status(400);
-    throw new Error('Invalid conversation');
+  // enforce rules
+  if (convo.isGroup === true) {
+    // group chats: any participant (admin/employee) may send
+  } else {
+    // 1:1 must be admin<->employee
+    const otherId = participants.find((p) => p !== userId);
+    if (!otherId) {
+      res.status(400);
+      throw new Error('Invalid conversation');
+    }
+    await _assertCanChat(req.user, otherId);
   }
-  await _assertCanChat(req.user, otherId);
 
   const msg = await ChatMessage.create({
     conversation: convoId,
@@ -239,24 +598,60 @@ const sendMessage = asyncHandler(async (req, res) => {
     },
   });
 
-  // Persist a notification for the other participant so it shows in the bell
-  // and contributes to unreadCounts.
-  try {
-    await appNotificationService.createNotification({
-      recipientUserId: otherId,
-      scope: 'messages',
-      type: 'info',
-      action: 'chatMessage',
-      title: 'New message',
-      message: preview,
-      payload: {
-        conversationId: String(convoId),
-        senderUserId: userId,
-      },
-    });
-  } catch (_) {}
+  // Persist notifications + Emit realtime event to all participants except sender
+  const recipients = participants.filter((p) => p !== userId);
 
-  // Emit realtime event to both users
+  let senderName = req.user?.name;
+  let senderEmployeeId = req.user?.employeeId;
+  let senderRole = req.user?.role;
+  if (!senderName || senderEmployeeId === undefined || !senderRole) {
+    try {
+      const sender = await User.findById(req.user._id)
+        .select('name employeeId role')
+        .lean();
+      if (sender) {
+        senderName = senderName || sender.name;
+        if (senderEmployeeId === undefined) senderEmployeeId = sender.employeeId;
+        senderRole = senderRole || sender.role;
+      }
+    } catch (_) {}
+  }
+
+  const senderLabel = (() => {
+    const name = (senderName || 'User').toString().trim();
+    const emp = (senderEmployeeId || '').toString().trim();
+    if (emp) return `${name} (${emp})`;
+    if (senderRole && String(senderRole).toLowerCase() === 'admin') return `${name} (Admin)`;
+    return name;
+  })();
+
+  const groupTitle = (convo.title || '').toString().trim();
+  const notificationTitle =
+    convo.isGroup === true
+      ? `New message in ${groupTitle || 'Group chat'} from ${senderLabel}`
+      : `New message from ${senderLabel}`;
+
+  for (const rid of recipients) {
+    try {
+      await appNotificationService.createNotification({
+        recipientUserId: rid,
+        scope: 'messages',
+        type: 'info',
+        action: 'chatMessage',
+        title: notificationTitle,
+        message: preview,
+        payload: {
+          conversationId: String(convoId),
+          senderUserId: userId,
+          senderName: (senderName || '').toString(),
+          senderEmployeeId: (senderEmployeeId || '').toString(),
+          isGroup: convo.isGroup === true,
+          groupTitle: groupTitle,
+        },
+      });
+    } catch (_) {}
+  }
+
   try {
     const io = global.io;
     if (io) {
@@ -267,8 +662,11 @@ const sendMessage = asyncHandler(async (req, res) => {
         body,
         createdAt: msg.createdAt?.toISOString?.() || new Date().toISOString(),
       };
+
       io.to(`user:${userId}`).emit('chatMessage', payload);
-      io.to(`user:${otherId}`).emit('chatMessage', payload);
+      for (const rid of recipients) {
+        io.to(`user:${rid}`).emit('chatMessage', payload);
+      }
     }
   } catch (_) {}
 
@@ -340,7 +738,14 @@ const markConversationRead = asyncHandler(async (req, res) => {
 module.exports = {
   listConversations,
   getOrCreateConversation,
+  listOnlineAdmins,
   listMessages,
   sendMessage,
   markConversationRead,
+  archiveConversation,
+  unarchiveConversation,
+  deleteConversation,
+  createGroupConversation,
+  addGroupMembers,
+  removeGroupMembers,
 };

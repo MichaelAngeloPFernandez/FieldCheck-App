@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-const Duration _manilaOffset = Duration(hours: 8);
-
 DateTime toManilaTime(DateTime dt) {
-  final utc = dt.toUtc();
-  return DateTime.fromMillisecondsSinceEpoch(
-    utc.millisecondsSinceEpoch + _manilaOffset.inMilliseconds,
-    isUtc: true,
-  );
+  return dt.toLocal();
 }
 
 DateTime manilaNow() => toManilaTime(DateTime.now());

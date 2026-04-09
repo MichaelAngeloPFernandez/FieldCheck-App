@@ -4,6 +4,9 @@ import 'package:field_check/screens/chat_conversation_screen.dart';
 import 'package:field_check/services/chat_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'package:field_check/providers/auth_provider.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? initialConversationId;
@@ -25,6 +28,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _conversations = <Map<String, dynamic>>[];
+  bool _showArchived = false;
+  bool _loadingAdmins = false;
+  String? _onlineAdminId;
 
   DateTime? _parseDate(dynamic v) {
     if (v == null) return null;
@@ -186,13 +192,20 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     try {
-      final items = await _chatService.listConversations();
+      final items = await _chatService.listConversations(
+        archived: _showArchived,
+      );
       if (!mounted) return;
       setState(() {
         _conversations = items;
         _sortConversations();
         _loading = false;
       });
+
+      final auth = context.read<AuthProvider>();
+      if (!_showArchived && !auth.isAdmin) {
+        await _loadOnlineAdmins();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -202,14 +215,128 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _loadOnlineAdmins() async {
+    if (_loadingAdmins) return;
+    if (!mounted) return;
+    setState(() {
+      _loadingAdmins = true;
+      _onlineAdminId = null;
+    });
+    try {
+      final admins = await _chatService.listOnlineAdmins();
+      if (!mounted) return;
+      setState(() {
+        _onlineAdminId = admins.isNotEmpty
+            ? (admins.first['id'] ?? admins.first['_id'] ?? '').toString()
+            : null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _onlineAdminId = null;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingAdmins = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _messageAdmin() async {
+    final adminId = (_onlineAdminId ?? '').trim();
+    if (adminId.isEmpty) return;
+    try {
+      final convoId = await _chatService.getOrCreateConversation(
+        otherUserId: adminId,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatConversationScreen(conversationId: convoId),
+        ),
+      );
+      _scheduleReload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  Future<void> _archiveConversation(String conversationId) async {
+    try {
+      await _chatService.archiveConversation(conversationId);
+      _scheduleReload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  Future<void> _unarchiveConversation(String conversationId) async {
+    try {
+      await _chatService.unarchiveConversation(conversationId);
+      _scheduleReload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  Future<void> _deleteConversation(String conversationId) async {
+    try {
+      await _chatService.deleteConversation(conversationId);
+      _scheduleReload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final auth = context.watch<AuthProvider>();
+    final showMessageAdmin = !auth.isAdmin && !_showArchived;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chat'),
         actions: [
+          if (showMessageAdmin)
+            IconButton(
+              onPressed:
+                  (_loadingAdmins || (_onlineAdminId ?? '').trim().isEmpty)
+                  ? null
+                  : _messageAdmin,
+              icon: const Icon(Icons.support_agent),
+              tooltip: _loadingAdmins
+                  ? 'Checking admin availability...'
+                  : ((_onlineAdminId ?? '').trim().isEmpty)
+                  ? 'Admin is offline'
+                  : 'Message Admin',
+            ),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _showArchived = !_showArchived;
+              });
+              _load();
+            },
+            icon: Icon(
+              _showArchived ? Icons.inbox_outlined : Icons.archive_outlined,
+            ),
+            tooltip: _showArchived ? 'Show inbox' : 'Show archived',
+          ),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
@@ -242,9 +369,37 @@ class _ChatScreenState extends State<ChatScreen> {
             )
           : (_conversations.isEmpty)
           ? Center(
-              child: Text(
-                'No conversations yet',
-                style: theme.textTheme.bodyMedium,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _showArchived
+                          ? 'No archived conversations'
+                          : 'No conversations yet',
+                      style: theme.textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                    if (!_showArchived) ...[
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed:
+                            (_loadingAdmins ||
+                                (_onlineAdminId ?? '').trim().isEmpty)
+                            ? null
+                            : _messageAdmin,
+                        child: Text(
+                          _loadingAdmins
+                              ? 'Checking admin availability...'
+                              : ((_onlineAdminId ?? '').trim().isEmpty)
+                              ? 'Admin is offline'
+                              : 'Message Admin',
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             )
           : ListView.builder(
@@ -253,52 +408,31 @@ class _ChatScreenState extends State<ChatScreen> {
               itemBuilder: (context, index) {
                 final c = _conversations[index];
                 final other = c['otherUser'];
+                final isGroup = c['isGroup'] == true;
+                final title = (c['title'] ?? '').toString().trim();
                 final otherName = other is Map
                     ? (other['name'] ?? 'User').toString()
                     : 'User';
+                final displayName = isGroup
+                    ? (title.isNotEmpty ? title : 'Group chat')
+                    : otherName;
                 final preview = (c['lastMessagePreview'] ?? '').toString();
                 final unread = _unreadCount(c);
+                final id = (c['id'] ?? '').toString();
+
+                final canModify = !isGroup;
 
                 return Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: 0.08,
-                      ),
-                    ),
-                  ),
                   child: ListTile(
-                    onTap: () {
-                      final id = (c['id'] ?? '').toString();
-                      if (id.isEmpty) return;
-
-                      // Optimistic: clear unread badge immediately.
-                      setState(() {
-                        final next = Map<String, dynamic>.from(c);
-                        next['unreadCount'] = 0;
-                        _conversations[index] = next;
-                        _sortConversations();
-                      });
-
-                      _chatService.markConversationRead(id).ignore();
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              ChatConversationScreen(conversationId: id),
-                        ),
-                      );
-                    },
                     leading: CircleAvatar(
                       child: Text(
-                        otherName.isNotEmpty
-                            ? otherName.substring(0, 1).toUpperCase()
-                            : 'U',
+                        displayName.isNotEmpty
+                            ? displayName.substring(0, 1).toUpperCase()
+                            : 'C',
                       ),
                     ),
                     title: Text(
-                      otherName,
+                      displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
@@ -312,8 +446,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    trailing: unread > 0
-                        ? Container(
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (unread > 0)
+                          Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
                               vertical: 4,
@@ -329,8 +466,50 @@ class _ChatScreenState extends State<ChatScreen> {
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                          )
-                        : null,
+                          ),
+                        if (canModify)
+                          PopupMenuButton<String>(
+                            onSelected: (value) {
+                              if (id.isEmpty) return;
+                              if (value == 'archive') {
+                                _archiveConversation(id);
+                              } else if (value == 'unarchive') {
+                                _unarchiveConversation(id);
+                              } else if (value == 'delete') {
+                                _deleteConversation(id);
+                              }
+                            },
+                            itemBuilder: (context) {
+                              final isArchived = c['archived'] == true;
+                              return <PopupMenuEntry<String>>[
+                                PopupMenuItem<String>(
+                                  value: isArchived ? 'unarchive' : 'archive',
+                                  child: Text(
+                                    isArchived ? 'Unarchive' : 'Archive',
+                                  ),
+                                ),
+                                const PopupMenuItem<String>(
+                                  value: 'delete',
+                                  child: Text('Delete'),
+                                ),
+                              ];
+                            },
+                          ),
+                      ],
+                    ),
+                    onTap: () async {
+                      final convoId = (c['id'] ?? '').toString();
+                      if (convoId.trim().isEmpty) return;
+
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ChatConversationScreen(conversationId: convoId),
+                        ),
+                      );
+
+                      _scheduleReload();
+                    },
                   ),
                 );
               },

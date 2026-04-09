@@ -28,12 +28,23 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   String? _error;
   bool _sending = false;
 
+  bool _loadingOlder = false;
+  bool _hasMore = true;
+
   List<Map<String, dynamic>> _messages = <Map<String, dynamic>>[];
 
   @override
   void initState() {
     super.initState();
     _load();
+
+    _scrollController.addListener(() {
+      if (!_scrollController.hasClients) return;
+      if (_loading || _loadingOlder || !_hasMore) return;
+      if (_scrollController.position.pixels <= 120) {
+        _loadOlder();
+      }
+    });
 
     _chatSub = _realtimeService.chatStream.listen((event) {
       try {
@@ -80,13 +91,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _hasMore = true;
     });
 
     try {
-      final items = await _chatService.listMessages(widget.conversationId);
+      final items = await _chatService.listMessages(
+        widget.conversationId,
+        limit: 60,
+      );
       if (!mounted) return;
       setState(() {
         _messages = items;
+        _hasMore = items.length >= 60;
         _loading = false;
       });
 
@@ -102,6 +118,75 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadOlder() async {
+    if (_loadingOlder || !_hasMore) return;
+    if (_messages.isEmpty) return;
+
+    final oldestId = (_messages.first['id'] ?? '').toString();
+    if (oldestId.trim().isEmpty) return;
+
+    if (!mounted) return;
+    setState(() {
+      _loadingOlder = true;
+      _error = null;
+    });
+
+    final beforePixels = _scrollController.hasClients
+        ? _scrollController.position.pixels
+        : null;
+    final beforeMax = _scrollController.hasClients
+        ? _scrollController.position.maxScrollExtent
+        : null;
+
+    try {
+      final older = await _chatService.listMessages(
+        widget.conversationId,
+        limit: 60,
+        before: oldestId,
+      );
+      if (!mounted) return;
+
+      // de-dupe by id
+      final existingIds = _messages
+          .map((m) => (m['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final filtered = older
+          .where((m) => !existingIds.contains((m['id'] ?? '').toString()))
+          .toList();
+
+      setState(() {
+        if (filtered.isNotEmpty) {
+          _messages = [...filtered, ..._messages];
+        }
+        _hasMore = older.length >= 60;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!_scrollController.hasClients) return;
+        if (beforePixels == null || beforeMax == null) return;
+        final afterMax = _scrollController.position.maxScrollExtent;
+        final delta = afterMax - beforeMax;
+        if (delta > 0) {
+          _scrollController.jumpTo(beforePixels + delta);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _hasMore = false;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingOlder = false;
+        });
+      }
     }
   }
 
@@ -219,9 +304,23 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 : ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                    itemCount: _messages.length,
+                    itemCount: _messages.length + (_loadingOlder ? 1 : 0),
                     itemBuilder: (context, index) {
-                      final msg = _messages[index];
+                      if (_loadingOlder && index == 0) {
+                        return const Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      }
+
+                      final msgIndex = _loadingOlder ? index - 1 : index;
+                      final msg = _messages[msgIndex];
                       final sender = msg['senderUser'];
                       final senderId = sender is Map
                           ? (sender['id'] ?? '').toString()

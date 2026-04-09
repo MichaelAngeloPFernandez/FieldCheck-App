@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:field_check/screens/enhanced_attendance_screen.dart';
 import 'package:field_check/screens/history_screen.dart';
+import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/settings_screen.dart';
 import 'package:field_check/screens/employee_task_list_screen.dart';
 import 'package:field_check/screens/employee_profile_screen.dart';
@@ -548,7 +549,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() {
           _selectedIndex = index;
         });
-        if (index == 4) {
+        if (index == 5) {
           _clearTasksBadge();
         }
       },
@@ -582,11 +583,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             _buildDrawerNavItem(
               index: 3,
+              icon: Icons.map_outlined,
+              label: 'Map',
+            ),
+            _buildDrawerNavItem(
+              index: 4,
               icon: Icons.settings,
               label: 'Settings',
             ),
             _buildDrawerNavItem(
-              index: 4,
+              index: 5,
               icon: Icons.task,
               label: 'Tasks',
               leading: _buildBadge(
@@ -650,6 +656,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'Attendance',
     'Profile',
     'History',
+    'Map',
     'Settings',
     'Tasks',
   ];
@@ -667,6 +674,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const EnhancedAttendanceScreen(),
       const EmployeeProfileScreen(),
       const HistoryScreen(),
+      const MapScreen(),
       const SettingsScreen(),
       _loadingUserId
           ? AppWidgets.loadingIndicator(message: 'Loading tasks...')
@@ -827,7 +835,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _selectedIndex = index;
                 });
 
-                if (index == 4) {
+                if (index == 5) {
                   // When user opens Tasks tab, refresh and clear badge noise.
                   _clearTasksBadge();
                 }
@@ -848,6 +856,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icon(Icons.history),
                   label: 'History',
                   tooltip: 'Attendance history',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.map_outlined),
+                  label: 'Map',
+                  tooltip: 'Map',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.settings),
