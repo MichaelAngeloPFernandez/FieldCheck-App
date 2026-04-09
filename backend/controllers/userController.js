@@ -644,6 +644,11 @@ const resendVerificationByAdmin = asyncHandler(async (req, res) => {
     return res.status(200).json({ message: 'User is already verified' });
   }
 
+  const emailStr = (user.email || '').toString().trim().toLowerCase();
+  if (!emailStr) {
+    return res.status(400).json({ message: 'User does not have an email address' });
+  }
+
   const verificationToken = uuidv4();
   user.verificationToken = verificationToken;
   user.verificationTokenExpires = Date.now() + 3600000; // 1 hour
@@ -656,14 +661,22 @@ const resendVerificationByAdmin = asyncHandler(async (req, res) => {
 
   try {
     await sendEmail({
-      email: user.email,
+      email: emailStr,
       subject: 'Activate your FieldCheck account',
       templateName: 'accountActivation',
       templateData: { name: user.name, activationLink: verificationUrl },
     });
   } catch (e) {
-    res.status(502);
-    throw new Error('Verification email could not be sent');
+    console.error('resendVerificationByAdmin: email send failed', {
+      userId: user && user._id ? String(user._id) : undefined,
+      email: emailStr,
+      error: e && e.message ? e.message : String(e),
+    });
+
+    // Token has already been reissued; keep it so user/admin can retry later.
+    return res.status(200).json({
+      message: 'Verification token updated but verification email could not be sent',
+    });
   }
 
   return res.status(200).json({ message: 'Verification email sent' });
