@@ -798,4 +798,28 @@ class TaskService {
 
     return <String, dynamic>{};
   }
+
+  Future<void> gradeTask(String userTaskId, int score, String feedback) async {
+    final response = await http.put(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/grade'),
+      headers: await _headers(),
+      body: json.encode({
+        'score': score,
+        'feedback': feedback,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to grade task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+            message = decoded['message'].toString();
+          }
+        } catch (_) {}
+      }
+      throw Exception(message);
+    }
+  }
 }

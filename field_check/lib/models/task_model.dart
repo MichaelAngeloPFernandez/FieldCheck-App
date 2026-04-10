@@ -59,6 +59,9 @@ class Task {
   final bool isArchived;
   final bool isOverdue;
   final bool isLate;
+  final num? gradeScore;
+  final String? gradeFeedback;
+  final bool isGraded;
   final List<TaskChecklistItem> checklist;
   final String? blockReason;
 
@@ -90,6 +93,9 @@ class Task {
     this.isArchived = false,
     this.isOverdue = false,
     this.isLate = false,
+    this.gradeScore,
+    this.gradeFeedback,
+    this.isGraded = false,
     this.checklist = const [],
     this.blockReason,
   });
@@ -196,6 +202,9 @@ class Task {
       isArchived: json['isArchived'] ?? false,
       isOverdue: json['isOverdue'] ?? false,
       isLate: json['isLate'] ?? false,
+      gradeScore: json['gradeScore'] as num?,
+      gradeFeedback: json['gradeFeedback'] as String?,
+      isGraded: json['isGraded'] ?? false,
       checklist: checklist,
       blockReason: json['blockReason'],
     );
@@ -230,6 +239,9 @@ class Task {
       'isArchived': isArchived,
       'isOverdue': isOverdue,
       'isLate': isLate,
+      'gradeScore': gradeScore,
+      'gradeFeedback': gradeFeedback,
+      'isGraded': isGraded,
       'checklist': checklist.map((c) => c.toJson()).toList(),
       'blockReason': blockReason,
     };
@@ -263,6 +275,9 @@ class Task {
     bool? isArchived,
     bool? isOverdue,
     bool? isLate,
+    num? gradeScore,
+    String? gradeFeedback,
+    bool? isGraded,
     List<TaskChecklistItem>? checklist,
     String? blockReason,
   }) {
@@ -294,6 +309,9 @@ class Task {
       isArchived: isArchived ?? this.isArchived,
       isOverdue: isOverdue ?? this.isOverdue,
       isLate: isLate ?? this.isLate,
+      gradeScore: gradeScore ?? this.gradeScore,
+      gradeFeedback: gradeFeedback ?? this.gradeFeedback,
+      isGraded: isGraded ?? this.isGraded,
       checklist: checklist ?? this.checklist,
       blockReason: blockReason ?? this.blockReason,
     );

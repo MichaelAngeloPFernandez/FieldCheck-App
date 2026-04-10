@@ -288,7 +288,9 @@ const forgotPassword = asyncHandler(async (req, res) => {
       console.error('forgotPassword: email send failed', {
         userId: user && user._id ? String(user._id) : undefined,
         email: user && user.email ? String(user.email) : undefined,
-        error: error && error.message ? error.message : String(error),
+        errorMessage: error && error.message ? error.message : String(error),
+        errorCode: error && error.code ? error.code : undefined,
+        errorStack: error && error.stack ? error.stack : undefined,
       });
     }
   });
@@ -670,7 +672,9 @@ const resendVerificationByAdmin = asyncHandler(async (req, res) => {
     console.error('resendVerificationByAdmin: email send failed', {
       userId: user && user._id ? String(user._id) : undefined,
       email: emailStr,
-      error: e && e.message ? e.message : String(e),
+      errorMessage: e && e.message ? e.message : String(e),
+      errorCode: e && e.code ? e.code : undefined,
+      errorStack: e && e.stack ? e.stack : undefined,
     });
 
     // Token has already been reissued; keep it so user/admin can retry later.

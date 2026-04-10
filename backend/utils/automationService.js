@@ -1,9 +1,10 @@
 /**
  * Automation Service
  * Handles automated tasks like:
- * - Deleting unverified users after 24 hours
  * - Cleanup of expired verification tokens
  * - Scheduling email reminders
+ * NOTE: Unverified users are NOT auto-deleted because admins create employee
+ * accounts that may remain unverified for extended periods.
  */
 
 const cron = require('node-cron');
@@ -42,7 +43,10 @@ const AUTO_CHECKOUT_MINUTES = 30;
 let cleanupJobActive = false;
 
 /**
- * Delete users who registered but haven't verified email after 24 hours
+ * Clean up expired verification tokens for unverified users.
+ * We do NOT delete unverified users because admins create employee accounts
+ * that may legitimately remain unverified while waiting for the employee
+ * to activate their account.
  */
 const cleanupUnverifiedUsers = async () => {
   try {
@@ -52,18 +56,14 @@ const cleanupUnverifiedUsers = async () => {
     }
 
     cleanupJobActive = true;
-    console.log('🧹 Starting unverified user cleanup...');
+    console.log('🧹 Starting expired token cleanup (unverified users are preserved)...');
 
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // Only clear expired tokens — do NOT delete the users.
+    // Employees added by an admin must not be removed just because they
+    // haven't clicked their verification link yet.
+    await cleanupExpiredTokens();
 
-    const result = await User.deleteMany({
-      isVerified: false,
-      createdAt: { $lt: twentyFourHoursAgo },
-      verificationTokenExpires: { $exists: true },
-    });
-
-    console.log(`✅ Cleanup complete: Deleted ${result.deletedCount} unverified users`);
-
+    console.log('✅ Token cleanup complete');
     cleanupJobActive = false;
   } catch (error) {
     console.error('❌ Cleanup failed:', error.message);
@@ -374,18 +374,17 @@ const cleanupExpiredTokens = async () => {
 const initializeAutomation = () => {
   console.log('⚙️  Initializing automation jobs...');
 
-  // Schedule main cleanup (delete unverified users after 24h)
+  // Schedule token cleanup (unverified users are NOT deleted — see cleanupUnverifiedUsers)
   cron.schedule(CLEANUP_SCHEDULE, cleanupUnverifiedUsers, {
     scheduled: true,
     timezone: 'UTC',
   });
 
-  console.log(`✅ Scheduled cleanup job: ${CLEANUP_SCHEDULE} UTC (2 AM daily)`);
+  console.log(`✅ Scheduled token cleanup job: ${CLEANUP_SCHEDULE} UTC (2 AM daily)`);
 
-  // Also run cleanup on startup (delayed by 10 seconds to ensure DB is ready)
+  // Also run token cleanup on startup (delayed by 10 seconds to ensure DB is ready)
   setTimeout(() => {
-    console.log('🚀 Running initial cleanup on startup...');
-    cleanupUnverifiedUsers();
+    console.log('🚀 Running initial token cleanup on startup...');
     cleanupExpiredTokens();
   }, 10000);
 

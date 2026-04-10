@@ -1,47 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="21" failures="0" errors="0" time="1.215">
-  <testsuite name="{suite}" errors="0" failures="0" skipped="0" timestamp="2026-04-05T15:10:18" time="1.13" tests="21">
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should allow valid check-in" time="0.05">
+<testsuites name="jest tests" tests="21" failures="0" errors="0" time="1.658">
+  <testsuite name="{suite}" errors="0" failures="0" skipped="0" timestamp="2026-04-10T14:45:41" time="1.472" tests="21">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should allow valid check-in" time="0.054">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should include rate limit headers" time="0.007">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should include rate limit headers" time="0.005">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should enforce rate limit (10 per 60 seconds)" time="0.059">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should enforce rate limit (10 per 60 seconds)" time="0.053">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should include response time header" time="0.005">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-in Endpoint" name="should include response time header" time="0.004">
     </testcase>
     <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should allow valid check-out" time="0.004">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should enforce rate limit separately from check-in" time="0.04">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should enforce rate limit separately from check-in" time="0.032">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should allow 10 check-outs per 60 seconds" time="0.034">
+    <testcase classname="Attendance Endpoints - Integration Tests › Check-out Endpoint" name="should allow 10 check-outs per 60 seconds" time="0.03">
     </testcase>
     <testcase classname="Attendance Endpoints - Integration Tests › Caching - GET Attendance" name="should cache GET responses" time="0.008">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Caching - GET Attendance" name="should serve cached data faster" time="0.007">
+    <testcase classname="Attendance Endpoints - Integration Tests › Caching - GET Attendance" name="should serve cached data faster" time="0.005">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Cache Invalidation - Write Operations" name="should invalidate cache on sync" time="0.013">
+    <testcase classname="Attendance Endpoints - Integration Tests › Cache Invalidation - Write Operations" name="should invalidate cache on sync" time="0.01">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Performance Metrics" name="should track response times" time="0.011">
+    <testcase classname="Attendance Endpoints - Integration Tests › Performance Metrics" name="should track response times" time="0.012">
     </testcase>
-    <testcase classname="Attendance Endpoints - Integration Tests › Performance Metrics" name="should calculate percentiles" time="0.017">
+    <testcase classname="Attendance Endpoints - Integration Tests › Performance Metrics" name="should calculate percentiles" time="0.014">
     </testcase>
-    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent check-ins" time="0.016">
+    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent check-ins" time="0.012">
     </testcase>
-    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent reads with cache" time="0.02">
+    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent reads with cache" time="0.018">
     </testcase>
-    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent check-in and check-out" time="0.033">
+    <testcase classname="Concurrency &amp; Race Conditions" name="should handle concurrent check-in and check-out" time="0.021">
     </testcase>
-    <testcase classname="Error Handling" name="should handle missing user" time="0.008">
+    <testcase classname="Error Handling" name="should handle missing user" time="0.005">
     </testcase>
-    <testcase classname="Error Handling" name="should handle invalid JSON" time="0.006">
+    <testcase classname="Error Handling" name="should handle invalid JSON" time="0.01">
     </testcase>
-    <testcase classname="Error Handling" name="should handle missing request body" time="0.003">
+    <testcase classname="Error Handling" name="should handle missing request body" time="0.004">
     </testcase>
-    <testcase classname="Edge Cases" name="should handle very fast consecutive requests" time="0.051">
+    <testcase classname="Edge Cases" name="should handle very fast consecutive requests" time="0.046">
     </testcase>
-    <testcase classname="Edge Cases" name="should handle requests with large payloads" time="0.004">
+    <testcase classname="Edge Cases" name="should handle requests with large payloads" time="0.008">
     </testcase>
-    <testcase classname="Edge Cases" name="should handle cache with different query parameters" time="0.011">
+    <testcase classname="Edge Cases" name="should handle cache with different query parameters" time="0.013">
     </testcase>
   </testsuite>
 </testsuites>

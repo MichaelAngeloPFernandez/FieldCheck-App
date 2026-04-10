@@ -99,6 +99,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
       setState(() {
         _isLoading = false;
+        _errorMessage = null;
         _successMessage =
             'Password reset successfully! You may close this page now.';
       });
@@ -134,6 +135,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
     setState(() {
       _passwordStrength = strength;
+      if (_errorMessage != null) {
+        _errorMessage = null;
+      }
     });
   }
 
@@ -210,7 +214,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_errorMessage != null)
+                if (_errorMessage != null && _successMessage == null)
                   Container(
                     padding: const EdgeInsets.all(AppTheme.md),
                     margin: const EdgeInsets.only(bottom: AppTheme.lg),

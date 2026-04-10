@@ -170,6 +170,7 @@ function toTaskJson(doc, userTaskId) {
     difficulty: doc.difficulty || 'medium',
     isArchived: !!doc.isArchived,
     isOverdue,
+    isLate: false, // Per-assignee isLate is overridden in getAssignedTasks
     rawStatus,
     progressPercent,
     checklist: Array.isArray(doc.checklist)
@@ -434,6 +435,10 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
         // Override task-level computed flags with per-assignee truth.
         isOverdue: isOverdueForAssignee,
         isLate: !!isLateForAssignee,
+        // Grading UI fields
+        gradeScore: a && a.grade && typeof a.grade.score === 'number' ? a.grade.score : undefined,
+        gradeFeedback: a && a.grade && a.grade.feedback ? a.grade.feedback : undefined,
+        isGraded: !!(a && a.grade && a.grade.score !== undefined),
       };
 
       if (a && (!Array.isArray(t.checklist) || t.checklist.length === 0)) {
@@ -1330,6 +1335,47 @@ const escalateTask = asyncHandler(async (req, res) => {
   });
 });
 
+// @route PUT /api/tasks/user-task/:userTaskId/grade
+// @access Private/Admin
+const gradeUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const { score, feedback } = req.body;
+
+  if (score === undefined || score === null) {
+    res.status(400);
+    throw new Error('Grade score is required');
+  }
+
+  const numScore = Number(score);
+  if (isNaN(numScore) || numScore < 0 || numScore > 100) {
+    res.status(400);
+    throw new Error('Score must be a number between 0 and 100');
+  }
+
+  const userTask = await UserTask.findById(userTaskId);
+  if (!userTask) {
+    res.status(404);
+    throw new Error('UserTask assignment not found');
+  }
+
+  userTask.grade = {
+    score: numScore,
+    feedback: feedback || '',
+    gradedAt: new Date(),
+    gradedBy: req.user._id,
+  };
+
+  // Automatically mark the task assignment as 'reviewed' once graded.
+  userTask.status = 'reviewed';
+  
+  await userTask.save();
+
+  res.status(200).json({
+    message: 'Task graded successfully',
+    grade: userTask.grade,
+  });
+});
+
 module.exports = {
   getTask,
   getTasks,
@@ -1355,4 +1401,5 @@ module.exports = {
   archiveTask,
   restoreTask,
   escalateTask,
+  gradeUserTask,
 };

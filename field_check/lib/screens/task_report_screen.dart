@@ -7,6 +7,7 @@ import 'package:field_check/services/report_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
+import 'package:field_check/services/user_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/manila_time.dart';
@@ -42,6 +43,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   late Task _task;
   bool _isSubmitting = false;
   bool _isBlocking = false;
+  bool _isSubmittingGrade = false;
+  double _gradeScore = 100.0;
+  final TextEditingController _gradeFeedbackController =
+      TextEditingController();
   bool _hasUnsavedChanges = false;
   bool _statusMarkedInProgress = false;
   int _reportProgressPercent = 0;
@@ -143,8 +148,53 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   @override
   void dispose() {
     _textController.dispose();
+    _gradeFeedbackController.dispose();
     _autosaveTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _submitGrade() async {
+    final userTaskId = _task.userTaskId;
+    if (userTaskId == null || userTaskId.trim().isEmpty) return;
+
+    if (_isSubmittingGrade) return;
+
+    setState(() {
+      _isSubmittingGrade = true;
+    });
+
+    try {
+      await TaskService().gradeTask(
+        userTaskId,
+        _gradeScore.toInt(),
+        _gradeFeedbackController.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _task = _task.copyWith(
+          isGraded: true,
+          gradeScore: _gradeScore.toInt(),
+          gradeFeedback: _gradeFeedbackController.text.trim(),
+          userTaskStatus: 'reviewed', // Updates local state status
+        );
+      });
+      AppWidgets.showSuccessSnackbar(context, 'Task successfully graded!');
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to submit grade',
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmittingGrade = false;
+        });
+      }
+    }
   }
 
   void _startAutosave() {
@@ -948,6 +998,136 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     return '${size.toStringAsFixed(i == 0 ? 0 : 1)} ${units[i]}';
   }
 
+  Widget _buildGradingSection() {
+    final isAdmin = UserService().currentUser?.role == 'admin';
+    final isCompleted = _task.userTaskStatus == 'completed';
+    final isReviewed = _task.userTaskStatus == 'reviewed' || _task.isGraded;
+
+    if (!isAdmin && !isReviewed) return const SizedBox.shrink();
+
+    if (isReviewed) {
+      return Container(
+        padding: const EdgeInsets.all(AppTheme.lg),
+        margin: const EdgeInsets.only(top: AppTheme.md),
+        decoration: BoxDecoration(
+          color: Colors.blue.withValues(alpha: 0.05),
+          border: Border(
+            top: BorderSide(color: Colors.blue.withValues(alpha: 0.2)),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.stars, color: Colors.blue),
+                const SizedBox(width: 8),
+                const Text('Task Grade', style: AppTheme.headingSm),
+                const Spacer(),
+                Text(
+                  '${_task.gradeScore ?? 0} / 100',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+            if ((_task.gradeFeedback ?? '').isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Feedback:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(_task.gradeFeedback!),
+            ],
+          ],
+        ),
+      );
+    }
+
+    if (isAdmin && isCompleted) {
+      return Container(
+        padding: const EdgeInsets.all(AppTheme.lg),
+        margin: const EdgeInsets.only(top: AppTheme.md),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: 0.05),
+          border: Border(
+            top: BorderSide(color: Colors.orange.withValues(alpha: 0.2)),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.grading, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('Admin Grading', style: AppTheme.headingSm),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('Score (0 - 100)'),
+            Slider(
+              value: _gradeScore,
+              min: 0,
+              max: 100,
+              divisions: 100,
+              label: _gradeScore.round().toString(),
+              activeColor: Colors.orange,
+              onChanged: (value) {
+                setState(() {
+                  _gradeScore = value;
+                });
+              },
+            ),
+            TextField(
+              controller: _gradeFeedbackController,
+              decoration: const InputDecoration(
+                labelText: 'Feedback (Optional)',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSubmittingGrade ? null : _submitGrade,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: _isSubmittingGrade
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                    : const Text(
+                        'Submit Grade',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasChecklist = _task.checklist.isNotEmpty;
@@ -1398,11 +1578,17 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
               ),
             ),
 
+          // Admin Grading Section
+          _buildGradingSection(),
+
           // Submit button
-          Container(
-            padding: const EdgeInsets.all(AppTheme.lg),
-            child: Row(
-              children: [
+          if (!_task.isGraded &&
+              _task.userTaskStatus != 'reviewed' &&
+              _task.userTaskStatus != 'completed')
+            Container(
+              padding: const EdgeInsets.all(AppTheme.lg),
+              child: Row(
+                children: [
                 Expanded(
                   child: OutlinedButton(
                     onPressed:
