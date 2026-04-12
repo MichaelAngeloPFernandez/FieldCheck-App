@@ -172,6 +172,28 @@ class MyAppState extends State<MyApp> {
                 ),
               ];
             }
+
+            // Persistence for dashboards
+            if (uri.path == '/admin-dashboard') {
+              final tab = uri.queryParameters['tab'];
+              final idx = int.tryParse(tab ?? '');
+              return [
+                MaterialPageRoute(
+                  builder: (context) => AdminDashboardScreen(initialIndex: idx),
+                  settings: RouteSettings(name: uri.toString()),
+                ),
+              ];
+            }
+            if (uri.path == '/dashboard') {
+              final tab = uri.queryParameters['tab'];
+              final idx = int.tryParse(tab ?? '');
+              return [
+                MaterialPageRoute(
+                  builder: (context) => DashboardScreen(initialIndex: idx),
+                  settings: RouteSettings(name: uri.toString()),
+                ),
+              ];
+            }
           }
 
           return [
@@ -224,11 +246,40 @@ class MyAppState extends State<MyApp> {
               );
             }
           }
+          if (settings.name == '/admin-dashboard') {
+            final int? initialIndex = settings.arguments as int?;
+            return MaterialPageRoute(
+              builder: (context) =>
+                  AdminDashboardScreen(initialIndex: initialIndex),
+            );
+          }
           if (settings.name == '/dashboard') {
             final int? initialIndex = settings.arguments as int?;
             return MaterialPageRoute(
               builder: (context) => DashboardScreen(initialIndex: initialIndex),
             );
+          }
+
+          // Handle query parameters in onGenerateRoute as well
+          final rawName = settings.name;
+          if (rawName != null && rawName.contains('?')) {
+            final uri = Uri.parse(rawName);
+            if (uri.path == '/admin-dashboard') {
+              final tab = uri.queryParameters['tab'];
+              final idx = int.tryParse(tab ?? '');
+              return MaterialPageRoute(
+                builder: (context) => AdminDashboardScreen(initialIndex: idx),
+                settings: settings,
+              );
+            }
+            if (uri.path == '/dashboard') {
+              final tab = uri.queryParameters['tab'];
+              final idx = int.tryParse(tab ?? '');
+              return MaterialPageRoute(
+                builder: (context) => DashboardScreen(initialIndex: idx),
+                settings: settings,
+              );
+            }
           }
           return null;
         },

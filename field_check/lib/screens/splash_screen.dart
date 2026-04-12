@@ -37,9 +37,20 @@ class _SplashScreenState extends State<SplashScreen> {
     if (authProvider.isAuthenticated) {
       // User is logged in, go to appropriate dashboard
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(
-        authProvider.isAdmin ? '/admin-dashboard' : '/dashboard',
-      );
+
+      // Check if we should preserve a specific path or tab
+      final uri = Uri.base;
+      final path = uri.path;
+
+      if (path == '/admin-dashboard' && authProvider.isAdmin) {
+        Navigator.of(context).pushReplacementNamed(uri.toString());
+      } else if (path == '/dashboard' && !authProvider.isAdmin) {
+        Navigator.of(context).pushReplacementNamed(uri.toString());
+      } else {
+        Navigator.of(context).pushReplacementNamed(
+          authProvider.isAdmin ? '/admin-dashboard' : '/dashboard',
+        );
+      }
     } else {
       // User not logged in, go to login screen
       if (!mounted) return;

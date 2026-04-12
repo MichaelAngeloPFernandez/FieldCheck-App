@@ -525,6 +525,40 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     );
   }
 
+  Widget _navBtn({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _metricBar({
     required String label,
     required int value,
@@ -595,10 +629,9 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     final tasks = _selectedUserTasks;
     final int assigned = tasks.length;
     final now = DateTime.now();
-    final int overdue = tasks.where((t) => t.dueDate.isBefore(now)).length;
-    final int active = tasks
-        .where((t) => t.status.toLowerCase() != 'completed')
-        .length;
+
+    final ids = _visibleEmployeeIds();
+    final hasMultiple = ids.length > 1;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -705,6 +738,25 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
                     ),
                   ],
                 ),
+                if (hasMultiple) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _navBtn(
+                        icon: Icons.chevron_left,
+                        label: 'Prev',
+                        onPressed: _selectPrevEmployee,
+                      ),
+                      const SizedBox(width: 16),
+                      _navBtn(
+                        icon: Icons.chevron_right,
+                        label: 'Next',
+                        onPressed: _selectNextEmployee,
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Text(
                   'Task Summary',

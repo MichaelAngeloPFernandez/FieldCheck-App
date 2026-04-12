@@ -160,9 +160,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _subscribeToEmployeeNotifications() {
     _notificationSub?.cancel();
     _notificationSub = _realtimeService.notificationStream.listen((data) {
-      // When a notification is created, unreadCounts will also be emitted.
-      // Keep this hook for future snackbars if needed.
       if (!mounted) return;
+      
+      final action = (data['action'] ?? '').toString();
+      final title = (data['title'] ?? '').toString();
+      final message = (data['message'] ?? '').toString();
+
+      if (action == 'taskGraded') {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green.shade600,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(message),
+              ],
+            ),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'VIEW',
+              textColor: Colors.white,
+              onPressed: () {
+                final payload = data['payload'] ?? {};
+                final taskId = payload['taskId']?.toString() ?? '';
+                if (taskId.isNotEmpty) {
+                  // Navigate to the task list and then perhaps details?
+                  // For now, staying on dashboard but notifying is good.
+                  _selectTab(5); // Go to tasks tab
+                }
+              },
+            ),
+          ),
+        );
+      }
     });
   }
 
@@ -688,32 +721,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ];
 
     return Scaffold(
-      drawer: isMobile ? _buildEmployeeDrawer() : null,
+      drawer: _buildEmployeeDrawer(),
       appBar: AppBar(
         elevation: 0,
-        leading: isMobile
-            ? Builder(
-                builder: (context) => IconButton(
-                  icon: const Icon(Icons.menu),
-                  tooltip: 'Menu',
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                ),
-              )
-            : (_selectedIndex != 0
-                  ? IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      tooltip: 'Back to Attendance',
-                      onPressed: () {
-                        AppLogger.info(
-                          AppLogger.tagNavigation,
-                          'Navigating back to Attendance',
-                        );
-                        setState(() {
-                          _selectedIndex = 0;
-                        });
-                      },
-                    )
-                  : null),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: 'Menu',
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         title: Text(
           _selectedIndex == 0
               ? _buildGreetingTitle()

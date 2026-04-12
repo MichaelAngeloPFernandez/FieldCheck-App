@@ -1007,41 +1007,97 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
     if (isReviewed) {
       return Container(
-        padding: const EdgeInsets.all(AppTheme.lg),
-        margin: const EdgeInsets.only(top: AppTheme.md),
+        padding: const EdgeInsets.all(20),
+        margin: const EdgeInsets.only(top: 16),
         decoration: BoxDecoration(
-          color: Colors.blue.withValues(alpha: 0.05),
-          border: Border(
-            top: BorderSide(color: Colors.blue.withValues(alpha: 0.2)),
+          gradient: LinearGradient(
+            colors: [Colors.green.shade50, Colors.white],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.green.shade200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.green.shade900.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Icon(Icons.stars, color: Colors.blue),
+                Icon(Icons.stars, color: Colors.green.shade700, size: 24),
                 const SizedBox(width: 8),
-                const Text('Task Grade', style: AppTheme.headingSm),
-                const Spacer(),
                 Text(
-                  '${_task.gradeScore ?? 0} / 100',
-                  style: const TextStyle(
+                  'Performance Grade',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.green.shade900,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade600,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'REVIEWED',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text(
+                  '${_task.gradeScore ?? 0}',
+                  style: TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+                Text(
+                  ' / 100',
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+                    color: Colors.green.shade700.withValues(alpha: 0.6),
                   ),
                 ),
               ],
             ),
             if ((_task.gradeFeedback ?? '').isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text(
-                'Feedback:',
-                style: TextStyle(fontWeight: FontWeight.w600),
+              const SizedBox(height: 16),
+              Text(
+                'Admin Feedback:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.green.shade900.withValues(alpha: 0.7),
+                ),
               ),
-              const SizedBox(height: 4),
-              Text(_task.gradeFeedback!),
+              const SizedBox(height: 8),
+              Text(
+                _task.gradeFeedback!,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Colors.green.shade900,
+                  height: 1.5,
+                ),
+              ),
             ],
           ],
         ),

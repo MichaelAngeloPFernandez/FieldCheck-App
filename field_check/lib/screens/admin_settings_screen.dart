@@ -21,7 +21,8 @@ import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_page.dart';
 
 class AdminSettingsScreen extends StatefulWidget {
-  const AdminSettingsScreen({super.key});
+  final Function(int)? onTabRequested;
+  const AdminSettingsScreen({super.key, this.onTabRequested});
 
   @override
   State<AdminSettingsScreen> createState() => _AdminSettingsScreenState();
@@ -667,12 +668,16 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                         leading: const Icon(Icons.map),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AdminGeofenceScreen(),
-                            ),
-                          );
+                          if (widget.onTabRequested != null) {
+                            widget.onTabRequested!(3); // Index for Geofences
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AdminGeofenceScreen(),
+                              ),
+                            );
+                          }
                         },
                       ),
                     ],
@@ -719,12 +724,16 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                         leading: const Icon(Icons.people),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const ManageEmployeesScreen(),
-                            ),
-                          );
+                          if (widget.onTabRequested != null) {
+                            widget.onTabRequested!(1); // Index for Personnel
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ManageEmployeesScreen(),
+                              ),
+                            );
+                          }
                         },
                       ),
                       const Divider(height: 18),

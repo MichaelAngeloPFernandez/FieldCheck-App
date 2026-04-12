@@ -1370,6 +1370,28 @@ const gradeUserTask = asyncHandler(async (req, res) => {
   
   await userTask.save();
 
+  // Notify the employee about their grade
+  try {
+    const appNotificationService = require('../services/appNotificationService');
+    const Task = require('../models/Task');
+    const task = await Task.findById(userTask.taskId).select('title').lean();
+    
+    await appNotificationService.createNotification({
+      recipientUserId: userTask.userId,
+      scope: 'tasks',
+      type: 'success',
+      action: 'taskGraded',
+      title: 'Task Graded',
+      message: `Your work on "${task?.title || 'a task'}" has been graded: ${numScore}/100`,
+      payload: {
+        userTaskId: String(userTask._id),
+        taskId: String(userTask.taskId),
+        score: numScore,
+        feedback: feedback || '',
+      },
+    });
+  } catch (_) {}
+
   res.status(200).json({
     message: 'Task graded successfully',
     grade: userTask.grade,

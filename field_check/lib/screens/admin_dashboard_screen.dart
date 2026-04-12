@@ -89,14 +89,16 @@ class _StatMetric {
 }
 
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+  final int? initialIndex;
+  const AdminDashboardScreen({super.key, this.initialIndex});
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  int _selectedIndex = 0;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  late int _selectedIndex;
 
   bool _railHoverExpanded = false;
   final UserService _userService = UserService();
@@ -1295,7 +1297,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 4:
         return const AdminReportsHubScreen(embedded: true);
       case 5:
-        return const AdminSettingsScreen();
+        return AdminSettingsScreen(
+          onTabRequested: (idx) {
+            setState(() {
+              _selectedIndex = idx;
+            });
+          },
+        );
       case 6:
         return const AdminTaskManagementScreen(embedded: true);
       default:
@@ -2427,6 +2435,47 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  Widget _buildNotificationSidebar() {
+    final theme = Theme.of(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final sidebarWidth = (width * 0.35).clamp(320.0, 420.0);
+
+    return Drawer(
+      width: sidebarWidth,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Icon(Icons.notifications_active_outlined, color: theme.colorScheme.primary),
+                  const SizedBox(width: 12),
+                  const Text('Notifications', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _notifications.isEmpty
+                  ? const Center(child: Text('No new notifications'))
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _notifications.length,
+                      itemBuilder: (context, index) {
+                        final notif = _notifications[index];
+                        return buildInboxItem(notif);
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildNotificationBadge(int count) {
     final text = count > 99 ? '99+' : '$count';
     return Container(
@@ -2447,7 +2496,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _showNotificationsInbox() async {
+    final width = MediaQuery.sizeOf(context).width;
+    final useSidebar = width >= 980;
+
     await _prefetchMessageNotifications();
+
+    if (useSidebar) {
+      _scaffoldKey.currentState?.openEndDrawer();
+      return;
+    }
+
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -3262,7 +3320,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
           final title = 'New Chat Message Received';
           final message =
-              'Employee No: ${senderEmp.isNotEmpty ? senderEmp : '-'}\nEmployee Name: $displayName\nUser: $displayUser\nMessage: "${messageContent.isNotEmpty ? messageContent : '-'}"';
+              'Employee No: ${senderEmp.isNotEmpty ? senderEmp : '-'}\nEmployee Name: $displayName\nRole: Employee\nMessage: "${messageContent.isNotEmpty ? messageContent : '-'}"';
           final createdAtRaw =
               (merged['createdAt'] ?? merged['timestamp'] ?? '').toString();
           final parsedTs = DateTime.tryParse(createdAtRaw);
@@ -4423,6 +4481,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         child: Focus(
           autofocus: true,
           child: Scaffold(
+            key: _scaffoldKey,
+            endDrawer: useRail ? _buildNotificationSidebar() : null,
             appBar: AppBar(
               leading: _selectedIndex != 0
                   ? BackButton(
