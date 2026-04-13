@@ -1314,6 +1314,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedIndex = widget.initialIndex ?? 0;
     _loadDashboardData();
     _initRealtimeService();
     _initMapData();
