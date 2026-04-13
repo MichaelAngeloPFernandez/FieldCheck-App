@@ -2623,8 +2623,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   });
                 }
 
-                }
-
                 return Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
