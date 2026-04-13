@@ -261,7 +261,6 @@ class MyAppState extends State<MyApp> {
           }
 
           // Handle query parameters in onGenerateRoute as well
-          final rawName = settings.name;
           if (rawName != null && rawName.contains('?')) {
             final uri = Uri.parse(rawName);
             if (uri.path == '/admin-dashboard') {

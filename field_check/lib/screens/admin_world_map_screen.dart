@@ -630,6 +630,9 @@ class _AdminWorldMapScreenState extends State<AdminWorldMapScreen> {
     final int assigned = tasks.length;
     final now = DateTime.now();
 
+    final int active = tasks.where((t) => t.status == 'in_progress').length;
+    final int overdue = tasks.where((t) => t.dueDate.isBefore(now) && t.status != 'completed').length;
+
     final ids = _visibleEmployeeIds();
     final hasMultiple = ids.length > 1;
 

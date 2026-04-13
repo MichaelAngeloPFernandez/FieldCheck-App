@@ -2466,7 +2466,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       itemCount: _notifications.length,
                       itemBuilder: (context, index) {
                         final notif = _notifications[index];
-                        return buildInboxItem(notif);
+                        return _buildInboxItem(notif);
                       },
                     ),
             ),
@@ -2623,206 +2623,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   });
                 }
 
-                Widget buildInboxItem(DashboardNotification notif) {
-                  final color = _notificationTypeColor(notif.type);
-                  final ts = formatManila(notif.timestamp, 'MMM d, HH:mm');
-                  final isSelected = selectedIds.contains(notif.id);
-
-                  return Card(
-                    elevation: 0,
-                    margin: const EdgeInsets.only(bottom: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    color: theme.colorScheme.surface,
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      onTap: () async {
-                        if (selectionMode) {
-                          toggleSelected(notif.id);
-                          return;
-                        }
-
-                        if (notif.type == 'messages') {
-                          final payload = notif.payload ?? <String, dynamic>{};
-                          final convoId =
-                              (payload['conversationId'] ??
-                                      payload['conversationID'] ??
-                                      '')
-                                  .toString();
-                          if (convoId.trim().isNotEmpty) {
-                            markReadByIds(
-                              {notif.id},
-                              read: true,
-                              notifySheet: setSheetState,
-                            );
-                            // Persist conversation read state without blocking
-                            // navigation.
-                            ChatService()
-                                .markConversationRead(convoId)
-                                .ignore();
-                            if (!mounted) return;
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => ChatConversationScreen(
-                                  conversationId: convoId,
-                                ),
-                              ),
-                            );
-                          }
-                          return;
-                        }
-
-                        setSheetState(() {
-                          notif.isRead = true;
-                        });
-                        await _showNotificationDetails(notif);
-                      },
-                      leading: selectionMode
-                          ? Checkbox(
-                              value: isSelected,
-                              onChanged: (_) => toggleSelected(notif.id),
-                            )
-                          : Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: color.withValues(alpha: 0.15),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: color.withValues(alpha: 0.35),
-                                ),
-                              ),
-                              child: Icon(
-                                notif.type == 'attendance'
-                                    ? Icons.access_time
-                                    : (notif.type == 'report'
-                                          ? Icons.description
-                                          : (notif.type == 'messages'
-                                                ? Icons.chat_bubble_outline
-                                                : Icons.notifications)),
-                                color: color,
-                                size: 18,
-                              ),
-                            ),
-                      title: Text(
-                        notif.title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: notif.isRead
-                              ? FontWeight.w600
-                              : FontWeight.w800,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text(
-                            notif.message,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(
-                                alpha: 0.75,
-                              ),
-                            ),
-                            maxLines: notif.type == 'messages' ? 4 : 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.schedule,
-                                size: 12,
-                                color: theme.colorScheme.onSurface.withValues(
-                                  alpha: 0.6,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  ts,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.6),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      trailing: selectionMode
-                          ? null
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (!notif.isRead)
-                                  Container(
-                                    width: 10,
-                                    height: 10,
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade400,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                PopupMenuButton<String>(
-                                  tooltip: 'Actions',
-                                  onSelected: (value) async {
-                                    switch (value) {
-                                      case 'markRead':
-                                        markReadByIds(
-                                          {notif.id},
-                                          read: true,
-                                          notifySheet: setSheetState,
-                                        );
-                                        return;
-                                      case 'markUnread':
-                                        markReadByIds(
-                                          {notif.id},
-                                          read: false,
-                                          notifySheet: setSheetState,
-                                        );
-                                        return;
-                                      case 'delete':
-                                        final ok = await confirmDelete(1);
-                                        if (!ok) return;
-                                        deleteByIds({notif.id});
-                                        setSheetState(() {
-                                          selectedIds.remove(notif.id);
-                                        });
-                                        return;
-                                    }
-                                  },
-                                  itemBuilder: (_) => <PopupMenuEntry<String>>[
-                                    PopupMenuItem(
-                                      value: notif.isRead
-                                          ? 'markUnread'
-                                          : 'markRead',
-                                      child: Text(
-                                        notif.isRead
-                                            ? 'Mark unread'
-                                            : 'Mark read',
-                                      ),
-                                    ),
-                                    const PopupMenuDivider(),
-                                    const PopupMenuItem(
-                                      value: 'delete',
-                                      child: Text('Delete'),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                    ),
-                  );
                 }
 
                 return Padding(
@@ -2988,7 +2788,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 itemCount: items.length,
                                 itemBuilder: (context, index) {
                                   final notif = items[index];
-                                  return buildInboxItem(notif);
+                                  return _buildInboxItem(
+                                    notif,
+                                    selectionMode: selectionMode,
+                                    selectedIds: selectedIds,
+                                    onToggleSelected: toggleSelected,
+                                    onMarkRead:
+                                        (ids, read) => markReadByIds(
+                                          ids,
+                                          read: read,
+                                          notifySheet: setSheetState,
+                                        ),
+                                    onConfirmDelete: confirmDelete,
+                                    onDelete: deleteByIds,
+                                    setSheetState: setSheetState,
+                                  );
                                 },
                               ),
                       ),
@@ -3000,6 +2814,197 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildInboxItem(
+    DashboardNotification notif, {
+    bool selectionMode = false,
+    Set<String> selectedIds = const {},
+    void Function(String)? onToggleSelected,
+    void Function(Set<String>, bool)? onMarkRead,
+    Future<bool> Function(int)? onConfirmDelete,
+    void Function(Set<String>)? onDelete,
+    void Function(void Function())? setSheetState,
+  }) {
+    final theme = Theme.of(context);
+    final color = _notificationTypeColor(notif.type);
+    final ts = formatManila(notif.timestamp, 'MMM d, HH:mm');
+    final isSelected = selectedIds.contains(notif.id);
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: theme.colorScheme.surface,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        onTap: () async {
+          if (selectionMode && onToggleSelected != null) {
+            onToggleSelected(notif.id);
+            return;
+          }
+
+          if (notif.type == 'messages') {
+            final payload = notif.payload ?? <String, dynamic>{};
+            final convoId =
+                (payload['conversationId'] ?? payload['conversationID'] ?? '')
+                    .toString();
+            if (convoId.trim().isNotEmpty) {
+              if (onMarkRead != null) {
+                onMarkRead({notif.id}, true);
+              }
+              ChatService().markConversationRead(convoId).ignore();
+              if (!mounted) return;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ChatConversationScreen(
+                    conversationId: convoId,
+                  ),
+                ),
+              );
+            }
+            return;
+          }
+
+          if (setSheetState != null) {
+            setSheetState(() {
+              notif.isRead = true;
+            });
+          } else {
+            setState(() {
+              notif.isRead = true;
+            });
+          }
+          await _showNotificationDetails(notif);
+        },
+        leading: selectionMode
+            ? Checkbox(
+                value: isSelected,
+                onChanged:
+                    (_) => onToggleSelected != null
+                        ? onToggleSelected(notif.id)
+                        : null,
+              )
+            : Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withValues(alpha: 0.35)),
+                ),
+                child: Icon(
+                  notif.type == 'attendance'
+                      ? Icons.access_time
+                      : (notif.type == 'report'
+                            ? Icons.description
+                            : (notif.type == 'messages'
+                                  ? Icons.chat_bubble_outline
+                                  : Icons.notifications)),
+                  color: color,
+                  size: 18,
+                ),
+              ),
+        title: Text(
+          notif.title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
+            color: theme.colorScheme.onSurface,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              notif.message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
+              maxLines: notif.type == 'messages' ? 4 : 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  Icons.schedule,
+                  size: 12,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    ts,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        trailing: selectionMode
+            ? null
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!notif.isRead)
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade400,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Actions',
+                    onSelected: (value) async {
+                      switch (value) {
+                        case 'markRead':
+                          if (onMarkRead != null) {
+                            onMarkRead({notif.id}, true);
+                          }
+                          return;
+                        case 'markUnread':
+                          if (onMarkRead != null) {
+                            onMarkRead({notif.id}, false);
+                          }
+                          return;
+                        case 'delete':
+                          if (onConfirmDelete != null && onDelete != null) {
+                            final ok = await onConfirmDelete(1);
+                            if (!ok) return;
+                            onDelete({notif.id});
+                            if (setSheetState != null) {
+                              setSheetState(() {
+                                // selectedIds likely local to sheet so we do not
+                                // worry about it here unless passed in.
+                              });
+                            }
+                          }
+                          return;
+                      }
+                    },
+                    itemBuilder: (_) => <PopupMenuEntry<String>>[
+                      PopupMenuItem(
+                        value: notif.isRead ? 'markUnread' : 'markRead',
+                        child: Text(notif.isRead ? 'Mark unread' : 'Mark read'),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    ],
+                  ),
+                ],
+              ),
+      ),
     );
   }
 

@@ -187,8 +187,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 final payload = data['payload'] ?? {};
                 final taskId = payload['taskId']?.toString() ?? '';
                 if (taskId.isNotEmpty) {
-                  // Navigate to the task list and then perhaps details?
-                  // For now, staying on dashboard but notifying is good.
+                  // Navigate to the task list
                   _selectTab(5); // Go to tasks tab
                 }
               },
@@ -321,6 +320,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         duration: const Duration(seconds: 3),
       ),
     );
+  }
+
+  void _selectTab(int index) {
+    if (!mounted) return;
+    setState(() {
+      _selectedIndex = index;
+    });
+    if (index == 5) {
+      _clearTasksBadge();
+    }
   }
 
   String _formatTime(DateTime time) {
@@ -579,12 +588,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       selected: selected,
       onTap: () {
         Navigator.pop(context);
-        setState(() {
-          _selectedIndex = index;
-        });
-        if (index == 5) {
-          _clearTasksBadge();
-        }
+        _selectTab(index);
       },
     );
   }
