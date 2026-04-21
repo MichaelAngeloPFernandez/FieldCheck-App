@@ -604,14 +604,14 @@ const sendMessage = asyncHandler(async (req, res) => {
   let senderName = req.user?.name;
   let senderEmployeeId = req.user?.employeeId;
   let senderRole = req.user?.role;
-  if (!senderName || senderEmployeeId === undefined || !senderRole) {
+  if (!senderName || !senderEmployeeId || !senderRole) {
     try {
       const sender = await User.findById(req.user._id)
         .select('name employeeId role')
         .lean();
       if (sender) {
         senderName = senderName || sender.name;
-        if (senderEmployeeId === undefined) senderEmployeeId = sender.employeeId;
+        senderEmployeeId = senderEmployeeId || sender.employeeId;
         senderRole = senderRole || sender.role;
       }
     } catch (_) {}

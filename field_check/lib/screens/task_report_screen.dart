@@ -73,6 +73,12 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     _startAutosave();
   }
 
+  bool get _isTaskBlocked {
+    final s = (_task.userTaskStatus ?? '').trim();
+    if (s == 'blocked') return true;
+    return (_task.blockStatus ?? '').toLowerCase().trim() == 'blocked';
+  }
+
   bool get _isResubmission {
     final id = widget.existingReportId;
     return id != null && id.trim().isNotEmpty;
@@ -159,34 +165,69 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
     if (_isSubmittingGrade) return;
 
+    final score = _gradeScore.toInt();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Grading'),
+        content: Text('Are you sure you want to submit a grade of $score/100?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() {
       _isSubmittingGrade = true;
     });
 
     try {
+      // In the backend, gradeUserTask already updates history.
+      // We retrieve updated UserTask to get comments correctly if possible,
+      // but for now we'll rely on the local state update.
       await TaskService().gradeTask(
         userTaskId,
-        _gradeScore.toInt(),
+        score,
         _gradeFeedbackController.text.trim(),
       );
       if (!mounted) return;
-      setState(() {
-        _task = _task.copyWith(
-          isGraded: true,
-          gradeScore: _gradeScore.toInt(),
-          gradeFeedback: _gradeFeedbackController.text.trim(),
-          userTaskStatus: 'reviewed', // Updates local state status
-        );
-      });
+
+      // Refresh task to get the consolidated comment history
+      try {
+        final updated = await TaskService().getTaskById(_task.id);
+        if (mounted) {
+          setState(() {
+            _task = updated;
+          });
+        }
+      } catch (_) {
+        // Fallback to manual local update if refresh fails
+        setState(() {
+          _task = _task.copyWith(
+            isGraded: true,
+            gradeScore: score,
+            gradeFeedback: _gradeFeedbackController.text.trim(),
+            userTaskStatus: 'reviewed',
+          );
+        });
+      }
+
+      if (!mounted) return;
       AppWidgets.showSuccessSnackbar(context, 'Task successfully graded!');
     } catch (e) {
       if (!mounted) return;
       AppWidgets.showErrorSnackbar(
         context,
-        AppWidgets.friendlyErrorMessage(
-          e,
-          fallback: 'Failed to submit grade',
-        ),
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to submit grade'),
       );
     } finally {
       if (mounted) {
@@ -748,6 +789,13 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
 
   Future<bool> _submitReport() async {
     if (_isSubmitting) return false;
+    if (_isTaskBlocked) {
+      AppWidgets.showErrorSnackbar(
+        context,
+        'This task is blocked. Please wait for an admin to unblock it.',
+      );
+      return false;
+    }
     if (_textController.text.trim().isEmpty) {
       AppWidgets.showWarningSnackbar(
         context,
@@ -908,7 +956,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         AppWidgets.showSuccessSnackbar(
           context,
           _isResubmission
-              ? 'Report resubmitted successfully!'
+              ? 'Report resubmitted (reopened window)!'
               : 'Report submitted successfully!',
         );
         Navigator.pop(context, true);
@@ -1042,7 +1090,10 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.green.shade600,
                     borderRadius: BorderRadius.circular(20),
@@ -1409,16 +1460,15 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                         ),
                         itemBuilder: (context, index) {
                           final item = _task.checklist[index];
-                          final isDisabled =
-                              _task.rawStatus == 'blocked' || _isSubmitting;
+                          final isDisabled = _isTaskBlocked || _isSubmitting;
                           return CheckboxListTile(
                             value: item.isCompleted,
                             onChanged: isDisabled
                                 ? null
-                                : (value) {
-                                    if (value == null) return;
-                                    _toggleChecklistItem(index, value);
-                                  },
+                                : (value) => _toggleChecklistItem(
+                                    index,
+                                    value ?? false,
+                                  ),
                             title: Text(item.label),
                             subtitle: item.completedAt != null
                                 ? Text(
@@ -1461,6 +1511,8 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                         controller: _textController,
                         maxLines: null,
                         expands: true,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.left,
                         textAlignVertical: TextAlignVertical.top,
                         style: AppTheme.bodyMd,
                         decoration: const InputDecoration(
@@ -1645,81 +1697,80 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
               padding: const EdgeInsets.all(AppTheme.lg),
               child: Row(
                 children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed:
-                        _isSubmitting ||
-                            _isBlocking ||
-                            _task.rawStatus == 'blocked'
-                        ? null
-                        : _blockTask,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: const BorderSide(color: Colors.red),
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.lg,
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isSubmitting || _isBlocking || _isTaskBlocked
+                          ? null
+                          : _blockTask,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppTheme.lg,
+                        ),
                       ),
-                    ),
-                    child: _isBlocking
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.red,
-                              ),
-                            ),
-                          )
-                        : const Text(
-                            'Block Task',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: AppTheme.md),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting ? null : _submitReport,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.lg,
-                      ),
-                    ),
-                    child: _isSubmitting
-                        ? const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
+                      child: _isBlocking
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.red,
                                 ),
                               ),
-                              SizedBox(width: 8),
-                              Text('Submitting...'),
-                            ],
-                          )
-                        : const Text(
-                            'Submit Report',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                            )
+                          : const Text(
+                              'Block Task',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: AppTheme.md),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting || _isTaskBlocked
+                          ? null
+                          : _submitReport,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppTheme.lg,
+                        ),
+                      ),
+                      child: _isSubmitting
+                          ? const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Text('Submitting...'),
+                              ],
+                            )
+                          : const Text(
+                              'Submit Report',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

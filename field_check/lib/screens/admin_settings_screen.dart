@@ -40,6 +40,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   bool _settingsLoadedFromBackend = true;
   bool _isSavingSettings = false;
 
+  // Data Retention Settings
+  int _notifExpiryDays = 30;
+  int _msgExpiryDays = 30;
+  bool _autoDeleteNotifs = false;
+  bool _autoDeleteMsgs = false;
+
   final UserService _userService = UserService();
   final SettingsService _settingsService = SettingsService();
   final NotificationService _notificationService = NotificationService();
@@ -209,6 +215,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           _geofenceRadius =
               (settings['geofenceRadius'] as num?)?.toInt() ?? _geofenceRadius;
           _syncFrequency = settings['syncFrequency'] ?? _syncFrequency;
+          
+          _notifExpiryDays = (settings['notifExpiryDays'] as num?)?.toInt() ?? _notifExpiryDays;
+          _msgExpiryDays = (settings['msgExpiryDays'] as num?)?.toInt() ?? _msgExpiryDays;
+          _autoDeleteNotifs = settings['autoDeleteNotifs'] == true;
+          _autoDeleteMsgs = settings['autoDeleteMsgs'] == true;
+
           _settingsLoadedFromBackend = true;
         });
         final prefs = await SharedPreferences.getInstance();
@@ -280,6 +292,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         'geofenceRadius': _geofenceRadius.toDouble(),
         'syncFrequency': _syncFrequency,
         'task.maxActivePerEmployee': _taskMaxActivePerEmployee,
+        'notifExpiryDays': _notifExpiryDays,
+        'msgExpiryDays': _msgExpiryDays,
+        'autoDeleteNotifs': _autoDeleteNotifs,
+        'autoDeleteMsgs': _autoDeleteMsgs,
       });
       if (!mounted) return;
       setState(() {
@@ -852,7 +868,56 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: gap),
+                SizedBox(
+                  width: double.infinity,
+                  child: cardShell(
+                    title: 'Auto-Cleanup & Retention',
+                    icon: Icons.auto_delete_outlined,
+                    children: [
+                      _buildSwitchSetting(
+                        title: 'Auto-Delete Notifications',
+                        subtitle: 'Automatically remove old notifications',
+                        value: _autoDeleteNotifs,
+                        onChanged: (val) => setState(() => _autoDeleteNotifs = val),
+                      ),
+                      if (_autoDeleteNotifs) ...[
+                        const SizedBox(height: 8),
+                        _buildDropdownSetting(
+                          title: 'Notifications Retention',
+                          value: _notifExpiryDays.toString(),
+                          items: const ['7', '14', '30', '60', '90', '180', '365'],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _notifExpiryDays = int.parse(val));
+                            }
+                          },
+                        ),
+                      ],
+                      const Divider(height: 18),
+                      _buildSwitchSetting(
+                        title: 'Auto-Delete Messages',
+                        subtitle: 'Automatically remove old chat messages',
+                        value: _autoDeleteMsgs,
+                        onChanged: (val) => setState(() => _autoDeleteMsgs = val),
+                      ),
+                      if (_autoDeleteMsgs) ...[
+                        const SizedBox(height: 8),
+                        _buildDropdownSetting(
+                          title: 'Messages Retention',
+                          value: _msgExpiryDays.toString(),
+                          items: const ['7', '14', '30', '60', '90', '180', '365'],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _msgExpiryDays = int.parse(val));
+                            }
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: gap),
                 SizedBox(
                   width: double.infinity,
                   child: cardShell(

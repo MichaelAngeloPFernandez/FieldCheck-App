@@ -8,7 +8,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:field_check/screens/admin_geofence_screen.dart';
 import 'package:field_check/screens/admin_reports_hub_screen.dart';
-import 'package:field_check/screens/admin_reports_screen.dart';
 import 'package:field_check/screens/admin_settings_screen.dart';
 import 'package:field_check/screens/admin_task_management_screen.dart';
 import 'package:field_check/screens/admin_world_map_screen.dart';
@@ -34,6 +33,7 @@ import 'package:field_check/screens/admin_chat_screen.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/http_util.dart';
+import 'package:field_check/utils/url_util.dart';
 
 class _AdminNavIntent extends Intent {
   final int index;
@@ -247,17 +247,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       _liveLocations.remove(k);
       _trails.remove(k);
     }
-  }
-
-  int get _onlinePresenceCount {
-    // Prefer the authoritative snapshot/presence set.
-    if (_onlineEmployeesByUserId.isNotEmpty) {
-      return _onlineEmployeesByUserId.length;
-    }
-    if (_onlineEmployeeIds.isNotEmpty) {
-      return _onlineEmployeeIds.length;
-    }
-    return _gpsOnlineCount;
   }
 
   String _selectedEmployeeLabel() {
@@ -918,12 +907,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required Color fallbackColor,
     bool compact = false,
   }) {
-    final theme = Theme.of(context);
     final color = metric.color ?? fallbackColor;
-    final isDark = theme.brightness == Brightness.dark;
-    final textStyle = theme.textTheme.labelSmall?.copyWith(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
       fontWeight: FontWeight.w700,
-      color: theme.colorScheme.onSurface.withValues(alpha: 0.85),
+      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85),
       fontSize: compact ? 11 : null,
     );
 
@@ -944,7 +932,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               text: metric.value,
               style: textStyle?.copyWith(
                 fontWeight: FontWeight.w800,
-                color: theme.colorScheme.onSurface,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             TextSpan(text: ' ${metric.label}', style: textStyle),
@@ -961,7 +949,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required List<_StatMetric> metrics,
     String? footer,
   }) {
-    final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -983,8 +970,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             Expanded(
               child: Text(
                 description ?? 'Summary',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1009,8 +998,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: 12),
           Text(
             footer,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
         ],
@@ -1105,84 +1096,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         if (_seenNotificationIds.contains(id)) continue;
         _seenNotificationIds.add(id);
 
-        final payload = raw['payload'];
-        final merged = <String, dynamic>{...raw};
-        if (payload is Map) {
-          try {
-            merged.addAll(Map<String, dynamic>.from(payload));
-          } catch (_) {}
-        }
-
-        String senderEmp =
-            (merged['senderEmployeeId'] ??
-                    merged['senderEmployeeNo'] ??
-                    merged['senderEmployeeCode'] ??
-                    merged['employeeNo'] ??
-                    merged['employeeCode'] ??
-                    merged['employeeId'] ??
-                    '')
-                .toString()
-                .trim();
-        String senderName =
-            (merged['senderName'] ??
-                    merged['senderFullName'] ??
-                    merged['employeeName'] ??
-                    merged['fullName'] ??
-                    '')
-                .toString()
-                .trim();
-        final username = (merged['senderUsername'] ?? merged['username'] ?? '')
-            .toString()
-            .trim();
-
-        final messageContent =
-            (merged['messageText'] ??
-                    merged['chatMessage'] ??
-                    merged['message'] ??
-                    '')
-                .toString()
-                .trim();
-
-        if ((senderEmp.isEmpty || senderName.isEmpty) &&
-            (merged['title'] ?? '').toString().trim().isNotEmpty) {
-          final t = (merged['title'] ?? '').toString();
-          final empMatch = RegExp(r'\(([^)]+)\)').firstMatch(t);
-          if (senderEmp.isEmpty && empMatch != null) {
-            senderEmp = (empMatch.group(1) ?? '').toString().trim();
-          }
-          if (senderName.isEmpty) {
-            final nameMatch = RegExp(r'from\s+(.+?)(\s*\(|$)').firstMatch(t);
-            if (nameMatch != null) {
-              senderName = (nameMatch.group(1) ?? '').toString().trim();
-            }
-          }
-        }
-
-        final displayUser = username.isNotEmpty
-            ? username
-            : (senderName.isNotEmpty ? senderName : 'User');
-
-        final displayName = senderName.isNotEmpty
-            ? senderName
-            : (username.isNotEmpty ? username : 'Unknown');
-
-        final title = 'New Chat Message Received';
-        final message =
-            'Employee No: ${senderEmp.isNotEmpty ? senderEmp : '-'}\nEmployee Name: $displayName\nUser: $displayUser\nMessage: "${messageContent.isNotEmpty ? messageContent : '-'}"';
-        final createdAtRaw = (raw['createdAt'] ?? '').toString();
-        final parsedTs = DateTime.tryParse(createdAtRaw);
-
-        toInsert.add(
-          DashboardNotification(
-            id: id,
-            title: title,
-            message: message,
-            type: 'messages',
-            timestamp: parsedTs ?? DateTime.now(),
-            payload: raw,
-            isRead: (raw['readAt'] ?? '').toString().trim().isNotEmpty,
-          ),
-        );
+        // Keep the raw payload intact for deep-linking (conversationId, sender, etc.).
+        toInsert.add(_notificationFromRaw(raw));
       }
 
       if (toInsert.isEmpty) return;
@@ -1222,8 +1137,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<Geofence> _geofences = [];
   Geofence? _selectedNearbyGeofence;
 
-  // Notification system
+  // Notification and Inbox State
   final List<DashboardNotification> _notifications = [];
+  int _inboxTabIndex = 0; // 0: Notifications, 1: Messages
+  bool _notifSelectionMode = false;
+  final Set<String> _selectedNotifIds = {};
+  int _unreadNotificationsCount = 0;
+  StreamSubscription<Map<String, dynamic>>? _unreadCountsSub;
   final Set<String> _snackDedupKeys = {};
 
   String? _onlineEmployeesNotificationId;
@@ -1315,8 +1235,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex ?? 0;
+    UrlUtil.updateTabQueryParam(_selectedIndex);
     _loadDashboardData();
     _initRealtimeService();
+    _subscribeToUnreadCounts();
+    _refreshUnreadNotificationsCount();
+    _loadInboxNotifications();
     _initMapData();
     _initLocationService();
     _startGpsSweepTimer();
@@ -1330,14 +1254,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildNotificationItem(DashboardNotification notif) {
-    final theme = Theme.of(context);
     final color = _notificationTypeColor(notif.type);
     final ts = formatManila(notif.timestamp, 'MMM d, HH:mm');
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: theme.colorScheme.surface,
+      color: Theme.of(context).colorScheme.surface,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         onTap: () async {
@@ -1368,9 +1291,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         title: Text(
           notif.title,
-          style: theme.textTheme.titleSmall?.copyWith(
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
             fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
-            color: theme.colorScheme.onSurface,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         subtitle: Column(
@@ -1379,8 +1302,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(height: 4),
             Text(
               notif.message,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.75),
               ),
             ),
             const SizedBox(height: 4),
@@ -1389,13 +1314,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 Icon(
                   Icons.schedule,
                   size: 12,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
                 const SizedBox(width: 4),
                 Text(
                   ts,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ],
@@ -1529,7 +1458,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           showDragHandle: true,
           useSafeArea: true,
           builder: (bctx) {
-            final theme = Theme.of(bctx);
             return Padding(
               padding: EdgeInsets.only(
                 left: 16,
@@ -1548,9 +1476,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         Expanded(
                           child: Text(
                             notif.title,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                            style: Theme.of(bctx).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                         ),
                         IconButton(
@@ -1751,27 +1678,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  final payload = notif.payload ?? <String, dynamic>{};
-                  final reportId =
-                      (payload['reportId'] ?? payload['reportID'] ?? '')
-                          .toString();
-                  if (reportId.trim().isNotEmpty) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => AdminReportsScreen(
-                          embedded: false,
-                          initialReportId: reportId,
-                        ),
-                      ),
-                    );
-                    return;
-                  }
-
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AdminReportsScreen(embedded: false),
-                    ),
-                  );
+                  AdminReportsHubScreen.selectInitialTab(0);
+                  _selectAdminScreen(4);
                 },
                 icon: const Icon(Icons.description),
                 label: const Text('Go to reports'),
@@ -1781,14 +1689,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 onPressed: () {
                   Navigator.pop(ctx);
                   AdminReportsHubScreen.selectInitialTab(1);
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AdminReportsHubScreen(),
-                    ),
-                  );
+                  _selectAdminScreen(4);
                 },
                 icon: const Icon(Icons.insights),
                 label: const Text('Analytics'),
+              ),
+            if (notif.type == 'task')
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  _selectAdminScreen(6);
+                },
+                child: const Text('Go to tasks'),
+              ),
+            if (notif.type == 'geofence')
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  _selectAdminScreen(3);
+                },
+                child: const Text('Go to geofences'),
               ),
             if (notif.type == 'messages')
               TextButton(
@@ -2436,10 +2358,214 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  void _markReadByIds(Set<String> ids, {required bool read}) async {
+    if (ids.isEmpty) return;
+    setState(() {
+      for (final n in _notifications) {
+        if (ids.contains(n.id)) n.isRead = read;
+      }
+    });
+
+    try {
+      final ts = TaskService();
+      if (read) {
+        await ts.markNotificationIdsRead(ids.toList());
+      } else {
+        await ts.markNotificationIdsUnread(ids.toList());
+      }
+    } catch (_) {}
+
+    _refreshUnreadNotificationsCount();
+  }
+
+  Future<void> _deleteByIds(Set<String> ids) async {
+    if (ids.isEmpty) return;
+    setState(() {
+      _notifications.removeWhere((n) => ids.contains(n.id));
+    });
+    try {
+      await TaskService().deleteNotificationIds(ids.toList());
+      if (!mounted) return;
+    } catch (_) {}
+
+    _refreshUnreadNotificationsCount();
+  }
+
+  Future<void> _refreshUnreadNotificationsCount() async {
+    try {
+      final total = await TaskService().fetchTotalUnreadCount();
+      if (!mounted) return;
+      setState(() {
+        _unreadNotificationsCount = total;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _loadInboxNotifications() async {
+    try {
+      final items = await TaskService().listAppNotifications(
+        unreadOnly: false,
+        limit: 50,
+        page: 1,
+      );
+      if (!mounted) return;
+      if (items.isEmpty) return;
+
+      final toInsert = <DashboardNotification>[];
+      for (final raw in items) {
+        final id = (raw['id'] ?? raw['_id'] ?? '').toString().trim();
+        if (id.isEmpty) continue;
+        if (_seenNotificationIds.contains(id)) continue;
+        _seenNotificationIds.add(id);
+
+        toInsert.add(_notificationFromRaw(raw));
+      }
+
+      if (toInsert.isEmpty) return;
+      toInsert.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+      setState(() {
+        _notifications.insertAll(0, toInsert);
+        if (_notifications.length > 50) {
+          _notifications.removeRange(50, _notifications.length);
+        }
+      });
+    } catch (_) {}
+  }
+
+  DashboardNotification _notificationFromRaw(Map<String, dynamic> raw) {
+    final id = (raw['id'] ?? raw['_id'] ?? '').toString().trim();
+    final scope = (raw['scope'] ?? '').toString().trim();
+    final ntype = (raw['type'] ?? '').toString().trim().toLowerCase();
+    final action = (raw['action'] ?? '').toString().trim().toLowerCase();
+
+    final title = (raw['title'] ?? 'Notification').toString();
+    final message = (raw['message'] ?? '').toString();
+
+    final createdAtRaw = (raw['createdAt'] ?? raw['timestamp'] ?? '')
+        .toString();
+    final parsedTs = DateTime.tryParse(createdAtRaw);
+    final ts = parsedTs ?? DateTime.now();
+
+    String uiType = ntype;
+    if (uiType.isEmpty ||
+        uiType == 'info' ||
+        uiType == 'warning' ||
+        uiType == 'success' ||
+        uiType == 'error') {
+      if (scope == 'messages') {
+        uiType = 'messages';
+      } else if (scope == 'geofences') {
+        uiType = 'geofence';
+      } else if (scope == 'tasks') {
+        uiType = 'task';
+      } else if (scope == 'announcements') {
+        uiType = 'employee';
+      } else if (scope == 'adminFeed') {
+        if (action.contains('report') || ntype == 'report') {
+          uiType = 'report';
+        } else if (action.contains('attendance') || ntype == 'attendance') {
+          uiType = 'attendance';
+        } else {
+          uiType = 'employee';
+        }
+      } else {
+        uiType = 'employee';
+      }
+    }
+
+    return DashboardNotification(
+      id: id.isNotEmpty ? id : DateTime.now().millisecondsSinceEpoch.toString(),
+      title: title,
+      message: message,
+      type: uiType,
+      timestamp: ts,
+      payload: raw,
+      isRead: (raw['readAt'] ?? '').toString().trim().isNotEmpty,
+    );
+  }
+
+  List<DashboardNotification> _groupMessageNotifications(
+    List<DashboardNotification> list,
+  ) {
+    final Map<String, List<DashboardNotification>> byConvo =
+        <String, List<DashboardNotification>>{};
+    final singles = <DashboardNotification>[];
+
+    for (final n in list) {
+      if (n.type != 'messages') continue;
+      final payload = n.payload ?? const <String, dynamic>{};
+      final convoId =
+          (payload['conversationId'] ?? payload['conversationID'] ?? '')
+              .toString()
+              .trim();
+      if (convoId.isEmpty) {
+        singles.add(n);
+        continue;
+      }
+      byConvo.putIfAbsent(convoId, () => <DashboardNotification>[]).add(n);
+    }
+
+    final out = <DashboardNotification>[];
+    out.addAll(singles);
+
+    for (final entry in byConvo.entries) {
+      final convoId = entry.key;
+      final items = entry.value
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      final latest = items.first;
+      final unread = items.where((e) => !e.isRead).length;
+
+      final payload = Map<String, dynamic>.from(
+        latest.payload ?? const <String, dynamic>{},
+      );
+      payload['conversationId'] = convoId;
+      payload['groupedIds'] = items.map((e) => e.id).toList(growable: false);
+
+      final senderName = (payload['senderName'] ?? '').toString().trim();
+      final senderEmp =
+          (payload['senderEmployeeId'] ?? payload['employeeId'] ?? '')
+              .toString()
+              .trim();
+      final who = [
+        if (senderName.isNotEmpty) senderName,
+        if (senderEmp.isNotEmpty) senderEmp,
+      ].join(' • ');
+
+      out.add(
+        DashboardNotification(
+          id: 'convo:$convoId',
+          title: who.isNotEmpty ? who : latest.title,
+          message: latest.message,
+          type: 'messages',
+          timestamp: latest.timestamp,
+          payload: payload,
+          isRead: unread == 0,
+        ),
+      );
+    }
+
+    out.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return out;
+  }
+
   Widget _buildNotificationSidebar() {
-    final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
     final sidebarWidth = (width * 0.35).clamp(320.0, 420.0);
+
+    final List<DashboardNotification> items = _inboxTabIndex == 1
+        ? _groupMessageNotifications(_notifications)
+        : _notifications.where((n) => n.type != 'messages').toList();
+
+    final int notificationsUnreadCount = _notifications
+        .where((n) => n.type != 'messages' && !n.isRead)
+        .length;
+    final int messagesUnreadCount = _notifications
+        .where((n) => n.type == 'messages' && !n.isRead)
+        .length;
+
+    final allSelected =
+        items.isNotEmpty && _selectedNotifIds.length == items.length;
 
     return Drawer(
       width: sidebarWidth,
@@ -2447,27 +2573,252 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
               child: Row(
                 children: [
-                  Icon(Icons.notifications_active_outlined, color: theme.colorScheme.primary),
+                  Icon(
+                    _notifSelectionMode
+                        ? Icons.checklist
+                        : Icons.notifications_active_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                   const SizedBox(width: 12),
-                  const Text('Notifications', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text(
+                    _notifSelectionMode ? 'Select Items' : 'Inbox',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const Spacer(),
-                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                  if (!_notifSelectionMode)
+                    IconButton(
+                      icon: const Icon(Icons.playlist_add_check),
+                      tooltip: 'Selection Mode',
+                      onPressed: () =>
+                          setState(() => _notifSelectionMode = true),
+                    ),
+                  if (_notifSelectionMode)
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => setState(() {
+                        _notifSelectionMode = false;
+                        _selectedNotifIds.clear();
+                      }),
+                    )
+                  else
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
                 ],
               ),
             ),
+            if (!_notifSelectionMode)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: SegmentedButton<int>(
+                  segments: [
+                    ButtonSegment(
+                      value: 0,
+                      label: const Text('Notifications'),
+                      icon: Badge(
+                        isLabelVisible: notificationsUnreadCount > 0,
+                        label: Text(
+                          notificationsUnreadCount > 999
+                              ? '999+'
+                              : notificationsUnreadCount.toString(),
+                        ),
+                        child: const Icon(Icons.notifications_none),
+                      ),
+                    ),
+                    ButtonSegment(
+                      value: 1,
+                      label: const Text('Messages'),
+                      icon: Badge(
+                        isLabelVisible: messagesUnreadCount > 0,
+                        label: Text(
+                          messagesUnreadCount > 999
+                              ? '999+'
+                              : messagesUnreadCount.toString(),
+                        ),
+                        child: const Icon(Icons.mail_outline),
+                      ),
+                    ),
+                  ],
+                  selected: {_inboxTabIndex},
+                  onSelectionChanged: (vals) {
+                    setState(() {
+                      _inboxTabIndex = vals.first;
+                    });
+                  },
+                ),
+              ),
+            if (_notifSelectionMode)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    Checkbox(
+                      value: allSelected,
+                      tristate:
+                          items.isNotEmpty &&
+                          _selectedNotifIds.isNotEmpty &&
+                          !allSelected,
+                      onChanged: (_) {
+                        setState(() {
+                          if (allSelected) {
+                            _selectedNotifIds.clear();
+                          } else {
+                            _selectedNotifIds.addAll(items.map((e) => e.id));
+                          }
+                        });
+                      },
+                    ),
+                    Text(
+                      _selectedNotifIds.isEmpty
+                          ? 'Select all'
+                          : '${_selectedNotifIds.length} selected',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (_selectedNotifIds.isNotEmpty) ...[
+                      IconButton(
+                        icon: const Icon(Icons.mark_chat_read_outlined),
+                        tooltip: 'Mark as read',
+                        onPressed: () {
+                          _markReadByIds(
+                            Set.from(_selectedNotifIds),
+                            read: true,
+                          );
+                          setState(() {
+                            _notifSelectionMode = false;
+                            _selectedNotifIds.clear();
+                          });
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.red,
+                        ),
+                        tooltip: 'Delete',
+                        onPressed: () async {
+                          final confirm =
+                              await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Delete?'),
+                                  content: Text(
+                                    'Delete ${_selectedNotifIds.length} items?',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: const Text('Delete'),
+                                    ),
+                                  ],
+                                ),
+                              ) ??
+                              false;
+                          if (confirm) {
+                            await _deleteByIds(Set.from(_selectedNotifIds));
+                            setState(() {
+                              _notifSelectionMode = false;
+                              _selectedNotifIds.clear();
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             const Divider(height: 1),
             Expanded(
-              child: _notifications.isEmpty
-                  ? const Center(child: Text('No new notifications'))
+              child: items.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _inboxTabIndex == 1
+                                ? Icons.mail_outline
+                                : Icons.notifications_off_outlined,
+                            size: 48,
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _inboxTabIndex == 1
+                                ? 'No messages'
+                                : 'No notifications',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
                   : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _notifications.length,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 12,
+                      ),
+                      itemCount: items.length,
                       itemBuilder: (context, index) {
-                        final notif = _notifications[index];
-                        return _buildInboxItem(notif);
+                        return _buildInboxItem(
+                          items[index],
+                          selectionMode: _notifSelectionMode,
+                          selectedIds: _selectedNotifIds,
+                          onToggleSelected: (id) {
+                            setState(() {
+                              if (_selectedNotifIds.contains(id)) {
+                                _selectedNotifIds.remove(id);
+                              } else {
+                                _selectedNotifIds.add(id);
+                              }
+                            });
+                          },
+                          onMarkRead: (ids, read) =>
+                              _markReadByIds(ids, read: read),
+                          onConfirmDelete: (count) async {
+                            return await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Delete?'),
+                                    content: Text('Remove this item?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: const Text('Delete'),
+                                      ),
+                                    ],
+                                  ),
+                                ) ??
+                                false;
+                          },
+                          onDelete: (ids) => _deleteByIds(ids),
+                        );
                       },
                     ),
             ),
@@ -2478,7 +2829,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildNotificationBadge(int count) {
-    final text = count > 99 ? '99+' : '$count';
+    final text = count > 999 ? '999+' : '$count';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -2545,13 +2896,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Set<String> ids, {
           required bool read,
           void Function(void Function())? notifySheet,
+          bool markAll = false,
         }) {
-          if (ids.isEmpty) return;
-          for (final n in _notifications) {
-            if (ids.contains(n.id)) {
-              n.isRead = read;
+          if (ids.isEmpty && !markAll) return;
+
+          if (markAll) {
+            for (final n in _notifications) {
+              if (read) n.isRead = true;
+            }
+          } else {
+            for (final n in _notifications) {
+              if (ids.contains(n.id)) {
+                n.isRead = read;
+              }
             }
           }
+
           if (notifySheet != null) {
             notifySheet(() {});
           } else if (mounted) {
@@ -2559,11 +2919,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           }
 
           // Persist read/unread state without blocking the UI.
-          if (read) {
+          if (markAll && read) {
+            setState(() {
+              _unreadNotificationsCount = 0;
+            });
+            TaskService().markAllNotificationsRead().ignore();
+          } else if (read) {
             TaskService().markNotificationIdsRead(ids.toList()).ignore();
           } else {
             TaskService().markNotificationIdsUnread(ids.toList()).ignore();
           }
+
+          _refreshUnreadNotificationsCount();
         }
 
         void deleteByIds(Set<String> ids) {
@@ -2572,6 +2939,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           setState(() {
             _notifications.removeWhere((n) => ids.contains(n.id));
           });
+
+          _refreshUnreadNotificationsCount();
         }
 
         List<DashboardNotification> activeItems() {
@@ -2588,7 +2957,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             heightFactor: 0.85,
             child: StatefulBuilder(
               builder: (sheetCtx, setSheetState) {
-                final theme = Theme.of(context);
                 final items = activeItems();
                 final unreadCount = items.where((n) => !n.isRead).length;
                 final notificationsUnread = _notifications
@@ -2700,9 +3068,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 : (unreadCount > 0
                                       ? () {
                                           markReadByIds(
-                                            items.map((n) => n.id).toSet(),
+                                            {},
                                             read: true,
                                             notifySheet: setSheetState,
+                                            markAll: true,
                                           );
                                         }
                                       : null),
@@ -2792,12 +3161,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     selectionMode: selectionMode,
                                     selectedIds: selectedIds,
                                     onToggleSelected: toggleSelected,
-                                    onMarkRead:
-                                        (ids, read) => markReadByIds(
-                                          ids,
-                                          read: read,
-                                          notifySheet: setSheetState,
-                                        ),
+                                    onMarkRead: (ids, read) => markReadByIds(
+                                      ids,
+                                      read: read,
+                                      notifySheet: setSheetState,
+                                    ),
                                     onConfirmDelete: confirmDelete,
                                     onDelete: deleteByIds,
                                     setSheetState: setSheetState,
@@ -2826,7 +3194,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     void Function(Set<String>)? onDelete,
     void Function(void Function())? setSheetState,
   }) {
-    final theme = Theme.of(context);
     final color = _notificationTypeColor(notif.type);
     final ts = formatManila(notif.timestamp, 'MMM d, HH:mm');
     final isSelected = selectedIds.contains(notif.id);
@@ -2835,7 +3202,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: theme.colorScheme.surface,
+      color: Theme.of(context).colorScheme.surface,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         onTap: () async {
@@ -2848,18 +3215,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             final payload = notif.payload ?? <String, dynamic>{};
             final convoId =
                 (payload['conversationId'] ?? payload['conversationID'] ?? '')
-                    .toString();
-            if (convoId.trim().isNotEmpty) {
+                    .toString()
+                    .trim();
+            final grouped = payload['groupedIds'];
+            final groupedIds = grouped is List
+                ? grouped
+                      .map((e) => e.toString())
+                      .where((e) => e.trim().isNotEmpty)
+                      .toSet()
+                : <String>{};
+
+            if (convoId.isNotEmpty) {
               if (onMarkRead != null) {
-                onMarkRead({notif.id}, true);
+                onMarkRead(
+                  groupedIds.isNotEmpty ? groupedIds : {notif.id},
+                  true,
+                );
               }
               ChatService().markConversationRead(convoId).ignore();
               if (!mounted) return;
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => ChatConversationScreen(
-                    conversationId: convoId,
-                  ),
+                  builder: (_) =>
+                      ChatConversationScreen(conversationId: convoId),
                 ),
               );
             }
@@ -2880,10 +3258,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         leading: selectionMode
             ? Checkbox(
                 value: isSelected,
-                onChanged:
-                    (_) => onToggleSelected != null
-                        ? onToggleSelected(notif.id)
-                        : null,
+                onChanged: (_) => onToggleSelected != null
+                    ? onToggleSelected(notif.id)
+                    : null,
               )
             : Container(
                 width: 40,
@@ -2907,9 +3284,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
         title: Text(
           notif.title,
-          style: theme.textTheme.titleSmall?.copyWith(
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
             fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
-            color: theme.colorScheme.onSurface,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -2920,8 +3297,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(height: 4),
             Text(
               notif.message,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.75),
               ),
               maxLines: notif.type == 'messages' ? 4 : 2,
               overflow: TextOverflow.ellipsis,
@@ -2932,14 +3311,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 Icon(
                   Icons.schedule,
                   size: 12,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     ts,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -2998,7 +3381,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         child: Text(notif.isRead ? 'Mark unread' : 'Mark read'),
                       ),
                       const PopupMenuDivider(),
-                      const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete'),
+                      ),
                     ],
                   ),
                 ],
@@ -3268,82 +3654,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         final scope = (merged['scope'] ?? '').toString().trim();
         if (scope == 'messages') {
-          String senderEmp =
-              (merged['senderEmployeeId'] ??
-                      merged['senderEmployeeNo'] ??
-                      merged['senderEmployeeCode'] ??
-                      merged['employeeNo'] ??
-                      merged['employeeCode'] ??
-                      merged['employeeId'] ??
-                      '')
-                  .toString()
-                  .trim();
-          String senderName =
-              (merged['senderName'] ??
-                      merged['senderFullName'] ??
-                      merged['employeeName'] ??
-                      merged['fullName'] ??
-                      '')
-                  .toString()
-                  .trim();
-          final username =
-              (merged['senderUsername'] ?? merged['username'] ?? '')
-                  .toString()
-                  .trim();
-
-          final messageContent =
-              (merged['messageText'] ??
-                      merged['chatMessage'] ??
-                      merged['message'] ??
-                      '')
-                  .toString()
-                  .trim();
-
-          if ((senderEmp.isEmpty || senderName.isEmpty) &&
-              (merged['title'] ?? '').toString().trim().isNotEmpty) {
-            final t = (merged['title'] ?? '').toString();
-            final empMatch = RegExp(r'\(([^)]+)\)').firstMatch(t);
-            if (senderEmp.isEmpty && empMatch != null) {
-              senderEmp = (empMatch.group(1) ?? '').toString().trim();
-            }
-            if (senderName.isEmpty) {
-              final nameMatch = RegExp(r'from\s+(.+?)(\s*\(|$)').firstMatch(t);
-              if (nameMatch != null) {
-                senderName = (nameMatch.group(1) ?? '').toString().trim();
-              }
-            }
-          }
-
-          final displayUser = username.isNotEmpty
-              ? username
-              : (senderName.isNotEmpty ? senderName : 'User');
-
-          final displayName = senderName.isNotEmpty
-              ? senderName
-              : (username.isNotEmpty ? username : 'Unknown');
-
-          final title = 'New Chat Message Received';
-          final message =
-              'Employee No: ${senderEmp.isNotEmpty ? senderEmp : '-'}\nEmployee Name: $displayName\nRole: Employee\nMessage: "${messageContent.isNotEmpty ? messageContent : '-'}"';
-          final createdAtRaw =
-              (merged['createdAt'] ?? merged['timestamp'] ?? '').toString();
-          final parsedTs = DateTime.tryParse(createdAtRaw);
-          final notifTs = parsedTs ?? DateTime.now();
-
           setState(() {
-            _notifications.insert(
-              0,
-              DashboardNotification(
-                id: incomingId.isNotEmpty
-                    ? incomingId
-                    : DateTime.now().millisecondsSinceEpoch.toString(),
-                title: title,
-                message: message,
-                type: 'messages',
-                timestamp: notifTs,
-                payload: merged,
-              ),
-            );
+            _notifications.insert(0, _notificationFromRaw(merged));
             if (_notifications.length > 50) {
               _notifications.removeLast();
             }
@@ -3472,6 +3784,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return;
         }
       } catch (_) {}
+    });
+  }
+
+  void _subscribeToUnreadCounts() {
+    _unreadCountsSub?.cancel();
+    _unreadCountsSub = _realtimeService.unreadCountsStream.listen((counts) {
+      final total = counts['total'];
+      final nextTotal = total is int
+          ? total
+          : total is num
+          ? total.toInt()
+          : int.tryParse(total?.toString() ?? '') ?? 0;
+
+      if (!mounted) return;
+      setState(() {
+        _unreadNotificationsCount = nextTotal;
+      });
     });
   }
 
@@ -3774,6 +4103,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _employeeLocationsSub?.cancel();
     _employeeLocationsSnapshotSub?.cancel();
     _liveLocationFallbackSub?.cancel();
+    _unreadCountsSub?.cancel();
     _employeeSearchController.dispose();
     _mapController.dispose();
     super.dispose();
@@ -3921,6 +4251,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     setState(() {
       _selectedIndex = index;
     });
+    UrlUtil.updateTabQueryParam(index);
 
     // If we navigated back to the dashboard and stats were marked dirty
     // (or not loaded yet), refresh immediately.
@@ -4519,11 +4850,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     clipBehavior: Clip.none,
                     children: [
                       const Icon(Icons.notifications),
-                      if (_onlinePresenceCount > 0)
+                      if (_unreadNotificationsCount > 0)
                         Positioned(
                           right: -2,
                           top: -2,
-                          child: _buildNotificationBadge(_onlinePresenceCount),
+                          child: _buildNotificationBadge(
+                            _unreadNotificationsCount,
+                          ),
                         ),
                     ],
                   ),

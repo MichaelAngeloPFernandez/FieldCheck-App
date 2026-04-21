@@ -21,6 +21,67 @@ import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/file_download/file_download.dart';
 import 'package:flutter/services.dart';
 
+class _ResubmitCountdown extends StatefulWidget {
+  final DateTime until;
+
+  const _ResubmitCountdown({required this.until});
+
+  @override
+  State<_ResubmitCountdown> createState() => _ResubmitCountdownState();
+}
+
+class _ResubmitCountdownState extends State<_ResubmitCountdown> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _format(Duration d) {
+    var secs = d.inSeconds;
+    if (secs <= 0) return '0s';
+
+    final days = secs ~/ 86400;
+    secs -= days * 86400;
+    final hours = secs ~/ 3600;
+    secs -= hours * 3600;
+    final mins = secs ~/ 60;
+    secs -= mins * 60;
+
+    final parts = <String>[];
+    if (days > 0) parts.add('${days}d');
+    if (hours > 0 || days > 0) parts.add('${hours}h');
+    if (mins > 0 || hours > 0 || days > 0) parts.add('${mins}m');
+    parts.add('${secs}s');
+    return parts.join(' ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = widget.until.difference(DateTime.now());
+    final isActive = remaining.inSeconds > 0;
+    final text = isActive ? _format(remaining) : 'Expired';
+
+    return Text(
+      text,
+      style: Theme.of(
+        context,
+      ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800),
+    );
+  }
+}
+
 class AdminReportsScreen extends StatefulWidget {
   final String? employeeId;
   final bool embedded;
@@ -73,6 +134,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   final AttendanceService _attendanceService = AttendanceService();
   final TaskService _taskService = TaskService();
+
+  bool _isTaskAssignmentBlocked(ReportModel r) {
+    final status = (r.taskBlockStatus ?? '').trim().toLowerCase();
+    return status == 'blocked';
+  }
 
   void _openEmployeeHistory(String employeeId, String employeeName) {
     Navigator.push(
@@ -1949,37 +2015,52 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       color: Theme.of(context).colorScheme.outlineVariant,
                     ),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      FilledButton.icon(
-                        onPressed: _openFiltersSheet,
-                        icon: const Icon(Icons.tune),
-                        label: const Text('Filters'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          textStyle: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _viewMode == 'attendance'
-                              ? 'Showing: ${_showArchivedAttendance ? 'Archived' : 'Current'} • $_filterDate • $_filterLocationLabel • $_attendanceStatusFilter'
-                              : 'Showing: ${_showArchivedReports ? 'Archived' : 'Current'} • $_taskDifficultyFilter • $_reportStatusFilter',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      Row(
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _openFiltersSheet,
+                            icon: const Icon(Icons.tune),
+                            label: const Text('Filters'),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
                               ),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _viewMode == 'attendance'
+                                  ? 'Showing: ${_showArchivedAttendance ? 'Archived' : 'Current'} • $_filterDate • $_filterLocationLabel • $_attendanceStatusFilter'
+                                  : 'Showing: ${_showArchivedReports ? 'Archived' : 'Current'} • $_taskDifficultyFilter • $_reportStatusFilter',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.7),
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonalIcon(
+                          onPressed: _exportReport,
+                          icon: const Icon(Icons.download),
+                          label: const Text('Export'),
                         ),
                       ),
                     ],
@@ -2551,475 +2632,622 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         final dialogWidth = _dialogWidthFor(ctx);
         final isWide = MediaQuery.sizeOf(ctx).width >= 900;
         final actionSize = isWide ? 44.0 : 36.0;
+        final now = DateTime.now();
+        final allowResubmit =
+            r.resubmitUntil != null && r.resubmitUntil!.isAfter(now);
+        final isBlocked = _isTaskAssignmentBlocked(r);
 
         String? grade = r.grade;
+        bool saving = false;
+        final gradeCommentController = TextEditingController(
+          text: r.gradeComment,
+        );
 
-        String labelForGrade(String? value) {
-          final v = (value ?? '').trim().toLowerCase();
-          if (v == 'poor') return 'Poor';
-          if (v == 'good') return 'Good';
-          if (v == 'excellent') return 'Excellent';
-          return 'Not graded';
-        }
+        return StatefulBuilder(
+          builder: (ctxOuter, setOuterState) {
+            String labelForGrade(String? value) {
+              final v = (value ?? '').trim().toLowerCase();
+              if (v == 'poor') return 'Poor';
+              if (v == 'good') return 'Good';
+              if (v == 'excellent') return 'Excellent';
+              return 'Not graded';
+            }
 
-        Color gradeColor(String? value) {
-          final v = (value ?? '').trim().toLowerCase();
-          if (v == 'poor') return theme.colorScheme.error;
-          if (v == 'good') return Colors.orange;
-          if (v == 'excellent') return Colors.green;
-          return theme.colorScheme.onSurface.withValues(alpha: 0.7);
-        }
+            Color gradeColor(String? value) {
+              final v = (value ?? '').trim().toLowerCase();
+              if (v == 'poor') return theme.colorScheme.error;
+              if (v == 'good') return Colors.orange;
+              if (v == 'excellent') return Colors.green;
+              return theme.colorScheme.onSurface.withValues(alpha: 0.7);
+            }
 
-        return AlertDialog(
-          insetPadding: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            r.taskTitle ?? 'Report Details',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          content: SizedBox(
-            width: dialogWidth,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+            bool isGraded(String? value) {
+              final v = (value ?? '').trim().toLowerCase();
+              return v == 'poor' || v == 'good' || v == 'excellent';
+            }
+
+            Future<void> save() async {
+              if (saving) return;
+              setOuterState(() {
+                saving = true;
+              });
+              try {
+                final updated = await ReportService()
+                    .updateReportStatusWithGrade(
+                      r.id,
+                      r.status,
+                      grade: grade,
+                      gradeComment: gradeCommentController.text,
+                    );
+                if (!mounted) return;
+                setOuterState(() {
+                  grade = updated.grade;
+                  gradeCommentController.text = updated.gradeComment;
+                });
+                await _fetchTaskReports();
+              } catch (e) {
+                if (!mounted) return;
+                AppWidgets.showErrorSnackbar(
+                  context,
+                  AppWidgets.friendlyErrorMessage(
+                    e,
+                    fallback: 'Failed to save grade',
+                  ),
+                );
+              } finally {
+                if (mounted) {
+                  setOuterState(() {
+                    saving = false;
+                  });
+                }
+              }
+            }
+
+            return AlertDialog(
+              insetPadding: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildReportStatusChip(r.status),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: gradeColor(grade).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: gradeColor(grade).withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Text(
-                          labelForGrade(grade),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: gradeColor(grade),
-                          ),
-                        ),
-                      ),
-                      if (r.taskIsOverdue)
-                        _buildMetaChip(
-                          'Overdue',
-                          color: theme.colorScheme.error,
-                        ),
-                      _buildMetaChip(
-                        formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
-                      ),
-                      _buildMetaChip('Attachments: ${r.attachments.length}'),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant,
-                      ),
-                    ),
-                    child: StatefulBuilder(
-                      builder: (ctx2, setDialogState) {
-                        Future<void> saveGrade(String? next) async {
-                          try {
-                            final updated = await ReportService()
-                                .updateReportStatusWithGrade(
-                                  r.id,
-                                  r.status,
-                                  grade: next,
-                                );
-                            if (!mounted) return;
-                            setDialogState(() {
-                              grade = updated.grade;
-                            });
-                            await _fetchTaskReports();
-                          } catch (e) {
-                            if (!mounted) return;
-                            AppWidgets.showErrorSnackbar(
-                              context,
-                              AppWidgets.friendlyErrorMessage(
-                                e,
-                                fallback: 'Failed to save grade',
-                              ),
-                            );
-                          }
-                        }
-
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Grade',
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            PopupMenuButton<String>(
-                              tooltip: 'Set grade',
-                              onSelected: (value) {
-                                switch (value) {
-                                  case 'clear':
-                                    saveGrade(null);
-                                    return;
-                                  case 'poor':
-                                  case 'good':
-                                  case 'excellent':
-                                    saveGrade(value);
-                                    return;
-                                }
-                              },
-                              itemBuilder: (_) =>
-                                  const <PopupMenuEntry<String>>[
-                                    PopupMenuItem(
-                                      value: 'excellent',
-                                      child: Text('Excellent'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'good',
-                                      child: Text('Good'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'poor',
-                                      child: Text('Poor'),
-                                    ),
-                                    PopupMenuDivider(),
-                                    PopupMenuItem(
-                                      value: 'clear',
-                                      child: Text('Clear grade'),
-                                    ),
-                                  ],
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surface,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: theme.colorScheme.outlineVariant,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.grade,
-                                      size: 18,
-                                      color: gradeColor(grade),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      labelForGrade(grade),
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    const Icon(Icons.expand_more, size: 18),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildDetailRow(
-                          'Employee:',
-                          r.employeeName ?? r.employeeId,
-                        ),
-                        _buildDetailRow(
-                          'Task:',
-                          r.taskTitle ?? (r.taskId ?? '-'),
-                        ),
-                        _buildDetailRow('Status:', r.status),
-                        _buildDetailRow('Grade:', labelForGrade(grade)),
-                        _buildDetailRow(
-                          'Submitted:',
-                          formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (r.content.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      'Content',
-                      style: theme.textTheme.titleSmall?.copyWith(
+                  Expanded(
+                    child: Text(
+                      r.taskTitle ?? 'Report Details',
+                      style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                  ),
+                  if (isGraded(grade))
                     Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.green.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
                         border: Border.all(
-                          color: theme.colorScheme.outlineVariant,
+                          color: Colors.green.withValues(alpha: 0.3),
                         ),
                       ),
-                      child: SelectableText(
-                        r.content,
+                      child: Text(
+                        'Graded',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          height: 1.35,
-                          color: theme.colorScheme.onSurface.withValues(
-                            alpha: 0.85,
-                          ),
+                          fontWeight: FontWeight.w800,
+                          color: Colors.green,
                         ),
                       ),
                     ),
-                  ],
-                  if (r.attachments.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      'Attachments',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: r.attachments.asMap().entries.map((entry) {
-                        final rawPath = entry.value;
-                        final normalized = _normalizeAttachmentUrl(rawPath);
-                        final url = _ensureUrlEncoded(normalized);
-                        final filename = _filenameFromUrl(url);
-                        final accessUrl = _resolveAttachmentAccessUrl(
-                          url,
-                          filename: filename,
-                        );
-                        final downloadUrl = _resolveAttachmentAccessUrl(
-                          url,
-                          filename: filename,
-                          forDownload: true,
-                        );
-                        final isImage = _isImagePath(url);
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          child: InkWell(
-                            onTap: () async {
-                              if (isImage) {
-                                _showImagePreview(filename, accessUrl);
-                                return;
-                              }
-                              await _downloadAttachment(downloadUrl, filename);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
+                ],
+              ),
+              content: SizedBox(
+                width: dialogWidth,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildReportStatusChip(r.status),
+                          if (r.type == 'task' && isBlocked)
+                            _buildMetaChip(
+                              'BLOCKED',
+                              color: theme.colorScheme.error,
+                            ),
+                          if (r.type == 'task' && allowResubmit)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                               decoration: BoxDecoration(
-                                color: theme.colorScheme.surface,
-                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.orange.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
                                 border: Border.all(
-                                  color: theme.colorScheme.outlineVariant,
+                                  color: Colors.orange.withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    isImage
-                                        ? Icons.image
-                                        : Icons.insert_drive_file,
-                                    color: isImage
-                                        ? theme.colorScheme.primary
-                                        : theme.colorScheme.onSurface
-                                              .withValues(alpha: 0.8),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          filename,
-                                          style: theme.textTheme.bodyMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          url,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                color: theme
-                                                    .colorScheme
-                                                    .onSurface
-                                                    .withValues(alpha: 0.7),
-                                              ),
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 1,
-                                        ),
-                                      ],
+                                  Text(
+                                    'Reopened',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.deepOrange,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  _buildCardAction(
-                                    child: SizedBox(
-                                      width: actionSize,
-                                      height: actionSize,
-                                      child: PopupMenuButton<String>(
-                                        tooltip: 'Attachment actions',
-                                        padding: EdgeInsets.zero,
-                                        child: Center(
-                                          child: Icon(
-                                            Icons.more_vert,
-                                            color: theme.colorScheme.onSurface
-                                                .withValues(alpha: 0.8),
-                                          ),
-                                        ),
-                                        onSelected: (value) async {
-                                          switch (value) {
-                                            case 'preview':
-                                              _showImagePreview(
-                                                filename,
-                                                accessUrl,
-                                              );
-                                              return;
-                                            case 'download':
-                                              await _downloadAttachment(
-                                                downloadUrl,
-                                                filename,
-                                              );
-                                              return;
-                                            case 'copy':
-                                              await Clipboard.setData(
-                                                ClipboardData(text: accessUrl),
-                                              );
-                                              if (!mounted) return;
-                                              AppWidgets.showSuccessSnackbar(
-                                                context,
-                                                'Link copied',
-                                              );
-                                              return;
-                                          }
-                                        },
-                                        itemBuilder: (ctx) =>
-                                            <PopupMenuEntry<String>>[
-                                              if (isImage)
-                                                const PopupMenuItem(
-                                                  value: 'preview',
-                                                  child: Text('Preview'),
-                                                ),
-                                              const PopupMenuItem(
-                                                value: 'download',
-                                                child: Text('Download'),
-                                              ),
-                                              const PopupMenuDivider(),
-                                              const PopupMenuItem(
-                                                value: 'copy',
-                                                child: Text('Copy link'),
-                                              ),
-                                            ],
-                                      ),
-                                    ),
-                                  ),
+                                  _ResubmitCountdown(until: r.resubmitUntil!),
                                 ],
                               ),
                             ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: gradeColor(grade).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: gradeColor(grade).withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Text(
+                              labelForGrade(grade),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: gradeColor(grade),
+                              ),
+                            ),
                           ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            if (r.type == 'task' && r.taskIsOverdue)
-              FilledButton(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (c) => AlertDialog(
-                      title: const Text('Reopen submission?'),
-                      content: const Text(
-                        'Allow this employee to resubmit their report for the next 24 hours?',
+                          if (r.taskIsOverdue)
+                            _buildMetaChip(
+                              'Overdue',
+                              color: theme.colorScheme.error,
+                            ),
+                          _buildMetaChip(
+                            formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
+                          ),
+                          if (r.type == 'task' && r.taskBlockedAt != null)
+                            _buildMetaChip(
+                              'Blocked: ${formatManila(r.taskBlockedAt!, 'yyyy-MM-dd HH:mm')}',
+                              color: theme.colorScheme.error,
+                            ),
+                          _buildMetaChip(
+                            'Attachments: ${r.attachments.length}',
+                          ),
+                        ],
                       ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(c, false),
-                          child: const Text('Cancel'),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant,
+                          ),
                         ),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(c, true),
-                          child: const Text('Reopen 24h'),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Grade',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                PopupMenuButton<String>(
+                                  tooltip: 'Set grade',
+                                  onSelected: (value) {
+                                    switch (value) {
+                                      case 'clear':
+                                        setOuterState(() {
+                                          grade = null;
+                                        });
+                                        return;
+                                      case 'poor':
+                                      case 'good':
+                                      case 'excellent':
+                                        setOuterState(() {
+                                          grade = value;
+                                        });
+                                        return;
+                                    }
+                                  },
+                                  itemBuilder: (_) =>
+                                      const <PopupMenuEntry<String>>[
+                                        PopupMenuItem(
+                                          value: 'excellent',
+                                          child: Text('Excellent'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'good',
+                                          child: Text('Good'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'poor',
+                                          child: Text('Poor'),
+                                        ),
+                                        PopupMenuDivider(),
+                                        PopupMenuItem(
+                                          value: 'clear',
+                                          child: Text('Clear grade'),
+                                        ),
+                                      ],
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.surface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: theme.colorScheme.outlineVariant,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.grade,
+                                          size: 18,
+                                          color: gradeColor(grade),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          labelForGrade(grade),
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        const Icon(Icons.expand_more, size: 18),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: gradeCommentController,
+                              maxLines: 4,
+                              decoration: const InputDecoration(
+                                labelText: 'Grade comment',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: saving ? null : save,
+                                icon: saving
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.save),
+                                label: Text(saving ? 'Saving…' : 'Save'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildDetailRow(
+                              'Employee:',
+                              r.employeeName ?? r.employeeId,
+                            ),
+                            _buildDetailRow(
+                              'Task:',
+                              r.taskTitle ?? (r.taskId ?? '-'),
+                            ),
+                            if (r.type == 'task' && isBlocked)
+                              _buildDetailRow('Task status:', 'BLOCKED'),
+                            if (r.type == 'task' &&
+                                (r.taskBlockReasonText ?? '').trim().isNotEmpty)
+                              _buildDetailRow(
+                                'Block reason:',
+                                r.taskBlockReasonText!.trim(),
+                              ),
+                            _buildDetailRow('Status:', r.status),
+                            _buildDetailRow('Grade:', labelForGrade(grade)),
+                            if (gradeCommentController.text.trim().isNotEmpty)
+                              _buildDetailRow(
+                                'Comment:',
+                                gradeCommentController.text.trim(),
+                              ),
+                            _buildDetailRow(
+                              'Submitted:',
+                              formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (r.content.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Content',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: SelectableText(
+                            r.content,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              height: 1.35,
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.85,
+                              ),
+                            ),
+                          ),
                         ),
                       ],
-                    ),
-                  );
-                  if (ok != true) return;
-                  try {
-                    await ReportService().reopenReportForResubmission(
-                      reportId: r.id,
-                      hours: 24,
-                    );
-                    await _fetchTaskReports();
-                    if (!mounted) return;
-                    AppWidgets.showSuccessSnackbar(
-                      context,
-                      'Submission reopened for 24 hours',
-                    );
-                  } catch (e) {
-                    if (!mounted) return;
-                    AppWidgets.showErrorSnackbar(
-                      context,
-                      AppWidgets.friendlyErrorMessage(
-                        e,
-                        fallback: 'Failed to reopen submission',
-                      ),
-                    );
-                  }
-                },
-                child: const Text('Reopen 24h'),
+                      if (r.attachments.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Attachments',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: r.attachments.asMap().entries.map((entry) {
+                            final rawPath = entry.value;
+                            final normalized = _normalizeAttachmentUrl(rawPath);
+                            final url = _ensureUrlEncoded(normalized);
+                            final filename = _filenameFromUrl(url);
+                            final accessUrl = _resolveAttachmentAccessUrl(
+                              url,
+                              filename: filename,
+                            );
+                            final downloadUrl = _resolveAttachmentAccessUrl(
+                              url,
+                              filename: filename,
+                              forDownload: true,
+                            );
+                            final isImage = _isImagePath(url);
+
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: InkWell(
+                                onTap: () async {
+                                  if (isImage) {
+                                    _showImagePreview(filename, accessUrl);
+                                    return;
+                                  }
+                                  await _downloadAttachment(
+                                    downloadUrl,
+                                    filename,
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: theme.colorScheme.outlineVariant,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        isImage
+                                            ? Icons.image
+                                            : Icons.insert_drive_file,
+                                        color: isImage
+                                            ? theme.colorScheme.primary
+                                            : theme.colorScheme.onSurface
+                                                  .withValues(alpha: 0.8),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              filename,
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              url,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: theme
+                                                        .colorScheme
+                                                        .onSurface
+                                                        .withValues(alpha: 0.7),
+                                                  ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _buildCardAction(
+                                        child: SizedBox(
+                                          width: actionSize,
+                                          height: actionSize,
+                                          child: PopupMenuButton<String>(
+                                            tooltip: 'Attachment actions',
+                                            padding: EdgeInsets.zero,
+                                            child: Center(
+                                              child: Icon(
+                                                Icons.more_vert,
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSurface
+                                                    .withValues(alpha: 0.8),
+                                              ),
+                                            ),
+                                            onSelected: (value) async {
+                                              switch (value) {
+                                                case 'preview':
+                                                  _showImagePreview(
+                                                    filename,
+                                                    accessUrl,
+                                                  );
+                                                  return;
+                                                case 'download':
+                                                  await _downloadAttachment(
+                                                    downloadUrl,
+                                                    filename,
+                                                  );
+                                                  return;
+                                                case 'copy':
+                                                  await Clipboard.setData(
+                                                    ClipboardData(
+                                                      text: accessUrl,
+                                                    ),
+                                                  );
+                                                  if (!mounted) return;
+                                                  AppWidgets.showSuccessSnackbar(
+                                                    context,
+                                                    'Link copied',
+                                                  );
+                                                  return;
+                                              }
+                                            },
+                                            itemBuilder: (ctx) =>
+                                                <PopupMenuEntry<String>>[
+                                                  if (isImage)
+                                                    const PopupMenuItem(
+                                                      value: 'preview',
+                                                      child: Text('Preview'),
+                                                    ),
+                                                  const PopupMenuItem(
+                                                    value: 'download',
+                                                    child: Text('Download'),
+                                                  ),
+                                                  const PopupMenuDivider(),
+                                                  const PopupMenuItem(
+                                                    value: 'copy',
+                                                    child: Text('Copy link'),
+                                                  ),
+                                                ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
-            ),
-          ],
+              actions: [
+                if (r.type == 'task' && r.taskIsOverdue && !allowResubmit)
+                  FilledButton(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (c) => AlertDialog(
+                          title: const Text('Reopen submission?'),
+                          content: const Text(
+                            'Allow this employee to resubmit their report for the next 24 hours?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(c, false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(c, true),
+                              child: const Text('Reopen 24h'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (ok != true) return;
+                      try {
+                        await ReportService().reopenReportForResubmission(
+                          reportId: r.id,
+                          hours: 24,
+                        );
+                        await _fetchTaskReports();
+                        if (!mounted) return;
+                        AppWidgets.showSuccessSnackbar(
+                          context,
+                          'Submission reopened for 24 hours',
+                        );
+                      } catch (e) {
+                        if (!mounted) return;
+                        AppWidgets.showErrorSnackbar(
+                          context,
+                          AppWidgets.friendlyErrorMessage(
+                            e,
+                            fallback: 'Failed to reopen submission',
+                          ),
+                        );
+                      }
+                    },
+                    child: const Text('Reopen 24h'),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -3438,6 +3666,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       'yyyy-MM-dd HH:mm',
     ).format(toManilaTime(r.submittedAt));
     final attachmentCount = r.attachments.length;
+    final isBlocked = _isTaskAssignmentBlocked(r);
 
     return Card(
       elevation: 0,
@@ -3560,6 +3789,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _buildReportStatusChip(r.status),
+                  if (r.type == 'task' && isBlocked)
+                    _buildMetaChip('BLOCKED', color: theme.colorScheme.error),
                   if (r.taskIsOverdue)
                     _buildMetaChip('Overdue', color: theme.colorScheme.error),
                   if ((r.taskDifficulty ?? '').isNotEmpty)

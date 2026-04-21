@@ -31,6 +31,14 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCompleted = task.status == 'completed';
+    final isGraded = task.isGraded == true;
+    final effectiveStatus = (task.userTaskStatus ?? '').trim().isNotEmpty
+        ? task.userTaskStatus!.trim()
+        : task.status;
+    final isBlocked =
+        effectiveStatus == 'blocked' ||
+        (task.blockStatus ?? '').toLowerCase().trim() == 'blocked';
+    final blockReason = (task.blockReasonText ?? '').trim();
 
     return AppPage(
       appBarTitle: 'Task Details',
@@ -44,6 +52,64 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isBlocked)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppTheme.md),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Icon(Icons.block, color: Colors.red),
+                  ),
+                  const SizedBox(width: AppTheme.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'This task is blocked',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: Colors.red,
+                              ),
+                        ),
+                        if (blockReason.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            blockReason,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.85),
+                                  height: 1.25,
+                                ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Text(
+                          'You can’t complete this task until an admin unblocks it.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.75),
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (isBlocked) const SizedBox(height: AppTheme.lg),
           Text(
             task.title,
             style: Theme.of(
@@ -73,7 +139,7 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
                 label: Text('Due: ${formatManila(task.dueDate, 'yyyy-MM-dd')}'),
                 visualDensity: VisualDensity.compact,
               ),
-              if (task.rawStatus == 'blocked')
+              if (isBlocked)
                 Chip(
                   label: const Text('Blocked'),
                   backgroundColor: Colors.red.withValues(alpha: 0.15),
@@ -85,6 +151,48 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
                 ),
             ],
           ),
+
+          if (isGraded) ...[
+            const SizedBox(height: AppTheme.lg),
+            Text(
+              'Grade',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: AppTheme.sm),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppTheme.md),
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${task.gradeScore?.toInt() ?? 0}/100',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if ((task.gradeFeedback ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: AppTheme.sm),
+                    Text(task.gradeFeedback!.trim(), style: AppTheme.bodyMd),
+                  ],
+                ],
+              ),
+            ),
+          ],
+
           if (task.checklist.isNotEmpty) ...[
             const SizedBox(height: AppTheme.lg),
             Text(
@@ -128,7 +236,7 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: isCompleted
+              onPressed: (isCompleted || isBlocked)
                   ? null
                   : () async {
                       final result = await Navigator.push<bool>(

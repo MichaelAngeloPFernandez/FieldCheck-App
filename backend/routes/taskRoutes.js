@@ -22,10 +22,13 @@ const {
   restoreUserTask,
   updateTaskChecklistItem,
   blockTask,
+  unblockUserTask,
+  closeUserTask,
   archiveTask,
   restoreTask,
   escalateTask,
   gradeUserTask,
+  addCommentToUserTask,
 } = require('../controllers/taskController');
 
 const { protect, admin } = require('../middleware/authMiddleware');
@@ -49,7 +52,10 @@ router.put('/user-task/:userTaskId/status', protect, updateUserTaskStatus);
 router.put('/user-task/:userTaskId/view', protect, markUserTaskViewed);
 router.put('/user-task/:userTaskId/archive', protect, archiveUserTask);
 router.put('/user-task/:userTaskId/restore', protect, restoreUserTask);
+router.put('/user-task/:userTaskId/unblock', protect, admin, unblockUserTask);
+router.put('/user-task/:userTaskId/close', protect, admin, closeUserTask);
 router.put('/user-task/:userTaskId/grade', protect, admin, gradeUserTask);
+router.post('/user-task/:userTaskId/comment', protect, addCommentToUserTask);
 router.put('/:id/archive', protect, admin, archiveTask);
 router.put('/:id/restore', protect, admin, restoreTask);
 router.post('/:id/escalate', protect, admin, escalateTask);

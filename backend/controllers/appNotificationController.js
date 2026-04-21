@@ -168,11 +168,31 @@ const markReadScope = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Mark ALL notifications for user as read
+const markAllRead = asyncHandler(async (req, res) => {
+  const result = await AppNotification.updateMany(
+    { recipientUser: req.user._id, readAt: null },
+    { $set: { readAt: new Date() } },
+  );
+
+  await appNotificationService.emitUnreadCounts(req.user._id);
+
+  res.json({
+    updated:
+      typeof result.modifiedCount === 'number'
+        ? result.modifiedCount
+        : typeof result.nModified === 'number'
+          ? result.nModified
+          : 0,
+  });
+});
+
 module.exports = {
   getUnreadCount,
   listNotifications,
   markRead,
   markUnread,
   markReadScope,
+  markAllRead,
   deleteByIds,
 };

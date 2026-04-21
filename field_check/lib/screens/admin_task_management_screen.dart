@@ -43,6 +43,68 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
   Timer? _fetchDebounce;
 
+  Future<String?> _promptAdminReviewNote({
+    required BuildContext context,
+    required String title,
+    required String actionLabel,
+  }) async {
+    final controller = TextEditingController();
+    String? error;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: Text(title),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Admin note is required.'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      labelText: 'Admin review note',
+                      errorText: error,
+                    ),
+                    onChanged: (_) {
+                      if (error != null) {
+                        setDialogState(() => error = null);
+                      }
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(null),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final note = controller.text.trim();
+                    if (note.isEmpty) {
+                      setDialogState(() => error = 'Required');
+                      return;
+                    }
+                    Navigator.of(ctx).pop(note);
+                  },
+                  child: Text(actionLabel),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    return result?.trim().isNotEmpty == true ? result!.trim() : null;
+  }
+
   String _canonicalUserId(UserModel user) {
     if (user.id.isNotEmpty) return user.id;
     final fallback = user.employeeId;
@@ -216,6 +278,11 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
       _socket.on('userTaskRestored', (data) {
         debugPrint('User task restored: $data');
+        _scheduleFetchTasks();
+      });
+
+      _socket.on('updatedUserTask', (data) {
+        debugPrint('User task updated: $data');
         _scheduleFetchTasks();
       });
     });
@@ -1410,6 +1477,16 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       builder: (ctx) {
         final due = task.dueDate;
 
+        Future<List<Map<String, dynamic>>> loadAssignees() async {
+          try {
+            final list = await _taskService.getTaskAssigneesDetailed(task.id);
+            return list;
+          } catch (e) {
+            debugPrint('Error loading task assignees: $e');
+            return <Map<String, dynamic>>[];
+          }
+        }
+
         return AlertDialog(
           title: Text(task.title),
           content: SingleChildScrollView(
@@ -1427,6 +1504,207 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                   Text('Type: ${task.type}'),
                 if (task.difficulty != null && task.difficulty!.isNotEmpty)
                   Text('Difficulty: ${task.difficulty}'),
+                const SizedBox(height: 16),
+                const Text(
+                  'Assignees',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                FutureBuilder<List<Map<String, dynamic>>>(
+                  future: loadAssignees(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+
+                    final rows = snapshot.data ?? <Map<String, dynamic>>[];
+                    if (rows.isEmpty) {
+                      return const Text('No assignees found.');
+                    }
+
+                    bool isBlockedRow(Map<String, dynamic> m) {
+                      final s = (m['status'] ?? '')
+                          .toString()
+                          .toLowerCase()
+                          .trim();
+                      if (s == 'blocked') return true;
+                      final b = (m['blockStatus'] ?? '')
+                          .toString()
+                          .toLowerCase()
+                          .trim();
+                      return b == 'blocked';
+                    }
+
+                    return Column(
+                      children: rows.map((m) {
+                        final name =
+                            (m['name'] ??
+                                    m['username'] ??
+                                    m['userId'] ??
+                                    'Employee')
+                                .toString();
+                        final employeeId = (m['employeeId'] ?? '').toString();
+                        final status = (m['status'] ?? '').toString();
+                        final userTaskId = (m['userTaskId'] ?? '').toString();
+                        final blocked = isBlockedRow(m);
+                        final reasonCat = (m['blockReasonCategory'] ?? '')
+                            .toString()
+                            .trim();
+                        final reasonText = (m['blockReasonText'] ?? '')
+                            .toString()
+                            .trim();
+                        final evidence = (m['blockEvidencePhotos'] is List)
+                            ? (m['blockEvidencePhotos'] as List)
+                                  .map((e) => e.toString())
+                                  .where((s) => s.trim().isNotEmpty)
+                                  .toList()
+                            : <String>[];
+
+                        return Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: blocked
+                                ? Colors.red.withValues(alpha: 0.06)
+                                : Colors.grey.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: blocked
+                                  ? Colors.red.withValues(alpha: 0.25)
+                                  : Colors.grey.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      employeeId.isNotEmpty
+                                          ? '$name ($employeeId)'
+                                          : name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    status,
+                                    style: TextStyle(
+                                      color: blocked
+                                          ? Colors.red.shade700
+                                          : Colors.grey.shade800,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (blocked) ...[
+                                const SizedBox(height: 8),
+                                if (reasonCat.isNotEmpty)
+                                  Text('Category: $reasonCat'),
+                                if (reasonText.isNotEmpty)
+                                  Text('Reason: $reasonText'),
+                                if (evidence.isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Text('Evidence: ${evidence.length} photo(s)'),
+                                ],
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed: userTaskId.isEmpty
+                                            ? null
+                                            : () async {
+                                                final note =
+                                                    await _promptAdminReviewNote(
+                                                      context: context,
+                                                      title:
+                                                          'Unblock assignment',
+                                                      actionLabel: 'Unblock',
+                                                    );
+                                                if (note == null) return;
+                                                try {
+                                                  await _taskService
+                                                      .unblockUserTask(
+                                                        userTaskId,
+                                                        note,
+                                                      );
+                                                  if (!mounted) return;
+                                                  AppWidgets.showSuccessSnackbar(
+                                                    context,
+                                                    'Assignment unblocked',
+                                                  );
+                                                } catch (e) {
+                                                  if (!mounted) return;
+                                                  AppWidgets.showErrorSnackbar(
+                                                    context,
+                                                    AppWidgets.friendlyErrorMessage(
+                                                      e,
+                                                      fallback:
+                                                          'Failed to unblock assignment',
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                        child: const Text('Unblock'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: FilledButton(
+                                        onPressed: userTaskId.isEmpty
+                                            ? null
+                                            : () async {
+                                                final note =
+                                                    await _promptAdminReviewNote(
+                                                      context: context,
+                                                      title: 'Close assignment',
+                                                      actionLabel: 'Close',
+                                                    );
+                                                if (note == null) return;
+                                                try {
+                                                  await _taskService
+                                                      .closeUserTask(
+                                                        userTaskId,
+                                                        note,
+                                                      );
+                                                  if (!mounted) return;
+                                                  AppWidgets.showSuccessSnackbar(
+                                                    context,
+                                                    'Assignment closed',
+                                                  );
+                                                } catch (e) {
+                                                  if (!mounted) return;
+                                                  AppWidgets.showErrorSnackbar(
+                                                    context,
+                                                    AppWidgets.friendlyErrorMessage(
+                                                      e,
+                                                      fallback:
+                                                          'Failed to close assignment',
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                        child: const Text('Close'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
               ],
             ),
           ),

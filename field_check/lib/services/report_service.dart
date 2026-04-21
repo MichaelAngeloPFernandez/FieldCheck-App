@@ -175,11 +175,18 @@ class ReportService {
     String id,
     String status, {
     String? grade,
+    String? gradeComment,
   }) async {
     final response = await HttpUtil().patch(
       '$_basePath/$id/status',
       headers: await _headers(),
-      body: {'status': status, if (grade != null) 'grade': grade},
+      body: {
+        'status': status,
+        // Backend clears grade when it receives an empty string.
+        'grade': grade ?? '',
+        // Backend clears grade comment when it receives an empty string.
+        'gradeComment': gradeComment ?? '',
+      },
     );
     if (response.statusCode == 200) {
       return ReportModel.fromJson(json.decode(response.body));

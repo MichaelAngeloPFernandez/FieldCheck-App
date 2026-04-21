@@ -8,6 +8,7 @@ class ReportModel {
   final String content;
   final String status; // 'submitted' | 'reviewed'
   final String? grade; // 'poor' | 'good' | 'excellent'
+  final String gradeComment;
   final DateTime submittedAt;
   final DateTime? resubmitUntil;
   final String? employeeName;
@@ -18,6 +19,10 @@ class ReportModel {
   final bool isArchived;
   final List<String> attachments;
   final bool taskIsOverdue;
+  final String? taskBlockStatus;
+  final String? taskBlockReasonCategory;
+  final String? taskBlockReasonText;
+  final DateTime? taskBlockedAt;
 
   ReportModel({
     required this.id,
@@ -29,6 +34,7 @@ class ReportModel {
     required this.content,
     required this.status,
     this.grade,
+    this.gradeComment = '',
     required this.submittedAt,
     this.resubmitUntil,
     this.employeeName,
@@ -39,6 +45,10 @@ class ReportModel {
     this.isArchived = false,
     this.attachments = const [],
     this.taskIsOverdue = false,
+    this.taskBlockStatus,
+    this.taskBlockReasonCategory,
+    this.taskBlockReasonText,
+    this.taskBlockedAt,
   });
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
@@ -49,34 +59,59 @@ class ReportModel {
     final resubmitUntil = resubmitRaw != null
         ? DateTime.tryParse(resubmitRaw)
         : null;
+
+    final blockedAtRaw = json['taskBlockedAt']?.toString();
+    final taskBlockedAt = blockedAtRaw != null
+        ? DateTime.tryParse(blockedAtRaw)
+        : null;
+
+    String parseEmployeeId() {
+      if (employee is Map) {
+        return (employee['_id'] ?? employee['id'] ?? '').toString();
+      }
+      if (employee != null) return employee.toString();
+      return (json['employeeId'] ?? '').toString();
+    }
+
+    DateTime parseSubmittedAt() {
+      final raw = json['submittedAt'] ?? json['createdAt'] ?? '';
+      if (raw is String && raw.isNotEmpty) {
+        return DateTime.tryParse(raw) ?? DateTime.now();
+      }
+      return DateTime.now();
+    }
+
     return ReportModel(
-      id: json['_id'] ?? json['id'] ?? '',
-      type: json['type'] ?? 'task',
-      taskId: task is Map ? task['_id'] : task,
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      type: (json['type'] ?? 'task').toString(),
+      taskId: task is Map ? task['_id']?.toString() : task?.toString(),
       attendanceId: json['attendance'] is Map
-          ? json['attendance']['_id']
-          : json['attendance'],
-      employeeId: employee is Map ? employee['_id'] : employee,
-      geofenceId: geofence is Map ? geofence['_id'] : geofence,
-      content: json['content'] ?? '',
-      status: json['status'] ?? 'submitted',
+          ? json['attendance']['_id']?.toString()
+          : json['attendance']?.toString(),
+      employeeId: parseEmployeeId(),
+      geofenceId: geofence is Map
+          ? geofence['_id']?.toString()
+          : geofence?.toString(),
+      content: (json['content'] ?? '').toString(),
+      status: (json['status'] ?? 'submitted').toString(),
       grade: json['grade']?.toString(),
-      submittedAt: DateTime.parse(
-        json['submittedAt'] ??
-            json['createdAt'] ??
-            DateTime.now().toIso8601String(),
-      ),
+      gradeComment: (json['gradeComment'] ?? '').toString(),
+      submittedAt: parseSubmittedAt(),
       resubmitUntil: resubmitUntil,
-      employeeName: employee is Map ? employee['name'] : null,
-      employeeEmail: employee is Map ? employee['email'] : null,
-      taskTitle: task is Map ? task['title'] : null,
-      taskDifficulty: task is Map ? task['difficulty'] : null,
-      geofenceName: geofence is Map ? geofence['name'] : null,
-      isArchived: json['isArchived'] ?? false,
+      employeeName: employee is Map ? employee['name']?.toString() : null,
+      employeeEmail: employee is Map ? employee['email']?.toString() : null,
+      taskTitle: task is Map ? task['title']?.toString() : null,
+      taskDifficulty: task is Map ? task['difficulty']?.toString() : null,
+      geofenceName: geofence is Map ? geofence['name']?.toString() : null,
+      isArchived: json['isArchived'] == true,
       attachments: json['attachments'] is List
-          ? List<String>.from(json['attachments'])
+          ? List<String>.from(json['attachments'].map((e) => e.toString()))
           : const [],
-      taskIsOverdue: json['taskIsOverdue'] ?? false,
+      taskIsOverdue: json['taskIsOverdue'] == true,
+      taskBlockStatus: json['taskBlockStatus']?.toString(),
+      taskBlockReasonCategory: json['taskBlockReasonCategory']?.toString(),
+      taskBlockReasonText: json['taskBlockReasonText']?.toString(),
+      taskBlockedAt: taskBlockedAt,
     );
   }
 }

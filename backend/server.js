@@ -1570,6 +1570,9 @@ process.on('uncaughtException', (error) => {
             
             const { initializeOfflineEmployeeVoidJob } = require('./utils/offlineEmployeeVoidJob');
             initializeOfflineEmployeeVoidJob();
+
+            const initCleanupJob = require('./jobs/cleanup_job');
+            initCleanupJob();
           }
         }
       } catch (err) {

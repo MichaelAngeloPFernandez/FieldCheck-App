@@ -32,6 +32,14 @@ function doesTaskCountTowardActiveLimit(taskDoc, now = new Date()) {
   return true;
 }
 
+function isBlockedAssignment(ut) {
+  if (!ut) return false;
+  const s = String(ut.status || '').toLowerCase();
+  if (s === 'blocked') return true;
+  const b = String(ut.blockStatus || '').toLowerCase();
+  return b === 'blocked';
+}
+
 async function countActiveNonOverdueTasksForUser(userId) {
   const now = new Date();
   const assignments = await UserTask.find({
@@ -223,6 +231,47 @@ const getTasks = asyncHandler(async (req, res) => {
   res.json(tasks.map((t) => toTaskJson(t)));
 });
 
+const getTaskAssignees = asyncHandler(async (req, res) => {
+  const { taskId } = req.params;
+
+  const task = await Task.findById(taskId).select('_id').lean();
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  const assignments = await UserTask.find({ taskId: task._id, isArchived: { $ne: true } })
+    .populate('userId', 'name employeeId username role')
+    .sort({ assignedAt: -1 });
+
+  res.json(
+    assignments.map((ut) => {
+      const u = ut.userId && typeof ut.userId === 'object' ? ut.userId : null;
+      return {
+        userTaskId: ut._id.toString(),
+        taskId: ut.taskId.toString(),
+        userId: u && u._id ? u._id.toString() : ut.userId.toString(),
+        name: u && u.name ? u.name : undefined,
+        employeeId: u && u.employeeId ? u.employeeId : undefined,
+        username: u && u.username ? u.username : undefined,
+        status: ut.status,
+        progressPercent: typeof ut.progressPercent === 'number' ? ut.progressPercent : 0,
+        assignedAt: ut.assignedAt ? ut.assignedAt.toISOString() : null,
+        completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
+        blockStatus: ut.blockStatus,
+        blockReasonCategory: ut.blockReasonCategory,
+        blockReasonText: ut.blockReasonText,
+        blockEvidencePhotos: Array.isArray(ut.blockEvidencePhotos) ? ut.blockEvidencePhotos : [],
+        blockedAt: ut.blockedAt ? ut.blockedAt.toISOString() : null,
+        adminReviewNote: ut.adminReviewNote,
+        adminAction: ut.adminAction,
+        adminActionAt: ut.adminActionAt ? ut.adminActionAt.toISOString() : null,
+        adminActionBy: ut.adminActionBy ? ut.adminActionBy.toString() : null,
+      };
+    }),
+  );
+});
+
 const getCurrentTasks = asyncHandler(async (req, res) => {
   const tasks = await Task.find({ isArchived: { $ne: true } }).sort({ createdAt: -1 });
   res.json(tasks.map((t) => toTaskJson(t)));
@@ -405,8 +454,13 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
     isArchived: archived ? true : { $ne: true },
   });
   const taskIds = assignments.map((a) => a.taskId);
-  const tasks = await Task.find({ _id: { $in: taskIds }, isArchived: { $ne: true } });
-  const assignmentByTaskId = new Map(assignments.map((a) => [a.taskId.toString(), a]));
+
+  // IMPORTANT: For employee task lists, archive state is driven by UserTask,
+  // not Task.isArchived. Do not filter out tasks by Task.isArchived here.
+  const tasks = await Task.find({ _id: { $in: taskIds } });
+  const assignmentByTaskId = new Map(
+    assignments.map((a) => [a.taskId.toString(), a]),
+  );
 
   res.json(
     tasks.map((t) => {
@@ -415,11 +469,9 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
       const dueDate = t && t.dueDate ? new Date(t.dueDate) : null;
       const assigneeStatus = a ? normalizeTaskStatus(a.status) : '';
       const isAssigneeCompleted = assigneeStatus === 'completed';
+
       const isOverdueForAssignee =
-        !!dueDate &&
-        dueDate < now &&
-        !isAssigneeCompleted &&
-        !t.isArchived;
+        !!dueDate && dueDate < now && !isAssigneeCompleted && !archived;
       const isLateForAssignee =
         !!dueDate &&
         isAssigneeCompleted &&
@@ -430,14 +482,28 @@ const getAssignedTasks = asyncHandler(async (req, res) => {
       const base = {
         ...toTaskJson(t, a ? a._id.toString() : undefined),
         userTaskStatus: a ? a.status : undefined,
-        userTaskAssignedAt: a && a.assignedAt ? a.assignedAt.toISOString() : undefined,
-        userTaskCompletedAt: a && a.completedAt ? a.completedAt.toISOString() : undefined,
+        userTaskAssignedAt:
+          a && a.assignedAt ? a.assignedAt.toISOString() : undefined,
+        userTaskCompletedAt:
+          a && a.completedAt ? a.completedAt.toISOString() : undefined,
+        blockStatus: a ? a.blockStatus : undefined,
+        blockReasonCategory: a ? a.blockReasonCategory : undefined,
+        blockReasonText: a ? a.blockReasonText : undefined,
+        blockEvidencePhotos: a ? a.blockEvidencePhotos : undefined,
+        blockedAt: a && a.blockedAt ? a.blockedAt.toISOString() : undefined,
+        adminReviewNote: a ? a.adminReviewNote : undefined,
+        adminAction: a ? a.adminAction : undefined,
+        adminActionAt: a && a.adminActionAt ? a.adminActionAt.toISOString() : undefined,
         // Override task-level computed flags with per-assignee truth.
         isOverdue: isOverdueForAssignee,
         isLate: !!isLateForAssignee,
         // Grading UI fields
-        gradeScore: a && a.grade && typeof a.grade.score === 'number' ? a.grade.score : undefined,
-        gradeFeedback: a && a.grade && a.grade.feedback ? a.grade.feedback : undefined,
+        gradeScore:
+          a && a.grade && typeof a.grade.score === 'number'
+            ? a.grade.score
+            : undefined,
+        gradeFeedback:
+          a && a.grade && a.grade.feedback ? a.grade.feedback : undefined,
         isGraded: !!(a && a.grade && a.grade.score !== undefined),
       };
 
@@ -1062,7 +1128,12 @@ const updateTaskChecklistItem = asyncHandler(async (req, res) => {
 // @access Private (assigned employee or admin)
 const blockTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { reason } = req.body;
+  const {
+    reasonCategory,
+    reasonText,
+    evidencePhotos,
+    reason,
+  } = req.body;
 
   const task = await Task.findById(id);
   if (!task) {
@@ -1083,320 +1154,272 @@ const blockTask = asyncHandler(async (req, res) => {
     }
   }
 
-  task.status = 'blocked';
-  task.blockReason =
-    typeof reason === 'string' && reason.trim().length > 0
-      ? reason.trim()
-      : 'No reason provided';
-
-  const updated = await task.save();
-
-  // Create a simple task report so admins can see the block reason
-  try {
-    const report = await Report.create({
-      type: 'task',
-      task: updated._id,
-      employee: req.user._id,
-      content: `Task blocked: ${updated.blockReason}`,
-    });
-    io.emit('newReport', report);
-  } catch (e) {
-    console.error('Failed to create task blocked report:', e);
-  }
-
-  io.emit('updatedTask', toTaskJson(updated));
-  res.json(toTaskJson(updated));
-});
-
-// @route GET /api/tasks/overdue
-// @access Private/Admin
-const getOverdueTasks = asyncHandler(async (req, res) => {
-  const now = new Date();
-  const tasks = await Task.find({
-    isArchived: { $ne: true },
-    dueDate: { $exists: true, $ne: null, $lt: now },
-  }).sort({ dueDate: 1 });
-
-  const overdue = tasks.filter((t) => !isTerminalTaskStatus(t.status));
-  res.status(200).json(overdue.map((t) => toTaskJson(t)));
-});
-
-// @route GET /api/tasks/:taskId/assignees
-// @access Private/Admin
-const getTaskAssignees = asyncHandler(async (req, res) => {
-  const { taskId } = req.params;
-
-  const task = await Task.findById(taskId).lean();
-  if (!task) {
-    res.status(404);
-    throw new Error('Task not found');
-  }
-
-  const assignments = await UserTask.find({ taskId, isArchived: { $ne: true } }).select(
-    'userId',
-  );
-
-  const assigneeIds = new Set();
-  const addAssigneeId = (raw) => {
-    if (raw == null) return;
-    const s = String(raw).trim();
-    if (!s) return;
-    const lower = s.toLowerCase();
-    if (lower === 'null' || lower === 'undefined') return;
-    assigneeIds.add(s);
-  };
-
-  for (const a of assignments) {
-    addAssigneeId(a.userId);
-  }
-
-  // Backward compatibility: some legacy deployments may have stored assignees
-  // directly on the Task document rather than via UserTask.
-  const legacyCandidateFields = [
-    task.assignedToMultiple,
-    task.teamMembers,
-    task.userIds,
-    task.assignees,
-    task.assignedEmployees,
-    task.assignedUsers,
-    task.assignedTo,
-  ];
-
-  for (const field of legacyCandidateFields) {
-    if (!field) continue;
-
-    if (Array.isArray(field)) {
-      for (const entry of field) {
-        if (!entry) continue;
-        if (typeof entry === 'string') {
-          addAssigneeId(entry);
-          continue;
-        }
-        if (typeof entry === 'object') {
-          const id = entry.userId || entry._id || entry.id || entry.employeeId;
-          addAssigneeId(id);
-        }
-      }
-      continue;
-    }
-
-    if (typeof field === 'string') {
-      addAssigneeId(field);
-      continue;
-    }
-
-    if (typeof field === 'object') {
-      const id = field.userId || field._id || field.id || field.employeeId;
-      addAssigneeId(id);
-    }
-  }
-
-  res.status(200).json(Array.from(assigneeIds));
-});
-
-// @route DELETE /api/tasks/:taskId/unassign/:userId
-// @access Private/Admin
-const unassignTaskFromUser = asyncHandler(async (req, res) => {
-  const { taskId, userId } = req.params;
-
-  const ut = await UserTask.findOne({ taskId, userId });
-  if (!ut) {
-    return res.status(404).json({ message: 'Assignment not found' });
-  }
-
-  if (!ut.isArchived) {
-    ut.isArchived = true;
-    await ut.save();
-    io.emit('userTaskArchived', {
-      id: ut._id.toString(),
-      userId: ut.userId.toString(),
-      taskId: ut.taskId.toString(),
-    });
-  }
-
-  io.emit('taskUnassigned', { taskId, userId });
-  res.status(200).json({ message: 'Task unassigned' });
-});
-
-// @route PUT /api/tasks/user-task/:userTaskId/archive
-// @access Private
-const archiveUserTask = asyncHandler(async (req, res) => {
-  const { userTaskId } = req.params;
-  const ut = await UserTask.findById(userTaskId);
-  if (!ut) {
-    res.status(404);
-    throw new Error('UserTask not found');
-  }
-
-  ut.isArchived = true;
-  await ut.save();
-  io.emit('userTaskArchived', {
-    id: ut._id.toString(),
-    userId: ut.userId.toString(),
-    taskId: ut.taskId.toString(),
-  });
-  res.status(200).json({ message: 'UserTask archived' });
-});
-
-// @route PUT /api/tasks/user-task/:userTaskId/restore
-// @access Private
-const restoreUserTask = asyncHandler(async (req, res) => {
-  const { userTaskId } = req.params;
-  const ut = await UserTask.findById(userTaskId);
-  if (!ut) {
-    res.status(404);
-    throw new Error('UserTask not found');
-  }
-
-  const maxActive = await getMaxActiveTasksPerEmployee();
-  await trimOverLimitAssignmentsForUser(ut.userId.toString(), maxActive);
-  const activeCount = await countActiveNonOverdueTasksForUser(ut.userId.toString());
-  if (activeCount >= maxActive) {
-    res.status(400);
-    throw new Error(
-      `User has reached the maximum number of active tasks (${activeCount}/${maxActive})`,
-    );
-  }
-
-  ut.isArchived = false;
-  await ut.save();
-  io.emit('userTaskRestored', {
-    id: ut._id.toString(),
-    userId: ut.userId.toString(),
-    taskId: ut.taskId.toString(),
-  });
-  res.status(200).json({ message: 'UserTask restored' });
-});
-
-const markUserTaskViewed = asyncHandler(async (req, res) => {
-  const { userTaskId } = req.params;
-  const ut = await UserTask.findById(userTaskId);
-  if (!ut) {
-    res.status(404);
-    throw new Error('UserTask not found');
-  }
-
-  if (!req.user) {
-    res.status(401);
-    throw new Error('Not authenticated');
-  }
-
-  if (req.user.role !== 'admin' && ut.userId.toString() !== req.user._id.toString()) {
-    res.status(403);
-    throw new Error('Not authorized to update this task assignment');
-  }
-
-  ut.lastViewedAt = new Date();
-  await ut.save();
-
-  res.status(200).json({
-    id: ut._id.toString(),
-    userId: ut.userId.toString(),
-    taskId: ut.taskId.toString(),
-    lastViewedAt: ut.lastViewedAt.toISOString(),
-  });
-});
-
-const escalateTask = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const task = await Task.findById(id);
-  if (!task) {
-    res.status(404);
-    throw new Error('Task not found');
-  }
-
-  const assignments = await UserTask.find({
+  // Block is per-assignment (UserTask) NOT global on Task.
+  const ut = await UserTask.findOne({
     taskId: task._id,
-    status: { $ne: 'completed' },
+    userId: req.user._id,
+    isArchived: { $ne: true },
   });
 
-  if (!assignments.length) {
-    return res.status(200).json({ sent: 0, targets: [] });
+  if (!ut) {
+    res.status(403);
+    throw new Error('Not authorized to update this task');
   }
 
-  const userIds = assignments.map((a) => a.userId);
-  const users = await User.find({
-    _id: { $in: userIds },
-    phone: { $exists: true, $ne: '' },
-    isActive: true,
-  }).select('phone');
-
-  if (!users.length) {
-    return res.status(200).json({ sent: 0, targets: [] });
+  const current = normalizeTaskStatus(ut.status);
+  if (isTerminalTaskStatus(current)) {
+    res.status(400);
+    throw new Error('Completed tasks cannot be blocked');
   }
 
-  await Promise.all(
-    users.map((u) => notificationService.notifyTaskEscalated(u, task))
-  );
+  const category = (reasonCategory ?? '').toString().trim();
+  const text = (reasonText ?? reason ?? '').toString().trim();
+  if (!text) {
+    res.status(400);
+    throw new Error('Block reason is required');
+  }
 
-  res.status(200).json({
-    sent: users.length,
-    targets: users.map((u) => u._id.toString()),
+  const photos = Array.isArray(evidencePhotos)
+    ? evidencePhotos
+        .map((p) => (p == null ? '' : String(p)).trim())
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+
+  ut.status = 'blocked';
+  ut.blockStatus = 'blocked';
+  ut.blockReasonCategory = category;
+  ut.blockReasonText = text;
+  ut.blockEvidencePhotos = photos;
+  ut.blockedAt = new Date();
+  ut.adminAction = undefined;
+  ut.adminActionAt = undefined;
+  ut.adminActionBy = undefined;
+  ut.adminReviewNote = undefined;
+
+  const updatedUt = await ut.save();
+
+  io.emit('updatedUserTask', {
+    id: updatedUt._id.toString(),
+    userId: updatedUt.userId.toString(),
+    taskId: updatedUt.taskId.toString(),
+    status: updatedUt.status,
+    blockStatus: updatedUt.blockStatus,
+    blockReasonCategory: updatedUt.blockReasonCategory,
+    blockReasonText: updatedUt.blockReasonText,
+    blockEvidencePhotos: updatedUt.blockEvidencePhotos,
+    blockedAt: updatedUt.blockedAt ? updatedUt.blockedAt.toISOString() : null,
+    adminReviewNote: updatedUt.adminReviewNote,
+    adminAction: updatedUt.adminAction,
+    adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
+  });
+
+  setImmediate(async () => {
+    try {
+      const who = [
+        (req.user?.name || '').toString().trim(),
+        (req.user?.employeeId || '').toString().trim(),
+      ].filter(Boolean);
+      const whoLabel = who.join(' • ');
+      const msg =
+        whoLabel.length > 0
+          ? `${whoLabel} blocked: ${task.title}`
+          : `Task blocked: ${task.title}`;
+      const payload = {
+        taskId: String(task._id),
+        userTaskId: String(updatedUt._id),
+        employeeId: (req.user?.employeeId || '').toString(),
+        employeeName: (req.user?.name || '').toString(),
+        userId: String(req.user?._id || ''),
+        reasonCategory: String(updatedUt.blockReasonCategory || ''),
+        reasonText: String(updatedUt.blockReasonText || ''),
+        blockedAt: updatedUt.blockedAt ? updatedUt.blockedAt.toISOString() : null,
+        destination: 'tasks.blocked',
+      };
+
+      await appNotificationService.createForAdmins({
+        excludeUserId: req.user?._id,
+        type: 'task',
+        action: 'task_blocked',
+        title: 'Task Blocked',
+        message: msg,
+        payload,
+      });
+
+      const admins = await User.find({ role: 'admin', isActive: { $ne: false } }).select(
+        '_id',
+      );
+      for (const admin of admins) {
+        if (req.user?._id && String(admin._id) === String(req.user._id)) continue;
+        try {
+          await appNotificationService.createNotification({
+            recipientUserId: admin._id,
+            scope: 'messages',
+            type: 'info',
+            action: 'task_blocked',
+            title: whoLabel.isNotEmpty ? whoLabel : 'Task blocked',
+            message: msg,
+            payload,
+          });
+        } catch (_) {}
+      }
+    } catch (_) {}
+  });
+
+  // Return task JSON augmented with assignment-specific status.
+  res.json({
+    ...toTaskJson(task, updatedUt._id.toString()),
+    userTaskStatus: updatedUt.status,
+    blockStatus: updatedUt.blockStatus,
+    blockReasonCategory: updatedUt.blockReasonCategory,
+    blockReasonText: updatedUt.blockReasonText,
+    blockEvidencePhotos: updatedUt.blockEvidencePhotos,
+    blockedAt: updatedUt.blockedAt ? updatedUt.blockedAt.toISOString() : null,
+    adminReviewNote: updatedUt.adminReviewNote,
+    adminAction: updatedUt.adminAction,
+    adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
   });
 });
 
-// @route PUT /api/tasks/user-task/:userTaskId/grade
+// @desc Admin action: unblock a blocked task assignment (UserTask)
+// @route PUT /api/tasks/user-task/:userTaskId/unblock
 // @access Private/Admin
-const gradeUserTask = asyncHandler(async (req, res) => {
+const unblockUserTask = asyncHandler(async (req, res) => {
   const { userTaskId } = req.params;
-  const { score, feedback } = req.body;
+  const { adminReviewNote } = req.body;
 
-  if (score === undefined || score === null) {
+  const note = (adminReviewNote ?? '').toString().trim();
+  if (!note) {
     res.status(400);
-    throw new Error('Grade score is required');
+    throw new Error('adminReviewNote is required');
   }
 
-  const numScore = Number(score);
-  if (isNaN(numScore) || numScore < 0 || numScore > 100) {
-    res.status(400);
-    throw new Error('Score must be a number between 0 and 100');
-  }
-
-  const userTask = await UserTask.findById(userTaskId);
-  if (!userTask) {
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
     res.status(404);
-    throw new Error('UserTask assignment not found');
+    throw new Error('UserTask not found');
   }
 
-  userTask.grade = {
-    score: numScore,
-    feedback: feedback || '',
-    gradedAt: new Date(),
-    gradedBy: req.user._id,
-  };
+  const current = normalizeTaskStatus(ut.status);
+  if (isTerminalTaskStatus(current)) {
+    res.status(400);
+    throw new Error('Completed tasks cannot be modified');
+  }
 
-  // Automatically mark the task assignment as 'reviewed' once graded.
-  userTask.status = 'reviewed';
-  
-  await userTask.save();
+  if (!isBlockedAssignment(ut)) {
+    res.status(400);
+    throw new Error('Only blocked assignments can be unblocked');
+  }
 
-  // Notify the employee about their grade
-  try {
-    const appNotificationService = require('../services/appNotificationService');
-    const Task = require('../models/Task');
-    const task = await Task.findById(userTask.taskId).select('title').lean();
-    
-    await appNotificationService.createNotification({
-      recipientUserId: userTask.userId,
-      scope: 'tasks',
-      type: 'success',
-      action: 'taskGraded',
-      title: 'Task Graded',
-      message: `Your work on "${task?.title || 'a task'}" has been graded: ${numScore}/100`,
-      payload: {
-        userTaskId: String(userTask._id),
-        taskId: String(userTask.taskId),
-        score: numScore,
-        feedback: feedback || '',
-      },
-    });
-  } catch (_) {}
+  ut.blockStatus = 'unblocked';
+  ut.adminReviewNote = note;
+  ut.adminAction = 'unblocked';
+  ut.adminActionAt = new Date();
+  ut.adminActionBy = req.user?._id;
+
+  const p = typeof ut.progressPercent === 'number' ? ut.progressPercent : 0;
+  ut.status = p > 0 ? 'in_progress' : 'accepted';
+
+  const updatedUt = await ut.save();
+
+  io.emit('updatedUserTask', {
+    id: updatedUt._id.toString(),
+    userId: updatedUt.userId.toString(),
+    taskId: updatedUt.taskId.toString(),
+    status: updatedUt.status,
+    blockStatus: updatedUt.blockStatus,
+    blockReasonCategory: updatedUt.blockReasonCategory,
+    blockReasonText: updatedUt.blockReasonText,
+    blockEvidencePhotos: updatedUt.blockEvidencePhotos,
+    blockedAt: updatedUt.blockedAt ? updatedUt.blockedAt.toISOString() : null,
+    adminReviewNote: updatedUt.adminReviewNote,
+    adminAction: updatedUt.adminAction,
+    adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
+    adminActionBy: updatedUt.adminActionBy ? updatedUt.adminActionBy.toString() : null,
+  });
 
   res.status(200).json({
-    message: 'Task graded successfully',
-    grade: userTask.grade,
+    id: updatedUt._id.toString(),
+    userId: updatedUt.userId.toString(),
+    taskId: updatedUt.taskId.toString(),
+    status: updatedUt.status,
+    blockStatus: updatedUt.blockStatus,
+    blockedAt: updatedUt.blockedAt ? updatedUt.blockedAt.toISOString() : null,
+    adminReviewNote: updatedUt.adminReviewNote,
+    adminAction: updatedUt.adminAction,
+    adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
   });
 });
+
+// @desc Admin action: close a blocked task assignment (UserTask)
+// @route PUT /api/tasks/user-task/:userTaskId/close
+// @access Private/Admin
+const closeUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const { adminReviewNote } = req.body;
+
+  const note = (adminReviewNote ?? '').toString().trim();
+  if (!note) {
+    res.status(400);
+    throw new Error('adminReviewNote is required');
+  }
+
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+
+  const current = normalizeTaskStatus(ut.status);
+  if (isTerminalTaskStatus(current)) {
+    res.status(400);
+    throw new Error('Completed tasks cannot be modified');
+  }
+
+  if (!isBlockedAssignment(ut)) {
+    res.status(400);
+    throw new Error('Only blocked assignments can be closed');
+  }
+
+  ut.status = 'closed';
+  ut.blockStatus = 'closed';
+  ut.adminReviewNote = note;
+  ut.adminAction = 'closed';
+  ut.adminActionAt = new Date();
+  ut.adminActionBy = req.user?._id;
+
+  const updatedUt = await ut.save();
+
+  io.emit('updatedUserTask', {
+    id: updatedUt._id.toString(),
+    userId: updatedUt.userId.toString(),
+    taskId: updatedUt.taskId.toString(),
+    status: updatedUt.status,
+    blockStatus: updatedUt.blockStatus,
+    blockReasonCategory: updatedUt.blockReasonCategory,
+    blockReasonText: updatedUt.blockReasonText,
+    blockEvidencePhotos: updatedUt.blockEvidencePhotos,
+    blockedAt: updatedUt.blockedAt ? updatedUt.blockedAt.toISOString() : null,
+    adminReviewNote: updatedUt.adminReviewNote,
+    adminAction: updatedUt.adminAction,
+    adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
+    adminActionBy: updatedUt.adminActionBy ? updatedUt.adminActionBy.toString() : null,
+  });
+
+  res.status(200).json({
+    id: updatedUt._id.toString(),
+    userId: updatedUt.userId.toString(),
+    taskId: updatedUt.taskId.toString(),
+    status: updatedUt.status,
+    blockStatus: updatedUt.blockStatus,
+    blockedAt: updatedUt.blockedAt ? updatedUt.blockedAt.toISOString() : null,
+    adminReviewNote: updatedUt.adminReviewNote,
+    adminAction: updatedUt.adminAction,
+    adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
+  });
+});
+
+// ... (rest of the code remains the same)
 
 module.exports = {
   getTask,
@@ -1418,6 +1441,8 @@ module.exports = {
   markUserTaskViewed,
   updateTaskChecklistItem,
   blockTask,
+  unblockUserTask,
+  closeUserTask,
   archiveUserTask,
   restoreUserTask,
   archiveTask,

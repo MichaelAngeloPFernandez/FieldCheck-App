@@ -9,6 +9,7 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/task_report_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
 import 'package:field_check/screens/employee_profile_screen.dart';
+import 'package:field_check/screens/task_submission_viewer_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
 
@@ -108,6 +109,13 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
     final s = task.userTaskStatus;
     if (s == null || s.trim().isEmpty) return task.status;
     return s;
+  }
+
+  bool _isBlocked(Task task) {
+    final s = _effectiveStatus(task);
+    if (s == 'blocked') return true;
+    final b = (task.blockStatus ?? '').toLowerCase().trim();
+    return b == 'blocked';
   }
 
   bool _needsAcceptance(Task task) {
@@ -446,6 +454,19 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
     final isCompleted = effectiveStatus == 'completed';
     final needsAcceptance = _needsAcceptance(task);
 
+    if (isCompleted) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TaskSubmissionViewerScreen(
+            task: task,
+            employeeId: widget.userModelId,
+          ),
+        ),
+      );
+      return;
+    }
+
     final userTaskId = task.userTaskId;
     if (userTaskId != null && userTaskId.trim().isNotEmpty) {
       TaskService().markUserTaskViewed(userTaskId).then((_) {
@@ -543,6 +564,71 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   ],
                 ),
                 const SizedBox(height: 10),
+                if (_isBlocked(task))
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Icon(Icons.block, color: Colors.red),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Blocked',
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.red,
+                                    ),
+                              ),
+                              if ((task.blockReasonText ?? '')
+                                  .trim()
+                                  .isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  (task.blockReasonText ?? '').trim(),
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        height: 1.25,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.85),
+                                      ),
+                                ),
+                              ],
+                              const SizedBox(height: 6),
+                              Text(
+                                'You can’t complete this task until an admin unblocks it.',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.75),
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_isBlocked(task)) const SizedBox(height: 10),
                 Text(
                   task.description,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -582,7 +668,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                         label: Text(task.difficulty!),
                         visualDensity: VisualDensity.compact,
                       ),
-                    if (task.rawStatus == 'blocked')
+                    if (_isBlocked(task))
                       Chip(
                         label: const Text('Blocked'),
                         visualDensity: VisualDensity.compact,
@@ -902,7 +988,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                       color: Colors.orange,
                       icon: Icons.schedule,
                     ),
-                  if (task.rawStatus == 'blocked')
+                  if (_isBlocked(task))
                     _buildStatusPill(
                       label: 'Blocked',
                       color: Colors.red.shade700,

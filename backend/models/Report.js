@@ -23,6 +23,10 @@ const reportSchema = new mongoose.Schema(
       type: String,
       enum: ['poor', 'good', 'excellent'],
     },
+    gradeComment: {
+      type: String,
+      default: '',
+    },
     submittedAt: { type: Date, default: Date.now },
     resubmitUntil: { type: Date },
     // Soft-archive flag for separating current vs archived reports

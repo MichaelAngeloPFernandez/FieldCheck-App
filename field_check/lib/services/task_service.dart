@@ -129,6 +129,97 @@ class TaskService {
     return 0;
   }
 
+  Future<void> markAllNotificationsRead() async {
+    final response = await http
+        .post(
+          Uri.parse('$_appNotificationsBaseUrl/mark-all-read'),
+          headers: await _headers(jsonContent: false),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark all notifications read');
+    }
+  }
+
+  Future<void> unblockUserTask(
+    String userTaskId,
+    String adminReviewNote,
+  ) async {
+    final response = await http
+        .put(
+          Uri.parse('$_baseUrl/user-task/$userTaskId/unblock'),
+          headers: await _headers(),
+          body: json.encode({'adminReviewNote': adminReviewNote}),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to unblock task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          } else {
+            message = response.body;
+          }
+        } catch (_) {
+          message = response.body;
+        }
+      }
+      throw Exception(message);
+    }
+  }
+
+  Future<void> closeUserTask(String userTaskId, String adminReviewNote) async {
+    final response = await http
+        .put(
+          Uri.parse('$_baseUrl/user-task/$userTaskId/close'),
+          headers: await _headers(),
+          body: json.encode({'adminReviewNote': adminReviewNote}),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to close task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          } else {
+            message = response.body;
+          }
+        } catch (_) {
+          message = response.body;
+        }
+      }
+      throw Exception(message);
+    }
+  }
+
+  Future<List<TaskComment>> addCommentToUserTask(
+    String userTaskId,
+    String body,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/comment'),
+      headers: await _headers(),
+      body: json.encode({'body': body}),
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      final List l = decoded['comments'] ?? [];
+      return l
+          .map((e) => TaskComment.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } else {
+      throw Exception('Failed to add comment');
+    }
+  }
+
   Future<int> markNotificationIdsUnread(List<String> ids) async {
     final clean = ids
         .map((e) => e.trim())
@@ -263,10 +354,24 @@ class TaskService {
 
     final decoded = json.decode(response.body);
     if (decoded is List) {
-      return decoded
-          .map((e) => e.toString())
-          .where((s) => s.isNotEmpty)
-          .toList();
+      final out = <String>[];
+      for (final e in decoded) {
+        if (e is String) {
+          final s = e.trim();
+          if (s.isNotEmpty) out.add(s);
+          continue;
+        }
+        if (e is Map) {
+          final mm = Map<String, dynamic>.from(e);
+          final raw = mm['userId'] ?? mm['_id'] ?? mm['id'] ?? mm['employeeId'];
+          final s = (raw ?? '').toString().trim();
+          if (s.isNotEmpty) out.add(s);
+          continue;
+        }
+        final s = e.toString().trim();
+        if (s.isNotEmpty) out.add(s);
+      }
+      return out;
     }
     if (decoded is Map) {
       final m = Map<String, dynamic>.from(decoded);
@@ -291,6 +396,35 @@ class TaskService {
       }
     }
     return <String>[];
+  }
+
+  Future<List<Map<String, dynamic>>> getTaskAssigneesDetailed(
+    String taskId,
+  ) async {
+    final response = await http
+        .get(
+          Uri.parse('$_baseUrl/$taskId/assignees'),
+          headers: await _headers(jsonContent: false),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 404) {
+      return <Map<String, dynamic>>[];
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load task assignees');
+    }
+
+    if (response.body.isEmpty) return <Map<String, dynamic>>[];
+    final decoded = json.decode(response.body);
+    if (decoded is List) {
+      return decoded
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+    }
+    return <Map<String, dynamic>>[];
   }
 
   /// Fetch non-archived (current) tasks
@@ -803,10 +937,7 @@ class TaskService {
     final response = await http.put(
       Uri.parse('$_baseUrl/user-task/$userTaskId/grade'),
       headers: await _headers(),
-      body: json.encode({
-        'score': score,
-        'feedback': feedback,
-      }),
+      body: json.encode({'score': score, 'feedback': feedback}),
     );
 
     if (response.statusCode != 200) {

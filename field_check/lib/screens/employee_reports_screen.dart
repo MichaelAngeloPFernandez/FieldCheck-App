@@ -13,10 +13,76 @@ import 'package:field_check/services/user_service.dart';
 import 'package:field_check/utils/file_download/file_download.dart';
 import 'package:field_check/screens/task_report_screen.dart';
 
+class _ResubmitCountdown extends StatefulWidget {
+  final DateTime until;
+
+  const _ResubmitCountdown({required this.until});
+
+  @override
+  State<_ResubmitCountdown> createState() => _ResubmitCountdownState();
+}
+
+class _ResubmitCountdownState extends State<_ResubmitCountdown> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _format(Duration d) {
+    var secs = d.inSeconds;
+    if (secs <= 0) return '0s';
+
+    final days = secs ~/ 86400;
+    secs -= days * 86400;
+    final hours = secs ~/ 3600;
+    secs -= hours * 3600;
+    final mins = secs ~/ 60;
+    secs -= mins * 60;
+
+    final parts = <String>[];
+    if (days > 0) parts.add('${days}d');
+    if (hours > 0 || days > 0) parts.add('${hours}h');
+    if (mins > 0 || hours > 0 || days > 0) parts.add('${mins}m');
+    parts.add('${secs}s');
+    return parts.join(' ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = widget.until.difference(DateTime.now());
+    final isActive = remaining.inSeconds > 0;
+    final text = isActive ? _format(remaining) : 'Expired';
+
+    return Text(
+      text,
+      style: Theme.of(
+        context,
+      ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800),
+    );
+  }
+}
+
 class EmployeeReportsScreen extends StatefulWidget {
   final String employeeId;
+  final String? initialReportId;
 
-  const EmployeeReportsScreen({super.key, required this.employeeId});
+  const EmployeeReportsScreen({
+    super.key,
+    required this.employeeId,
+    this.initialReportId,
+  });
 
   @override
   State<EmployeeReportsScreen> createState() => _EmployeeReportsScreenState();
@@ -27,6 +93,8 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
   Timer? _autoRefreshTimer;
   bool _isLoading = false;
   String? _error;
+
+  bool _initialReportOpened = false;
 
   String _typeFilter = 'task'; // task | all
 
@@ -112,6 +180,25 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
       if (_isLoading) return;
       _loadReports();
     });
+  }
+
+  String _labelForGrade(String? grade) {
+    final g = (grade ?? '').trim().toLowerCase();
+    switch (g) {
+      case 'excellent':
+        return 'Excellent';
+      case 'good':
+        return 'Good';
+      case 'poor':
+        return 'Poor';
+      default:
+        return '-';
+    }
+  }
+
+  bool _isGraded(ReportModel r) {
+    final g = (r.grade ?? '').trim().toLowerCase();
+    return g == 'poor' || g == 'good' || g == 'excellent';
   }
 
   @override
@@ -316,6 +403,18 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
         _reports = mine;
         _isLoading = false;
       });
+
+      final initialId = (widget.initialReportId ?? '').trim();
+      if (!_initialReportOpened && initialId.isNotEmpty) {
+        _initialReportOpened = true;
+        final match = mine.where((r) => r.id == initialId).toList();
+        if (match.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _showReportDetails(match.first);
+          });
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -391,6 +490,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
     final now = DateTime.now();
     final allowResubmit =
         r.resubmitUntil != null && r.resubmitUntil!.isAfter(now);
+    final isGraded = _isGraded(r);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -400,8 +500,59 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (r.type == 'task' && allowResubmit) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'Reopened',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.deepOrange,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Resubmission window closes in',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            _ResubmitCountdown(until: r.resubmitUntil!),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               _buildDetailRow('Task:', r.taskTitle ?? (r.taskId ?? '-')),
               _buildDetailRow('Status:', r.status),
+              if (isGraded) _buildDetailRow('Grade:', _labelForGrade(r.grade)),
+              if ((r.gradeComment).trim().isNotEmpty)
+                _buildDetailRow('Comment:', r.gradeComment.trim()),
               _buildDetailRow(
                 'Submitted:',
                 formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
@@ -551,7 +702,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                   );
                 }
               },
-              child: const Text('Resubmit'),
+              child: const Text('Resubmit (Reopened)'),
             ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -586,6 +737,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
     final attachments = r.attachments.length;
     final canArchive = r.type == 'task';
     final isArchivedTab = _tab == 'archived';
+    final isGraded = _isGraded(r);
 
     return Card(
       elevation: 0,
@@ -666,6 +818,18 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
+                  if (isGraded)
+                    Chip(
+                      label: Text('Grade: ${_labelForGrade(r.grade)}'),
+                      backgroundColor: Colors.green.withValues(alpha: 0.12),
+                      labelStyle: Theme.of(context).textTheme.labelMedium
+                          ?.copyWith(
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.w800,
+                          ),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
                   Chip(
                     label: Text('Attachments: $attachments'),
                     backgroundColor: Theme.of(
@@ -737,120 +901,125 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
               children: [
                 Row(
                   children: [
-                    ChoiceChip(
-                      label: const Text('Current'),
-                      selected: _tab == 'current',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        setState(() {
-                          _tab = 'current';
-                        });
-                        _loadReports();
-                      },
+                    Expanded(
+                      child: SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(
+                            value: 'current',
+                            label: Text('Current'),
+                          ),
+                          ButtonSegment(
+                            value: 'archived',
+                            label: Text('Archived'),
+                          ),
+                        ],
+                        selected: {_tab},
+                        onSelectionChanged: (vals) {
+                          final next = vals.first;
+                          if (next == _tab) return;
+                          setState(() {
+                            _tab = next;
+                          });
+                          _loadReports();
+                        },
+                      ),
                     ),
                     const SizedBox(width: AppTheme.sm),
-                    ChoiceChip(
-                      label: const Text('Archived'),
-                      selected: _tab == 'archived',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        setState(() {
-                          _tab = 'archived';
-                        });
-                        _loadReports();
-                      },
-                    ),
-                    const Spacer(),
-                    ChoiceChip(
-                      label: const Text('Task'),
-                      selected: _typeFilter == 'task',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        setState(() {
-                          _typeFilter = 'task';
-                        });
-                        _loadReports();
-                      },
-                    ),
-                    const SizedBox(width: AppTheme.sm),
-                    ChoiceChip(
-                      label: const Text('All'),
-                      selected: _typeFilter == 'all',
-                      onSelected: (sel) {
-                        if (!sel) return;
-                        setState(() {
-                          _typeFilter = 'all';
-                        });
-                        _loadReports();
-                      },
+                    Expanded(
+                      child: SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(value: 'task', label: Text('Task')),
+                          ButtonSegment(value: 'all', label: Text('All')),
+                        ],
+                        selected: {_typeFilter},
+                        onSelectionChanged: (vals) {
+                          final next = vals.first;
+                          if (next == _typeFilter) return;
+                          setState(() {
+                            _typeFilter = next;
+                          });
+                          _loadReports();
+                        },
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: AppTheme.sm),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      ChoiceChip(
-                        label: Text(_formatDateRangeLabel(_dateRange)),
-                        selected: _dateRange != null,
-                        onSelected: (_) async {
-                          final picked = await showDateRangePicker(
-                            context: context,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime(2100),
-                            initialDateRange: _dateRange,
-                          );
-                          if (picked == null) return;
-                          if (!mounted) return;
-                          setState(() {
-                            _dateRange = picked;
-                          });
-                        },
+                Wrap(
+                  spacing: AppTheme.sm,
+                  runSpacing: AppTheme.sm,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    ChoiceChip(
+                      label: Text(_formatDateRangeLabel(_dateRange)),
+                      selected: _dateRange != null,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) async {
+                        final picked = await showDateRangePicker(
+                          context: context,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                          initialDateRange: _dateRange,
+                        );
+                        if (picked == null) return;
+                        if (!mounted) return;
+                        setState(() {
+                          _dateRange = picked;
+                        });
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Attachments'),
+                      selected: _attachmentsOnly,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (sel) {
+                        setState(() {
+                          _attachmentsOnly = sel;
+                        });
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Submitted'),
+                      selected: _statusFilter == 'submitted',
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (sel) {
+                        setState(() {
+                          _statusFilter = sel ? 'submitted' : 'all';
+                        });
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Reviewed'),
+                      selected: _statusFilter == 'reviewed',
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (sel) {
+                        setState(() {
+                          _statusFilter = sel ? 'reviewed' : 'all';
+                        });
+                      },
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _dateRange = null;
+                          _attachmentsOnly = false;
+                          _statusFilter = 'all';
+                        });
+                      },
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.md,
+                          vertical: 10,
+                        ),
                       ),
-                      const SizedBox(width: AppTheme.sm),
-                      ChoiceChip(
-                        label: const Text('Attachments'),
-                        selected: _attachmentsOnly,
-                        onSelected: (sel) {
-                          setState(() {
-                            _attachmentsOnly = sel;
-                          });
-                        },
-                      ),
-                      const SizedBox(width: AppTheme.sm),
-                      ChoiceChip(
-                        label: const Text('Submitted'),
-                        selected: _statusFilter == 'submitted',
-                        onSelected: (sel) {
-                          setState(() {
-                            _statusFilter = sel ? 'submitted' : 'all';
-                          });
-                        },
-                      ),
-                      const SizedBox(width: AppTheme.sm),
-                      ChoiceChip(
-                        label: const Text('Reviewed'),
-                        selected: _statusFilter == 'reviewed',
-                        onSelected: (sel) {
-                          setState(() {
-                            _statusFilter = sel ? 'reviewed' : 'all';
-                          });
-                        },
-                      ),
-                      const SizedBox(width: AppTheme.sm),
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _dateRange = null;
-                            _attachmentsOnly = false;
-                            _statusFilter = 'all';
-                          });
-                        },
-                        child: const Text('Clear'),
-                      ),
-                    ],
-                  ),
+                      child: const Text('Clear'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -858,30 +1027,23 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
           const SizedBox(height: AppTheme.md),
           Expanded(
             child: _isLoading
-                ? AppWidgets.loadingIndicator(message: 'Loading reports...')
-                : (_error != null
-                      ? AppWidgets.errorMessage(
-                          message: _error!,
-                          onRetry: _loadReports,
-                        )
-                      : (filtered.isEmpty
-                            ? AppWidgets.emptyState(
-                                title: 'No reports',
-                                message: _tab == 'archived'
-                                    ? 'No archived reports.'
-                                    : 'No current reports yet.',
-                              )
-                            : RefreshIndicator(
-                                onRefresh: _loadReports,
-                                child: ListView.builder(
-                                  padding: EdgeInsets.zero,
-                                  itemCount: filtered.length,
-                                  itemBuilder: (context, index) {
-                                    final r = filtered[index];
-                                    return _buildReportCard(r);
-                                  },
-                                ),
-                              ))),
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                ? Center(
+                    child: AppWidgets.errorMessage(
+                      message: _error!,
+                      onRetry: _loadReports,
+                    ),
+                  )
+                : filtered.isEmpty
+                ? const Center(child: Text('No reports found'))
+                : ListView.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (context, i) {
+                      final r = filtered[i];
+                      return _buildReportCard(r);
+                    },
+                  ),
           ),
         ],
       ),

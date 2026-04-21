@@ -30,6 +30,40 @@ class TaskChecklistItem {
   }
 }
 
+class TaskComment {
+  final String sender;
+  final String senderName;
+  final String body;
+  final DateTime? createdAt;
+
+  TaskComment({
+    required this.sender,
+    required this.senderName,
+    required this.body,
+    this.createdAt,
+  });
+
+  factory TaskComment.fromJson(Map<String, dynamic> json) {
+    return TaskComment(
+      sender: json['sender']?.toString() ?? '',
+      senderName: json['senderName'] ?? (json['name'] ?? 'Unknown'),
+      body: json['body'] ?? '',
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'])
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'sender': sender,
+      'senderName': senderName,
+      'body': body,
+      'createdAt': createdAt?.toIso8601String(),
+    };
+  }
+}
+
 class Task {
   final String id;
   final String title;
@@ -49,6 +83,14 @@ class Task {
   userTaskStatus; // Per-assignee status (pending_acceptance/accepted/in_progress/completed)
   final DateTime? userTaskAssignedAt;
   final DateTime? userTaskCompletedAt;
+  final String? blockStatus;
+  final String? blockReasonCategory;
+  final String? blockReasonText;
+  final List<String> blockEvidencePhotos;
+  final DateTime? blockedAt;
+  final String? adminReviewNote;
+  final String? adminAction;
+  final DateTime? adminActionAt;
   final UserModel? assignedTo; // Single assignee (for backward compatibility)
   final List<UserModel> assignedToMultiple; // Multiple assignees
   final String? geofenceId; // Auto-populated from assigned geofence
@@ -62,6 +104,7 @@ class Task {
   final num? gradeScore;
   final String? gradeFeedback;
   final bool isGraded;
+  final List<TaskComment> comments;
   final List<TaskChecklistItem> checklist;
   final String? blockReason;
 
@@ -83,6 +126,14 @@ class Task {
     this.userTaskStatus,
     this.userTaskAssignedAt,
     this.userTaskCompletedAt,
+    this.blockStatus,
+    this.blockReasonCategory,
+    this.blockReasonText,
+    this.blockEvidencePhotos = const [],
+    this.blockedAt,
+    this.adminReviewNote,
+    this.adminAction,
+    this.adminActionAt,
     this.assignedTo,
     this.assignedToMultiple = const [],
     this.geofenceId,
@@ -96,6 +147,7 @@ class Task {
     this.gradeScore,
     this.gradeFeedback,
     this.isGraded = false,
+    this.comments = const [],
     this.checklist = const [],
     this.blockReason,
   });
@@ -148,6 +200,12 @@ class Task {
               .toList()
         : <TaskChecklistItem>[];
 
+    final List<TaskComment> comments = json['comments'] is List
+        ? (json['comments'] as List)
+              .map((e) => TaskComment.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+        : <TaskComment>[];
+
     final int progress = json['progressPercent'] is num
         ? (json['progressPercent'] as num).toInt()
         : 0;
@@ -172,6 +230,23 @@ class Task {
         ? DateTime.tryParse(userTaskCompletedAtRaw)
         : null;
 
+    final blockedAtRaw = json['blockedAt']?.toString();
+    final blockedAt = blockedAtRaw != null
+        ? DateTime.tryParse(blockedAtRaw)
+        : null;
+
+    final adminActionAtRaw = json['adminActionAt']?.toString();
+    final adminActionAt = adminActionAtRaw != null
+        ? DateTime.tryParse(adminActionAtRaw)
+        : null;
+
+    final evidence = json['blockEvidencePhotos'] is List
+        ? (json['blockEvidencePhotos'] as List)
+              .map((e) => (e ?? '').toString())
+              .where((s) => s.trim().isNotEmpty)
+              .toList()
+        : <String>[];
+
     return Task(
       id: json['_id'] ?? json['id'] ?? '',
       title: json['title'] ?? '',
@@ -190,6 +265,14 @@ class Task {
       userTaskStatus: json['userTaskStatus'],
       userTaskAssignedAt: userTaskAssignedAt,
       userTaskCompletedAt: userTaskCompletedAt,
+      blockStatus: json['blockStatus']?.toString(),
+      blockReasonCategory: json['blockReasonCategory']?.toString(),
+      blockReasonText: json['blockReasonText']?.toString(),
+      blockEvidencePhotos: evidence,
+      blockedAt: blockedAt,
+      adminReviewNote: json['adminReviewNote']?.toString(),
+      adminAction: json['adminAction']?.toString(),
+      adminActionAt: adminActionAt,
       assignedTo: json['assignedTo'] != null
           ? UserModel.fromJson(json['assignedTo'])
           : null,
@@ -202,9 +285,10 @@ class Task {
       isArchived: json['isArchived'] ?? false,
       isOverdue: json['isOverdue'] ?? false,
       isLate: json['isLate'] ?? false,
-      gradeScore: json['gradeScore'] as num?,
-      gradeFeedback: json['gradeFeedback'] as String?,
-      isGraded: json['isGraded'] ?? false,
+      gradeScore: json['gradeScore'] ?? json['grade']?['score'],
+      gradeFeedback: json['gradeFeedback'] ?? json['grade']?['feedback'],
+      isGraded: json['isGraded'] ?? (json['grade'] != null),
+      comments: comments,
       checklist: checklist,
       blockReason: json['blockReason'],
     );
@@ -242,6 +326,7 @@ class Task {
       'gradeScore': gradeScore,
       'gradeFeedback': gradeFeedback,
       'isGraded': isGraded,
+      'comments': comments.map((c) => c.toJson()).toList(),
       'checklist': checklist.map((c) => c.toJson()).toList(),
       'blockReason': blockReason,
     };
@@ -278,6 +363,7 @@ class Task {
     num? gradeScore,
     String? gradeFeedback,
     bool? isGraded,
+    List<TaskComment>? comments,
     List<TaskChecklistItem>? checklist,
     String? blockReason,
   }) {
@@ -312,6 +398,7 @@ class Task {
       gradeScore: gradeScore ?? this.gradeScore,
       gradeFeedback: gradeFeedback ?? this.gradeFeedback,
       isGraded: isGraded ?? this.isGraded,
+      comments: comments ?? this.comments,
       checklist: checklist ?? this.checklist,
       blockReason: blockReason ?? this.blockReason,
     );

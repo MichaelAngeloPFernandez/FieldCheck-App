@@ -1,6 +1,5 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:field_check/screens/enhanced_attendance_screen.dart';
 import 'package:field_check/screens/history_screen.dart';
@@ -9,6 +8,7 @@ import 'package:field_check/screens/settings_screen.dart';
 import 'package:field_check/screens/employee_task_list_screen.dart';
 import 'package:field_check/screens/employee_profile_screen.dart';
 import 'package:field_check/screens/employee_task_details_screen.dart';
+import 'package:field_check/screens/employee_reports_screen.dart';
 import 'package:field_check/providers/auth_provider.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
@@ -22,6 +22,7 @@ import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:field_check/utils/url_util.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int? initialIndex;
@@ -64,6 +65,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (widget.initialIndex != null) {
       _selectedIndex = widget.initialIndex!;
     }
+    UrlUtil.updateTabQueryParam(_selectedIndex);
     _loadUserId();
     _initServices();
 
@@ -161,12 +163,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _notificationSub?.cancel();
     _notificationSub = _realtimeService.notificationStream.listen((data) {
       if (!mounted) return;
-      
+
       final action = (data['action'] ?? '').toString();
       final title = (data['title'] ?? '').toString();
       final message = (data['message'] ?? '').toString();
 
-      if (action == 'taskGraded') {
+      if (action == 'taskGraded' || action == 'reportGraded') {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -175,7 +177,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
                 Text(message),
               ],
             ),
@@ -185,10 +190,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
               textColor: Colors.white,
               onPressed: () {
                 final payload = data['payload'] ?? {};
-                final taskId = payload['taskId']?.toString() ?? '';
-                if (taskId.isNotEmpty) {
-                  // Navigate to the task list
-                  _selectTab(5); // Go to tasks tab
+                if (payload is Map) {
+                  final reportId = (payload['reportId'] ?? '').toString();
+                  if (action == 'reportGraded' && reportId.length == 24) {
+                    final employeeId = (UserService().currentUser?.id ?? '')
+                        .toString();
+                    if (employeeId.trim().isNotEmpty) {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => EmployeeReportsScreen(
+                            employeeId: employeeId,
+                            initialReportId: reportId,
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                  }
+
+                  final taskId = (payload['taskId'] ?? '').toString();
+                  if (taskId.isNotEmpty) {
+                    // Navigate to the task list
+                    _selectTab(5); // Go to tasks tab
+                  }
                 }
               },
             ),
@@ -327,6 +351,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _selectedIndex = index;
     });
+    UrlUtil.updateTabQueryParam(index);
     if (index == 5) {
       _clearTasksBadge();
     }
@@ -637,6 +662,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 count: _tasksBadgeCount,
               ),
             ),
+            ListTile(
+              leading: _buildBadge(
+                child: const Icon(Icons.notifications),
+                count: _notificationsBadgeCount,
+              ),
+              title: const Text('Notifications'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _openNotificationsInbox();
+              },
+            ),
             const Divider(),
             SwitchListTile(
               title: const Text('Share live location with admin'),
@@ -701,10 +737,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isMobile =
-        !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS);
+    final isCompact = MediaQuery.of(context).size.width < 700;
     final appBarForeground =
         theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary;
     final List<Widget> screens = [
@@ -725,16 +758,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ];
 
     return Scaffold(
-      drawer: _buildEmployeeDrawer(),
+      drawer: isCompact ? _buildEmployeeDrawer() : null,
       appBar: AppBar(
         elevation: 0,
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
-            tooltip: 'Menu',
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
+        leading: isCompact
+            ? Builder(
+                builder: (context) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  tooltip: 'Menu',
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              )
+            : null,
         title: Text(
           _selectedIndex == 0
               ? _buildGreetingTitle()
@@ -744,7 +779,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             color: appBarForeground,
           ),
         ),
-        actions: isMobile
+        actions: isCompact
             ? []
             : [
                 Stack(
@@ -843,7 +878,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
       ),
       body: IndexedStack(index: _selectedIndex, children: screens),
-      bottomNavigationBar: isMobile
+      bottomNavigationBar: isCompact
           ? null
           : BottomNavigationBar(
               currentIndex: _selectedIndex,
@@ -1092,6 +1127,47 @@ class _EmployeeNotificationsSheetState
       }
     }
 
+    if (scope == 'tasks' &&
+        (action == 'taskGraded' || action == 'reportGraded')) {
+      if (action == 'reportGraded') {
+        final reportId = readPayload('reportId');
+        final employeeId = (UserService().currentUser?.id ?? '').toString();
+        if (employeeId.trim().isNotEmpty && reportId.length == 24) {
+          if (!mounted) return;
+          Navigator.of(context).pop();
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => EmployeeReportsScreen(
+                employeeId: employeeId,
+                initialReportId: reportId,
+              ),
+            ),
+          );
+          return;
+        }
+      }
+
+      final taskId = readPayload('taskId');
+      if (taskId.length == 24) {
+        try {
+          final task = await TaskService().getTaskById(taskId);
+          if (!mounted) return;
+          Navigator.of(context).pop();
+
+          final employeeId = (UserService().currentUser?.id ?? '').toString();
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  EmployeeTaskDetailsScreen(task: task, employeeId: employeeId),
+            ),
+          );
+          return;
+        } catch (_) {
+          // fall through
+        }
+      }
+    }
+
     if (scope == 'messages' && action == 'chatMessage') {
       final convoId = readPayload('conversationId');
       if (!mounted) return;
@@ -1209,9 +1285,25 @@ class _EmployeeNotificationsSheetState
                 final title = (n['title'] ?? 'Notification').toString();
                 final message = (n['message'] ?? '').toString();
                 final scope = (n['scope'] ?? '').toString();
+                final action = (n['action'] ?? '').toString();
+                final payload = n['payload'];
                 final readAt = n['readAt'];
                 final isRead = readAt != null && readAt.toString().isNotEmpty;
                 final id = (n['id'] ?? '').toString();
+
+                String readPayload(String key) {
+                  if (payload is Map) {
+                    return (payload[key] ?? '').toString();
+                  }
+                  return '';
+                }
+
+                final isReportGraded =
+                    scope == 'tasks' && action == 'reportGraded';
+                final grade = readPayload('grade');
+                final gradeComment = readPayload('gradeComment');
+                final hasGrade = grade.trim().isNotEmpty;
+                final hasGradeComment = gradeComment.trim().isNotEmpty;
 
                 final selected = _selectedIds.contains(id);
 
@@ -1253,7 +1345,21 @@ class _EmployeeNotificationsSheetState
                       fontWeight: isRead ? FontWeight.w600 : FontWeight.w900,
                     ),
                   ),
-                  subtitle: message.trim().isEmpty ? null : Text(message),
+                  subtitle:
+                      (message.trim().isEmpty &&
+                          !(isReportGraded && (hasGrade || hasGradeComment)))
+                      ? null
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (message.trim().isNotEmpty) Text(message),
+                            if (isReportGraded && hasGrade)
+                              Text('Grade: ${grade.trim()}'),
+                            if (isReportGraded && hasGradeComment)
+                              Text('Comment: ${gradeComment.trim()}'),
+                          ],
+                        ),
                   trailing: _selectionMode
                       ? null
                       : (isRead

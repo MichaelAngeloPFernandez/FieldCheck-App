@@ -42,9 +42,9 @@ class _SplashScreenState extends State<SplashScreen> {
       final uri = Uri.base;
       final path = uri.path;
 
-      if (path == '/admin-dashboard' && authProvider.isAdmin) {
+      if (path.contains('/admin-dashboard') && authProvider.isAdmin) {
         Navigator.of(context).pushReplacementNamed(uri.toString());
-      } else if (path == '/dashboard' && !authProvider.isAdmin) {
+      } else if (path.contains('/dashboard') && !authProvider.isAdmin) {
         Navigator.of(context).pushReplacementNamed(uri.toString());
       } else {
         Navigator.of(context).pushReplacementNamed(
