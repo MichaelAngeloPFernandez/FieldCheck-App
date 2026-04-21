@@ -51,6 +51,8 @@ const userTaskSchema = new mongoose.Schema(
       gradedAt: { type: Date, required: false },
       gradedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
     },
+    cancelReason: { type: String, required: false },
+    cancelledAt: { type: Date, required: false },
     comments: [
       {
         sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

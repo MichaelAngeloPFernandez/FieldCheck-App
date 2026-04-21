@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const AppNotification = require('../models/AppNotification');
 const ChatMessage = require('../models/ChatMessage');
 const Settings = require('../models/Settings');
+const Report = require('../models/Report');
 
 /**
  * Periodically cleans up old notifications and messages based on Admin settings.
@@ -16,7 +17,7 @@ const initCleanupJob = () => {
     try {
       // 1. Fetch relevant retention settings
       const settingsDocs = await Settings.find({
-        key: { $in: ['autoDeleteNotifs', 'notifExpiryDays', 'autoDeleteMsgs', 'msgExpiryDays'] }
+        key: { $in: ['autoDeleteNotifs', 'notifExpiryDays', 'autoDeleteMsgs', 'msgExpiryDays', 'autoDeleteReports', 'reportExpiryDays'] }
       }).lean();
 
       const settings = {};
@@ -26,6 +27,8 @@ const initCleanupJob = () => {
       const notifExpiryDays = parseInt(settings.notifExpiryDays) || 30;
       const autoDeleteMsgs = settings.autoDeleteMsgs === true || settings.autoDeleteMsgs === 'true';
       const msgExpiryDays = parseInt(settings.msgExpiryDays) || 30;
+      const autoDeleteReports = settings.autoDeleteReports === true || settings.autoDeleteReports === 'true';
+      const reportExpiryDays = parseInt(settings.reportExpiryDays) || 30;
 
       // 2. Perform Notification Cleanup
       if (autoDeleteNotifs) {
@@ -47,6 +50,17 @@ const initCleanupJob = () => {
           createdAt: { $lt: threshold }
         });
         console.log(`[Cleanup Job] Deleted ${result.deletedCount} messages older than ${msgExpiryDays} days.`);
+      }
+
+      // 4. Perform Report Cleanup
+      if (autoDeleteReports) {
+        const threshold = new Date();
+        threshold.setDate(threshold.getDate() - reportExpiryDays);
+        
+        const result = await Report.deleteMany({
+          createdAt: { $lt: threshold }
+        });
+        console.log(`[Cleanup Job] Deleted ${result.deletedCount} reports older than ${reportExpiryDays} days.`);
       }
 
       console.log('[Cleanup Job] Sweep completed successfully.');

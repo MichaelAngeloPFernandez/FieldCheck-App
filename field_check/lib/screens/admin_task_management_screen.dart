@@ -1159,12 +1159,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                 _employeeOverdueCount[employee.id] ?? 0,
                               ].cast<int>().reduce((a, b) => a > b ? a : b);
 
-                              final int workloadScore =
-                                  (activeCount * 10 +
-                                          difficultyWeight.round() * 5 +
-                                          overdueCount * 20)
-                                      .clamp(0, 9999)
-                                      .toInt();
                               final atLimit =
                                   activeCount >= _taskLimitPerEmployee;
                               final isAlreadyAssigned =
@@ -1198,7 +1192,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                     '${info.overdueTasksCount} overdue',
                                   );
                                 }
-                                parts.add('score $workloadScore');
                                 if (info.distanceMeters > 0) {
                                   if (info.distanceMeters >= 1000) {
                                     parts.add(
@@ -1214,7 +1207,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                     '${employee.email} · ${parts.join(' · ')}';
                               } else {
                                 subtitle =
-                                    '${employee.email} · score $workloadScore';
+                                    '${employee.email} · $activeCount active';
                               }
 
                               if (atLimit &&
@@ -1428,10 +1421,10 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                               'Task assigned to $successful of $total employees.';
                         } else if (successful == 0) {
                           message =
-                              'Failed to assign task to all $total employees (check workload limits).';
+                              'Failed to assign task to all $total employees (check task limits).';
                         } else {
                           message =
-                              'Task assigned to $successful of $total employees. $failed failed (see workload limits).';
+                              'Task assigned to $successful of $total employees. $failed failed (see task limits).';
                         }
                       } else {
                         message = 'Task assignment request completed.';
@@ -1739,58 +1732,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
     final body = Column(
       children: [
-        if (widget.embedded)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: PopupMenuButton<String>(
-                    onSelected: (value) {
-                      setState(() => _sortBy = value);
-                    },
-                    itemBuilder: (BuildContext context) => [
-                      const PopupMenuItem(
-                        value: 'dueDate',
-                        child: Text('Sort by Due Date'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'difficulty',
-                        child: Text('Sort by Difficulty'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'status',
-                        child: Text('Sort by Status'),
-                      ),
-                    ],
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.sort),
-                            const SizedBox(width: 8),
-                            const Text('Sort'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _addTask,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Create Task'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: brandColor,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: Column(

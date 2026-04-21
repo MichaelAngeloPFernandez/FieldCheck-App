@@ -34,6 +34,7 @@ import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/http_util.dart';
 import 'package:field_check/utils/url_util.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _AdminNavIntent extends Intent {
   final int index;
@@ -1139,7 +1140,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   // Notification and Inbox State
   final List<DashboardNotification> _notifications = [];
-  int _inboxTabIndex = 0; // 0: Notifications, 1: Messages
+  int _inboxTabIndex = 0; // 0: Online, 1: Reports & Tasks, 2: Messages
   bool _notifSelectionMode = false;
   final Set<String> _selectedNotifIds = {};
   int _unreadNotificationsCount = 0;
@@ -1236,11 +1237,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     super.initState();
     _selectedIndex = widget.initialIndex ?? 0;
     UrlUtil.updateTabQueryParam(_selectedIndex);
+    // Load persisted tab if no explicit initial index
+    if (widget.initialIndex == null) {
+      SharedPreferences.getInstance().then((prefs) {
+        final saved = prefs.getInt('admin.lastTab');
+        if (saved != null && saved != _selectedIndex && mounted) {
+          setState(() {
+            _selectedIndex = saved;
+          });
+          UrlUtil.updateTabQueryParam(saved);
+        }
+      });
+    }
     _loadDashboardData();
     _initRealtimeService();
     _subscribeToUnreadCounts();
     _refreshUnreadNotificationsCount();
     _loadInboxNotifications();
+    _prefetchMessageNotifications();
     _initMapData();
     _initLocationService();
     _startGpsSweepTimer();
@@ -2553,12 +2567,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final sidebarWidth = (width * 0.35).clamp(320.0, 420.0);
 
-    final List<DashboardNotification> items = _inboxTabIndex == 1
+    final List<DashboardNotification> items = _inboxTabIndex == 2
         ? _groupMessageNotifications(_notifications)
-        : _notifications.where((n) => n.type != 'messages').toList();
+        : _inboxTabIndex == 1
+            ? _notifications.where((n) => n.type == 'task' || n.type == 'report' || n.type == 'attendance').toList()
+            : _notifications.where((n) => n.type == 'employee' || n.type == 'geofence').toList();
 
-    final int notificationsUnreadCount = _notifications
-        .where((n) => n.type != 'messages' && !n.isRead)
+    final int onlineUnreadCount = _notifications
+        .where((n) => (n.type == 'employee' || n.type == 'geofence') && !n.isRead)
+        .length;
+    final int reportsTasksUnreadCount = _notifications
+        .where((n) => (n.type == 'task' || n.type == 'report' || n.type == 'attendance') && !n.isRead)
         .length;
     final int messagesUnreadCount = _notifications
         .where((n) => n.type == 'messages' && !n.isRead)
@@ -2624,19 +2643,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   segments: [
                     ButtonSegment(
                       value: 0,
-                      label: const Text('Notifications'),
+                      label: const Text('Online'),
                       icon: Badge(
-                        isLabelVisible: notificationsUnreadCount > 0,
+                        isLabelVisible: onlineUnreadCount > 0,
                         label: Text(
-                          notificationsUnreadCount > 999
+                          onlineUnreadCount > 999
                               ? '999+'
-                              : notificationsUnreadCount.toString(),
+                              : onlineUnreadCount.toString(),
                         ),
-                        child: const Icon(Icons.notifications_none),
+                        child: const Icon(Icons.people_outline),
                       ),
                     ),
                     ButtonSegment(
                       value: 1,
+                      label: const Text('Reports'),
+                      icon: Badge(
+                        isLabelVisible: reportsTasksUnreadCount > 0,
+                        label: Text(
+                          reportsTasksUnreadCount > 999
+                              ? '999+'
+                              : reportsTasksUnreadCount.toString(),
+                        ),
+                        child: const Icon(Icons.assignment_outlined),
+                      ),
+                    ),
+                    ButtonSegment(
+                      value: 2,
                       label: const Text('Messages'),
                       icon: Badge(
                         isLabelVisible: messagesUnreadCount > 0,
@@ -2918,19 +2950,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             setState(() {});
           }
 
-          // Persist read/unread state without blocking the UI.
+          // Persist read/unread state to server, then refresh badge.
           if (markAll && read) {
             setState(() {
               _unreadNotificationsCount = 0;
             });
-            TaskService().markAllNotificationsRead().ignore();
+            TaskService().markAllNotificationsRead().then((_) {
+              _refreshUnreadNotificationsCount();
+            }).catchError((_) {});
           } else if (read) {
-            TaskService().markNotificationIdsRead(ids.toList()).ignore();
+            TaskService().markNotificationIdsRead(ids.toList()).then((_) {
+              _refreshUnreadNotificationsCount();
+            }).catchError((_) {});
           } else {
-            TaskService().markNotificationIdsUnread(ids.toList()).ignore();
+            TaskService().markNotificationIdsUnread(ids.toList()).then((_) {
+              _refreshUnreadNotificationsCount();
+            }).catchError((_) {});
           }
-
-          _refreshUnreadNotificationsCount();
         }
 
         void deleteByIds(Set<String> ids) {
@@ -2944,12 +2980,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }
 
         List<DashboardNotification> activeItems() {
-          final isMessages = tabIndex == 1;
-          return _notifications
-              .where(
-                (n) => isMessages ? n.type == 'messages' : n.type != 'messages',
-              )
-              .toList();
+          if (tabIndex == 2) {
+            return _groupMessageNotifications(
+              _notifications.where((n) => n.type == 'messages').toList(),
+            );
+          } else if (tabIndex == 1) {
+            return _notifications
+                .where((n) => n.type == 'task' || n.type == 'report' || n.type == 'attendance')
+                .toList();
+          } else {
+            return _notifications
+                .where((n) => n.type == 'employee' || n.type == 'geofence')
+                .toList();
+          }
         }
 
         return SafeArea(
@@ -2959,8 +3002,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               builder: (sheetCtx, setSheetState) {
                 final items = activeItems();
                 final unreadCount = items.where((n) => !n.isRead).length;
-                final notificationsUnread = _notifications
-                    .where((n) => n.type != 'messages' && !n.isRead)
+                final onlineUnread = _notifications
+                    .where((n) => (n.type == 'employee' || n.type == 'geofence') && !n.isRead)
+                    .length;
+                final reportsTasksUnread = _notifications
+                    .where((n) => (n.type == 'task' || n.type == 'report' || n.type == 'attendance') && !n.isRead)
                     .length;
                 final messagesUnread = _notifications
                     .where((n) => n.type == 'messages' && !n.isRead)
@@ -3007,8 +3053,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     selectionMode
                                         ? 'Select'
                                         : (tabIndex == 1
-                                              ? 'Messages'
-                                              : 'Notifications'),
+                                              ? 'Reports & Tasks'
+                                              : (tabIndex == 2
+                                                    ? 'Messages'
+                                                    : 'Online')),
                                     style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
@@ -3104,16 +3152,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             label: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Text('Notifications'),
-                                if (notificationsUnread > 0) ...[
+                                const Text('Online'),
+                                if (onlineUnread > 0) ...[
                                   const SizedBox(width: 6),
-                                  _buildNotificationBadge(notificationsUnread),
+                                  _buildNotificationBadge(onlineUnread),
                                 ],
                               ],
                             ),
                           ),
                           ButtonSegment<int>(
                             value: 1,
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('Reports'),
+                                if (reportsTasksUnread > 0) ...[
+                                  const SizedBox(width: 6),
+                                  _buildNotificationBadge(reportsTasksUnread),
+                                ],
+                              ],
+                            ),
+                          ),
+                          ButtonSegment<int>(
+                            value: 2,
                             label: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -3141,9 +3202,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         child: items.isEmpty
                             ? Center(
                                 child: Text(
-                                  tabIndex == 1
+                                  tabIndex == 2
                                       ? 'No messages'
-                                      : 'No notifications',
+                                      : (tabIndex == 1
+                                            ? 'No reports or task notifications'
+                                            : 'No online notifications'),
                                   style: TextStyle(
                                     color: Theme.of(context)
                                         .colorScheme
@@ -4252,6 +4315,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       _selectedIndex = index;
     });
     UrlUtil.updateTabQueryParam(index);
+    // Persist the current tab to SharedPreferences for refresh persistence
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setInt('admin.lastTab', index);
+    });
 
     // If we navigated back to the dashboard and stats were marked dirty
     // (or not loaded yet), refresh immediately.
@@ -4714,12 +4781,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           '$activeTaskCount / $_taskLimitPerEmployee',
           isBusy ? Colors.red : Colors.blue,
         ),
-        if (loc != null)
-          _buildStatusRow(
-            'Workload Score',
-            loc.workloadScore.toStringAsFixed(2),
-            _getWorkloadColor(loc.workloadScore),
-          ),
         const SizedBox(height: 12),
         if (isOnline && _liveLocations.containsKey(userId))
           Text(
@@ -4840,11 +4901,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               title: Text(_getAppBarTitle()),
               backgroundColor: brandColor,
               actions: [
-                if (_selectedIndex == 0)
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    onPressed: _loadDashboardData,
-                  ),
                 IconButton(
                   icon: Stack(
                     clipBehavior: Clip.none,

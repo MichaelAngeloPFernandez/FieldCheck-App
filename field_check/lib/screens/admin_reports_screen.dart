@@ -1994,79 +1994,16 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           icon: const Icon(Icons.tune),
                           label: const Text('Filters'),
                         ),
+                        FilledButton.tonalIcon(
+                          onPressed: _exportReport,
+                          icon: const Icon(Icons.download),
+                          label: const Text('Export'),
+                        ),
                       ],
                     );
                   },
                 ),
                 const SizedBox(height: 12),
-                // View toggle
-                const SizedBox.shrink(),
-
-                const SizedBox(height: 12),
-
-                const SizedBox.shrink(),
-
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _openFiltersSheet,
-                            icon: const Icon(Icons.tune),
-                            label: const Text('Filters'),
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              textStyle: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _viewMode == 'attendance'
-                                  ? 'Showing: ${_showArchivedAttendance ? 'Archived' : 'Current'} • $_filterDate • $_filterLocationLabel • $_attendanceStatusFilter'
-                                  : 'Showing: ${_showArchivedReports ? 'Archived' : 'Current'} • $_taskDifficultyFilter • $_reportStatusFilter',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.7),
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.tonalIcon(
-                          onPressed: _exportReport,
-                          icon: const Icon(Icons.download),
-                          label: const Text('Export'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
                 const SizedBox(height: 10),
 
                 Container(

@@ -1076,6 +1076,102 @@ const acceptUserTask = asyncHandler(async (req, res) => {
   });
 });
 
+// @route POST /api/tasks/user-task/:userTaskId/cancel
+// @desc Employee cancels an accepted/in-progress task (resets to pending_acceptance)
+// @access Private
+const cancelUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const { reason } = req.body;
+
+  const cancelReason = (reason ?? '').toString().trim();
+  if (!cancelReason) {
+    res.status(400);
+    throw new Error('Cancellation reason is required');
+  }
+
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authenticated');
+  }
+
+  if (req.user.role !== 'admin' && ut.userId.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error('Not authorized to cancel this task assignment');
+  }
+
+  const current = String(ut.status || '').toLowerCase();
+  if (!['accepted', 'in_progress'].includes(current)) {
+    res.status(400);
+    throw new Error('Only accepted or in-progress tasks can be cancelled');
+  }
+
+  ut.status = 'pending_acceptance';
+  ut.progressPercent = 0;
+  ut.cancelReason = cancelReason;
+  ut.cancelledAt = new Date();
+  ut.completedAt = undefined;
+  await ut.save();
+
+  // Emit real-time event
+  io.emit('taskCancelled', {
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+    status: ut.status,
+    cancelReason: ut.cancelReason,
+    cancelledAt: ut.cancelledAt ? ut.cancelledAt.toISOString() : null,
+  });
+
+  // Fire-and-forget admin notification
+  setImmediate(async () => {
+    try {
+      const task = await Task.findById(ut.taskId).select('title');
+      const who = [
+        (req.user?.name || '').toString().trim(),
+        (req.user?.employeeId || '').toString().trim(),
+      ].filter(Boolean);
+      const whoLabel = who.join(' \u2022 ');
+      const taskTitle = task ? task.title : 'Unknown task';
+      const msg = whoLabel
+        ? `${whoLabel} cancelled task: ${taskTitle}`
+        : `Task cancelled: ${taskTitle}`;
+
+      await appNotificationService.createForAdmins({
+        excludeUserId: req.user?._id,
+        type: 'task',
+        action: 'task_cancelled',
+        title: 'Task Cancelled',
+        message: msg,
+        payload: {
+          taskId: String(ut.taskId),
+          userTaskId: String(ut._id),
+          employeeId: (req.user?.employeeId || '').toString(),
+          employeeName: (req.user?.name || '').toString(),
+          userId: String(req.user?._id || ''),
+          cancelReason,
+        },
+      });
+    } catch (e) {
+      console.error('Failed to create task cancellation notification:', e.message || e);
+    }
+  });
+
+  res.status(200).json({
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+    status: ut.status,
+    cancelReason: ut.cancelReason,
+    cancelledAt: ut.cancelledAt ? ut.cancelledAt.toISOString() : null,
+  });
+});
+
 // @route PUT /api/tasks/:id/checklist-item
 // @access Private (assigned employee or admin)
 const updateTaskChecklistItem = asyncHandler(async (req, res) => {
@@ -1449,4 +1545,6 @@ module.exports = {
   restoreTask,
   escalateTask,
   gradeUserTask,
+  addCommentToUserTask,
+  cancelUserTask,
 };

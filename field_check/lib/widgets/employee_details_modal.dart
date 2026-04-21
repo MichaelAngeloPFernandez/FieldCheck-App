@@ -194,11 +194,6 @@ class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
                       employee.activeTaskCount.toString(),
                       Icons.task_alt,
                     ),
-                    _buildInfoRow(
-                      'Workload Score',
-                      '${(employee.workloadScore * 100).toStringAsFixed(0)}%',
-                      Icons.trending_up,
-                    ),
                     if (employee.speed != null)
                       _buildInfoRow(
                         'Speed',

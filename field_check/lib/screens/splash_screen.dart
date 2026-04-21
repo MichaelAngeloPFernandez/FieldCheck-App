@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 
 /// Splash screen that checks authentication status on app startup
@@ -47,9 +48,17 @@ class _SplashScreenState extends State<SplashScreen> {
       } else if (path.contains('/dashboard') && !authProvider.isAdmin) {
         Navigator.of(context).pushReplacementNamed(uri.toString());
       } else {
-        Navigator.of(context).pushReplacementNamed(
-          authProvider.isAdmin ? '/admin-dashboard' : '/dashboard',
-        );
+        // Read last tab from SharedPreferences for refresh persistence
+        final prefs = await SharedPreferences.getInstance();
+        final lastTab = authProvider.isAdmin
+            ? prefs.getInt('admin.lastTab')
+            : prefs.getInt('employee.lastTab');
+        final routeName = authProvider.isAdmin ? '/admin-dashboard' : '/dashboard';
+        if (lastTab != null && lastTab > 0) {
+          Navigator.of(context).pushReplacementNamed('$routeName?tab=$lastTab');
+        } else {
+          Navigator.of(context).pushReplacementNamed(routeName);
+        }
       }
     } else {
       // User not logged in, go to login screen

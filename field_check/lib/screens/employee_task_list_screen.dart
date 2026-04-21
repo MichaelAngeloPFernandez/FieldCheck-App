@@ -155,6 +155,81 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
     }
   }
 
+  Future<void> _cancelTask(Task task) async {
+    final userTaskId = task.userTaskId;
+    if (userTaskId == null || userTaskId.trim().isEmpty) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(context, 'Unable to cancel task');
+      return;
+    }
+
+    final reasonController = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dctx) {
+        return AlertDialog(
+          title: const Text('Cancel Task'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Please provide a reason for cancelling this task.',
+                style: Theme.of(dctx).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Reason for cancellation...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dctx),
+              child: const Text('Back'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final text = reasonController.text.trim();
+                if (text.isEmpty) return;
+                Navigator.pop(dctx, text);
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(dctx).colorScheme.error,
+                foregroundColor: Theme.of(dctx).colorScheme.onError,
+              ),
+              child: const Text('Cancel Task'),
+            ),
+          ],
+        );
+      },
+    );
+    reasonController.dispose();
+
+    if (reason == null || reason.trim().isEmpty) return;
+
+    try {
+      await TaskService().cancelUserTask(userTaskId, reason.trim());
+      if (!mounted) return;
+      AppWidgets.showSuccessSnackbar(context, 'Task cancelled');
+      await _refreshTasks();
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to cancel task'),
+      );
+    }
+  }
+
   Future<void> _deleteOverdue(Task task) async {
     final userTaskId = task.userTaskId;
     if (userTaskId == null || userTaskId.trim().isEmpty) {
@@ -730,7 +805,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   ),
                 ],
                 const SizedBox(height: 16),
-                if (needsAcceptance && !_isArchivedTab) ...[
+                if (needsAcceptance && !_isArchivedTab && !_isOverdueTab) ...[
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -753,9 +828,12 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                         ? null
                         : () async {
                             if (needsAcceptance) {
-                              AppWidgets.showErrorSnackbar(
-                                context,
-                                'Accept this task first to begin',
+                              // Use root context for snackbar so it appears on top of the bottom sheet
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Accept this task first to begin'),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
                               );
                               return;
                             }
@@ -784,6 +862,28 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                     child: Text(isCompleted ? 'Completed' : 'Complete Task'),
                   ),
                 ),
+                if (!_isOverdueTab && !_isArchivedTab && !needsAcceptance && !isCompleted && !_isBlocked(task) && (effectiveStatus == 'accepted' || effectiveStatus == 'in_progress')) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await _cancelTask(task);
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx, true);
+                        }
+                      },
+                      icon: Icon(Icons.cancel_outlined, color: Theme.of(context).colorScheme.error),
+                      label: Text(
+                        'Cancel Task',
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Theme.of(context).colorScheme.error.withValues(alpha: 0.5)),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
@@ -1020,7 +1120,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   ),
                 ],
               ),
-              if (needsAcceptance && !_isArchivedTab) ...[
+              if (needsAcceptance && !_isArchivedTab && !_isOverdueTab) ...[
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,

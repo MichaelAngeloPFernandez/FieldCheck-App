@@ -45,6 +45,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   int _msgExpiryDays = 30;
   bool _autoDeleteNotifs = false;
   bool _autoDeleteMsgs = false;
+  bool _autoDeleteReports = false;
+  int _reportExpiryDays = 30;
 
   final UserService _userService = UserService();
   final SettingsService _settingsService = SettingsService();
@@ -168,6 +170,24 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               _syncFrequency = update['syncFrequency'] as String;
               prefs.setString('syncFrequency', _syncFrequency);
             }
+            if (update.containsKey('notifExpiryDays')) {
+              _notifExpiryDays = (update['notifExpiryDays'] as num).toInt();
+            }
+            if (update.containsKey('msgExpiryDays')) {
+              _msgExpiryDays = (update['msgExpiryDays'] as num).toInt();
+            }
+            if (update.containsKey('autoDeleteNotifs')) {
+              _autoDeleteNotifs = update['autoDeleteNotifs'] == true;
+            }
+            if (update.containsKey('autoDeleteMsgs')) {
+              _autoDeleteMsgs = update['autoDeleteMsgs'] == true;
+            }
+            if (update.containsKey('autoDeleteReports')) {
+              _autoDeleteReports = update['autoDeleteReports'] == true;
+            }
+            if (update.containsKey('reportExpiryDays')) {
+              _reportExpiryDays = (update['reportExpiryDays'] as num).toInt();
+            }
           });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Settings synced in real-time')),
@@ -220,6 +240,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           _msgExpiryDays = (settings['msgExpiryDays'] as num?)?.toInt() ?? _msgExpiryDays;
           _autoDeleteNotifs = settings['autoDeleteNotifs'] == true;
           _autoDeleteMsgs = settings['autoDeleteMsgs'] == true;
+          _autoDeleteReports = settings['autoDeleteReports'] == true;
+          _reportExpiryDays = (settings['reportExpiryDays'] as num?)?.toInt() ?? _reportExpiryDays;
 
           _settingsLoadedFromBackend = true;
         });
@@ -296,6 +318,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         'msgExpiryDays': _msgExpiryDays,
         'autoDeleteNotifs': _autoDeleteNotifs,
         'autoDeleteMsgs': _autoDeleteMsgs,
+        'autoDeleteReports': _autoDeleteReports,
+        'reportExpiryDays': _reportExpiryDays,
       });
       if (!mounted) return;
       setState(() {
@@ -304,6 +328,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Settings saved and synced')),
       );
+      // Reload from backend to confirm persistence
+      _loadSettings();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -910,6 +936,26 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                           onChanged: (val) {
                             if (val != null) {
                               setState(() => _msgExpiryDays = int.parse(val));
+                            }
+                          },
+                        ),
+                      ],
+                      const Divider(height: 18),
+                      _buildSwitchSetting(
+                        title: 'Auto-Delete Reports',
+                        subtitle: 'Automatically remove old attendance & task reports',
+                        value: _autoDeleteReports,
+                        onChanged: (val) => setState(() => _autoDeleteReports = val),
+                      ),
+                      if (_autoDeleteReports) ...[
+                        const SizedBox(height: 8),
+                        _buildDropdownSetting(
+                          title: 'Reports Retention',
+                          value: _reportExpiryDays.toString(),
+                          items: const ['7', '14', '30', '60', '90', '180', '365'],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _reportExpiryDays = int.parse(val));
                             }
                           },
                         ),

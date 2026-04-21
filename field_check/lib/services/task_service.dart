@@ -47,7 +47,7 @@ class TaskService {
     ).replace(queryParameters: params);
     final response = await http
         .get(uri, headers: await _headers(jsonContent: false))
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       throw Exception('Failed to load notifications');
@@ -86,7 +86,7 @@ class TaskService {
 
     final response = await http
         .get(uri, headers: await _headers(jsonContent: false))
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       throw Exception('Failed to load tasks');
@@ -113,7 +113,7 @@ class TaskService {
           headers: await _headers(),
           body: json.encode({'ids': clean}),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       throw Exception('Failed to mark notifications read');
@@ -135,7 +135,7 @@ class TaskService {
           Uri.parse('$_appNotificationsBaseUrl/mark-all-read'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       throw Exception('Failed to mark all notifications read');
@@ -152,7 +152,7 @@ class TaskService {
           headers: await _headers(),
           body: json.encode({'adminReviewNote': adminReviewNote}),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       String message = 'Failed to unblock task';
@@ -179,7 +179,7 @@ class TaskService {
           headers: await _headers(),
           body: json.encode({'adminReviewNote': adminReviewNote}),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       String message = 'Failed to close task';
@@ -233,7 +233,7 @@ class TaskService {
           headers: await _headers(),
           body: json.encode({'ids': clean}),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       throw Exception('Failed to mark notifications unread');
@@ -262,7 +262,7 @@ class TaskService {
           headers: await _headers(),
           body: json.encode({'ids': clean}),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       throw Exception('Failed to delete notifications');
@@ -284,7 +284,7 @@ class TaskService {
           Uri.parse('$_baseUrl/$taskId'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200) {
       final decoded = json.decode(response.body);
@@ -340,7 +340,7 @@ class TaskService {
           Uri.parse('$_baseUrl/$taskId/assignees'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 404) {
       return <String>[];
@@ -406,7 +406,7 @@ class TaskService {
           Uri.parse('$_baseUrl/$taskId/assignees'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 404) {
       return <Map<String, dynamic>>[];
@@ -434,7 +434,7 @@ class TaskService {
           Uri.parse('$_baseUrl?archived=false'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200) {
       final Iterable l = json.decode(response.body);
@@ -499,7 +499,7 @@ class TaskService {
           Uri.parse('$_baseUrl?archived=true'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200) {
       final Iterable l = json.decode(response.body);
@@ -518,7 +518,7 @@ class TaskService {
             Uri.parse('$_baseUrl/overdue'),
             headers: await _headers(jsonContent: false),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         final Iterable l = json.decode(response.body);
@@ -536,7 +536,7 @@ class TaskService {
   Future<List<Task>> fetchAllTasks() async {
     final response = await http
         .get(Uri.parse(_baseUrl), headers: await _headers(jsonContent: false))
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);
@@ -670,7 +670,7 @@ class TaskService {
           Uri.parse('$_baseUrl/$taskId/unassign/$userId'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200 ||
         response.statusCode == 204 ||
@@ -729,7 +729,7 @@ class TaskService {
           Uri.parse('$_baseUrl/assigned/$userModelId?archived=$query'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);
@@ -783,6 +783,33 @@ class TaskService {
     }
   }
 
+  Future<void> cancelUserTask(String userTaskId, String reason) async {
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/user-task/$userTaskId/cancel'),
+          headers: await _headers(),
+          body: json.encode({'reason': reason}),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to cancel task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          } else {
+            message = response.body;
+          }
+        } catch (_) {
+          message = response.body;
+        }
+      }
+      throw Exception(message);
+    }
+  }
+
   Future<void> markTasksScopeRead() async {
     final response = await http.post(
       Uri.parse('$_appNotificationsBaseUrl/mark-read-scope'),
@@ -801,7 +828,7 @@ class TaskService {
           Uri.parse('$_appNotificationsBaseUrl/unread-count'),
           headers: await _headers(jsonContent: false),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
       throw Exception('Failed to load unread counts');
@@ -856,7 +883,7 @@ class TaskService {
           headers: await _headers(),
           body: json.encode({'index': index, 'isCompleted': isCompleted}),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200) {
       final decoded = json.decode(response.body);
@@ -898,7 +925,7 @@ class TaskService {
           headers: await _headers(),
           body: json.encode({'reason': reason}),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200) {
       final decoded = json.decode(response.body);

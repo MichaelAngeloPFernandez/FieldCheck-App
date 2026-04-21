@@ -18,6 +18,7 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
   ReportSummary? _todayReport;
   WeeklySummary? _weeklyReport;
   MonthlySummary? _monthlyReport;
+  Map<DateTime, DetailedDateReport>? _monthActivity;
 
   @override
   void initState() {
@@ -30,15 +31,18 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
     setState(() => _isLoading = true);
 
     try {
+      final now = DateTime.now();
       final today = await _reportsService.getTodayReport();
       final weekly = await _reportsService.getWeeklyReport();
-      final monthly = await _reportsService.getMonthlyReport();
+      final monthly = await _reportsService.getMonthlyReport(month: now);
+      final monthActivity = await _reportsService.getMonthActivity(now.year, now.month);
 
       if (mounted) {
         setState(() {
           _todayReport = today;
           _weeklyReport = weekly;
           _monthlyReport = monthly;
+          _monthActivity = monthActivity;
           _isLoading = false;
         });
       }
@@ -266,18 +270,21 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
             final day = index - (startingDayOfWeek - 1) + 1;
             final date = DateTime(now.year, now.month, day);
             final isToday = day == now.day;
+            
+            final detail = _monthActivity?[date];
+            final hasCheckIns = detail != null && detail.attendances.isNotEmpty;
+            final hasTasks = detail != null && detail.taskReports.isNotEmpty;
+            final hasOverdue = detail?.taskReports.any((r) => r.taskIsOverdue) ?? false;
 
             return GestureDetector(
               onTap: () => _showDateReportDialog(date),
               child: Container(
                 decoration: BoxDecoration(
-                  color: isToday ? Colors.blue.withValues(alpha: 0.2) : null,
+                  color: isToday ? Colors.blue.withValues(alpha: 0.1) : null,
                   border: Border.all(
                     color: isToday
-                        ? Colors.blue
-                        : Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.15),
+                        ? Colors.blue.withValues(alpha: 0.5)
+                        : Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -288,21 +295,37 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
                       Text(
                         day.toString(),
                         style: TextStyle(
-                          fontWeight: isToday
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                          color: isToday
-                              ? Colors.blue
-                              : Theme.of(context).colorScheme.onSurface,
+                          fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                          color: isToday ? Colors.blue : null,
                         ),
                       ),
-                      if (isToday)
-                        Container(
-                          width: 4,
-                          height: 4,
-                          decoration: const BoxDecoration(
-                            color: Colors.blue,
-                            shape: BoxShape.circle,
+                      if (hasCheckIns || hasTasks)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (hasCheckIns)
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.green,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              if (hasTasks)
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                                  decoration: BoxDecoration(
+                                    color: hasOverdue ? Colors.orange : Colors.blue,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                     ],
@@ -631,16 +654,87 @@ class _EnhancedReportsScreenState extends State<EnhancedReportsScreen>
   void _showDateReportDialog(DateTime date) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Report for ${DateFormat('MMM dd, yyyy').format(date)}'),
-        content: const Text('Detailed report for this date'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+      builder: (context) {
+        return FutureBuilder<DetailedDateReport>(
+          future: _reportsService.getDateReport(date),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return AlertDialog(
+                title: Text('Report for ${DateFormat('MMM dd, yyyy').format(date)}'),
+                content: const SizedBox(
+                  height: 100,
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              );
+            }
+
+            final report = snapshot.data;
+            if (report == null) {
+              return AlertDialog(
+                title: Text('Report for ${DateFormat('MMM dd, yyyy').format(date)}'),
+                content: const Text('Failed to load report data.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              title: Text('Report for ${DateFormat('MMM dd, yyyy').format(date)}'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Attendance Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 8),
+                      if (report.attendances.isEmpty)
+                        const Text('No attendance records for this date.')
+                      else
+                        ...report.attendances.map((a) => ListTile(
+                          dense: true,
+                          leading: Icon(a.isCheckIn ? Icons.login : Icons.logout, color: a.isCheckIn ? Colors.green : Colors.orange),
+                          title: Text(a.employeeName ?? 'Unknown Employee'),
+                          subtitle: Text('${a.isCheckIn ? "Check-in" : "Check-out"} at ${DateFormat.jm().format(a.checkInTime.toLocal())}'),
+                        )),
+                        
+                      const SizedBox(height: 24),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      
+                      const Text('Task Reports', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 8),
+                      if (report.taskReports.isEmpty)
+                        const Text('No task reports for this date.')
+                      else
+                        ...report.taskReports.map((t) => ListTile(
+                          dense: true,
+                          leading: Icon(
+                            t.status == 'approved' || t.status == 'graded' || t.status == 'completed' ? Icons.check_circle : Icons.pending,
+                            color: t.status == 'approved' || t.status == 'graded' || t.status == 'completed' ? Colors.blue : Colors.grey,
+                          ),
+                          title: Text(t.taskTitle ?? 'Unknown Task'),
+                          subtitle: Text('Status: ${t.status.toUpperCase()} • By ${t.employeeName ?? 'Unknown'}'),
+                        )),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

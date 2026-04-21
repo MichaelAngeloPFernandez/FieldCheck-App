@@ -66,6 +66,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _selectedIndex = widget.initialIndex!;
     }
     UrlUtil.updateTabQueryParam(_selectedIndex);
+    // Load persisted tab if no explicit initial index
+    if (widget.initialIndex == null) {
+      SharedPreferences.getInstance().then((prefs) {
+        final saved = prefs.getInt('employee.lastTab');
+        if (saved != null && saved != _selectedIndex && mounted) {
+          setState(() {
+            _selectedIndex = saved;
+          });
+          UrlUtil.updateTabQueryParam(saved);
+        }
+      });
+    }
     _loadUserId();
     _initServices();
 
@@ -352,6 +364,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _selectedIndex = index;
     });
     UrlUtil.updateTabQueryParam(index);
+    // Persist the current tab to SharedPreferences for refresh persistence
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setInt('employee.lastTab', index);
+    });
     if (index == 5) {
       _clearTasksBadge();
     }

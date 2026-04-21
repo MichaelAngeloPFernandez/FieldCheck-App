@@ -261,12 +261,6 @@ class _EmployeeStatusViewState extends State<EmployeeStatusView> {
                   employee.activeTaskCount.toString(),
                   Icons.task_alt,
                 ),
-                _buildQuickInfo(
-                  context,
-                  'Workload',
-                  '${(employee.workloadScore * 100).toStringAsFixed(0)}%',
-                  Icons.trending_up,
-                ),
                 if (employee.currentGeofence != null)
                   _buildQuickInfo(
                     context,
