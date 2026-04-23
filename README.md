@@ -33,7 +33,9 @@
 ## 📋 DOCUMENTATION GUIDE
 
 ### Getting Started (READ FIRST)
-- **SESSION_COMPLETE.md** - Session summary (you are here)
+- **SYSTEM_REFERENCE.md** - ⭐ **Primary Technical Reference** (for Developers & AI Agents)
+- **AI_AGENT_CONTEXT.md** - Context specifically for AI coding agents
+- **SESSION_COMPLETE.md** - Recent session summary
 - **GROUPMATE_SETUP_GUIDE.md** - For team members
 - **README.md** - Project overview
 

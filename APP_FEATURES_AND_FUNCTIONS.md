@@ -1,4 +1,8 @@
 # 📱 FieldCheck 2.0 - Complete Features & Functions Guide
+
+> [!NOTE]
+> This document is maintained for historical reference and detailed API specs. For the most up-to-date system architecture and AI agent context (as of April 2026), please refer to **SYSTEM_REFERENCE.md**.
+
 ## For Capstone Chapter 1-3 Reference
 
 **Project Name:** FieldCheck 2.0 - GPS-Based Geofencing Attendance System  
