@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Pre-commit hook for FieldCheck-App
+# Automatically formats and lints code before commit
+
+echo "🔍 Running pre-commit checks..."
+
+# Format Dart code
+echo "📱 Formatting Dart code..."
+cd field_check
+dart format --line-length=100 lib/ 2>/dev/null || true
+
+# Format JavaScript code  
+echo "🔧 Formatting JavaScript code..."
+cd ../backend
+npx prettier --write "**/*.js" 2>/dev/null || true
+
+# Lint check (non-blocking)
+echo "✅ Checking for lint issues..."
+cd ../field_check
+flutter analyze 2>/dev/null | grep -E "error|WARNING" || echo "No critical issues found"
+
+echo "✨ Pre-commit checks complete!"

@@ -25,7 +25,7 @@ async function populateReportById(reportId) {
 // @route POST /api/reports
 // @access Private
 const createReport = asyncHandler(async (req, res) => {
-  const { type, taskId, attendanceId, employeeId, geofenceId, content, attachments } = req.body;
+  const { type, taskId, attendanceId, employeeId, geofenceId, content, attachments, attachmentIds } = req.body;
   if (!type || !['task', 'attendance'].includes(type)) {
     res.status(400);
     throw new Error('Invalid report type');
@@ -47,6 +47,9 @@ const createReport = asyncHandler(async (req, res) => {
     type,
     employee: isAdmin ? (employeeId || req.user._id) : req.user._id,
     content: content || '',
+    // NEW: Support attachmentIds (references to Attachment documents)
+    attachmentIds: Array.isArray(attachmentIds) ? attachmentIds : [],
+    // DEPRECATED: Keep for backward compatibility
     attachments: Array.isArray(attachments) ? attachments : [],
   };
 
@@ -128,7 +131,8 @@ const createReport = asyncHandler(async (req, res) => {
       }
 
       existing.content = content || '';
-      existing.attachments = Array.isArray(attachments) ? attachments : [];
+      existing.attachmentIds = Array.isArray(attachmentIds) ? attachmentIds : existing.attachmentIds;
+      existing.attachments = Array.isArray(attachments) ? attachments : existing.attachments;
       existing.status = 'submitted';
       existing.submittedAt = now;
       existing.resubmitUntil = undefined;

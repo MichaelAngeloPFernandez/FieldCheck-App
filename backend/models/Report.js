@@ -13,6 +13,12 @@ const reportSchema = new mongoose.Schema(
     employee: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     geofence: { type: mongoose.Schema.Types.ObjectId, ref: 'Geofence' },
     content: { type: String, default: '' },
+    // NEW: Reference to Attachment documents (instead of raw URLs)
+    attachmentIds: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Attachment'
+    }],
+    // DEPRECATED: Keep for backward compatibility, but use attachmentIds instead
     attachments: [{ type: String }],
     status: {
       type: String,

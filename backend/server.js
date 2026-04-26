@@ -1065,6 +1065,8 @@ const chatRoutes = require('./routes/chatRoutes');
 const availabilityRoutes = require('./routes/availabilityRoutes');
 const employeeTrackingRoutes = require('./routes/employeeTrackingRoutes');
 const locationRoutes = require('./routes/locationRoutes');
+const attachmentRoutes = require('./routes/attachmentRoutes');
+const ticketRoutes = require('./routes/ticketRoutes');
 
 app.use(express.json({ limit: '200kb' })); 
 app.use(cors({
@@ -1331,6 +1333,8 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/availability', availabilityRoutes);
 app.use('/api/employee-tracking', employeeTrackingRoutes);
 app.use('/api/location', locationRoutes);
+app.use('/api/attachments', attachmentRoutes);
+app.use('/api/tickets', ticketRoutes);
 
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) {
