@@ -30,7 +30,6 @@ class AdminSettingsScreen extends StatefulWidget {
 
 class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   bool _allowOfflineMode = true;
-  bool _requireBeaconVerification = false;
   bool _enableLocationTracking = true;
   int _geofenceRadius = 100;
   String _syncFrequency = 'Every 15 minutes';
@@ -153,14 +152,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               _allowOfflineMode = update['allowOfflineMode'] == true;
               prefs.setBool('allowOfflineMode', _allowOfflineMode);
             }
-            if (update.containsKey('requireBeaconVerification')) {
-              _requireBeaconVerification =
-                  update['requireBeaconVerification'] == true;
-              prefs.setBool(
-                'requireBeaconVerification',
-                _requireBeaconVerification,
-              );
-            }
             if (update.containsKey('enableLocationTracking')) {
               _enableLocationTracking =
                   update['enableLocationTracking'] == true;
@@ -227,9 +218,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       if (settings.isNotEmpty) {
         setState(() {
           _allowOfflineMode = settings['allowOfflineMode'] ?? _allowOfflineMode;
-          _requireBeaconVerification =
-              settings['requireBeaconVerification'] ??
-              _requireBeaconVerification;
           _enableLocationTracking =
               settings['enableLocationTracking'] ?? _enableLocationTracking;
           _geofenceRadius =
@@ -247,10 +235,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         });
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('allowOfflineMode', _allowOfflineMode);
-        await prefs.setBool(
-          'requireBeaconVerification',
-          _requireBeaconVerification,
-        );
         await prefs.setBool('enableLocationTracking', _enableLocationTracking);
         await prefs.setInt('geofenceRadius', _geofenceRadius);
         await prefs.setString('syncFrequency', _syncFrequency);
@@ -260,9 +244,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         setState(() {
           _allowOfflineMode =
               prefs.getBool('allowOfflineMode') ?? _allowOfflineMode;
-          _requireBeaconVerification =
-              prefs.getBool('requireBeaconVerification') ??
-              _requireBeaconVerification;
           _enableLocationTracking =
               prefs.getBool('enableLocationTracking') ??
               _enableLocationTracking;
@@ -276,9 +257,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       setState(() {
         _allowOfflineMode =
             prefs.getBool('allowOfflineMode') ?? _allowOfflineMode;
-        _requireBeaconVerification =
-            prefs.getBool('requireBeaconVerification') ??
-            _requireBeaconVerification;
         _enableLocationTracking =
             prefs.getBool('enableLocationTracking') ?? _enableLocationTracking;
         _geofenceRadius = prefs.getInt('geofenceRadius') ?? _geofenceRadius;
@@ -296,10 +274,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('allowOfflineMode', _allowOfflineMode);
-    await prefs.setBool(
-      'requireBeaconVerification',
-      _requireBeaconVerification,
-    );
     await prefs.setBool('enableLocationTracking', _enableLocationTracking);
     await prefs.setInt('geofenceRadius', _geofenceRadius);
     await prefs.setString('syncFrequency', _syncFrequency);
@@ -309,7 +283,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     try {
       await _settingsService.updateSettings({
         'allowOfflineMode': _allowOfflineMode,
-        'requireBeaconVerification': _requireBeaconVerification,
         'enableLocationTracking': _enableLocationTracking,
         'geofenceRadius': _geofenceRadius.toDouble(),
         'syncFrequency': _syncFrequency,
@@ -612,18 +585,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                             if (value) {
                               _enableLocationTracking = true;
                             }
-                          });
-                        },
-                      ),
-                      const Divider(height: 18),
-                      _buildSwitchSetting(
-                        title: 'Require Beacon Verification',
-                        subtitle:
-                            'Use Bluetooth beacons for additional location verification',
-                        value: _requireBeaconVerification,
-                        onChanged: (value) {
-                          setState(() {
-                            _requireBeaconVerification = value;
                           });
                         },
                       ),

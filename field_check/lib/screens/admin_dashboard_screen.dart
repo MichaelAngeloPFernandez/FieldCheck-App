@@ -11,6 +11,8 @@ import 'package:field_check/screens/admin_reports_hub_screen.dart';
 import 'package:field_check/screens/admin_settings_screen.dart';
 import 'package:field_check/screens/admin_task_management_screen.dart';
 import 'package:field_check/screens/admin_world_map_screen.dart';
+import 'package:field_check/screens/admin_ticket_list_screen.dart';
+import 'package:field_check/screens/admin_template_management_screen.dart';
 import 'package:field_check/screens/manage_employees_screen.dart';
 import 'package:field_check/screens/manage_admins_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
@@ -1227,6 +1229,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         );
       case 6:
         return const AdminTaskManagementScreen(embedded: true);
+      case 7:
+        return const AdminTicketListScreen();
+      case 8:
+        return const AdminTemplateManagementScreen();
       default:
         return _buildDashboardOverview();
     }
@@ -5054,6 +5060,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               ),
                               label: const Text('Tasks'),
                             ),
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Tickets (Ctrl+8)',
+                                child: Icon(Icons.confirmation_number_outlined),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Tickets (Ctrl+8)',
+                                child: Icon(Icons.confirmation_number),
+                              ),
+                              label: const Text('Tickets'),
+                            ),
+                            NavigationRailDestination(
+                              icon: const Tooltip(
+                                message: 'Templates (Ctrl+9)',
+                                child: Icon(Icons.description_outlined),
+                              ),
+                              selectedIcon: const Tooltip(
+                                message: 'Templates (Ctrl+9)',
+                                child: Icon(Icons.description),
+                              ),
+                              label: const Text('Templates'),
+                            ),
                           ],
                         ),
                       ),
@@ -5679,6 +5707,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             onTap: () {
               setState(() {
                 _selectedIndex = 5; // Settings tab
+              });
+            },
+          ),
+          _buildQuickActionButton(
+            icon: Icons.confirmation_number,
+            label: 'Tickets',
+            color: Colors.deepPurple,
+            onTap: () {
+              setState(() {
+                _selectedIndex = 7; // Tickets tab
+              });
+            },
+          ),
+          _buildQuickActionButton(
+            icon: Icons.description,
+            label: 'Templates',
+            color: Colors.cyan,
+            onTap: () {
+              setState(() {
+                _selectedIndex = 8; // Templates tab
               });
             },
           ),

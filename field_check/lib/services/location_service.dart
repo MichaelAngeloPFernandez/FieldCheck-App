@@ -1,9 +1,39 @@
 // ignore_for_file: undefined_function, undefined_named_parameter
 import 'package:geolocator/geolocator.dart' as geolocator;
 import 'dart:async';
+import 'package:flutter/material.dart';
 
 class LocationService {
-  Future<geolocator.Position> getCurrentLocation() async {
+  static Future<bool> requestLocationPermissionWithDialog(
+    BuildContext context, {
+    bool showForAllUsers = true,
+  }) async {
+    // Import widget here to avoid circular dependency
+    // ignore: prefer_relative_import
+    final locationPermissionDialog = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        // ignore: prefer_relative_import
+        return _buildLocationPermissionDialog(showForAllUsers);
+      },
+    );
+
+    return locationPermissionDialog ?? false;
+  }
+
+  static Widget _buildLocationPermissionDialog(bool showForAllUsers) {
+    // Lazy-loaded widget to avoid circular imports
+    return Builder(
+      builder: (context) {
+        return _LocationPermissionDialogContent(
+          showForAllUsers: showForAllUsers,
+        );
+      },
+    );
+  }
+
+  Future<geolocator.Position> getCurrentLocation({BuildContext? context}) async {
     bool serviceEnabled;
     geolocator.LocationPermission permission;
 
@@ -18,14 +48,18 @@ class LocationService {
 
     permission = await geolocator.Geolocator.checkPermission();
     if (permission == geolocator.LocationPermission.denied) {
-      permission = await geolocator.Geolocator.requestPermission();
-      if (permission == geolocator.LocationPermission.denied) {
-        // Permissions are denied, next time you could try
-        // requesting permissions again (this is also where
-        // Android's shouldShowRequestPermissionRationale
-        // returned true. According to Android guidelines
-        // your App should show an explanatory UI now.
-        return Future.error('Location permissions are denied');
+      // Show permission dialog if context is available
+      if (context != null) {
+        final granted = await requestLocationPermissionWithDialog(context);
+        if (!granted) {
+          return Future.error('Location permissions are denied');
+        }
+        permission = await geolocator.Geolocator.checkPermission();
+      } else {
+        permission = await geolocator.Geolocator.requestPermission();
+        if (permission == geolocator.LocationPermission.denied) {
+          return Future.error('Location permissions are denied');
+        }
       }
     }
 
@@ -141,5 +175,203 @@ class LocationService {
       lastTime = now;
       yield pos; // Emit immediately, no delays
     }
+  }
+}
+
+/// Internal dialog widget for location permission
+class _LocationPermissionDialogContent extends StatefulWidget {
+  final bool showForAllUsers;
+
+  const _LocationPermissionDialogContent({
+    required this.showForAllUsers,
+  });
+
+  @override
+  State<_LocationPermissionDialogContent> createState() =>
+      _LocationPermissionDialogContentState();
+}
+
+class _LocationPermissionDialogContentState
+    extends State<_LocationPermissionDialogContent> {
+  bool _isLoading = false;
+
+  Future<void> _requestLocationPermission() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final permission = await geolocator.Geolocator.requestPermission();
+
+      if (!mounted) return;
+
+      if (permission == geolocator.LocationPermission.denied ||
+          permission == geolocator.LocationPermission.deniedForever) {
+        _showSettingsRedirect();
+      } else if (permission == geolocator.LocationPermission.whileInUse ||
+          permission == geolocator.LocationPermission.always) {
+        Navigator.of(context).pop(true);
+      } else {
+        Navigator.of(context).pop(false);
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(false);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _showSettingsRedirect() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (settingsContext) => AlertDialog(
+        title: const Text('Location Access Required'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Location permission has been denied. Please grant permission in your app settings.',
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Steps:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text('1. Tap "Open Settings"'),
+            Text('2. Find and tap "Permissions"'),
+            Text('3. Tap "Location"'),
+            Text('4. Select "Allow while using the app"'),
+            Text('5. Return to FieldCheck'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(settingsContext);
+              Navigator.pop(context, false);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(settingsContext);
+              try {
+                await geolocator.Geolocator.openLocationSettings();
+                // Brief delay to allow settings app to close
+                await Future.delayed(const Duration(milliseconds: 500));
+
+                if (!mounted) return;
+
+                final permission = await geolocator.Geolocator.checkPermission();
+                if (permission == geolocator.LocationPermission.whileInUse ||
+                    permission == geolocator.LocationPermission.always) {
+                  Navigator.of(context).pop(true);
+                } else {
+                  _showSettingsRedirect();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Could not open settings: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.location_on,
+                size: 40,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Enable Location Access',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'FieldCheck needs access to your device location to provide real-time tracking and verification.',
+              style: theme.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            if (_isLoading)
+              const SizedBox(
+                height: 40,
+                child: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else
+              Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _requestLocationPermission,
+                      icon: const Icon(Icons.location_on),
+                      label: const Text('Grant Location Access'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop(false);
+                      },
+                      child: const Text('Not Now'),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

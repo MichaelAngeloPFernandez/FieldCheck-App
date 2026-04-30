@@ -82,6 +82,13 @@ const userSchema = mongoose.Schema(
     tokenVersion: { type: Number, default: 0 },
     provider: { type: String, enum: ['local', 'google'], default: 'local' },
     googleId: { type: String },
+    // Soft multi-tenancy: optional company association for ticket scoping.
+    // Existing users without a company are unaffected.
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Company',
+      default: null,
+    },
   },
   { timestamps: true }
 );

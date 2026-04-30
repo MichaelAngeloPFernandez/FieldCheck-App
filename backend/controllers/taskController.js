@@ -282,6 +282,16 @@ const getArchivedTasks = asyncHandler(async (req, res) => {
   res.json(tasks.map((t) => toTaskJson(t)));
 });
 
+const getOverdueTasks = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const tasks = await Task.find({
+    isArchived: { $ne: true },
+    dueDate: { $lt: now },
+    status: { $nin: ['completed', 'reviewed', 'closed'] },
+  }).sort({ dueDate: 1 });
+  res.json(tasks.map((t) => toTaskJson(t)));
+});
+
 const createTask = asyncHandler(async (req, res) => {
   const { title, description, dueDate, status, geofenceId, type, difficulty } = req.body;
 
@@ -1515,7 +1525,156 @@ const closeUserTask = asyncHandler(async (req, res) => {
   });
 });
 
-// ... (rest of the code remains the same)
+// --- Missing function stubs (were exported but never defined) ---
+
+const unassignTaskFromUser = asyncHandler(async (req, res) => {
+  const { taskId, userId } = req.params;
+  const ut = await UserTask.findOne({ taskId, userId, isArchived: { $ne: true } });
+  if (!ut) {
+    res.status(404);
+    throw new Error('Assignment not found');
+  }
+  ut.isArchived = true;
+  await ut.save();
+
+  // Update active task count
+  try {
+    const count = await UserTask.countDocuments({
+      userId, isArchived: { $ne: true }, status: { $ne: 'completed' },
+    });
+    await User.findByIdAndUpdate(userId, { activeTaskCount: count });
+  } catch (_) {}
+
+  io.emit('taskUnassigned', { taskId, userId });
+  res.json({ message: 'Task unassigned', taskId, userId });
+});
+
+const markUserTaskViewed = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+  ut.lastViewedAt = new Date();
+  await ut.save();
+  res.json({ id: ut._id.toString(), lastViewedAt: ut.lastViewedAt });
+});
+
+const archiveUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+  ut.isArchived = true;
+  await ut.save();
+  io.emit('userTaskArchived', {
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+  });
+  res.json({ message: 'UserTask archived', id: ut._id.toString() });
+});
+
+const restoreUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+  ut.isArchived = false;
+  await ut.save();
+  io.emit('userTaskRestored', {
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+  });
+  res.json({ message: 'UserTask restored', id: ut._id.toString() });
+});
+
+const escalateTask = asyncHandler(async (req, res) => {
+  const task = await Task.findById(req.params.id);
+  if (!task) { res.status(404); throw new Error('Task not found'); }
+  // Mark difficulty as hard and notify admins
+  task.difficulty = 'hard';
+  await task.save();
+  try {
+    await appNotificationService.createForAdmins({
+      type: 'task', action: 'escalated',
+      title: 'Task Escalated',
+      message: `Task "${task.title}" has been escalated.`,
+      payload: { taskId: String(task._id) },
+    });
+  } catch (_) {}
+  io.emit('updatedTask', toTaskJson(task));
+  res.json(toTaskJson(task));
+});
+
+const gradeUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const { score, feedback } = req.body;
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) { res.status(404); throw new Error('UserTask not found'); }
+  ut.grade = {
+    score: typeof score === 'number' ? Math.min(100, Math.max(0, score)) : undefined,
+    feedback: feedback || '',
+    gradedAt: new Date(),
+    gradedBy: req.user._id,
+  };
+  if (ut.status !== 'closed') ut.status = 'reviewed';
+  await ut.save();
+  io.emit('updatedUserTaskStatus', {
+    id: ut._id.toString(), userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(), status: ut.status,
+  });
+  // Notify the employee
+  try {
+    await appNotificationService.createNotification({
+      recipientUserId: ut.userId,
+      scope: 'tasks', type: 'info', action: 'task_graded',
+      title: 'Task Graded',
+      message: `Your task was graded: ${score}/100`,
+      payload: { userTaskId: String(ut._id), score },
+    });
+  } catch (_) {}
+  res.json({
+    id: ut._id.toString(), grade: ut.grade, status: ut.status,
+  });
+});
+
+const addCommentToUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const { body: commentBody } = req.body;
+  if (!commentBody || !commentBody.trim()) {
+    res.status(400); throw new Error('Comment body is required');
+  }
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) { res.status(404); throw new Error('UserTask not found'); }
+  const comment = {
+    sender: req.user._id,
+    senderName: req.user.name || 'Unknown',
+    body: commentBody.trim(),
+    createdAt: new Date(),
+  };
+  ut.comments.push(comment);
+  await ut.save();
+  const saved = ut.comments[ut.comments.length - 1];
+  io.emit('taskCommentAdded', {
+    userTaskId: ut._id.toString(),
+    taskId: ut.taskId.toString(),
+    comment: {
+      _id: saved._id.toString(),
+      sender: String(req.user._id),
+      senderName: req.user.name || 'Unknown',
+      body: saved.body,
+      createdAt: saved.createdAt.toISOString(),
+    },
+  });
+  res.status(201).json(saved);
+});
 
 module.exports = {
   getTask,

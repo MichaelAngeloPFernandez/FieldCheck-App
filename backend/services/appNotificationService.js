@@ -152,4 +152,167 @@ module.exports = {
   emitUnreadNotifications,
   createNotification,
   createForAdmins,
+  
+  // Additional methods for notification management
+  async getNotificationsByScope(userId, scope, { limit = 50, offset = 0 } = {}) {
+    try {
+      const query = { recipientUser: userId };
+      if (scope) {
+        query.scope = scope;
+      }
+
+      const notifications = await AppNotification.find(query)
+        .sort({ createdAt: -1 })
+        .limit(parseInt(limit))
+        .skip(parseInt(offset))
+        .lean();
+
+      return notifications.map(n => ({
+        id: String(n._id),
+        scope: n.scope,
+        type: n.type,
+        action: n.action,
+        title: n.title,
+        message: n.message,
+        payload: n.payload,
+        isRead: !!n.readAt,
+        createdAt: n.createdAt?.toISOString?.() || new Date().toISOString(),
+        readAt: n.readAt?.toISOString?.() || null,
+      }));
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      return [];
+    }
+  },
+
+  async markNotificationAsRead(notificationId, userId) {
+    try {
+      const notification = await AppNotification.findOneAndUpdate(
+        { _id: notificationId, recipientUser: userId },
+        { readAt: new Date() },
+        { new: true }
+      );
+
+      if (notification) {
+        await this.emitUnreadCounts(userId);
+        const io = global.io;
+        if (io) {
+          io.to(`user:${String(userId)}`).emit('notificationRead', {
+            id: String(notification._id),
+          });
+        }
+      }
+
+      return notification;
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      return null;
+    }
+  },
+
+  async markNotificationAsUnread(notificationId, userId) {
+    try {
+      const notification = await AppNotification.findOneAndUpdate(
+        { _id: notificationId, recipientUser: userId },
+        { readAt: null },
+        { new: true }
+      );
+
+      if (notification) {
+        await this.emitUnreadCounts(userId);
+      }
+
+      return notification;
+    } catch (error) {
+      console.error('Error marking notification as unread:', error);
+      return null;
+    }
+  },
+
+  async markScopeAsRead(userId, scope) {
+    try {
+      const query = { recipientUser: userId, readAt: null };
+      if (scope) {
+        query.scope = scope;
+      }
+
+      const result = await AppNotification.updateMany(query, { readAt: new Date() });
+
+      if (result.modifiedCount > 0) {
+        await this.emitUnreadCounts(userId);
+        const io = global.io;
+        if (io) {
+          io.to(`user:${String(userId)}`).emit('scopeMarkedAsRead', { scope });
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error marking scope as read:', error);
+      return null;
+    }
+  },
+
+  async deleteNotification(notificationId, userId) {
+    try {
+      const notification = await AppNotification.findOneAndDelete({
+        _id: notificationId,
+        recipientUser: userId,
+      });
+
+      if (notification) {
+        await this.emitUnreadCounts(userId);
+        const io = global.io;
+        if (io) {
+          io.to(`user:${String(userId)}`).emit('notificationDeleted', {
+            id: String(notificationId),
+          });
+        }
+      }
+
+      return notification;
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      return null;
+    }
+  },
+
+  async deleteNotificationsByScope(userId, scope) {
+    try {
+      const query = { recipientUser: userId };
+      if (scope) {
+        query.scope = scope;
+      }
+
+      const result = await AppNotification.deleteMany(query);
+
+      if (result.deletedCount > 0) {
+        await this.emitUnreadCounts(userId);
+        const io = global.io;
+        if (io) {
+          io.to(`user:${String(userId)}`).emit('scopeNotificationsDeleted', { scope });
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error deleting notifications by scope:', error);
+      return null;
+    }
+  },
+
+  async getNotificationCount(userId, scope) {
+    try {
+      const query = { recipientUser: userId };
+      if (scope) {
+        query.scope = scope;
+      }
+
+      const count = await AppNotification.countDocuments(query);
+      return count;
+    } catch (error) {
+      console.error('Error getting notification count:', error);
+      return 0;
+    }
+  },
 };

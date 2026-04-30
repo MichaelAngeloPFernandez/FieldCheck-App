@@ -6,6 +6,7 @@ import 'package:field_check/screens/history_screen.dart';
 import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/settings_screen.dart';
 import 'package:field_check/screens/employee_task_list_screen.dart';
+import 'package:field_check/screens/employee_ticket_list_screen.dart';
 import 'package:field_check/screens/employee_profile_screen.dart';
 import 'package:field_check/screens/employee_task_details_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
@@ -678,6 +679,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 count: _tasksBadgeCount,
               ),
             ),
+            _buildDrawerNavItem(
+              index: 6,
+              icon: Icons.confirmation_number,
+              label: 'Tickets',
+            ),
             ListTile(
               leading: _buildBadge(
                 child: const Icon(Icons.notifications),
@@ -748,6 +754,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'Map',
     'Settings',
     'Tasks',
+    'Tickets',
   ];
 
   @override
@@ -771,6 +778,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     icon: Icons.error_outline,
                   )
                 : EmployeeTaskListScreen(userModelId: _userModelId!)),
+      const EmployeeTicketListScreen(),
     ];
 
     return Scaffold(
@@ -946,6 +954,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   label: 'Tasks',
                   tooltip: 'Task list',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.confirmation_number_outlined),
+                  label: 'Tickets',
+                  tooltip: 'Tickets',
                 ),
               ],
             ),

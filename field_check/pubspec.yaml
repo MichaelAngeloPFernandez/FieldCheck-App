@@ -50,6 +50,7 @@ dependencies:
   dio: ^5.3.0
   path_provider: ^2.1.1
   url_launcher: ^6.3.2
+  app_settings: ^4.2.0
 
 dev_dependencies:
   flutter_test:

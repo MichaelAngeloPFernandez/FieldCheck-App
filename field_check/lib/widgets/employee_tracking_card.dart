@@ -35,6 +35,7 @@ class EmployeeTrackingCard extends StatelessWidget {
             children: [
               // Header with name and status
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Avatar
                   AppWidgets.userAvatar(
@@ -47,52 +48,76 @@ class EmployeeTrackingCard extends StatelessWidget {
                     fallbackIcon: Icons.person,
                   ),
                   const SizedBox(width: 12),
-                  // Name and status
+                  // Name, ID and status
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Employee name with better handling
                         Text(
                           employee.name,
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                             color: onSurface.withValues(alpha: 0.9),
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isOnline ? Colors.green : Colors.grey,
+                        // Employee ID
+                        if (employee.id != null && employee.id!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'ID: ${employee.id}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: onSurface.withValues(alpha: 0.6),
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              isOnline ? 'Online' : 'Offline',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: isOnline
-                                    ? Colors.green
-                                    : onSurface.withValues(alpha: 0.65),
+                          ),
+                        // Online status
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color:
+                                      isOnline ? Colors.green : Colors.grey,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              Text(
+                                isOnline ? 'Online' : 'Offline',
+                                style:
+                                    theme.textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: isOnline
+                                      ? Colors.green
+                                      : onSurface.withValues(alpha: 0.65),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
                   // Workload indicator
-                  WorkloadIndicatorWidget(
-                    status: _getWorkloadStatus(taskCount, workload),
-                    activeTaskCount: taskCount,
-                    difficultyWeight: workload,
-                    showDetails: false,
-                    size: 28,
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: WorkloadIndicatorWidget(
+                      status: _getWorkloadStatus(taskCount, workload),
+                      activeTaskCount: taskCount,
+                      difficultyWeight: workload,
+                      showDetails: false,
+                      size: 28,
+                    ),
                   ),
                 ],
               ),
