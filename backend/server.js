@@ -1067,8 +1067,6 @@ const employeeTrackingRoutes = require('./routes/employeeTrackingRoutes');
 const locationRoutes = require('./routes/locationRoutes');
 const attachmentRoutes = require('./routes/attachmentRoutes');
 const companyRoutes = require('./routes/companyRoutes');
-const templateRoutes = require('./routes/templateRoutes');
-const ticketRoutes = require('./routes/ticketRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 
 app.use(express.json({ limit: '200kb' })); 
@@ -1338,8 +1336,6 @@ app.use('/api/employee-tracking', employeeTrackingRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/attachments', attachmentRoutes);
 app.use('/api/companies', companyRoutes);
-app.use('/api/templates', templateRoutes);
-app.use('/api/tickets', ticketRoutes);
 app.use('/api/audit', auditRoutes);
 
 app.get('*', (req, res, next) => {
@@ -1583,9 +1579,6 @@ process.on('uncaughtException', (error) => {
 
             const initCleanupJob = require('./jobs/cleanup_job');
             initCleanupJob();
-
-            const initializeSlaCheckJob = require('./jobs/sla_check_job');
-            initializeSlaCheckJob();
           }
         }
       } catch (err) {

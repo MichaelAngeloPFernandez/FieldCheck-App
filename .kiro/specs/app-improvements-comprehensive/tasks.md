@@ -184,14 +184,14 @@ This implementation plan addresses comprehensive improvements to the FieldCheck 
     - Test that geofence locations are prioritized
 
 - [-] 10. Fix center map button functionality
-  - [ ] 10.1 Implement center map on geofence logic
+  - [x] 10.1 Implement center map on geofence logic
     - Create _centerMapOnGeofence() method
     - Center map view on current geofence location
     - Add smooth animation transition
     - Adjust zoom level to show complete geofence boundary
     - _Requirements: 8.1, 8.2, 8.4_
 
-  - [ ] 10.2 Add fallback to GPS location
+  - [-] 10.2 Add fallback to GPS location
     - Implement GPS location fallback when no geofence exists
     - Display appropriate error messages on failure
     - _Requirements: 8.3, 8.5_

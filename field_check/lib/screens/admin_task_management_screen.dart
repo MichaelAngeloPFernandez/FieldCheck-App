@@ -4,10 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/availability_service.dart';
-import 'package:field_check/services/template_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/models/user_model.dart';
-import 'package:field_check/models/ticket_template_model.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
@@ -392,20 +390,14 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   }
 
   Future<void> _addTask() async {
-    // ── Pre-load templates and employees before opening the dialog ──────────
-    List<TicketTemplateModel> templates = [];
+    // ── Pre-load employees before opening the dialog ──────────
     List<UserModel> employees = [];
     try {
-      final results = await Future.wait([
-        TemplateService.getTemplates(),
-        _userService.fetchEmployees(),
-      ]);
-      templates = (results[0] as List).cast<TicketTemplateModel>();
-      employees = ((results[1] as List).cast<UserModel>())
+      employees = (await _userService.fetchEmployees())
           .where((e) => e.id.isNotEmpty && e.isActive)
           .toList();
     } catch (e) {
-      debugPrint('Error pre-loading templates/employees: $e');
+      debugPrint('Error pre-loading employees: $e');
       // Non-fatal — dialog still opens, dropdowns will just be empty
     }
 
@@ -418,7 +410,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     bool isSubmitting = false;
 
     // ── New fields ───────────────────────────────────────────────────────────
-    TicketTemplateModel? selectedTemplate;
     UserModel? selectedEmployee;
 
     await showDialog(
@@ -460,87 +451,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           ],
                         ),
                       ),
-
-                    // ── Service Type dropdown (from TicketTemplates) ──────────
-                    const Text(
-                      'Service Type',
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    DropdownButtonFormField<String>(
-                      value: selectedTemplate?.id,
-                      decoration: InputDecoration(
-                        hintText: templates.isEmpty
-                            ? 'No service types available'
-                            : 'Select a service type…',
-                        prefixIcon: const Icon(Icons.build_circle_outlined),
-                        border: const OutlineInputBorder(),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                      ),
-                      items: templates.map((t) {
-                        return DropdownMenuItem<String>(
-                          value: t.id,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(t.name,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600)),
-                              if (t.description.isNotEmpty)
-                                Text(
-                                  t.description,
-                                  style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: templates.isEmpty
-                          ? null
-                          : (id) {
-                              final t = templates
-                                  .where((t) => t.id == id)
-                                  .cast<TicketTemplateModel?>()
-                                  .firstWhere((_) => true,
-                                      orElse: () => null);
-                              dialogSetState(() {
-                                selectedTemplate = t;
-                                // Auto-fill title from template name
-                                if (t != null &&
-                                    titleController.text.trim().isEmpty) {
-                                  titleController.text = t.name;
-                                }
-                                dialogError = null;
-                              });
-                            },
-                      isExpanded: true,
-                    ),
-
-                    // SLA chip shown when a template with SLA is selected
-                    if (selectedTemplate?.slaFormatted != null) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.timer_outlined,
-                              size: 14, color: Colors.blueGrey),
-                          const SizedBox(width: 4),
-                          Text(
-                            'SLA: ${selectedTemplate!.slaFormatted}',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.blueGrey),
-                          ),
-                        ],
-                      ),
-                    ],
-
-                    const SizedBox(height: 14),
 
                     // ── Title ────────────────────────────────────────────────
                     TextField(

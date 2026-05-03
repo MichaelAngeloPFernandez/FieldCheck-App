@@ -595,8 +595,9 @@ class _MapScreenState extends State<MapScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Centered on your GPS location'),
+              content: Text('No geofence found - centered on your GPS location'),
               duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
             ),
           );
         }
@@ -617,19 +618,37 @@ class _MapScreenState extends State<MapScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Centered on your current location'),
+              content: Text('No geofence found - centered on your current location'),
               duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
             ),
           );
         }
       } catch (e) {
         // Step 5: Display error message if all attempts fail (Requirement 8.5)
+        if (kDebugMode) print('Failed to get GPS location: $e');
         if (mounted) {
+          String errorMessage = 'Unable to center map: ';
+          if (e.toString().contains('permission')) {
+            errorMessage += 'Location permission denied. Please enable location access in settings.';
+          } else if (e.toString().contains('disabled')) {
+            errorMessage += 'Location services are disabled. Please enable GPS.';
+          } else if (e.toString().contains('timeout')) {
+            errorMessage += 'GPS timeout. Please ensure you have a clear view of the sky.';
+          } else {
+            errorMessage += 'Could not determine your location. Please try again.';
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Unable to center map: ${e.toString()}'),
-              duration: const Duration(seconds: 3),
+              content: Text(errorMessage),
+              duration: const Duration(seconds: 4),
               backgroundColor: Theme.of(context).colorScheme.error,
+              action: SnackBarAction(
+                label: 'Retry',
+                textColor: Colors.white,
+                onPressed: _centerMapOnGeofence,
+              ),
             ),
           );
         }
@@ -639,9 +658,14 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to center map: ${e.toString()}'),
+            content: const Text('Failed to center map. Please try again.'),
             duration: const Duration(seconds: 3),
             backgroundColor: Theme.of(context).colorScheme.error,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _centerMapOnGeofence,
+            ),
           ),
         );
       }
