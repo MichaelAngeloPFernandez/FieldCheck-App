@@ -1,0 +1,130 @@
+@startuml FieldCheck_InteractionOverview
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam arrowColor #34495E
+
+title FIGURE 3.1: Agile Development Cycle Diagram\nFieldCheck - Daily Employee and Admin Workflows with System Processes
+
+rectangle "Daily Employee Workflow" {
+  rectangle "Morning" {
+    (1. Employee Opens App)
+    (2. Authenticate with JWT)
+    (3. View Assigned Tasks)
+    (4. Navigate to Job Site)
+  }
+  
+  rectangle "At Job Site" {
+    (5. GPS Acquires Location)
+    (6. Tap Check-In Button)
+    (7. Validate Location vs Geofence)
+    (8. Create Attendance Record)
+    (9. View Tasks for Geofence)
+  }
+  
+  rectangle "During Shift" {
+    (10. Complete Tasks)
+    (11. Update Task Status)
+    (12. View Attendance History)
+    (13. Receive Real-Time Updates)
+  }
+  
+  rectangle "End of Shift" {
+    (14. Tap Check-Out Button)
+    (15. Validate Location vs Geofence)
+    (16. Create Check-Out Record)
+    (17. Shift Complete)
+  }
+  
+  (1. Employee Opens App) --> (2. Authenticate with JWT)
+  (2. Authenticate with JWT) --> (3. View Assigned Tasks)
+  (3. View Assigned Tasks) --> (4. Navigate to Job Site)
+  (4. Navigate to Job Site) --> (5. GPS Acquires Location)
+  (5. GPS Acquires Location) --> (6. Tap Check-In Button)
+  (6. Tap Check-In Button) --> (7. Validate Location vs Geofence)
+  (7. Validate Location vs Geofence) --> (8. Create Attendance Record)
+  (8. Create Attendance Record) --> (9. View Tasks for Geofence)
+  (9. View Tasks for Geofence) --> (10. Complete Tasks)
+  (10. Complete Tasks) --> (11. Update Task Status)
+  (11. Update Task Status) --> (12. View Attendance History)
+  (12. View Attendance History) --> (13. Receive Real-Time Updates)
+  (13. Receive Real-Time Updates) --> (14. Tap Check-Out Button)
+  (14. Tap Check-Out Button) --> (15. Validate Location vs Geofence)
+  (15. Validate Location vs Geofence) --> (16. Create Check-Out Record)
+  (16. Create Check-Out Record) --> (17. Shift Complete)
+}
+
+rectangle "Daily Admin Workflow" {
+  rectangle "Morning Setup" {
+    (A1. Admin Opens App)
+    (A2. Authenticate with JWT)
+    (A3. View Dashboard)
+    (A4. Check Employee Status)
+  }
+  
+  rectangle "During Day" {
+    (A5. Monitor Real-Time Locations)
+    (A6. Assign New Tasks)
+    (A7. Create/Edit Geofences)
+    (A8. Receive Notifications)
+  }
+  
+  rectangle "End of Day" {
+    (A9. Generate Reports)
+    (A10. Export to PDF/Excel)
+    (A11. Archive Old Records)
+    (A12. Review Analytics)
+  }
+  
+  (A1. Admin Opens App) --> (A2. Authenticate with JWT)
+  (A2. Authenticate with JWT) --> (A3. View Dashboard)
+  (A3. View Dashboard) --> (A4. Check Employee Status)
+  (A4. Check Employee Status) --> (A5. Monitor Real-Time Locations)
+  (A5. Monitor Real-Time Locations) --> (A6. Assign New Tasks)
+  (A6. Assign New Tasks) --> (A7. Create/Edit Geofences)
+  (A7. Create/Edit Geofences) --> (A8. Receive Notifications)
+  (A8. Receive Notifications) --> (A9. Generate Reports)
+  (A9. Generate Reports) --> (A10. Export to PDF/Excel)
+  (A10. Export to PDF/Excel) --> (A11. Archive Old Records)
+  (A11. Archive Old Records) --> (A12. Review Analytics)
+}
+
+rectangle "System Background Processes" {
+  rectangle "Connectivity" {
+    (S1. Monitor Network Status)
+    (S2. Detect Offline Mode)
+    (S3. Queue Offline Data)
+    (S4. Sync When Online)
+  }
+  
+  rectangle "Real-Time" {
+    (S5. Broadcast Events)
+    (S6. Update Dashboard)
+    (S7. Send Notifications)
+    (S8. Maintain Connections)
+  }
+  
+  rectangle "Data Management" {
+    (S9. Validate GPS Data)
+    (S10. Calculate Distances)
+    (S11. Generate Reports)
+    (S12. Backup Data)
+  }
+  
+  (S1. Monitor Network Status) --> (S2. Detect Offline Mode)
+  (S2. Detect Offline Mode) --> (S3. Queue Offline Data)
+  (S3. Queue Offline Data) --> (S4. Sync When Online)
+  (S5. Broadcast Events) --> (S6. Update Dashboard)
+  (S6. Update Dashboard) --> (S7. Send Notifications)
+  (S7. Send Notifications) --> (S8. Maintain Connections)
+  (S9. Validate GPS Data) --> (S10. Calculate Distances)
+  (S10. Calculate Distances) --> (S11. Generate Reports)
+  (S11. Generate Reports) --> (S12. Backup Data)
+}
+
+' Cross-workflow interactions
+(8. Create Attendance Record) -.-> (S9. Validate GPS Data)
+(11. Update Task Status) -.-> (S5. Broadcast Events)
+(A6. Assign New Tasks) -.-> (S5. Broadcast Events)
+(S4. Sync When Online) -.-> (8. Create Attendance Record)
+
+@enduml

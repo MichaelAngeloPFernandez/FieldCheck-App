@@ -1,0 +1,59 @@
+@startgantt FieldCheck Project Gantt Chart
+
+title FieldCheck Development Timeline
+
+' Project timeline from Week 1 to Week 16
+Project starts 2024-01-01
+Project ends 2024-04-15
+
+' Define phases
+[Requirements] as req lasts 14 days
+[Design] as design lasts 14 days starts after req
+[Development] as dev lasts 56 days starts after design
+[Testing] as test lasts 14 days starts after dev
+[Deployment] as deploy lasts 14 days starts after test
+
+' Development sub-tasks
+[Mobile App Development] as mobile lasts 42 days starts after design
+[Backend API Development] as api lasts 42 days starts after design
+[Database Setup] as db lasts 28 days starts after design
+
+' Testing sub-tasks
+[Unit Testing] as unit lasts 7 days starts after dev
+[Integration Testing] as integration lasts 14 days starts after dev
+[User Acceptance Testing] as uat lasts 7 days starts after integration
+
+' Deployment sub-tasks
+[Server Setup] as server lasts 7 days starts after test
+[Production Deployment] as prod lasts 7 days starts after server
+
+' Progress indicators (100% completed)
+req is 100% completed
+design is 100% completed
+dev is 100% completed
+mobile is 100% completed
+api is 100% completed
+db is 100% completed
+test is 100% completed
+unit is 100% completed
+integration is 100% completed
+uat is 100% completed
+deploy is 100% completed
+server is 100% completed
+prod is 100% completed
+
+' Add milestones
+milestone M1 happens 2024-01-15 : **Requirements Complete**
+milestone M2 happens 2024-01-29 : **Design Complete**
+milestone M3 happens 2024-03-18 : **Development Complete**
+milestone M4 happens 2024-04-01 : **Testing Complete**
+milestone M5 happens 2024-04-15 : **Project Complete**
+
+' Add notes
+note on req : Gather and document all system requirements
+note on design : Create system architecture and UI/UX designs
+note on dev : Implement mobile app, backend API, and database
+note on test : Conduct comprehensive testing phases
+note on deploy : Deploy to production environment
+
+@endgantt

@@ -1,0 +1,1603 @@
+const express = require('express');
+const http = require('http'); // Import http module
+const { Server } = require('socket.io'); // Import Server from socket.io
+const dotenv = require('dotenv');
+const connectDB = require('./config/db');
+const cors = require('cors');
+const https = require('https');
+const { URL } = require('url');
+
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const compression = require('compression');
+const morgan = require('morgan');
+const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+const User = require('./models/User');
+const EmployeeLocation = require('./models/EmployeeLocation');
+const appNotificationService = require('./services/appNotificationService');
+
+console.log(' Starting server initialization...');
+
+dotenv.config();
+
+const _normalizeEnv = (keys) => {
+  for (const key of keys) {
+    const v = process.env[key];
+    if (typeof v === 'string') {
+      process.env[key] = v.trim();
+    }
+  }
+};
+
+_normalizeEnv(['NODE_ENV', 'JWT_SECRET', 'JWT_REFRESH_SECRET', 'MONGO_URI', 'MONGODB_URI', 'PORT']);
+
+const _isProdEnv = (process.env.NODE_ENV || '').trim() === 'production';
+if (_isProdEnv) {
+  if (!process.env.JWT_SECRET) {
+    console.error('Missing required env var: JWT_SECRET');
+    process.exit(1);
+  }
+  if (!process.env.MONGO_URI && !process.env.MONGODB_URI) {
+    console.error('Missing required env var: MONGO_URI (or MONGODB_URI)');
+    process.exit(1);
+  }
+}
+
+console.log(' Modules loaded, environment configured');
+
+const app = express();
+const server = http.createServer(app); // Create http server
+let dbReady = false;
+const io = new Server(server, { // Initialize socket.io
+  cors: {
+    origin: "*", // Allow all origins for now, refine later
+    methods: ["GET", "POST"]
+  }
+});
+
+// Render (and most PaaS) sits behind a reverse proxy that sets X-Forwarded-* headers.
+// Use a safe hop count (NOT true) so req.ip and rate limiting work correctly.
+if ((process.env.NODE_ENV || '').trim() === 'production') {
+  app.set('trust proxy', 1);
+}
+
+// Export io for use in other modules
+module.exports.io = io;
+
+// Also expose via global.io so controllers and utilities can emit events
+global.io = io;
+
+console.log(' Socket.io initialized');
+
+// Track employee locations for real-time dashboard updates
+const employeeLocations = new Map(); // { userId: { lat, lng, accuracy, timestamp } }
+module.exports.employeeLocations = employeeLocations;
+
+const employeeLocationPayloads = new Map();
+let adminNearbyState = {
+  mode: 'off',
+  latitude: null,
+  longitude: null,
+  geofenceId: null,
+  radiusMeters: null,
+  updatedAt: null,
+  setByUserId: null,
+};
+
+// Throttle admin notifications for overtasked employees
+const overtaskNotified = new Map(); // { userId: { count: number, at: number } }
+
+// Track active sockets per user for accurate online/offline presence.
+// We only mark a user offline when their *last* socket disconnects.
+const userSockets = new Map(); // { userId: Set(socketId) }
+const pendingOfflineTimers = new Map(); // { userId: Timeout }
+const OFFLINE_GRACE_MS = 3000;
+
+// Throttle rapid "sharing enabled" wakeups so toggling doesn't spam the admin UI.
+const lastSharingWakeEmitAt = new Map(); // { userId: number }
+const SHARING_WAKE_THROTTLE_MS = 2000;
+
+// Throttle presence notifications so brief reconnects / concurrent emits don't duplicate.
+const lastEmployeeOnlineNotifyAt = new Map(); // { userId: number }
+const EMPLOYEE_ONLINE_NOTIFY_THROTTLE_MS = 10000;
+
+let _cachedMaxActivePerEmployee = null;
+let _cachedMaxActivePerEmployeeAt = 0;
+const _maxActiveCacheMs = 60 * 1000;
+
+const _haversineMeters = (lat1, lon1, lat2, lon2) => {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+const _getMaxActivePerEmployee = async () => {
+  const now = Date.now();
+  if (
+    _cachedMaxActivePerEmployee != null &&
+    now - _cachedMaxActivePerEmployeeAt < _maxActiveCacheMs
+  ) {
+    return _cachedMaxActivePerEmployee;
+  }
+
+  try {
+    const Settings = require('./models/Settings');
+    const doc = await Settings.findOne({ key: 'task.maxActivePerEmployee' })
+      .select('value')
+      .lean();
+    const raw = doc?.value;
+    const parsed =
+      typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string'
+          ? parseInt(raw, 10)
+          : NaN;
+    const normalized = Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+    _cachedMaxActivePerEmployee = normalized;
+    _cachedMaxActivePerEmployeeAt = now;
+    return normalized;
+  } catch (_) {
+    return _cachedMaxActivePerEmployee != null ? _cachedMaxActivePerEmployee : 10;
+  }
+};
+
+// --- Presence tracking & real-time location monitoring ---
+let lastBroadcastCount = 0;
+io.on('connection', (socket) => {
+  let userIdFromToken = socket.id;
+
+  const _trackSocketForUser = (userId) => {
+    if (typeof userId !== 'string' || userId.length !== 24) return;
+    let set = userSockets.get(userId);
+    if (!set) {
+      set = new Set();
+      userSockets.set(userId, set);
+    }
+    set.add(socket.id);
+
+    const pending = pendingOfflineTimers.get(userId);
+    if (pending) {
+      clearTimeout(pending);
+      pendingOfflineTimers.delete(userId);
+    }
+  };
+
+  const _untrackSocketForUser = (userId) => {
+    if (typeof userId !== 'string' || userId.length !== 24) return 0;
+    const set = userSockets.get(userId);
+    if (!set) return 0;
+    set.delete(socket.id);
+    if (set.size <= 0) {
+      userSockets.delete(userId);
+      return 0;
+    }
+    return set.size;
+  };
+
+  try {
+    const authHeader =
+      (socket.handshake.headers && socket.handshake.headers.authorization) ||
+      (socket.handshake.headers && socket.handshake.headers.Authorization);
+
+    const authToken =
+      (socket.handshake && socket.handshake.auth && socket.handshake.auth.token)
+        ? socket.handshake.auth.token
+        : null;
+
+    if (authToken && typeof authToken === 'string') {
+      const decoded = jwt.verify(authToken, process.env.JWT_SECRET);
+      if (decoded && decoded.id) {
+        userIdFromToken = decoded.id;
+      }
+    }
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded && decoded.id) {
+        userIdFromToken = decoded.id;
+      }
+    }
+  } catch (_) {}
+
+  // Store the resolved userId on the socket for later disconnect handling.
+  socket.data = socket.data || {};
+  socket.data.userId = userIdFromToken;
+  _trackSocketForUser(userIdFromToken);
+
+  try {
+    if (typeof userIdFromToken === 'string' && userIdFromToken.length === 24) {
+      socket.join(`user:${userIdFromToken}`);
+      setImmediate(async () => {
+        try {
+          const u = await User.findById(userIdFromToken).select('role');
+          if (u && u.role === 'admin') {
+            socket.join('role:admin');
+
+            // Seed a presence snapshot for the grouped "Online employees" notification.
+            try {
+              const online = await User.find({ role: 'employee', isOnline: true })
+                .select('name employeeId')
+                .lean();
+
+              const employees = (online || [])
+                .map((emp) => ({
+                  userId: emp && emp._id ? String(emp._id) : '',
+                  name: emp && emp.name ? String(emp.name) : 'Employee',
+                  employeeCode: emp && emp.employeeId ? String(emp.employeeId) : '',
+                }))
+                .filter((e) => e.userId && e.userId.length === 24);
+
+              socket.emit('seedOnlineSnapshot', {
+                employees,
+                count: employees.length,
+                timestamp: new Date().toISOString(),
+              });
+            } catch (_) {}
+          } else if (u && u.role === 'employee') {
+            socket.join('role:employee');
+            try {
+              io.to('user:' + userIdFromToken).emit('adminNearbyMode', adminNearbyState);
+            } catch (_) {}
+          }
+
+          try {
+            await appNotificationService.emitUnreadCounts(userIdFromToken);
+          } catch (_) {}
+        } catch (_) {}
+      });
+    }
+  } catch (_) {}
+
+  try {
+    const count = io.of('/').sockets.size;
+    if (count !== lastBroadcastCount) {
+      lastBroadcastCount = count;
+      io.emit('onlineCount', count);
+    }
+  } catch (_) {}
+
+  socket.on('joinLocationRoom', async () => {
+    try {
+      const requesterId =
+        socket && socket.data && socket.data.userId ? String(socket.data.userId) : '';
+
+      if (typeof requesterId !== 'string' || requesterId.length !== 24) {
+        return;
+      }
+
+      const requester = await User.findById(requesterId).select('role').lean();
+      if (!requester || requester.role !== 'admin') {
+        return;
+      }
+
+      const employees = await User.find({ role: 'employee', isOnline: true })
+        .select('name username employeeId lastLatitude lastLongitude lastLocationUpdate activeTaskCount isOnline')
+        .lean();
+
+      if (!employees.length) {
+        socket.emit('employeeLocationsUpdate', []);
+        return;
+      }
+
+      const employeeIds = employees.map((e) => e._id);
+
+      const openAttendanceByUser = await (async () => {
+        try {
+          const Attendance = require('./models/Attendance');
+          const rows = await Attendance.find({
+            employee: { $in: employeeIds },
+            checkOut: { $exists: false },
+            isVoid: { $ne: true },
+          })
+            .sort({ createdAt: -1 })
+            .populate('geofence', 'name')
+            .select('employee geofence')
+            .lean();
+
+          const map = new Map();
+          for (const row of rows) {
+            const key = row && row.employee ? String(row.employee) : '';
+            if (!key) continue;
+            if (!map.has(key)) {
+              map.set(key, row);
+            }
+          }
+          return map;
+        } catch (_) {
+          return new Map();
+        }
+      })();
+
+      const snapshot = [];
+      for (const emp of employees) {
+        const userId = emp && emp._id ? String(emp._id) : '';
+        if (!userId) continue;
+
+        const cached = employeeLocationPayloads.get(userId);
+        const latitude =
+          cached && typeof cached.latitude === 'number'
+            ? cached.latitude
+            : typeof emp.lastLatitude === 'number'
+              ? emp.lastLatitude
+              : null;
+        const longitude =
+          cached && typeof cached.longitude === 'number'
+            ? cached.longitude
+            : typeof emp.lastLongitude === 'number'
+              ? emp.lastLongitude
+              : null;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          continue;
+        }
+
+        const openAttendance = openAttendanceByUser.get(userId);
+        const geofenceName =
+          openAttendance && openAttendance.geofence
+            ? openAttendance.geofence.name || null
+            : null;
+        const activeTaskCount =
+          typeof emp.activeTaskCount === 'number' ? emp.activeTaskCount : 0;
+
+        let status = 'moving';
+        if (activeTaskCount > 0) {
+          status = 'busy';
+        } else if (openAttendance) {
+          status = 'available';
+        }
+
+        snapshot.push({
+          employeeId: userId,
+          name: emp && emp.name ? String(emp.name) : 'Employee',
+          username: emp && emp.username ? String(emp.username) : null,
+          latitude,
+          longitude,
+          accuracy: cached && typeof cached.accuracy === 'number' ? cached.accuracy : 0,
+          speed: 0,
+          status,
+          timestamp: (
+            cached && cached.timestamp
+              ? String(cached.timestamp)
+              : emp && emp.lastLocationUpdate
+                ? new Date(emp.lastLocationUpdate).toISOString()
+                : new Date().toISOString()
+          ),
+          activeTaskCount,
+          workloadScore: 0,
+          currentGeofence: geofenceName,
+          distanceToNearestTask: null,
+          isOnline: true,
+          batteryLevel: null,
+        });
+      }
+      socket.emit('employeeLocationsUpdate', snapshot);
+    } catch (_) {}
+  });
+
+  socket.on('employeeOnline', async (data) => {
+    try {
+      const payloadId =
+        data && (data.employeeId || data.userId || data.id)
+          ? String(data.employeeId || data.userId || data.id)
+          : '';
+
+      let userId = userIdFromToken;
+      if (
+        (typeof userId !== 'string' || userId.length !== 24) &&
+        payloadId.length === 24
+      ) {
+        userId = payloadId;
+      }
+
+      socket.data.userId = userId;
+      _trackSocketForUser(userId);
+
+      let name = (data && data.name ? String(data.name) : '').trim();
+      let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
+      const timestamp = data && data.timestamp ? data.timestamp : new Date().toISOString();
+
+      // Option B: Presence should be handled as a grouped UI item on the admin.
+      // Emit a realtime presence event to admins; do not persist per-employee bell notifications.
+      try {
+        io.to('role:admin').emit('employeeOnline', {
+          employeeId: String(userId),
+          name: name || 'Employee',
+          employeeCode: employeeCode,
+          timestamp,
+        });
+      } catch (_) {}
+
+      try {
+        // Intentionally no persisted appNotificationService call for employeeOnline.
+      } catch (_) {}
+    } catch (_) {}
+  });
+
+  socket.on('employeeOffline', async (data) => {
+    try {
+      const payloadId =
+        data && (data.employeeId || data.userId || data.id)
+          ? String(data.employeeId || data.userId || data.id)
+          : '';
+
+      let userId = userIdFromToken;
+      if (
+        (typeof userId !== 'string' || userId.length !== 24) &&
+        payloadId.length === 24
+      ) {
+        userId = payloadId;
+      }
+
+      if (typeof userId === 'string' && userId.length === 24) {
+        try {
+          User.findByIdAndUpdate(userId, { isOnline: false, status: 'offline' }).catch(() => {});
+        } catch (_) {}
+      }
+
+      try {
+        employeeLocations.delete(userId);
+      } catch (_) {}
+
+      try {
+        employeeLocationPayloads.delete(userId);
+      } catch (_) {}
+
+      // Fetch employee details for proper notification display
+      let employeeName = 'Employee';
+      let employeeCode = '';
+      try {
+        const user = await User.findById(userId).select('name employeeId').lean();
+        if (user) {
+          employeeName = user.name || 'Employee';
+          employeeCode = user.employeeId || '';
+        }
+      } catch (_) {}
+
+      try {
+        io.emit('employeeOffline', {
+          employeeId: String(userId),
+          name: employeeName,
+          employeeCode: employeeCode,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (_) {}
+    } catch (_) {}
+  });
+  socket.on('adminNearbyModeChanged', async (data) => {
+    try {
+      const requesterId =
+        socket && socket.data && socket.data.userId ? String(socket.data.userId) : '';
+      if (typeof requesterId !== 'string' || requesterId.length !== 24) {
+        return;
+      }
+
+      const requester = await User.findById(requesterId).select('role').lean();
+      if (!requester || requester.role !== 'admin') {
+        return;
+      }
+
+      const mode = (data && data.mode ? String(data.mode) : 'off').toLowerCase();
+      const latitude = data && typeof data.latitude === 'number' ? data.latitude : null;
+      const longitude = data && typeof data.longitude === 'number' ? data.longitude : null;
+      const geofenceId = data && data.geofenceId ? String(data.geofenceId) : null;
+      const radiusMeters =
+        data && typeof data.radiusMeters === 'number' ? data.radiusMeters : null;
+
+      adminNearbyState = {
+        mode,
+        latitude,
+        longitude,
+        geofenceId,
+        radiusMeters,
+        updatedAt: new Date().toISOString(),
+        setByUserId: mode === 'off' ? null : requesterId,
+      };
+
+      try {
+        io.to('role:employee').emit('adminNearbyMode', adminNearbyState);
+      } catch (_) {}
+    } catch (_) {}
+  });
+
+  // Handle real-time location updates from employees while checked in
+  socket.on('employeeLocationUpdate', (data, callback) => {
+    try {
+      const { latitude, longitude, accuracy, timestamp } = data;
+
+      const sharingEnabled =
+        !(data && Object.prototype.hasOwnProperty.call(data, 'sharingEnabled'))
+          ? true
+          : !!data.sharingEnabled;
+
+      const payloadId =
+        data && (data.employeeId || data.userId || data.id)
+          ? String(data.employeeId || data.userId || data.id)
+          : '';
+
+      let userId = userIdFromToken;
+      if (
+        (typeof userId !== 'string' || userId.length !== 24) &&
+        payloadId.length === 24
+      ) {
+        userId = payloadId;
+      }
+
+      // Store latest location instantly
+      employeeLocations.set(userId, {
+        lat: latitude,
+        lng: longitude,
+        accuracy: accuracy,
+        timestamp: timestamp,
+      });
+
+      // If the client is actively sharing location again, ensure presence is
+      // flipped back to online immediately so admins see the change without
+      // waiting for any DB writes or enrichment.
+      if (sharingEnabled) {
+        try {
+          const userKey = String(userId);
+          const nowMs = Date.now();
+          const prev = lastSharingWakeEmitAt.get(userKey) || 0;
+          if (nowMs - prev >= SHARING_WAKE_THROTTLE_MS) {
+            lastSharingWakeEmitAt.set(userKey, nowMs);
+
+            // Emit presence + marker payload immediately using whatever we have.
+            // This keeps admin list + markers responsive even if enrichment is slow.
+            const employeeName = (data && data.name ? String(data.name) : '').trim();
+            const username = (data && data.username ? String(data.username) : '').trim();
+            const employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
+
+            try {
+              io.emit('employeeOnline', {
+                employeeId: userKey,
+                name: employeeName || 'Employee',
+                employeeCode,
+                timestamp: new Date().toISOString(),
+              });
+            } catch (_) {}
+
+            try {
+              io.emit('liveEmployeeLocation', {
+                employeeId: userKey,
+                name: employeeName || 'Employee',
+                username: username || null,
+                employeeCode: employeeCode || null,
+                socketId: socket.id,
+                userId,
+                latitude,
+                longitude,
+                accuracy,
+                timestamp: timestamp || new Date().toISOString(),
+              });
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
+      if (!sharingEnabled) {
+        try {
+          if (typeof userId === 'string' && userId.length === 24) {
+            User.findByIdAndUpdate(userId, { isOnline: false, status: 'offline' }).catch(() => {});
+          }
+        } catch (_) {}
+
+        try {
+          employeeLocations.delete(userId);
+        } catch (_) {}
+
+        try {
+          employeeLocationPayloads.delete(userId);
+        } catch (_) {}
+
+        try {
+          let employeeName = (data && data.name ? String(data.name) : '').trim();
+          let employeeCode = (data && data.employeeCode ? String(data.employeeCode) : '').trim();
+
+          const emitOffline = (nameVal, codeVal) => {
+            try {
+              io.emit('employeeOffline', {
+                employeeId: String(userId),
+                name: (nameVal || '').trim() || 'Employee',
+                employeeCode: (codeVal || '').trim(),
+                timestamp: new Date().toISOString(),
+              });
+            } catch (_) {}
+          };
+
+          if ((!employeeName || !employeeCode) && typeof userId === 'string' && userId.length === 24) {
+            User.findById(userId)
+              .select('name employeeId')
+              .lean()
+              .then((u) => {
+                if (u) {
+                  if (!employeeName && u.name) employeeName = String(u.name);
+                  if (!employeeCode && u.employeeId) employeeCode = String(u.employeeId);
+                }
+                emitOffline(employeeName, employeeCode);
+              })
+              .catch(() => {
+                emitOffline(employeeName, employeeCode);
+              });
+          } else {
+            emitOffline(employeeName, employeeCode);
+          }
+        } catch (_) {}
+
+        if (typeof callback === 'function') {
+          callback({ received: true, timestamp: Date.now() });
+        }
+        return;
+      }
+
+      if (typeof userId === 'string' && userId.length === 24) {
+        const locationDoc = {
+          user: userId,
+          latitude,
+          longitude,
+          accuracy,
+          timestamp: timestamp ? new Date(timestamp) : new Date(),
+        };
+        EmployeeLocation.create(locationDoc).catch(() => {});
+      }
+
+      // Send immediate ACK for low-latency feedback
+      if (typeof callback === 'function') {
+        callback({ received: true, timestamp: Date.now() });
+      }
+
+      // Broadcast to admins/dashboard for real-time monitoring (async)
+
+      // Throttle expensive enrichment per user to reduce lag when multiple accounts are active.
+
+      socket.data = socket.data || {};
+
+      socket.data._lastEnrichAt = socket.data._lastEnrichAt || {};
+
+      const prevEnrichAt = socket.data._lastEnrichAt[String(userId)];
+
+      if (prevEnrichAt && Date.now() - prevEnrichAt < 1200) {
+
+        return;
+
+      }
+
+      socket.data._lastEnrichAt[String(userId)] = Date.now();
+
+
+      setImmediate(async () => {
+        try {
+          // Update location, lastLocationUpdate, and isOnline in database for auto-checkout tracking and map display
+          if (typeof userId === 'string' && userId.length === 24) {
+            try {
+              await User.findByIdAndUpdate(userId, {
+                lastLatitude: latitude,
+                lastLongitude: longitude,
+                lastLocationUpdate: new Date(),
+                isOnline: true,
+              });
+            } catch (_) {}
+          }
+
+          // Enrich data for admin dashboards using EmployeeLocationService
+          let name = 'Unknown';
+          let username = null;
+          let employeeId = null;
+          let isOnline = true;
+          let status = 'moving';
+          let currentGeofence = null;
+          let isCheckedIn = false;
+          let isWithinCheckedInGeofence = false;
+          let activeTaskCount = 0;
+          let maxActive = 10;
+
+          if (typeof userId === 'string' && userId.length === 24) {
+            try {
+              const Attendance = require('./models/Attendance');
+              const Geofence = require('./models/Geofence');
+              const Task = require('./models/Task');
+              const UserTask = require('./models/UserTask');
+
+              const user = await User.findById(userId).select('name username isOnline employeeId phone');
+              if (user) {
+                if (user.name) {
+                  name = user.name;
+                }
+                if (user.username) {
+                  username = user.username;
+                }
+                if (user.employeeId) {
+                  employeeId = String(user.employeeId);
+                }
+                if (typeof user.isOnline === 'boolean') {
+                  isOnline = user.isOnline;
+                }
+              }
+
+              // Check if employee is currently checked in
+              const openAttendance = await Attendance.findOne({
+                employee: userId,
+                checkOut: { $exists: false },
+              }).populate('geofence');
+
+              if (openAttendance) {
+                isCheckedIn = true;
+                currentGeofence = openAttendance.geofence?.name || null;
+                try {
+                  const gf = openAttendance.geofence;
+                  if (
+                    gf &&
+                    typeof gf.latitude === 'number' &&
+                    typeof gf.longitude === 'number' &&
+                    typeof gf.radius === 'number'
+                  ) {
+                    const dist = _haversineMeters(
+                      gf.latitude,
+                      gf.longitude,
+                      latitude,
+                      longitude,
+                    );
+                    isWithinCheckedInGeofence = dist <= gf.radius;
+                  } else {
+                    isWithinCheckedInGeofence = true;
+                  }
+                } catch (_) {
+                  isWithinCheckedInGeofence = true;
+                }
+
+                if (!isWithinCheckedInGeofence) {
+                  setImmediate(async () => {
+                    try {
+                    } catch (_) {}
+                  });
+                }
+              }
+
+              // Check if employee has active tasks (busy status)
+              const now = new Date();
+              const assignments = await UserTask.find({
+                userId,
+                isArchived: { $ne: true },
+                status: { $ne: 'completed' },
+              }).select('taskId status');
+
+              const taskIds = assignments.map((a) => a.taskId);
+              const tasks = taskIds.length
+                ? await Task.find({
+                    _id: { $in: taskIds },
+                    isArchived: { $ne: true },
+                  }).select('dueDate status isArchived')
+                : [];
+
+              const terminalStatuses = new Set(['completed', 'reviewed', 'closed']);
+              activeTaskCount = tasks.filter((t) => {
+                const status = String(t.status || '').toLowerCase();
+                if (t.isArchived) return false;
+                if (terminalStatuses.has(status)) return false;
+                if (t.dueDate && t.dueDate < now) return false;
+                return true;
+              }).length;
+
+              const taskById = new Map(tasks.map((t) => [String(t._id), t]));
+              const startedTaskCount = assignments.filter((a) => {
+                const st = String(a.status || '').toLowerCase();
+                if (st !== 'in_progress') return false;
+                const task = taskById.get(String(a.taskId));
+                if (!task) return false;
+                const taskStatus = String(task.status || '').toLowerCase();
+                if (task.isArchived) return false;
+                if (terminalStatuses.has(taskStatus)) return false;
+                return true;
+              }).length;
+
+              try {
+                maxActive = await _getMaxActivePerEmployee();
+              } catch (_) {}
+
+              try {
+                await User.findByIdAndUpdate(userId, { activeTaskCount });
+              } catch (_) {}
+
+              // Throttled notification when already over the limit
+              if (activeTaskCount > maxActive) {
+                const nowMs = Date.now();
+                const prev = overtaskNotified.get(userId);
+                const shouldNotify =
+                  !prev ||
+                  prev.count !== activeTaskCount ||
+                  nowMs - prev.at > 10 * 60 * 1000;
+
+                if (shouldNotify) {
+                  overtaskNotified.set(userId, { count: activeTaskCount, at: nowMs });
+                  io.emit('adminNotification', {
+                    type: 'task',
+                    action: 'employeeOvertasked',
+                    userId,
+                    employeeId: user?.employeeId ? String(user.employeeId) : null,
+                    name,
+                    activeTaskCount,
+                    maxActive,
+                    timestamp: new Date().toISOString(),
+                    message: `${name} is over the task limit (${activeTaskCount}/${maxActive}).`,
+                    severity: 'warning',
+                  });
+
+                  setImmediate(async () => {
+                    try {
+                    } catch (_) {}
+                  });
+                }
+              }
+
+              if (startedTaskCount > 0) {
+                status = 'busy';
+              } else if (isCheckedIn && isWithinCheckedInGeofence) {
+                status = 'available';
+              }
+            } catch (_) {}
+          }
+
+          // Emit rich EmployeeLocation-compatible payload for admin dashboard
+          const richPayload = {
+            employeeId: String(userId),
+            name,
+            username,
+            latitude,
+            longitude,
+            accuracy: accuracy || 0,
+            speed: 0,
+            status,
+            timestamp: timestamp || new Date().toISOString(),
+            activeTaskCount,
+            workloadScore: 0,
+            currentGeofence,
+            distanceToNearestTask: null,
+            isOnline,
+            batteryLevel: null,
+          };
+
+          employeeLocationPayloads.set(String(userId), richPayload);
+          io.emit('employeeLocationUpdate', richPayload);
+
+          // Existing lightweight event used by RealtimeService/AdminWorldMap
+          io.emit('liveEmployeeLocation', {
+            employeeId: String(userId),
+            name,
+            username,
+            employeeCode: employeeId,
+            socketId: socket.id,
+            userId,
+            latitude,
+            longitude,
+            accuracy,
+            timestamp,
+          });
+        } catch (e) {
+          console.error('Error broadcasting live employee location:', e);
+        }
+      });
+
+      if ((process.env.NODE_ENV || '').trim() === 'development') {
+        console.log(` Location: ${userId} at (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) • Accuracy: ${accuracy.toFixed(1)}m`);
+      }
+    } catch (e) {
+      console.error('Error handling location update:', e && e.message ? e.message : e);
+      if (typeof callback === 'function') {
+        callback({ received: false, error: e.message });
+      }
+    }
+  });
+
+  socket.on('disconnect', () => {
+    const userId =
+      socket && socket.data && socket.data.userId
+        ? String(socket.data.userId)
+        : (typeof userIdFromToken === 'string' ? userIdFromToken : '');
+
+    // If the admin who last enabled nearby mode disconnects, clear the admin marker
+    // for employees immediately so it doesn't persist after refresh.
+    try {
+      if (
+        adminNearbyState &&
+        adminNearbyState.mode !== 'off' &&
+        adminNearbyState.setByUserId &&
+        String(adminNearbyState.setByUserId) === String(userId)
+      ) {
+        setImmediate(async () => {
+          try {
+            const u = await User.findById(userId).select('role').lean();
+            if (u && u.role === 'admin') {
+              adminNearbyState = {
+                mode: 'off',
+                latitude: null,
+                longitude: null,
+                geofenceId: null,
+                radiusMeters: null,
+                updatedAt: new Date().toISOString(),
+                setByUserId: null,
+              };
+              try {
+                io.to('role:employee').emit('adminNearbyMode', adminNearbyState);
+              } catch (_) {}
+            }
+          } catch (_) {}
+        });
+      }
+    } catch (_) {}
+
+    const remaining = _untrackSocketForUser(userId);
+    if (remaining === 0 && typeof userId === 'string' && userId.length === 24) {
+      // Use a short grace period to prevent flicker during brief reconnects.
+      if (!pendingOfflineTimers.has(userId)) {
+        const timer = setTimeout(async () => {
+          try {
+            const current = userSockets.get(userId);
+            if (current && current.size > 0) {
+              return;
+            }
+
+            let employeeName = '';
+            let employeeCode = '';
+            try {
+              const u = await User.findById(userId).select('name employeeId role').lean();
+              if (u) {
+                employeeName = u.name ? String(u.name) : '';
+                employeeCode = u.employeeId ? String(u.employeeId) : '';
+              }
+            } catch (_) {}
+
+            try {
+              const updated = await User.findOneAndUpdate(
+                { _id: userId, role: 'employee' },
+                {
+                  isOnline: false,
+                  status: 'offline',
+                },
+                { new: true },
+              );
+
+              if (!updated) {
+                return;
+              }
+            } catch (_) {}
+
+            try {
+              employeeLocations.delete(userId);
+            } catch (_) {}
+
+            try {
+              employeeLocationPayloads.delete(userId);
+            } catch (_) {}
+
+            try {
+              io.emit('employeeOffline', {
+                employeeId: String(userId),
+                name: (employeeName || 'Employee').trim() || 'Employee',
+                employeeCode: (employeeCode || '').trim(),
+                timestamp: new Date().toISOString(),
+              });
+            } catch (_) {}
+
+            try {
+              const appNotificationService = require('./services/appNotificationService');
+              const name = (employeeName || 'Employee').trim() || 'Employee';
+              await appNotificationService.createForAdmins({
+                excludeUserId: userId,
+                type: 'employee',
+                action: 'employeeOffline',
+                title: 'Employee Offline',
+                message: `${name} is now offline.`,
+                payload: {
+                  userId,
+                  name,
+                  employeeId: employeeCode,
+                  employeeCode,
+                  timestamp: new Date().toISOString(),
+                },
+              });
+            } catch (_) {}
+          } finally {
+            pendingOfflineTimers.delete(userId);
+          }
+        }, OFFLINE_GRACE_MS);
+
+        pendingOfflineTimers.set(userId, timer);
+      }
+    }
+
+    try {
+      const count = io.of('/').sockets.size;
+      if (count !== lastBroadcastCount) {
+        lastBroadcastCount = count;
+        io.emit('onlineCount', count);
+      }
+    } catch (_) {}
+  });
+});
+
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+  }),
+);
+app.use(compression());
+if ((process.env.NODE_ENV || '').trim() !== 'production') {
+  app.use(morgan('dev'));
+}
+
+// Rate limiting: keep strict in production, relax/disable in development
+const isProd = (process.env.NODE_ENV || '').trim() === 'production';
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
+  max: parseInt(process.env.RATE_LIMIT_MAX || (isProd ? '1000' : '0')), // 0 disables in dev
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip preflight and health checks to avoid blocking normal API usage
+  skip: (req) => req.method === 'OPTIONS' || req.path === '/api/health',
+});
+if (isProd) {
+  app.use(limiter);
+}
+
+// Route modules (loaded after io initialization to avoid circular deps)
+const userRoutes = require('./routes/userRoutes');
+const geofenceRoutes = require('./routes/geofenceRoutes');
+const attendanceRoutes = require('./routes/attendanceRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const reportRoutes = require('./routes/reportRoutes');
+const exportRoutes = require('./routes/exportRoutes');
+const taskRoutes = require('./routes/taskRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const appNotificationRoutes = require('./routes/appNotificationRoutes');
+const chatRoutes = require('./routes/chatRoutes');
+const availabilityRoutes = require('./routes/availabilityRoutes');
+const employeeTrackingRoutes = require('./routes/employeeTrackingRoutes');
+const locationRoutes = require('./routes/locationRoutes');
+const attachmentRoutes = require('./routes/attachmentRoutes');
+const companyRoutes = require('./routes/companyRoutes');
+const templateRoutes = require('./routes/templateRoutes');
+const ticketRoutes = require('./routes/ticketRoutes');
+const auditRoutes = require('./routes/auditRoutes');
+
+app.use(express.json({ limit: '200kb' })); 
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.get('/api/uploads/proxy', (req, res) => {
+  try {
+    const raw = (req.query && req.query.url ? String(req.query.url) : '').trim();
+    if (!raw) {
+      return res.status(400).json({ message: 'Missing url' });
+    }
+
+    let target;
+    try {
+      target = new URL(raw);
+    } catch (_) {
+      return res.status(400).json({ message: 'Invalid url' });
+    }
+
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      return res.status(400).json({ message: 'Unsupported protocol' });
+    }
+
+    const allowAll = (process.env.ALLOW_UPLOAD_PROXY_ALL || '').trim() === 'true';
+    const allowedHosts = new Set([
+      'fieldcheck-app.onrender.com',
+      'fieldcheck-backend.onrender.com',
+    ]);
+    if (!allowAll && !allowedHosts.has(target.hostname)) {
+      return res.status(403).json({ message: 'Host not allowed' });
+    }
+
+    const wantsDownload =
+      req.query && (req.query.download === '1' || req.query.download === 'true');
+    const filename =
+      req.query && req.query.filename ? String(req.query.filename) : null;
+
+    const fetchOnce = (urlObj, redirectsLeft) => {
+      const client = urlObj.protocol === 'https:' ? https : http;
+
+      const upstream = client.get(
+        urlObj,
+        {
+          headers: {
+            'User-Agent': 'FieldCheckUploadProxy',
+          },
+        },
+        (upstreamRes) => {
+          const code = upstreamRes.statusCode || 0;
+
+          if (
+            code >= 300 &&
+            code < 400 &&
+            upstreamRes.headers &&
+            upstreamRes.headers.location &&
+            redirectsLeft > 0
+          ) {
+            try {
+              const next = new URL(String(upstreamRes.headers.location), urlObj);
+              upstreamRes.resume();
+              return fetchOnce(next, redirectsLeft - 1);
+            } catch (_) {
+              upstreamRes.resume();
+              return res.status(502).json({ message: 'Bad redirect' });
+            }
+          }
+
+          res.status(code);
+
+          const contentType = upstreamRes.headers['content-type'];
+          if (contentType) {
+            res.setHeader('Content-Type', contentType);
+          }
+          const contentLength = upstreamRes.headers['content-length'];
+          if (contentLength) {
+            res.setHeader('Content-Length', contentLength);
+          }
+          res.setHeader('Cache-Control', 'no-store');
+
+          if (wantsDownload) {
+            const name = filename || urlObj.pathname.split('/').pop() || 'download';
+            res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+          }
+
+          upstreamRes.pipe(res);
+        },
+      );
+
+      upstream.on('error', () => {
+        try {
+          res.status(502).json({ message: 'Failed to fetch remote file' });
+        } catch (_) {}
+      });
+    };
+
+    return fetchOnce(target, 3);
+  } catch (_) {
+    return res.status(500).json({ message: 'Proxy error' });
+  }
+});
+
+const flutterWebBuildPath = path.join(__dirname, '..', 'field_check', 'build', 'web');
+let cachedAssetManifestJson = null;
+
+const _walkDirFiles = (dirPath, basePath) => {
+  const out = [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      out.push(..._walkDirFiles(full, basePath));
+    } else if (entry.isFile()) {
+      out.push(path.relative(basePath, full).split(path.sep).join('/'));
+    }
+  }
+  return out;
+};
+
+const _buildAssetManifestJson = () => {
+  const assetsDir = path.join(flutterWebBuildPath, 'assets');
+  const files = _walkDirFiles(assetsDir, assetsDir);
+  const manifest = {};
+
+  for (const rel of files) {
+    if (
+      rel === 'AssetManifest.bin' ||
+      rel === 'AssetManifest.bin.json' ||
+      rel === 'AssetManifest.json'
+    ) {
+      continue;
+    }
+
+    const keyA = rel;
+    const keyB = `assets/${rel}`;
+    manifest[keyA] = [keyA];
+    manifest[keyB] = [keyB];
+  }
+
+  return manifest;
+};
+
+app.use(
+  express.static(flutterWebBuildPath, {
+    index: false,
+    etag: true,
+    lastModified: true,
+    maxAge: '365d',
+    immutable: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+        return;
+      }
+
+      const base = path.basename(filePath);
+      if (
+        base === 'main.dart.js' ||
+        base === 'flutter_bootstrap.js' ||
+        base === 'flutter.js' ||
+        base === 'flutter_service_worker.js' ||
+        base === 'version.json' ||
+        base === 'manifest.json'
+      ) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    },
+  }),
+);
+
+app.get('/assets/AssetManifest.json', (req, res) => {
+  try {
+    if (!cachedAssetManifestJson) {
+      cachedAssetManifestJson = _buildAssetManifestJson();
+    }
+
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.status(200).json(cachedAssetManifestJson);
+  } catch (_) {
+    return res.status(200).json({});
+  }
+});
+
+app.get('/api/health', async (req, res) => {
+  const readyState = mongoose?.connection?.readyState;
+  const connected = dbReady || readyState === 1;
+
+  const nodeEnv = (process.env.NODE_ENV || 'development').trim();
+  const dbHost = mongoose?.connection?.host || null;
+  const dbName = mongoose?.connection?.db?.databaseName || null;
+  const gitCommit = process.env.RENDER_GIT_COMMIT || process.env.SOURCE_VERSION || null;
+
+  if (!connected) {
+    return res.status(503).json({
+      status: 'starting',
+      nodeEnv,
+      db: { readyState, host: dbHost, name: dbName },
+      build: { gitCommit },
+    });
+  }
+
+  const verbose = req.query.verbose === '1' || req.query.verbose === 'true';
+  let userCount;
+  if (verbose) {
+    try {
+      userCount = await User.countDocuments({});
+    } catch (_) {
+      userCount = undefined;
+    }
+  }
+
+  return res.json({
+    status: 'ok',
+    nodeEnv,
+    db: { readyState, host: dbHost, name: dbName },
+    build: { gitCommit },
+    ...(verbose ? { userCount } : {}),
+  });
+});
+
+app.get('/api/health/details', async (req, res) => {
+  const provided = (req.get('x-health-secret') || req.query.secret || '').toString();
+  const expected = (process.env.HEALTH_SECRET || '').toString();
+  if (!expected || provided !== expected) {
+    return res.status(401).json({ status: 'unauthorized' });
+  }
+
+  const readyState = mongoose?.connection?.readyState;
+  const connected = dbReady || readyState === 1;
+  const nodeEnv = (process.env.NODE_ENV || 'development').trim();
+  const dbHost = mongoose?.connection?.host || null;
+  const dbName = mongoose?.connection?.db?.databaseName || null;
+  const gitCommit = process.env.RENDER_GIT_COMMIT || process.env.SOURCE_VERSION || null;
+
+  let userCount;
+  try {
+    userCount = await User.countDocuments({});
+  } catch (_) {
+    userCount = undefined;
+  }
+
+  return res.status(connected ? 200 : 503).json({
+    status: connected ? 'ok' : 'starting',
+    nodeEnv,
+    db: { readyState, host: dbHost, name: dbName },
+    build: { gitCommit },
+    userCount,
+  });
+});
+
+app.use('/api/users', userRoutes);
+app.use('/api/geofences', geofenceRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/export', exportRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/app-notifications', appNotificationRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/availability', availabilityRoutes);
+app.use('/api/employee-tracking', employeeTrackingRoutes);
+app.use('/api/location', locationRoutes);
+app.use('/api/attachments', attachmentRoutes);
+app.use('/api/companies', companyRoutes);
+app.use('/api/templates', templateRoutes);
+app.use('/api/tickets', ticketRoutes);
+app.use('/api/audit', auditRoutes);
+
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  if (path.extname(req.path || '') !== '') {
+    return res.status(404).end();
+  }
+
+  res.setHeader('Cache-Control', 'no-cache');
+  return res.sendFile(path.join(flutterWebBuildPath, 'index.html'));
+});
+
+const { protect } = require('./middleware/authMiddleware');
+const Attendance = require('./models/Attendance');
+const Geofence = require('./models/Geofence');
+
+app.post('/api/sync', protect, async (req, res) => {
+  const payload = req.body || {};
+
+  const results = {
+    attendanceProcessed: 0,
+    attendanceAccepted: 0,
+    attendanceDuplicates: 0,
+    attendanceRejected: 0,
+    items: [],
+  };
+  try {
+    const items = Array.isArray(payload.attendance) ? payload.attendance : [];
+    for (const item of items) {
+      try {
+        const type = String(item.type || '').toLowerCase();
+        const eventId = (item.eventId || item.id || '').toString().trim();
+        if (type !== 'checkin' && type !== 'checkout') {
+          results.items.push({
+            eventId: eventId || null,
+            type,
+            status: 'rejected',
+            reason: 'invalid_type',
+          });
+          results.attendanceRejected++;
+          continue;
+        }
+        if (!eventId) {
+          results.items.push({
+            eventId: null,
+            type,
+            status: 'rejected',
+            reason: 'missing_event_id',
+          });
+          results.attendanceRejected++;
+          continue;
+        }
+
+        // Idempotency: if we already processed this eventId for this employee, mark duplicate.
+        const dupeQuery =
+          type === 'checkin'
+            ? { employee: req.user._id, syncCheckInEventId: eventId }
+            : { employee: req.user._id, syncCheckOutEventId: eventId };
+        const existing = await Attendance.findOne(dupeQuery).select('_id').lean();
+        if (existing) {
+          results.items.push({
+            eventId,
+            type,
+            status: 'duplicate',
+            reason: 'already_processed',
+            attendanceId: existing._id?.toString?.() || String(existing._id),
+          });
+          results.attendanceDuplicates++;
+          continue;
+        }
+
+        if (type === 'checkin') {
+          const geofence = await Geofence.findById(item.geofenceId);
+          if (!geofence) {
+            results.items.push({
+              eventId,
+              type,
+              status: 'rejected',
+              reason: 'geofence_not_found',
+            });
+            results.attendanceRejected++;
+            continue;
+          }
+          const toRad = (deg) => (deg * Math.PI) / 180;
+
+          const haversineMeters = (lat1, lon1, lat2, lon2) => {
+            const R = 6371000;
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+          };
+          const distanceMeters = haversineMeters(
+            geofence.latitude,
+            geofence.longitude,
+            item.latitude,
+            item.longitude,
+          );
+          if (distanceMeters > geofence.radius) {
+            results.items.push({
+              eventId,
+              type,
+              status: 'rejected',
+              reason: 'outside_geofence',
+              distanceMeters,
+              radius: geofence.radius,
+            });
+            results.attendanceRejected++;
+            continue;
+          }
+
+          const created = await Attendance.create({
+            employee: req.user._id,
+            geofence: geofence._id,
+            checkIn: item.timestamp ? new Date(item.timestamp) : new Date(),
+            status: 'in',
+            location: { lat: item.latitude, lng: item.longitude },
+            syncCheckInEventId: eventId,
+          });
+
+          results.items.push({
+            eventId,
+            type,
+            status: 'accepted',
+            attendanceId: created._id.toString(),
+          });
+          results.attendanceAccepted++;
+          results.attendanceProcessed++;
+        } else {
+          // Checkout: align with main checkout flow: do NOT enforce inside-geofence.
+          const openRecord = await Attendance.findOne({
+            employee: req.user._id,
+            checkOut: { $exists: false },
+          }).sort({ createdAt: -1 });
+
+          if (!openRecord) {
+            results.items.push({
+              eventId,
+              type,
+              status: 'rejected',
+              reason: 'no_open_attendance',
+            });
+            results.attendanceRejected++;
+            continue;
+          }
+
+          openRecord.checkOut = item.timestamp ? new Date(item.timestamp) : new Date();
+          openRecord.status = 'out';
+          openRecord.location = { lat: item.latitude, lng: item.longitude };
+          openRecord.syncCheckOutEventId = eventId;
+          await openRecord.save();
+
+          results.items.push({
+            eventId,
+            type,
+            status: 'accepted',
+            attendanceId: openRecord._id.toString(),
+          });
+          results.attendanceAccepted++;
+          results.attendanceProcessed++;
+        }
+      } catch (_) {}
+    }
+    res.status(200).json({ message: 'Sync processed', results });
+  } catch (e) {
+    res.status(500).json({ message: 'Sync failed' });
+  }
+});
+
+// Error handling middleware (JSON responses)
+const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+app.use(notFound);
+app.use(errorHandler);
+const port = process.env.PORT || 3000;
+
+// Gracefully handle server listen errors (e.g., port already in use)
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.log(`Port ${port} in use; backend already running. Skipping start.`);
+    process.exit(0);
+  } else {
+    console.error('Server error:', err);
+    process.exit(1);
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+(async () => {
+  try {
+    server.listen(port, '0.0.0.0', () => { // Listen on all network interfaces
+      console.log(`Backend server listening at http://0.0.0.0:${port}`);
+      console.log(`Accessible from your device at: http://192.168.8.35:${port}`);
+    });
+
+    const runStartupMaintenance = process.env.DISABLE_STARTUP_MAINTENANCE !== 'true';
+    const runBackgroundJobs = process.env.DISABLE_JOBS !== 'true';
+
+    let postDbInitDone = false;
+    const connectDbWithRetry = async () => {
+      try {
+        await connectDB();
+        dbReady = true;
+
+        if (!postDbInitDone) {
+          postDbInitDone = true;
+
+          if (runStartupMaintenance) {
+            try {
+              await User.updateMany(
+                { role: 'employee', isOnline: true },
+                { $set: { isOnline: false, status: 'offline' } },
+              );
+            } catch (_) {}
+          }
+
+          const isProduction = (process.env.NODE_ENV || '').trim() === 'production';
+          if (!isProduction && (process.env.USE_INMEMORY_DB === 'true' || process.env.SEED_DEV === 'true')) {
+            const { seedDevData } = require('./utils/seedDev');
+            await seedDevData();
+          }
+          
+          if (runBackgroundJobs) {
+            const { initializeAutomation } = require('./utils/automationService');
+            initializeAutomation();
+            
+            const { initializeOfflineEmployeeVoidJob } = require('./utils/offlineEmployeeVoidJob');
+            initializeOfflineEmployeeVoidJob();
+
+            const initCleanupJob = require('./jobs/cleanup_job');
+            initCleanupJob();
+
+            const initializeSlaCheckJob = require('./jobs/sla_check_job');
+            initializeSlaCheckJob();
+          }
+        }
+      } catch (err) {
+        dbReady = false;
+        console.error('Failed to connect to database:', err && err.message ? err.message : err);
+        setTimeout(connectDbWithRetry, 10000);
+      }
+    };
+
+    connectDbWithRetry();
+  } catch (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  }
+})();

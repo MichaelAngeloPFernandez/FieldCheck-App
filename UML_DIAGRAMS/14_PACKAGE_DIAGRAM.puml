@@ -1,0 +1,183 @@
+@startuml FieldCheck_PackageDiagram
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam packageBackgroundColor #AED6F1
+skinparam packageBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.5 (Extended): Package Diagram\nFieldCheck - Code Organization and Package Structure
+
+package "FieldCheck Mobile App" {
+  package "Presentation" {
+    package "Screens" {
+      [LoginScreen]
+      [EmployeeDashboard]
+      [CheckInScreen]
+      [TaskListScreen]
+      [HistoryScreen]
+      [ProfileScreen]
+      [AdminDashboard]
+      [GeofenceManagement]
+      [ReportScreen]
+    }
+    package "Widgets" {
+      [CustomButton]
+      [MapWidget]
+      [TaskCard]
+      [AttendanceCard]
+    }
+  }
+  
+  package "Business Logic" {
+    package "Managers" {
+      [AuthManager]
+      [LocationManager]
+      [AttendanceManager]
+      [TaskManager]
+      [ReportManager]
+    }
+    package "Services" {
+      [LocationService]
+      [SyncService]
+      [NotificationService]
+    }
+  }
+  
+  package "Data" {
+    package "Local Storage" {
+      [SharedPreferences]
+      [OfflineQueue]
+    }
+    package "Models" {
+      [UserModel]
+      [AttendanceModel]
+      [TaskModel]
+      [GeofenceModel]
+    }
+  }
+  
+  package "Communication" {
+    [HTTPClient]
+    [SocketIOClient]
+    [EncryptionHandler]
+  }
+  
+  package "Device Integration" {
+    [GPSModule]
+    [ConnectivityMonitor]
+    [FileHandler]
+  }
+}
+
+package "FieldCheck Backend" {
+  package "API Layer" {
+    package "Routes" {
+      [AuthRoutes]
+      [UserRoutes]
+      [GeofenceRoutes]
+      [AttendanceRoutes]
+      [TaskRoutes]
+      [ReportRoutes]
+    }
+  }
+  
+  package "Service Layer" {
+    package "Services" {
+      [UserService]
+      [GeofenceService]
+      [AttendanceService]
+      [TaskService]
+      [ReportService]
+      [NotificationService]
+    }
+  }
+  
+  package "Middleware" {
+    [AuthMiddleware]
+    [RBACMiddleware]
+    [ValidationMiddleware]
+    [ErrorHandler]
+  }
+  
+  package "Real-Time" {
+    [SocketIOServer]
+    [EventEmitter]
+  }
+  
+  package "Data Access" {
+    package "Repositories" {
+      [UserRepository]
+      [GeofenceRepository]
+      [AttendanceRepository]
+      [TaskRepository]
+      [ReportRepository]
+    }
+  }
+  
+  package "Utilities" {
+    [GeoCalculator]
+    [TokenManager]
+    [EncryptionUtil]
+    [FileGenerator]
+  }
+  
+  package "Models" {
+    [User]
+    [Geofence]
+    [Attendance]
+    [Task]
+    [Report]
+  }
+}
+
+package "Database" {
+  [MongoDB]
+}
+
+package "External Services" {
+  [OpenStreetMap]
+  [FileExportService]
+}
+
+' Dependencies
+Presentation --> "Business Logic": uses
+"Business Logic" --> Data: uses
+"Business Logic" --> Communication: uses
+"Business Logic" --> "Device Integration": uses
+
+Communication --> "FieldCheck Backend": connects
+"FieldCheck Backend" --> MongoDB: queries
+"FieldCheck Backend" --> "External Services": calls
+
+Screens --> Widgets: uses
+Managers --> Services: uses
+AuthManager --> AuthMiddleware: uses
+LocationManager --> GPSModule: uses
+AttendanceManager --> SyncService: uses
+TaskManager --> TaskService: uses
+
+AuthRoutes --> AuthMiddleware: uses
+UserRoutes --> UserService: uses
+GeofenceRoutes --> GeofenceService: uses
+AttendanceRoutes --> AttendanceService: uses
+TaskRoutes --> TaskService: uses
+ReportRoutes --> ReportService: uses
+
+UserService --> UserRepository: uses
+GeofenceService --> GeofenceRepository: uses
+AttendanceService --> AttendanceRepository: uses
+TaskService --> TaskRepository: uses
+ReportService --> ReportRepository: uses
+
+UserRepository --> MongoDB: accesses
+GeofenceRepository --> MongoDB: accesses
+AttendanceRepository --> MongoDB: accesses
+TaskRepository --> MongoDB: accesses
+ReportRepository --> MongoDB: accesses
+
+GeofenceService --> GeoCalculator: uses
+UserService --> TokenManager: uses
+UserService --> EncryptionUtil: uses
+ReportService --> FileGenerator: uses
+
+@enduml

@@ -1,0 +1,496 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../services/employee_location_service.dart';
+import 'admin_actions_modal.dart';
+
+class EmployeeDetailsModal extends StatefulWidget {
+  final EmployeeLocation employee;
+  final List<EmployeeLocation> locationHistory;
+  final VoidCallback? onReassignTasks;
+  final Function(EmployeeStatus)? onStatusChange;
+  final VoidCallback? onSendMessage;
+  final VoidCallback? onViewReports;
+  final VoidCallback? onViewHistory;
+
+  const EmployeeDetailsModal({
+    super.key,
+    required this.employee,
+    required this.locationHistory,
+    this.onReassignTasks,
+    this.onStatusChange,
+    this.onSendMessage,
+    this.onViewReports,
+    this.onViewHistory,
+  });
+
+  @override
+  State<EmployeeDetailsModal> createState() => _EmployeeDetailsModalState();
+}
+
+class _EmployeeDetailsModalState extends State<EmployeeDetailsModal> {
+  late EmployeeStatus _selectedStatus;
+
+  String _formatLastSeen(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+
+    if (diff.inSeconds < 60) {
+      return 'now';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    } else {
+      return '${diff.inDays}d ago';
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedStatus = widget.employee.status;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final employee = widget.employee;
+    final statusColor = _getStatusColor(employee.status);
+    final statusLabel = _getStatusLabel(employee.status);
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header with employee info
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [statusColor.withValues(alpha: 0.8), statusColor],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              employee.name,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'ID: ${employee.employeeId}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.85),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Status badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white, width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          statusLabel,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Body content
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Location section
+                  _buildSection('Current Location', [
+                    _buildInfoRow(
+                      'Coordinates',
+                      '${employee.latitude.toStringAsFixed(6)}, ${employee.longitude.toStringAsFixed(6)}',
+                      Icons.location_on,
+                    ),
+                    _buildInfoRow(
+                      'Accuracy',
+                      '${employee.accuracy.toStringAsFixed(1)}m',
+                      Icons.my_location,
+                    ),
+                    if (employee.currentGeofence != null)
+                      _buildInfoRow(
+                        'Geofence',
+                        employee.currentGeofence!,
+                        Icons.fence,
+                      ),
+                  ]),
+                  const SizedBox(height: 20),
+                  // Status section
+                  _buildSection('Status & Activity', [
+                    _buildInfoRow(
+                      'Online Status',
+                      employee.isOnline ? 'Online' : 'Offline',
+                      employee.isOnline ? Icons.cloud_done : Icons.cloud_off,
+                      color: employee.isOnline ? Colors.green : Colors.red,
+                    ),
+                    _buildInfoRow(
+                      'Last Seen',
+                      _formatLastSeen(employee.timestamp),
+                      Icons.access_time,
+                    ),
+                    _buildInfoRow(
+                      'Active Tasks',
+                      employee.activeTaskCount.toString(),
+                      Icons.task_alt,
+                    ),
+                    if (employee.speed != null)
+                      _buildInfoRow(
+                        'Speed',
+                        '${(employee.speed! * 3.6).toStringAsFixed(1)} km/h',
+                        Icons.speed,
+                      ),
+                    if (employee.batteryLevel != null)
+                      _buildInfoRow(
+                        'Battery',
+                        '${employee.batteryLevel}%',
+                        Icons.battery_full,
+                      ),
+                  ]),
+                  const SizedBox(height: 20),
+                  // Movement history
+                  if (widget.locationHistory.isNotEmpty)
+                    _buildSection(
+                      'Movement History (Last ${widget.locationHistory.length} updates)',
+                      [
+                        SizedBox(
+                          height: 150,
+                          child: ListView.builder(
+                            itemCount: widget.locationHistory.length,
+                            itemBuilder: (context, index) {
+                              final loc = widget.locationHistory[index];
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      DateFormat(
+                                        'HH:mm:ss',
+                                      ).format(loc.timestamp),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                    Text(
+                                      '${loc.latitude.toStringAsFixed(4)}, ${loc.longitude.toStringAsFixed(4)}',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: theme.colorScheme.onSurface
+                                                .withValues(alpha: 0.75),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 20),
+                  // Status change dropdown
+                  _buildSection('Change Status', [
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.outline.withValues(
+                            alpha: 0.4,
+                          ),
+                        ),
+                      ),
+                      child: DropdownButton<EmployeeStatus>(
+                        value: _selectedStatus,
+                        isExpanded: true,
+                        underline: const SizedBox.shrink(),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        items: EmployeeStatus.values.map((status) {
+                          return DropdownMenuItem(
+                            value: status,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: _getStatusColor(status),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _getStatusLabel(status),
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (status) {
+                          if (status != null) {
+                            setState(() => _selectedStatus = status);
+                          }
+                        },
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 24),
+                  // Action buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: widget.onReassignTasks,
+                          icon: const Icon(Icons.assignment),
+                          label: const Text('Reassign Tasks'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: widget.onSendMessage,
+                          icon: const Icon(Icons.message),
+                          label: const Text('Send Message'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: widget.onViewReports,
+                          icon: const Icon(Icons.assessment),
+                          label: const Text('View Reports'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => AdminActionsModal(
+                                employeeId: employee.employeeId,
+                                employeeName: employee.name,
+                                onActionComplete: () {
+                                  Navigator.pop(context);
+                                },
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.admin_panel_settings),
+                          label: const Text('Admin Actions'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            widget.onStatusChange?.call(_selectedStatus);
+                            Navigator.pop(context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.purple,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Update Status'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.75),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(
+    String label,
+    String value,
+    IconData icon, {
+    Color? color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color:
+                    color ??
+                    Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.75),
+                ),
+              ),
+            ],
+          ),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getStatusColor(EmployeeStatus status) {
+    switch (status) {
+      case EmployeeStatus.available:
+        return Colors.green;
+      case EmployeeStatus.moving:
+        return Colors.blue;
+      case EmployeeStatus.busy:
+        return Colors.red;
+      case EmployeeStatus.offline:
+        return Colors.grey;
+    }
+  }
+
+  String _getStatusLabel(EmployeeStatus status) {
+    switch (status) {
+      case EmployeeStatus.available:
+        return '🟢 Checked In';
+      case EmployeeStatus.moving:
+        return '🔵 Online';
+      case EmployeeStatus.busy:
+        return '🔴 Busy';
+      case EmployeeStatus.offline:
+        return '⚫ Offline';
+    }
+  }
+}

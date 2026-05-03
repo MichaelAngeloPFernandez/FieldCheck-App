@@ -1,0 +1,261 @@
+@startuml FieldCheck Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam backgroundColor white
+skinparam class {
+    BackgroundColor white
+    ArrowColor #2688d4
+    BorderColor #2688d4
+}
+
+title FieldCheck: Class Diagram
+
+package "Models" {
+    class User {
+        -int userId
+        -String username
+        -String email
+        -String fullName
+        -String role
+        -bool isActive
+        +login(): bool
+        +logout(): void
+        +updateProfile(): bool
+    }
+
+    class Location {
+        -int locationId
+        -String name
+        -String address
+        -double latitude
+        -double longitude
+        -bool isActive
+        +createGeofence(): Geofence
+    }
+
+    class Geofence {
+        -int geofenceId
+        -String name
+        -int radius
+        -Location location
+        -bool isActive
+        +isPointInside(double lat, double lng): bool
+        +update(): bool
+        +delete(): bool
+    }
+
+    class Attendance {
+        -int attendanceId
+        -User user
+        -Geofence geofence
+        -DateTime checkInTime
+        -DateTime checkOutTime
+        -double checkInLatitude
+        -double checkInLongitude
+        -double checkOutLatitude
+        -double checkOutLongitude
+        -bool isSynced
+        +checkIn(): bool
+        +checkOut(): bool
+        +sync(): bool
+    }
+
+    class BeaconDevice {
+        -int beaconId
+        -String uuid
+        -int major
+        -int minor
+        -String name
+        -Location location
+        -bool isActive
+        +detect(): bool
+    }
+
+    class OfflineData {
+        -int offlineDataId
+        -String dataType
+        -String dataJson
+        -DateTime createdAt
+        -bool isSynced
+        -User user
+        +sync(): bool
+    }
+
+    class Task {
+        -int taskId
+        -String title
+        -String description
+        -DateTime dueDate
+        -User createdBy
+        +create(): bool
+        +update(): bool
+        +delete(): bool
+    }
+
+    class UserTask {
+        -int userTaskId
+        -User user
+        -Task task
+        -String status
+        -DateTime assignedAt
+        -DateTime completedAt
+        +updateStatus(): bool
+    }
+}
+
+package "Services" {
+    class AuthService {
+        +login(String username, String password): User
+        +logout(): void
+        +register(User user): bool
+        +resetPassword(String email): bool
+        +validateToken(String token): bool
+    }
+
+    class GeofenceService {
+        +createGeofence(Geofence geofence): bool
+        +updateGeofence(Geofence geofence): bool
+        +deleteGeofence(int geofenceId): bool
+        +getGeofences(): List<Geofence>
+        +isPointInGeofence(double lat, double lng, int geofenceId): bool
+    }
+
+    class AttendanceService {
+        +checkIn(User user, Geofence geofence, double lat, double lng): bool
+        +checkOut(int attendanceId, double lat, double lng): bool
+        +getAttendanceHistory(User user): List<Attendance>
+        +getAttendanceReports(): List<Attendance>
+    }
+
+    class LocationService {
+        +getCurrentLocation(): Map<String, double>
+        +startLocationTracking(): void
+        +stopLocationTracking(): void
+        +requestLocationPermission(): bool
+    }
+
+    class SyncService {
+        +syncOfflineData(): bool
+        +saveOfflineData(String dataType, String dataJson): bool
+        +getOfflineData(): List<OfflineData>
+    }
+
+    class TaskService {
+        +createTask(Task task): bool
+        +updateTask(Task task): bool
+        +deleteTask(int taskId): bool
+        +getTasks(): List<Task>
+        +assignTask(User user, Task task): bool
+        +updateUserTaskStatus(UserTask userTask): bool
+        +getUserTasks(User user): List<UserTask>
+    }
+
+    class BeaconService {
+        +startBeaconScanning(): void
+        +stopBeaconScanning(): void
+        +getDetectedBeacons(): List<BeaconDevice>
+    }
+}
+
+package "Controllers" {
+    class AuthController {
+        -AuthService authService
+        +login(String username, String password): User
+        +logout(): void
+        +isLoggedIn(): bool
+    }
+
+    class TaskController {
+        -TaskService taskService
+        +createTask(String title, String description, DateTime dueDate): bool
+        +updateTask(int taskId, String title, String description, DateTime dueDate): bool
+        +deleteTask(int taskId): bool
+        +getTasks(): List<Task>
+        +assignTask(int userId, int taskId): bool
+        +updateUserTaskStatus(int userTaskId, String status): bool
+        +getUserTasks(): List<UserTask>
+    }
+
+    class GeofenceController {
+        -GeofenceService geofenceService
+        -LocationService locationService
+        +createGeofence(String name, int radius, double lat, double lng): bool
+        +updateGeofence(Geofence geofence): bool
+        +deleteGeofence(int geofenceId): bool
+        +getGeofences(): List<Geofence>
+        +isUserInGeofence(int geofenceId): bool
+    }
+
+    class AttendanceController {
+        -AttendanceService attendanceService
+        -GeofenceService geofenceService
+        -LocationService locationService
+        -SyncService syncService
+        +checkIn(int geofenceId): bool
+        +checkOut(int attendanceId): bool
+        +getAttendanceHistory(): List<Attendance>
+    }
+}
+
+package "Views" {
+    class LoginView {
+        -AuthController authController
+        +render(): Widget
+        +handleLogin(): void
+    }
+
+    class DashboardView {
+        -AuthController authController
+        -AttendanceController attendanceController
+        +render(): Widget
+        +showAttendanceHistory(): void
+    }
+
+    class GeofenceMapView {
+        -GeofenceController geofenceController
+        +render(): Widget
+        +showGeofences(): void
+        +createGeofence(): void
+    }
+
+    class AttendanceView {
+        -AttendanceController attendanceController
+        +render(): Widget
+        +checkIn(): void
+        +checkOut(): void
+    }
+
+    class SettingsView {
+        -AuthController authController
+        -SyncService syncService
+        +render(): Widget
+        +syncData(): void
+        +updateProfile(): void
+    }
+}
+
+' Relationships
+User "1" -- "0..*" Attendance
+Location "1" -- "0..*" Geofence
+Geofence "1" -- "0..*" Attendance
+Location "1" -- "0..*" BeaconDevice
+User "1" -- "0..*" OfflineData
+User "1" -- "0..*" Task
+User "1" -- "0..*" UserTask
+Task "1" -- "0..*" UserTask
+
+AuthService -- AuthController
+GeofenceService -- GeofenceController
+AttendanceService -- AttendanceController
+LocationService -- GeofenceController
+LocationService -- AttendanceController
+SyncService -- AttendanceController
+TaskService -- TaskController
+
+AuthController -- LoginView
+AuthController -- DashboardView
+GeofenceController -- GeofenceMapView
+AttendanceController -- AttendanceView
+AttendanceController -- DashboardView
+
+@enduml

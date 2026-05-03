@@ -1,0 +1,14 @@
+backend/.env* 
+backend/coverage/ 
+backend/uploads/ 
+backend/test-results/
+
+!backend/.env.example
+
+.firebase/
+field_check/build/
+build/
+backend/server.js.*bak*
+backend/server.js.bak*
+backend/server.js.*
+scripts/

@@ -1,0 +1,61 @@
+@startuml FieldCheck_OfflineSyncTiming
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam arrowColor #34495E
+
+title FIGURE 3.4 (Extended): Offline Synchronization Timing Diagram\nFieldCheck - Offline Data Sync Process with Connectivity Detection
+
+robust "Mobile Device" as Mobile
+robust "Network Connection" as Network
+robust "Backend Server" as Server
+robust "Local Storage" as LocalDB
+
+{Mobile, Network, Server, LocalDB} -> Mobile: Employee at Job Site
+{Mobile, Network, Server, LocalDB} -> Mobile: Tap Check-In Button
+
+Mobile -> Mobile: Get GPS Location
+Mobile -> Network: Check Connectivity
+Network -> Mobile: Online
+
+Mobile -> Server: POST /api/attendance/check-in
+Server -> Server: Validate Location
+Server -> Server: Create Attendance Record
+Server -> Mobile: 200 OK
+
+Mobile -> Mobile: Show Success
+Mobile -> LocalDB: Cache Attendance
+
+{Mobile, Network, Server, LocalDB} -> Mobile: Employee Moves to Area\nwith No Signal
+
+Mobile -> Network: Check Connectivity
+Network -> Mobile: Offline
+
+Mobile -> Mobile: Employee Tap Check-Out
+Mobile -> Mobile: Get GPS Location
+Mobile -> Network: Try to Send
+Network -> Mobile: Connection Failed
+
+Mobile -> LocalDB: Save Check-Out Locally
+Mobile -> Mobile: Show "Saved Offline"
+
+{Mobile, Network, Server, LocalDB} -> Mobile: Employee Moves Back\nto Area with Signal
+
+Mobile -> Network: Check Connectivity
+Network -> Mobile: Online
+
+Mobile -> Mobile: Detect Connection
+Mobile -> Mobile: Retrieve Offline Data
+Mobile -> LocalDB: Get Saved Records
+LocalDB -> Mobile: Return 2 Records
+
+Mobile -> Server: POST /api/attendance/sync\n{offlineRecords}
+Server -> Server: Validate All Records
+Server -> Server: Insert Records
+Server -> Mobile: 200 OK
+
+Mobile -> LocalDB: Delete Synced Records
+Mobile -> Mobile: Show "Sync Complete"
+
+{Mobile, Network, Server, LocalDB} -> Mobile: Data is Now Synced
+
+@enduml

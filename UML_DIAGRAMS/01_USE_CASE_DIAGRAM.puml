@@ -1,0 +1,70 @@
+@startuml FieldCheck_UseCase
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam actorBackgroundColor #D4E6F1
+skinparam usecaseBackgroundColor #AED6F1
+skinparam arrowColor #34495E
+
+title FIGURE 3.9: Use Case Diagram\nFieldCheck System - All Actors and Interactions
+
+actor "Employee" as Employee
+actor "Administrator" as Admin
+actor "System" as System
+
+rectangle "FieldCheck System" {
+  usecase "Login/Authentication" as UC1
+  usecase "Check-In at Geofence" as UC2
+  usecase "Check-Out at Geofence" as UC3
+  usecase "View Assigned Tasks" as UC4
+  usecase "Complete Task" as UC5
+  usecase "View Attendance History" as UC6
+  usecase "View Personal Profile" as UC7
+  
+  usecase "Create Geofence" as UC8
+  usecase "Edit Geofence" as UC9
+  usecase "Delete Geofence" as UC10
+  usecase "Assign Tasks to Geofence" as UC11
+  usecase "Manage Employees" as UC12
+  usecase "View Real-Time Locations" as UC13
+  usecase "Generate Reports" as UC14
+  usecase "Export Data (PDF/Excel)" as UC15
+  usecase "Archive/Restore Tasks" as UC16
+  usecase "Archive/Restore Reports" as UC17
+  
+  usecase "Sync Offline Data" as UC18
+  usecase "Validate GPS Location" as UC19
+  usecase "Send Real-Time Updates" as UC20
+}
+
+Employee --> UC1
+Employee --> UC2
+Employee --> UC3
+Employee --> UC4
+Employee --> UC5
+Employee --> UC6
+Employee --> UC7
+
+Admin --> UC1
+Admin --> UC8
+Admin --> UC9
+Admin --> UC10
+Admin --> UC11
+Admin --> UC12
+Admin --> UC13
+Admin --> UC14
+Admin --> UC15
+Admin --> UC16
+Admin --> UC17
+
+System --> UC18
+System --> UC19
+System --> UC20
+
+UC2 ..> UC19 : includes
+UC3 ..> UC19 : includes
+UC18 ..> UC2 : extends
+UC18 ..> UC3 : extends
+UC20 ..> UC13 : includes
+UC20 ..> UC14 : includes
+
+@enduml

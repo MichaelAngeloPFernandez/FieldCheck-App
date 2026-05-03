@@ -1,0 +1,861 @@
+import 'dart:convert';
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:io' show SocketException;
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/user_model.dart';
+import '../config/api_config.dart';
+
+class UserService {
+  static final String _baseUrl = '${ApiConfig.baseUrl}/api';
+  static final Uri _healthUri = Uri.parse('${ApiConfig.baseUrl}/api/health');
+  // Add cached profile and getter
+  static UserModel? _cachedProfile;
+  static final StreamController<UserModel?> _profileController =
+      StreamController<UserModel?>.broadcast();
+  UserModel? get currentUser => _cachedProfile;
+  Stream<UserModel?> get profileStream => _profileController.stream;
+
+  Future<void> _warmUpBackend({
+    Duration maxWait = const Duration(seconds: 70),
+  }) async {
+    final deadline = DateTime.now().add(maxWait);
+
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final res = await http
+            .get(_healthUri)
+            .timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200) {
+          try {
+            final decoded = json.decode(res.body);
+            if (decoded is Map<String, dynamic>) {
+              final status = (decoded['status'] ?? '').toString();
+              if (status == 'ok') return;
+            }
+          } catch (_) {
+            return;
+          }
+          return;
+        }
+      } catch (_) {
+        // Ignore and retry
+      }
+
+      await Future.delayed(const Duration(seconds: 2));
+    }
+  }
+
+  String _extractErrorMessage(http.Response response, String fallback) {
+    try {
+      final dynamic decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final msg = decoded['message'];
+        if (msg != null) return msg.toString();
+      }
+      if (decoded != null) return decoded.toString();
+    } catch (_) {
+      // ignore
+    }
+    final body = response.body.trim();
+    if (body.isNotEmpty) return body;
+    return fallback;
+  }
+
+  Future<String> uploadAvatarBytes(Uint8List bytes, String filename) async {
+    try {
+      final token = await getToken();
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/users/upload/avatar'),
+      );
+      request.files.add(
+        http.MultipartFile.fromBytes('avatar', bytes, filename: filename),
+      );
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+      var response = await request.send();
+      if (response.statusCode == 200) {
+        final responseData = await http.Response.fromStream(response);
+        final data = json.decode(responseData.body);
+        return data['avatarUrl'] ?? '';
+      } else {
+        throw Exception('Failed to upload avatar: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Avatar upload error: $e');
+    }
+  }
+
+  Future<List<UserModel>> fetchEmployees() async {
+    final token = await getToken();
+    final response = await http.get(
+      Uri.parse('$_baseUrl/users?role=employee'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((j) => UserModel.fromJson(j)).toList();
+    } else {
+      throw Exception('Failed to load employees');
+    }
+  }
+
+  Future<List<UserModel>> fetchAdmins() async {
+    final token = await getToken();
+    final response = await http.get(
+      Uri.parse('$_baseUrl/users?role=admin'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((j) => UserModel.fromJson(j)).toList();
+    } else {
+      throw Exception('Failed to load administrators');
+    }
+  }
+
+  Future<void> resendVerificationByAdmin(String userId) async {
+    final token = await getToken();
+    final response = await http.post(
+      Uri.parse('$_baseUrl/users/$userId/resend-verification'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to resend verification email'),
+    );
+  }
+
+  Future<UserModel> verifyUserByAdmin(String userId) async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$_baseUrl/users/$userId/verify'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final user = decoded['user'];
+        if (user is Map<String, dynamic>) {
+          return UserModel.fromJson(user);
+        }
+      }
+      throw Exception('Verify succeeded but no user returned');
+    }
+
+    throw Exception(_extractErrorMessage(response, 'Failed to verify user'));
+  }
+
+  Future<List<UserModel>> fetchAllUsers({String? role}) async {
+    final token = await getToken();
+    final uri = Uri.parse(
+      role == null ? '$_baseUrl/users' : '$_baseUrl/users?role=$role',
+    );
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((j) => UserModel.fromJson(j)).toList();
+    }
+    throw Exception('Failed to load users');
+  }
+
+  Future<List<Map<String, dynamic>>?> getOnlineEmployees() async {
+    try {
+      final token = await getToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/location/online-employees'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        return null;
+      }
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<UserModel> loginIdentifier(String identifier, String password) async {
+    try {
+      await _warmUpBackend();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/users/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'identifier': identifier, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 60));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final token = data['token'] as String?;
+        final refreshToken = data['refreshToken'] as String?;
+        final prefs = await SharedPreferences.getInstance();
+        if (token != null) {
+          await prefs.setString('auth_token', token);
+        }
+        if (refreshToken != null) {
+          await prefs.setString('refresh_token', refreshToken);
+        }
+        _cachedProfile = UserModel.fromJson(data);
+        try {
+          _profileController.add(_cachedProfile);
+        } catch (_) {}
+        return _cachedProfile!;
+      } else {
+        // Parse server error into a friendly message
+        String message = 'Login failed';
+        try {
+          final dynamic err = json.decode(response.body);
+          if (err is Map<String, dynamic>) {
+            message = (err['message'] ?? message).toString();
+          } else {
+            message = err.toString();
+          }
+        } catch (_) {
+          // Not JSON, keep generic
+        }
+        // Common case from backend: invalid credentials
+        if (response.statusCode == 401 || response.statusCode == 400) {
+          if (message.toLowerCase().contains('invalid')) {
+            message = 'Invalid email/username or password';
+          }
+        }
+        throw Exception(message);
+      }
+    } on SocketException catch (_) {
+      throw Exception(
+        'Network error. Please confirm you are online and try again.',
+      );
+    } on http.ClientException catch (_) {
+      throw Exception(
+        'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
+      );
+    } on TimeoutException catch (_) {
+      try {
+        await _warmUpBackend();
+        final retryResponse = await http
+            .post(
+              Uri.parse('$_baseUrl/users/login'),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({
+                'identifier': identifier,
+                'password': password,
+              }),
+            )
+            .timeout(const Duration(seconds: 60));
+        if (retryResponse.statusCode == 200) {
+          final data = json.decode(retryResponse.body);
+          final token = data['token'] as String?;
+          final refreshToken = data['refreshToken'] as String?;
+          final prefs = await SharedPreferences.getInstance();
+          if (token != null) {
+            await prefs.setString('auth_token', token);
+          }
+          if (refreshToken != null) {
+            await prefs.setString('refresh_token', refreshToken);
+          }
+          _cachedProfile = UserModel.fromJson(data);
+          return _cachedProfile!;
+        }
+
+        final message = _extractErrorMessage(retryResponse, 'Login failed');
+        throw Exception(message);
+      } catch (_) {
+        throw Exception(
+          'Request timed out. Server may be busy or unreachable.',
+        );
+      }
+    }
+  }
+
+  Future<UserModel> login(String email, String password) async {
+    try {
+      await _warmUpBackend();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/users/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'identifier': email, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 60));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final token = data['token'] as String?;
+        final refreshToken = data['refreshToken'] as String?;
+        final prefs = await SharedPreferences.getInstance();
+        if (token != null) {
+          await prefs.setString('auth_token', token);
+        }
+        if (refreshToken != null) {
+          await prefs.setString('refresh_token', refreshToken);
+        }
+        _cachedProfile = UserModel.fromJson(data);
+        return _cachedProfile!;
+      } else {
+        String message = 'Login failed';
+        try {
+          final dynamic err = json.decode(response.body);
+          if (err is Map<String, dynamic>) {
+            message = (err['message'] ?? message).toString();
+          } else {
+            message = err.toString();
+          }
+        } catch (_) {}
+        if (response.statusCode == 401 || response.statusCode == 400) {
+          if (message.toLowerCase().contains('invalid')) {
+            message = 'Invalid email/username or password';
+          }
+        }
+        throw Exception(message);
+      }
+    } on SocketException catch (_) {
+      throw Exception(
+        'Network error. Please confirm you are online and try again.',
+      );
+    } on http.ClientException catch (_) {
+      throw Exception(
+        'Cannot reach server at ${ApiConfig.baseUrl}. Please check the backend.',
+      );
+    } on TimeoutException catch (_) {
+      try {
+        await _warmUpBackend();
+        final retryResponse = await http
+            .post(
+              Uri.parse('$_baseUrl/users/login'),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({'identifier': email, 'password': password}),
+            )
+            .timeout(const Duration(seconds: 60));
+
+        if (retryResponse.statusCode == 200) {
+          final data = json.decode(retryResponse.body);
+          final token = data['token'] as String?;
+          final refreshToken = data['refreshToken'] as String?;
+          final prefs = await SharedPreferences.getInstance();
+          if (token != null) {
+            await prefs.setString('auth_token', token);
+          }
+          if (refreshToken != null) {
+            await prefs.setString('refresh_token', refreshToken);
+          }
+          _cachedProfile = UserModel.fromJson(data);
+          return _cachedProfile!;
+        }
+
+        final message = _extractErrorMessage(retryResponse, 'Login failed');
+        throw Exception(message);
+      } catch (_) {
+        throw Exception(
+          'Request timed out. Server may be busy or unreachable.',
+        );
+      }
+    }
+  }
+
+  Future<UserModel> register(
+    String name,
+    String email,
+    String password, {
+    String role = 'employee',
+    String? employeeId,
+    String? username,
+    String? phone,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/users'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'name': name,
+        'username': username,
+        'email': email,
+        'password': password,
+        'role': role,
+        'employeeId': employeeId,
+        'phone': phone,
+      }),
+    );
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return UserModel.fromJson(data);
+    } else {
+      final message = _extractErrorMessage(response, 'Registration failed');
+      throw Exception(message);
+    }
+  }
+
+  Future<void> forgotPassword(String email) async {
+    try {
+      await _warmUpBackend(maxWait: const Duration(seconds: 8));
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/users/forgot-password'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'email': email}),
+          )
+          .timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200 || response.statusCode == 202) return;
+
+      final message = _extractErrorMessage(
+        response,
+        'Failed to send reset email',
+      );
+      throw Exception(message);
+    } catch (e) {
+      if (e is http.ClientException) {
+        throw Exception('Server unreachable. Please try again later.');
+      }
+      if (e is SocketException) {
+        throw Exception(
+          'Network error. Please confirm you are online and try again.',
+        );
+      }
+      if (e is TimeoutException) {
+        throw Exception('Request timed out. Please try again.');
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> verifyEmail(String token) async {
+    final trimmed = token.trim();
+    if (trimmed.isEmpty) {
+      throw Exception('Missing verification token');
+    }
+
+    try {
+      await _warmUpBackend(maxWait: const Duration(seconds: 8));
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/users/verify/$trimmed'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) return;
+
+      final message = _extractErrorMessage(response, 'Failed to verify email');
+      throw Exception(message);
+    } catch (e) {
+      if (e is http.ClientException) {
+        throw Exception('Server unreachable. Please try again later.');
+      }
+      if (e is SocketException) {
+        throw Exception(
+          'Network error. Please confirm you are online and try again.',
+        );
+      }
+      if (e is TimeoutException) {
+        throw Exception('Request timed out. Please try again.');
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> resetPassword(String token, String newPassword) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/users/reset-password/$token'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'password': newPassword}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) return;
+      final message = _extractErrorMessage(
+        response,
+        'Failed to reset password',
+      );
+      throw Exception(message);
+    } catch (e) {
+      if (e is http.ClientException) {
+        throw Exception('Server unreachable. Please try again later.');
+      }
+      if (e is SocketException) {
+        throw Exception(
+          'Network error. Please confirm you are online and try again.',
+        );
+      }
+      if (e is TimeoutException) {
+        throw Exception('Request timed out. Please try again.');
+      }
+      rethrow;
+    }
+  }
+
+  Future<UserModel> getProfile() async {
+    final token = await getToken();
+    final response = await http.get(
+      Uri.parse('$_baseUrl/users/profile'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final profile = UserModel.fromJson(data);
+      _cachedProfile = profile;
+      _profileController.add(profile);
+      return profile;
+    } else if (response.statusCode == 401) {
+      final refreshed = await refreshAccessToken();
+      if (!refreshed) {
+        throw Exception('Session expired');
+      }
+      final token2 = await getToken();
+      final response2 = await http.get(
+        Uri.parse('$_baseUrl/users/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token2 != null) 'Authorization': 'Bearer $token2',
+        },
+      );
+      if (response2.statusCode == 200) {
+        final data = json.decode(response2.body);
+        final profile = UserModel.fromJson(data);
+        _cachedProfile = profile;
+        _profileController.add(profile);
+        return profile;
+      }
+      throw Exception('Failed to load profile: ${response2.body}');
+    } else {
+      throw Exception('Failed to load profile: ${response.body}');
+    }
+  }
+
+  Future<UserModel> updateMyProfile({
+    String? name,
+    String? email,
+    String? avatarUrl,
+    String? username,
+    String? phone,
+  }) async {
+    final token = await getToken();
+    final payload = <String, dynamic>{};
+    if (name != null) payload['name'] = name;
+    if (email != null) payload['email'] = email;
+    if (username != null) payload['username'] = username;
+    if (avatarUrl != null) {
+      payload['avatarUrl'] = avatarUrl; // Add avatarUrl to payload
+    }
+    if (phone != null) payload['phone'] = phone;
+
+    final response = await http.put(
+      Uri.parse('$_baseUrl/users/profile'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: json.encode(payload),
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final profile = UserModel.fromJson(data);
+      _cachedProfile = profile;
+      _profileController.add(profile);
+      final prefs = await SharedPreferences.getInstance();
+      final token = data['token'];
+      if (token is String && token.isNotEmpty) {
+        await prefs.setString('auth_token', token);
+      }
+      final refreshToken = data['refreshToken'];
+      if (refreshToken is String && refreshToken.isNotEmpty) {
+        await prefs.setString('refresh_token', refreshToken);
+      }
+      return profile;
+    } else if (response.statusCode == 401) {
+      final refreshed = await refreshAccessToken();
+      if (!refreshed) {
+        throw Exception('Session expired');
+      }
+      final token2 = await getToken();
+      final response2 = await http.put(
+        Uri.parse('$_baseUrl/users/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token2 != null) 'Authorization': 'Bearer $token2',
+        },
+        body: json.encode(payload),
+      );
+      if (response2.statusCode == 200) {
+        final data = json.decode(response2.body);
+        final profile = UserModel.fromJson(data);
+        _cachedProfile = profile;
+        _profileController.add(profile);
+        final prefs = await SharedPreferences.getInstance();
+        final token = data['token'];
+        if (token is String && token.isNotEmpty) {
+          await prefs.setString('auth_token', token);
+        }
+        final refreshToken = data['refreshToken'];
+        if (refreshToken is String && refreshToken.isNotEmpty) {
+          await prefs.setString('refresh_token', refreshToken);
+        }
+        return profile;
+      }
+      throw Exception('Failed to update profile: ${response2.body}');
+    } else {
+      throw Exception('Failed to update profile: ${response.body}');
+    }
+  }
+
+  Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
+
+  Future<String?> getRefreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('refresh_token');
+  }
+
+  Future<bool> refreshAccessToken() async {
+    final refreshToken = await getRefreshToken();
+    if (refreshToken == null) return false;
+    final res = await http.post(
+      Uri.parse('$_baseUrl/users/refresh-token'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'refreshToken': refreshToken}),
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final prefs = await SharedPreferences.getInstance();
+      final token = data['token'] as String?;
+      final refreshToken2 = data['refreshToken'] as String?;
+      if (token != null) await prefs.setString('auth_token', token);
+      if (refreshToken2 != null) {
+        await prefs.setString('refresh_token', refreshToken2);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> logout() async {
+    final token = await getToken();
+    try {
+      await http.post(
+        Uri.parse('$_baseUrl/users/logout'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (_) {}
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys();
+    for (final k in keys) {
+      if (k.startsWith('taskAssignmentDraft_')) {
+        await prefs.remove(k);
+      }
+    }
+    await prefs.remove('auth_token');
+    await prefs.remove('refresh_token');
+    _cachedProfile = null;
+    try {
+      _profileController.add(null);
+    } catch (_) {}
+  }
+
+  /// Explicitly mark the current employee as offline for presence tracking.
+  ///
+  /// This calls the /api/location/offline endpoint, which sets isOnline=false
+  /// in the backend and emits an employeeOffline Socket.io event so admin
+  /// dashboards drop the user from "online" lists.
+  Future<void> markOffline() async {
+    final token = await getToken();
+    if (token == null) return;
+
+    try {
+      await http.post(
+        Uri.parse('$_baseUrl/location/offline'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (_) {
+      // Ignore errors - offline marking is best-effort only.
+    }
+  }
+
+  // Admin-only operations
+  Future<String> resetUserPasswordByAdmin(
+    String userModelId,
+    String? password,
+  ) async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$_baseUrl/users/$userModelId/reset-password-admin'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: json.encode({'password': password}),
+    );
+
+    if (response.statusCode == 200) {
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          final tp = decoded['tempPassword'];
+          if (tp is String && tp.trim().isNotEmpty) {
+            return tp.trim();
+          }
+        }
+      } catch (_) {}
+      return '';
+    }
+
+    String message = 'Failed to reset password';
+    try {
+      final dynamic err = json.decode(response.body);
+      if (err is Map<String, dynamic> && err['message'] != null) {
+        message = err['message'].toString();
+      }
+    } catch (_) {}
+    throw Exception(message);
+  }
+
+  Future<void> deleteUser(String id) async {
+    final token = await getToken();
+    final response = await http.delete(
+      Uri.parse('$_baseUrl/users/$id'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete user: ${response.body}');
+    }
+  }
+
+  Future<void> deactivateUser(String id) async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$_baseUrl/users/$id/deactivate'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to deactivate user: ${response.body}');
+    }
+  }
+
+  Future<void> reactivateUser(String id) async {
+    // Reactivate via admin update endpoint
+    await updateUserByAdmin(id, isActive: true);
+  }
+
+  Future<UserModel> updateUserByAdmin(
+    String userModelId, {
+    String? name,
+    String? email,
+    String? role,
+    bool? isActive,
+    bool? isVerified,
+    String? username,
+    String? employeeId,
+    String? phone,
+  }) async {
+    final token = await getToken();
+    final payload = <String, dynamic>{};
+    if (name != null) payload['name'] = name;
+    if (email != null) payload['email'] = email;
+    if (role != null) payload['role'] = role;
+    if (isActive != null) payload['isActive'] = isActive;
+    if (isVerified != null) payload['isVerified'] = isVerified;
+    if (username != null) payload['username'] = username;
+    if (employeeId != null) payload['employeeId'] = employeeId;
+    if (phone != null) payload['phone'] = phone;
+
+    final response = await http.put(
+      Uri.parse('$_baseUrl/users/$userModelId'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: json.encode(payload),
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return UserModel.fromJson(data);
+    } else {
+      final message = _extractErrorMessage(response, 'Failed to update user');
+      throw Exception(message);
+    }
+  }
+
+  Future<List<UserModel>> fetchUsers({String? role}) async {
+    final token = await getToken();
+    final uri = Uri.parse(
+      '$_baseUrl/users${role != null ? '?role=$role' : ''}',
+    );
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((j) => UserModel.fromJson(j)).toList();
+    } else {
+      throw Exception('Failed to fetch users: ${response.body}');
+    }
+  }
+
+  Future<Map<String, dynamic>> importUsersJson(String jsonStr) async {
+    final token = await getToken();
+    final response = await http.post(
+      Uri.parse('$_baseUrl/users/import'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: jsonStr,
+    );
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Failed to import users: ${response.body}');
+    }
+  }
+}

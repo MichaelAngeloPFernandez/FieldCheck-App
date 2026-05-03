@@ -1,0 +1,64 @@
+@startuml FieldCheck_GeofenceValidation
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam arrowColor #34495E
+
+title FIGURE 3.4 (Part B): Geofence Validation Algorithm Flowchart\nFieldCheck - GPS Location Validation using Haversine Formula
+
+start
+:Employee initiates\nCheck-In/Check-Out;
+:Get employee's current\nGPS coordinates (lat, lon);
+:Retrieve all active\ngeofences from database;
+:Initialize distance = infinity;
+:Initialize validGeofence = null;
+
+:For each geofence in list;
+:Get geofence center\n(lat2, lon2) and radius;
+
+:Calculate distance using\nHaversine Formula:
+d = 2R × arcsin(√(sin²((lat2-lat1)/2) 
++ cos(lat1) × cos(lat2) × sin²((lon2-lon1)/2)))
+where R = 6,371 km;
+
+if (distance < radius?) then
+  :Update validGeofence\nto current geofence;
+  :Update minimum distance;
+else
+  :Continue to next geofence;
+endif
+
+:End For loop;
+
+if (validGeofence found?) then
+  :Create Attendance Record:
+  - userId
+  - geofenceId
+  - timestamp
+  - GPS coordinates
+  - accuracy;
+  
+  if (Device online?) then
+    :Send to backend server\nvia HTTPS/REST API;
+    :Backend validates\nand stores in database;
+    :Emit Socket.io event\nto admin dashboard;
+    :Return success response;
+    :Show "Check-In Successful"\nmessage to employee;
+  else
+    :Save to local storage\n(offline mode);
+    :Show "Saved Offline"\nmessage;
+    :Monitor connectivity;
+    if (Connection restored?) then
+      :Sync offline data\nto backend;
+      :Delete from local storage;
+    endif
+  endif
+else
+  :Return error:
+  "Not at authorized location";
+  :Show error message\nto employee;
+  :Log failed attempt;
+endif
+
+stop
+
+@enduml

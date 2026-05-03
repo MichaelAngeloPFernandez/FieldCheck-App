@@ -1,0 +1,1589 @@
+// ignore_for_file: avoid_print, use_build_context_synchronously
+import 'dart:convert';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geolocator/geolocator.dart' as geolocator;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/location_service.dart';
+import '../services/geofence_service.dart';
+import '../models/geofence_model.dart';
+import '../services/realtime_service.dart';
+import '../services/user_service.dart';
+import '../utils/http_util.dart';
+import '../services/autosave_service.dart';
+import '../services/attendance_service.dart';
+import '../widgets/location_tracker_indicator.dart';
+import '../widgets/checkin_timer_widget.dart';
+import 'package:uuid/uuid.dart';
+
+class EnhancedAttendanceScreen extends StatefulWidget {
+  const EnhancedAttendanceScreen({super.key});
+
+  @override
+  State<EnhancedAttendanceScreen> createState() =>
+      _EnhancedAttendanceScreenState();
+}
+
+class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
+  final RealtimeService _realtimeService = RealtimeService();
+  final AutosaveService _autosaveService = AutosaveService();
+  final LocationService _locationService = LocationService();
+  final GeofenceService _geofenceService = GeofenceService();
+  final UserService _userService = UserService();
+  final AttendanceService _attendanceService = AttendanceService();
+
+  bool _isCheckedIn = false;
+  bool _isLoading = false;
+  bool _isOnline = true;
+  String _lastCheckTime = "--:--";
+  int _pendingSyncCount = 0;
+  DateTime? _lastCheckTimestamp;
+  DateTime? _localCheckInAnchorTimestamp;
+
+  Position? _userPosition;
+  List<Geofence> _assignedGeofences = [];
+  List<Geofence> _allGeofences = [];
+  Geofence? _currentGeofence;
+  bool _isWithinAnyGeofence = false;
+  double? _currentDistanceMeters;
+  String? _userModelId;
+
+  DateTime? _lastLocationUpdate;
+  Timer? _locationUpdateTimer;
+  StreamSubscription? _attendanceSub;
+  StreamSubscription<Map<String, dynamic>>? _unreadCountsSub;
+  int _unreadMessageCount = 0;
+
+  String? _locationIssueMessage;
+  bool _locationPermissionDeniedForever = false;
+  bool _locationServiceDisabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeServices();
+    _loadAttendanceStatus();
+  }
+
+  @override
+  void dispose() {
+    _locationUpdateTimer?.cancel();
+    _attendanceSub?.cancel();
+    _unreadCountsSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initializeServices() async {
+    // Initialize realtime service in background (don't block UI)
+    _realtimeService.initialize().ignore();
+
+    _unreadCountsSub?.cancel();
+    _unreadCountsSub = _realtimeService.unreadCountsStream.listen((data) {
+      try {
+        final raw = data['messages'];
+        final next = raw is int
+            ? raw
+            : int.tryParse(raw?.toString() ?? '') ?? 0;
+        if (!mounted) return;
+        setState(() {
+          _unreadMessageCount = next;
+        });
+      } catch (_) {}
+    });
+
+    // Listen for attendance updates relevant to this user and refresh status
+    _attendanceSub = _realtimeService.attendanceStream.listen((event) {
+      try {
+        final data = event['data'];
+        if (data == null) return;
+
+        String? employeeId;
+        if (data is Map<String, dynamic>) {
+          final emp = data['employee'];
+          if (emp is Map) {
+            employeeId = (emp['_id'] ?? emp['id'] ?? emp['employeeId'])
+                ?.toString();
+          } else if (emp != null) {
+            employeeId = emp.toString();
+          }
+        }
+
+        if (employeeId != null &&
+            _userModelId != null &&
+            employeeId == _userModelId) {
+          // Refresh authoritative status so timer widgets and UI update
+          _loadAttendanceStatus();
+        }
+      } catch (e) {
+        debugPrint('Error processing realtime attendance event: $e');
+      }
+    });
+
+    await _autosaveService.initialize();
+
+    await _loadUserSettings();
+    await _loadCurrentUser();
+    await _loadAssignedGeofences();
+    await _initializeLocation();
+    // Note: Location updates only happen on-demand when user taps check-in/out
+    // Do NOT call _startLocationUpdates() - it causes unnecessary location polling
+    await _loadPendingSyncCount();
+  }
+
+  void _openChat() {
+    if (mounted && _unreadMessageCount > 0) {
+      setState(() {
+        _unreadMessageCount = 0;
+      });
+    }
+    Navigator.of(context).pushNamed('/chat');
+  }
+
+  Widget _buildChatQuickAccessCard() {
+    final theme = Theme.of(context);
+    final badgeCount = _unreadMessageCount;
+
+    return _buildSurfaceCard(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: _openChat,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: Icon(
+                  Icons.chat_bubble_outline,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Chat',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      badgeCount > 0
+                          ? 'You have $badgeCount unread message${badgeCount == 1 ? '' : 's'}'
+                          : 'Message your admin',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (badgeCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.error,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: theme.colorScheme.error.withValues(alpha: 0.22),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    badgeCount > 99 ? '99+' : badgeCount.toString(),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onError,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 10),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadCurrentUser() async {
+    try {
+      final profile = await _userService.getProfile();
+      if (!mounted) return;
+      setState(() {
+        _userModelId = profile.id;
+      });
+    } catch (_) {
+      // Ignore and continue; we will attempt again when needed
+    }
+  }
+
+  Future<void> _loadUserSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isOnline = !(prefs.getBool('user.offlineMode') ?? false);
+    });
+  }
+
+  Future<void> _loadPendingSyncCount() async {
+    try {
+      final list = await _autosaveService.getUnsyncedData();
+      final pending = list
+          .where((e) => (e['key'] as String).startsWith('attendance_'))
+          .length;
+      if (mounted) {
+        setState(() {
+          _pendingSyncCount = pending;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadAssignedGeofences() async {
+    try {
+      final geofences = await _geofenceService.fetchGeofences();
+      // Determine assigned geofences for the current user. The backend
+      // returns `assignedEmployees` inside each geofence; prefer those.
+      String? userId = _userModelId;
+      if (userId == null) {
+        try {
+          final profile = await _userService.getProfile();
+          userId = profile.id;
+          if (mounted) {
+            setState(() {
+              _userModelId = userId;
+            });
+          }
+        } catch (_) {
+          // ignore - we'll still show all geofences as fallback
+        }
+      }
+
+      final allActive = geofences.where((g) => g.isActive).toList();
+      List<Geofence> assigned = [];
+      if (userId != null) {
+        assigned = allActive.where((g) {
+          final list = g.assignedEmployees;
+          if (list == null || list.isEmpty) return false;
+          return list.any((u) => (u.id == userId) || (u.employeeId == userId));
+        }).toList();
+      }
+
+      // If no explicit assigned geofences found, keep assigned list empty
+      // so fallback logic will choose nearest overall geofence instead.
+      setState(() {
+        _allGeofences = geofences;
+        _assignedGeofences = assigned;
+      });
+    } catch (e) {
+      debugPrint('Error loading geofences: $e');
+    }
+  }
+
+  Future<void> _loadAttendanceStatus() async {
+    try {
+      final status = await _attendanceService.getCurrentAttendanceStatus();
+      if (mounted) {
+        setState(() {
+          _isCheckedIn = status.isCheckedIn;
+          _lastCheckTime = status.lastCheckTime ?? "--:--";
+          final serverTs = status.lastCheckTimestamp;
+
+          if (!_isCheckedIn) {
+            _localCheckInAnchorTimestamp = null;
+            _lastCheckTimestamp = serverTs;
+            return;
+          }
+
+          // If we just checked in locally, the backend may briefly return a stale
+          // timestamp (previous attendance record / timezone drift). That causes
+          // the timer to jump to an old value. Prefer the local anchor until the
+          // server returns a timestamp that is not older than it.
+          if (_localCheckInAnchorTimestamp != null && serverTs != null) {
+            if (serverTs.isBefore(_localCheckInAnchorTimestamp!)) {
+              _lastCheckTimestamp = _localCheckInAnchorTimestamp;
+              return;
+            }
+          }
+
+          // Use local anchor if present (for consistent 00:00 start), otherwise
+          // fall back to server timestamp.
+          _lastCheckTimestamp = _localCheckInAnchorTimestamp ?? serverTs;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading attendance status: $e');
+    }
+  }
+
+  Future<void> _initializeLocation() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _refreshLocationAndStatus(showSnackOnError: false);
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _updateLocation() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      await _refreshLocationAndStatus(showSnackOnError: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshLocationAndStatus({
+    required bool showSnackOnError,
+  }) async {
+    try {
+      final position = await _locationService.getCurrentLocation();
+      if (!mounted) return;
+      setState(() {
+        _userPosition = position;
+        _lastLocationUpdate = DateTime.now();
+        _locationIssueMessage = null;
+        _locationPermissionDeniedForever = false;
+        _locationServiceDisabled = false;
+      });
+      await _updateGeofenceStatus();
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString();
+      final lower = msg.toLowerCase();
+
+      setState(() {
+        _locationIssueMessage = 'Unable to get your location.';
+        _locationPermissionDeniedForever = false;
+        _locationServiceDisabled = false;
+
+        if (lower.contains('disabled')) {
+          _locationIssueMessage = 'GPS is off. Turn on Location Services.';
+          _locationServiceDisabled = true;
+        } else if (lower.contains('permanently denied') ||
+            lower.contains('denied forever')) {
+          _locationIssueMessage =
+              'Location permission is blocked. Allow it in Settings.';
+          _locationPermissionDeniedForever = true;
+        } else if (lower.contains('permissions are denied') ||
+            lower.contains('permission denied')) {
+          _locationIssueMessage = 'Location permission is denied.';
+        }
+      });
+
+      if (showSnackOnError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_locationIssueMessage ?? 'Failed to update location'),
+            duration: const Duration(seconds: 3),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openSystemLocationSettings() async {
+    try {
+      await geolocator.Geolocator.openLocationSettings();
+    } catch (_) {}
+  }
+
+  Future<void> _openSystemAppSettings() async {
+    try {
+      await geolocator.Geolocator.openAppSettings();
+    } catch (_) {}
+  }
+
+  Widget _buildSectionHeader({
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+
+  Widget _buildSurfaceCard({
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.all(16),
+  }) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(padding: padding, child: child),
+    );
+  }
+
+  Widget _buildStatusPill(String label, Color color, {IconData? icon}) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow({required String label, required String value}) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBanner({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required Color color,
+    Widget? action,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (action != null) action,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGeofenceRow({
+    required Geofence geofence,
+    required bool highlighted,
+    required List<Widget> tags,
+  }) {
+    final theme = Theme.of(context);
+    final highlightColor = theme.colorScheme.primary;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? highlightColor.withValues(alpha: 0.08)
+            : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: highlighted
+              ? highlightColor.withValues(alpha: 0.3)
+              : theme.colorScheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.location_on,
+            size: 18,
+            color: highlighted
+                ? highlightColor
+                : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              geofence.name,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: highlighted ? FontWeight.w700 : FontWeight.w600,
+                color: highlighted ? highlightColor : null,
+              ),
+            ),
+          ),
+          Wrap(spacing: 6, children: tags),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationStatusBanner() {
+    if (_locationIssueMessage == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.error;
+    Widget action;
+
+    if (_locationServiceDisabled) {
+      action = TextButton.icon(
+        onPressed: _openSystemLocationSettings,
+        icon: const Icon(Icons.settings),
+        label: const Text('Open settings'),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      );
+    } else if (_locationPermissionDeniedForever) {
+      action = TextButton.icon(
+        onPressed: _openSystemAppSettings,
+        icon: const Icon(Icons.settings),
+        label: const Text('Open settings'),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      );
+    } else {
+      action = TextButton.icon(
+        onPressed: _isLoading ? null : _updateLocation,
+        icon: const Icon(Icons.refresh),
+        label: const Text('Retry'),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+
+    return _buildBanner(
+      icon: Icons.gps_off,
+      title: _locationIssueMessage!,
+      color: color,
+      action: action,
+    );
+  }
+
+  Future<void> _updateGeofenceStatus() async {
+    if (_userPosition == null || _allGeofences.isEmpty) return;
+
+    final accuracy = _userPosition!.accuracy;
+    double extraTolerance = 50;
+    if (accuracy > 0) {
+      extraTolerance = (accuracy * 1.5).clamp(50, 300).toDouble();
+    }
+
+    // PRIORITY 1: Check if employee is inside any ASSIGNED geofence
+    Geofence? selectedGeofence;
+    double minDistance = double.infinity;
+    Geofence? nearestAssignedGeofence;
+    bool withinAnyGeofence = false;
+
+    for (final geofence in _assignedGeofences) {
+      if (!geofence.isActive) continue;
+
+      final distance = Geolocator.distanceBetween(
+        _userPosition!.latitude,
+        _userPosition!.longitude,
+        geofence.latitude,
+        geofence.longitude,
+      );
+
+      // Track nearest assigned geofence as fallback
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearestAssignedGeofence = geofence;
+      }
+
+      // If inside this assigned geofence, prefer it
+      if (distance <= geofence.radius + extraTolerance) {
+        withinAnyGeofence = true;
+        selectedGeofence = geofence; // Use first assigned geofence we're inside
+        break; // Stop at first match (inside assigned geofence)
+      }
+    }
+
+    // PRIORITY 2: If not inside any assigned geofence, use nearest assigned geofence
+    if (selectedGeofence == null && nearestAssignedGeofence != null) {
+      selectedGeofence = nearestAssignedGeofence;
+    }
+
+    // PRIORITY 3: If no assigned geofences or employee unassigned, fall back to nearest overall
+    if (selectedGeofence == null) {
+      minDistance = double.infinity;
+      for (final geofence in _allGeofences) {
+        if (!geofence.isActive) continue;
+
+        final distance = Geolocator.distanceBetween(
+          _userPosition!.latitude,
+          _userPosition!.longitude,
+          geofence.latitude,
+          geofence.longitude,
+        );
+
+        if (distance < minDistance) {
+          minDistance = distance;
+          selectedGeofence = geofence;
+        }
+
+        if (distance <= geofence.radius + extraTolerance) {
+          withinAnyGeofence = true;
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _currentGeofence = selectedGeofence;
+        _currentDistanceMeters = selectedGeofence != null
+            ? Geolocator.distanceBetween(
+                _userPosition!.latitude,
+                _userPosition!.longitude,
+                selectedGeofence.latitude,
+                selectedGeofence.longitude,
+              )
+            : null;
+        _isWithinAnyGeofence = withinAnyGeofence;
+      });
+    }
+  }
+
+  Future<void> _toggleAttendance() async {
+    // Only refresh location if it's stale (> 10 seconds old) or missing
+    final now = DateTime.now();
+    if (_userPosition == null ||
+        _lastLocationUpdate == null ||
+        now.difference(_lastLocationUpdate!).inSeconds > 10) {
+      try {
+        await _updateLocation().timeout(
+          const Duration(seconds: 8),
+          onTimeout: () {
+            debugPrint(
+              'Location update timed out, proceeding with last known position',
+            );
+          },
+        );
+      } catch (e) {
+        debugPrint(
+          'Location update failed: $e, proceeding with last known position',
+        );
+      }
+    }
+
+    if (!_isCheckedIn && !_isWithinAnyGeofence) {
+      _showGeofenceErrorDialog();
+      return;
+    }
+
+    if (_isCheckedIn && _userPosition == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to get location. Please enable GPS and try again.',
+            ),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      if (_isCheckedIn) {
+        final confirmed = await _confirmCheckout();
+        if (!confirmed) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+          return;
+        }
+      } else {
+        final proceed = await _ensureTasksBeforeCheckIn();
+        if (!proceed) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+          return;
+        }
+
+        final confirmed = await _confirmCheckIn();
+        if (!confirmed) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+          return;
+        }
+      }
+
+      // Get time now
+      final now = DateTime.now();
+
+      final bool wasCheckedInBeforeSubmit = _isCheckedIn;
+
+      // For checkout, use current geofence or find the one from the open attendance record
+      String? geofenceIdForSubmission = _currentGeofence?.id;
+
+      // If no current geofence, try to use the first assigned geofence as fallback
+      if (geofenceIdForSubmission == null && _assignedGeofences.isNotEmpty) {
+        geofenceIdForSubmission = _assignedGeofences.first.id;
+        debugPrint(
+          'Using fallback geofence for checkout: $geofenceIdForSubmission',
+        );
+      }
+
+      final attendanceData = {
+        'eventId': const Uuid().v4(),
+        'isCheckedIn': !_isCheckedIn,
+        'timestamp': now.toIso8601String(),
+        'latitude': _userPosition?.latitude,
+        'longitude': _userPosition?.longitude,
+        'geofenceId': geofenceIdForSubmission,
+        'geofenceName':
+            _currentGeofence?.name ??
+            (_assignedGeofences.isNotEmpty
+                ? _assignedGeofences.first.name
+                : null),
+      };
+
+      // DEBUG: Log geofence selection and lists to help diagnose wrong-location bug
+      try {
+        debugPrint('=== Attendance submit debug ===');
+        debugPrint('UserId: ${_userModelId ?? 'unknown'}');
+        debugPrint(
+          'Selected geofenceIdForSubmission: $geofenceIdForSubmission',
+        );
+        debugPrint('CurrentGeofence.name: ${_currentGeofence?.name}');
+        debugPrint(
+          'Assigned geofences (${_assignedGeofences.length}): ${_assignedGeofences.map((g) => '${g.id ?? 'no-id'}:${g.name}').join(', ')}',
+        );
+        debugPrint(
+          'All geofences (${_allGeofences.length}): ${_allGeofences.map((g) => '${g.id ?? 'no-id'}:${g.name}').join(', ')}',
+        );
+        debugPrint('Attendance payload: $attendanceData');
+      } catch (e) {
+        debugPrint('Error while logging attendance debug: $e');
+      }
+
+      // Quick user-visible confirmation of selected geofence to help testing
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Submitting to: ${attendanceData['geofenceName'] ?? 'N/A'} (${attendanceData['geofenceId'] ?? 'no-id'})',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
+      // Save to autosave first (for offline sync support)
+      final storageKey = 'attendance_${now.millisecondsSinceEpoch}';
+      await _autosaveService.saveData(storageKey, attendanceData);
+
+      // Try to persist attendance immediately via REST API. We saved an
+      // autosave copy above so that if submission fails we can retry later.
+      try {
+        await _attendanceService.submitAttendance(
+          AttendanceData(
+            isCheckedIn: !_isCheckedIn,
+            timestamp: now,
+            latitude: _userPosition?.latitude,
+            longitude: _userPosition?.longitude,
+            geofenceId: geofenceIdForSubmission,
+            geofenceName: _currentGeofence?.name,
+          ),
+        );
+
+        // Success - clear the autosave entry now.
+        await _autosaveService.clearData(storageKey);
+
+        // Update local state immediately so the timer starts at 00:00 and the
+        // UI does not jump due to backend timestamp delay/timezone drift.
+        if (mounted) {
+          setState(() {
+            _isCheckedIn = !wasCheckedInBeforeSubmit;
+            if (_isCheckedIn) {
+              _localCheckInAnchorTimestamp = now;
+            } else {
+              _localCheckInAnchorTimestamp = null;
+            }
+            _lastCheckTimestamp = now;
+            _lastCheckTime = TimeOfDay.fromDateTime(now).format(context);
+          });
+        }
+
+        // Clear autosave copy for successfully synced records
+        await _autosaveService.clearData(storageKey);
+      } catch (e) {
+        // Keep autosave entry for retry and inform the user; do not clear it.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Attendance submit failed: $e — saved for retry'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+
+      // Refresh pending sync count for offline mode banner
+      await _loadPendingSyncCount();
+
+      // CRITICAL: Reload attendance status from backend to ensure accurate state
+      await _loadAttendanceStatus();
+
+      if (mounted) {
+        final newIsCheckedIn = _isCheckedIn; // authoritative server state
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newIsCheckedIn
+                  ? 'Successfully checked in!'
+                  : 'Successfully checked out!',
+            ),
+            backgroundColor: newIsCheckedIn ? Colors.green : Colors.blue,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<bool> _confirmCheckout() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Confirm Check-Out'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Are you sure you want to check out?'),
+                const SizedBox(height: 8),
+                if (_currentGeofence != null)
+                  Text('Location: ${_currentGeofence!.name}'),
+                if (_currentDistanceMeters != null)
+                  Text(
+                    'Distance: ${_currentDistanceMeters!.toStringAsFixed(1)}m',
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Check Out'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<bool> _confirmCheckIn() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Confirm Check-In'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Do you want to check in now?'),
+                const SizedBox(height: 8),
+                if (_currentGeofence != null)
+                  Text('Location: ${_currentGeofence!.name}'),
+                if (_currentDistanceMeters != null)
+                  Text(
+                    'Distance: ${_currentDistanceMeters!.toStringAsFixed(1)}m',
+                  ),
+                if (_userPosition != null)
+                  Text(
+                    'GPS accuracy: ${_userPosition!.accuracy.toStringAsFixed(0)}m',
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Check In'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<bool> _ensureTasksBeforeCheckIn() async {
+    try {
+      String? userId = _userModelId;
+      if (userId == null) {
+        final profile = await _userService.getProfile();
+        userId = profile.id;
+        if (mounted) {
+          setState(() {
+            _userModelId = userId;
+          });
+        }
+      }
+      // Allow check-in to proceed
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  void _showGeofenceErrorDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Location Error'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'You are not within any of your assigned geofence areas. Please move to an authorized location to check in.',
+            ),
+            const SizedBox(height: 16),
+            if (_assignedGeofences.isNotEmpty) ...[
+              const Text(
+                'Your assigned locations:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ...(_assignedGeofences.map(
+                (geofence) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    '• ${geofence.name} – ${geofence.address} (${geofence.radius}m radius)',
+                  ),
+                ),
+              )),
+            ],
+            const SizedBox(height: 16),
+            const Text(
+              'Current location details:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Latitude: ${_userPosition?.latitude.toStringAsFixed(6) ?? 'N/A'}',
+            ),
+            Text(
+              'Longitude: ${_userPosition?.longitude.toStringAsFixed(6) ?? 'N/A'}',
+            ),
+            if (_currentGeofence != null) ...[
+              const SizedBox(height: 8),
+              Text('Nearest geofence: ${_currentGeofence!.name}'),
+              Text(
+                'Distance: ${_currentDistanceMeters?.toStringAsFixed(1) ?? 'N/A'}m',
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _updateLocation();
+            },
+            child: const Text('Refresh Location'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Attendance',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Clock in, verify your location, and manage your shift.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                if (_realtimeService.isConnected)
+                  _buildBanner(
+                    icon: Icons.wifi,
+                    title: 'Live updates active',
+                    subtitle: 'Your attendance changes sync instantly.',
+                    color: Colors.green.shade600,
+                  ),
+
+                if (_realtimeService.isConnected) const SizedBox(height: 12),
+
+                if (!_isOnline)
+                  _buildBanner(
+                    icon: Icons.cloud_off,
+                    title: 'Offline mode',
+                    subtitle: 'Pending sync: $_pendingSyncCount',
+                    color: Colors.orange.shade700,
+                    action: TextButton.icon(
+                      onPressed: _isLoading ? null : _syncOfflineAttendance,
+                      icon: const Icon(Icons.sync),
+                      label: const Text('Sync now'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.orange.shade700,
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+
+                if (!_isOnline) const SizedBox(height: 12),
+
+                if (_locationIssueMessage != null) _buildLocationStatusBanner(),
+
+                if (_locationIssueMessage != null) const SizedBox(height: 12),
+
+                // Location status
+                _buildLocationCard(),
+                const SizedBox(height: 24),
+
+                // Check-in/out section
+                _buildAttendanceCard(),
+                const SizedBox(height: 24),
+
+                // Assigned geofences
+                if (_assignedGeofences.isNotEmpty) _buildGeofencesCard(),
+                const SizedBox(height: 12),
+                // Informational: show all geofences
+                if (_allGeofences.isNotEmpty) _buildAllGeofencesCard(),
+                const SizedBox(height: 16),
+                _buildChatQuickAccessCard(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAllGeofencesCard() {
+    final theme = Theme.of(context);
+    return _buildSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: 'All Locations',
+            subtitle: 'Reference list of available sites',
+          ),
+          const SizedBox(height: 12),
+          ...(_allGeofences.map(
+            (g) => _buildGeofenceRow(
+              geofence: g,
+              highlighted: false,
+              tags: [
+                _buildStatusPill(
+                  g.isActive ? 'Active' : 'Inactive',
+                  g.isActive
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                _buildStatusPill('${g.radius}m', theme.colorScheme.primary),
+              ],
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationCard() {
+    final theme = Theme.of(context);
+    final statusColor = _isWithinAnyGeofence
+        ? Colors.green
+        : theme.colorScheme.error;
+    return _buildSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: 'Current Location',
+            subtitle: 'GPS and geofence validation',
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildStatusPill(
+                _isWithinAnyGeofence
+                    ? 'Within authorized area'
+                    : 'Outside authorized area',
+                statusColor,
+                icon: _isWithinAnyGeofence
+                    ? Icons.check_circle
+                    : Icons.error_outline,
+              ),
+              if (_currentGeofence != null)
+                _buildStatusPill(
+                  'Nearest: ${_currentGeofence!.name}',
+                  theme.colorScheme.primary,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_currentGeofence != null)
+            _buildInfoRow(
+              label: 'Current geofence',
+              value: _currentGeofence!.name,
+            ),
+          if (_currentDistanceMeters != null)
+            _buildInfoRow(
+              label: 'Distance',
+              value: '${_currentDistanceMeters!.toStringAsFixed(1)} m',
+            ),
+          if (_userPosition != null)
+            _buildInfoRow(
+              label: 'Coordinates',
+              value:
+                  '${_userPosition!.latitude.toStringAsFixed(6)}, ${_userPosition!.longitude.toStringAsFixed(6)}',
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttendanceCard() {
+    final theme = Theme.of(context);
+    final checkInColor = Colors.green.shade600;
+    final checkOutColor = theme.colorScheme.error;
+    final actionColor = _isCheckedIn ? checkOutColor : checkInColor;
+
+    return _buildSurfaceCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildSectionHeader(
+            title: 'Check-in Status',
+            subtitle: _isCheckedIn
+                ? 'Tracking your active shift'
+                : 'You are currently off shift',
+            trailing: _buildStatusPill(
+              _isCheckedIn ? 'Checked in' : 'Checked out',
+              actionColor,
+            ),
+          ),
+          const SizedBox(height: 16),
+          LocationTrackerIndicator(
+            isCheckedIn: _isCheckedIn,
+            onTap: _updateLocation,
+          ),
+          const SizedBox(height: 16),
+          if (_isCheckedIn)
+            CheckInTimerWidget(
+              employeeId: _userModelId ?? 'unknown',
+              isCheckedIn: _isCheckedIn,
+              checkInTimestamp: _lastCheckTimestamp,
+            ),
+          const SizedBox(height: 24),
+          Container(
+            width: 200,
+            height: 200,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: actionColor.withValues(alpha: 0.12),
+              border: Border.all(color: actionColor, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: actionColor.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: (_isLoading || (!_isWithinAnyGeofence && !_isCheckedIn))
+                    ? null
+                    : _toggleAttendance,
+                child: Center(
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _isCheckedIn ? Icons.logout : Icons.login,
+                              size: 48,
+                              color: actionColor,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _isCheckedIn ? 'CHECK OUT' : 'CHECK IN',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: actionColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (!_isWithinAnyGeofence && !_isCheckedIn)
+            _buildBanner(
+              icon: Icons.warning_amber_rounded,
+              title: 'Move inside your assigned geofence to check in.',
+              subtitle: 'Tap refresh after you get closer to your site.',
+              color: theme.colorScheme.error,
+              action: TextButton.icon(
+                onPressed: _isLoading ? null : _updateLocation,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh location'),
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          if (!_isWithinAnyGeofence && !_isCheckedIn)
+            const SizedBox(height: 12),
+          if (!_isWithinAnyGeofence && _isCheckedIn)
+            _buildBanner(
+              icon: Icons.info_outline,
+              title: 'You are outside your geofence. You can still check out.',
+              subtitle: 'Refresh your location if needed.',
+              color: Colors.orange.shade700,
+              action: TextButton.icon(
+                onPressed: _isLoading ? null : _updateLocation,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh location'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange.shade700,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          if (!_isWithinAnyGeofence && _isCheckedIn) const SizedBox(height: 12),
+          Text(
+            _isCheckedIn
+                ? 'Checked in at $_lastCheckTime'
+                : _lastCheckTime == "--:--"
+                ? 'Not checked in yet'
+                : 'Checked out at $_lastCheckTime',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _syncOfflineAttendance() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+      final unsynced = await _autosaveService.getUnsyncedData();
+      final items = <Map<String, dynamic>>[];
+      final keyByEventId = <String, String>{};
+      for (final e in unsynced) {
+        final key = e['key'] as String;
+        if (key.startsWith('attendance_')) {
+          final data = e['data'] as Map<String, dynamic>;
+          final eventId = (data['eventId'] ?? e['id'])?.toString();
+          if (eventId == null || eventId.trim().isEmpty) {
+            continue;
+          }
+          keyByEventId[eventId] = key;
+          items.add({
+            'eventId': eventId,
+            'type': (data['isCheckedIn'] == true) ? 'checkin' : 'checkout',
+            'timestamp': data['timestamp'],
+            'latitude': data['latitude'],
+            'longitude': data['longitude'],
+            'geofenceId': data['geofenceId'],
+          });
+        }
+      }
+      if (items.isEmpty) {
+        await _loadPendingSyncCount();
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+      final res = await HttpUtil().post(
+        '/api/sync',
+        body: {'attendance': items},
+      );
+      if (res.statusCode == 200) {
+        final acceptedEventIds = <String>{};
+        try {
+          final decoded = jsonDecode(res.body);
+          final results = decoded is Map ? decoded['results'] : null;
+          final itemsRes = results is Map ? results['items'] : null;
+          if (itemsRes is List) {
+            for (final r in itemsRes) {
+              if (r is! Map) continue;
+              final status = (r['status'] ?? '').toString();
+              final eventId = (r['eventId'] ?? '').toString();
+              if (eventId.isEmpty) continue;
+              if (status == 'accepted' || status == 'duplicate') {
+                acceptedEventIds.add(eventId);
+              }
+            }
+          }
+        } catch (_) {}
+
+        for (final eventId in acceptedEventIds) {
+          final key = keyByEventId[eventId];
+          if (key != null) {
+            await _autosaveService.clearData(key);
+          }
+        }
+        await _loadPendingSyncCount();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Synced ${acceptedEventIds.length} records'),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Sync failed: ${res.body}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sync error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildGeofencesCard() {
+    final theme = Theme.of(context);
+    return _buildSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            title: 'Your Assigned Locations',
+            subtitle: 'Tap refresh to update your nearest site',
+          ),
+          const SizedBox(height: 12),
+          ...(_assignedGeofences.map(
+            (geofence) => _buildGeofenceRow(
+              geofence: geofence,
+              highlighted: geofence.id == _currentGeofence?.id,
+              tags: [
+                _buildStatusPill(
+                  '${geofence.radius}m',
+                  theme.colorScheme.primary,
+                ),
+              ],
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+}

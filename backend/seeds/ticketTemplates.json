@@ -1,0 +1,131 @@
+[
+  {
+    "name": "Aircon Cleaning",
+    "description": "Standard air conditioning cleaning service ticket",
+    "json_schema": {
+      "$id": "aircon-cleaning-v1",
+      "type": "object",
+      "required": ["customer_name", "service_type", "checklist"],
+      "properties": {
+        "customer_name": { "type": "string", "title": "Customer Name" },
+        "service_type": {
+          "type": "string",
+          "title": "Service Type",
+          "enum": ["inspection", "deep_clean", "repair", "installation"]
+        },
+        "unit_serial": { "type": "string", "title": "Unit Serial Number" },
+        "unit_type": {
+          "type": "string",
+          "title": "AC Unit Type",
+          "enum": ["split", "window", "central", "portable"]
+        },
+        "checklist": {
+          "type": "object",
+          "title": "Service Checklist",
+          "properties": {
+            "filter_cleaned": { "type": "boolean", "title": "Filter Cleaned" },
+            "coil_cleaned": { "type": "boolean", "title": "Coil Cleaned" },
+            "drain_cleared": { "type": "boolean", "title": "Drain Cleared" },
+            "refrigerant_checked": { "type": "boolean", "title": "Refrigerant Level Checked" },
+            "thermostat_tested": { "type": "boolean", "title": "Thermostat Tested" }
+          },
+          "required": ["filter_cleaned"]
+        },
+        "photos": {
+          "type": "array",
+          "title": "Service Photos",
+          "items": { "type": "string", "format": "uri" }
+        },
+        "notes": { "type": "string", "title": "Additional Notes" }
+      }
+    },
+    "workflow": {
+      "statuses": ["open", "in_progress", "completed", "verified", "closed"],
+      "transitions": {
+        "open": ["in_progress", "closed"],
+        "in_progress": ["completed", "blocked", "closed"],
+        "blocked": ["in_progress", "closed"],
+        "completed": ["verified", "in_progress"],
+        "verified": ["closed"],
+        "closed": []
+      }
+    },
+    "sla_seconds": 28800,
+    "visibility": "company"
+  },
+  {
+    "name": "Proof of Delivery",
+    "description": "Delivery confirmation with photo proof and signature",
+    "json_schema": {
+      "$id": "proof-of-delivery-v1",
+      "type": "object",
+      "required": ["recipient_name", "package_id"],
+      "properties": {
+        "recipient_name": { "type": "string", "title": "Recipient Name" },
+        "package_id": { "type": "string", "title": "Package ID" },
+        "photo_proof": {
+          "type": "array",
+          "title": "Photo Proof",
+          "items": { "type": "string", "format": "uri" }
+        },
+        "signature": { "type": "string", "format": "uri", "title": "Signature" },
+        "notes": { "type": "string", "title": "Delivery Notes" }
+      }
+    },
+    "sla_seconds": 14400,
+    "visibility": "company"
+  },
+  {
+    "name": "Pest Control",
+    "description": "Pest control treatment and inspection ticket",
+    "json_schema": {
+      "$id": "pest-control-v1",
+      "type": "object",
+      "required": ["property_owner", "infestation_type", "treatment_used"],
+      "properties": {
+        "property_owner": { "type": "string", "title": "Property Owner" },
+        "infestation_type": {
+          "type": "string",
+          "title": "Infestation Type",
+          "enum": ["rodent", "insect", "termite", "other"]
+        },
+        "treatment_used": { "type": "string", "title": "Treatment Used" },
+        "photos": {
+          "type": "array",
+          "title": "Site Photos",
+          "items": { "type": "string", "format": "uri" }
+        },
+        "follow_up_date": { "type": "string", "format": "date", "title": "Follow-up Date" },
+        "notes": { "type": "string", "title": "Notes" }
+      }
+    },
+    "sla_seconds": 43200,
+    "visibility": "company"
+  },
+  {
+    "name": "General Maintenance",
+    "description": "General-purpose maintenance request",
+    "json_schema": {
+      "$id": "general-maintenance-v1",
+      "type": "object",
+      "required": ["description"],
+      "properties": {
+        "description": { "type": "string", "title": "Issue Description" },
+        "priority": {
+          "type": "string",
+          "title": "Priority",
+          "enum": ["low", "medium", "high", "urgent"]
+        },
+        "location_description": { "type": "string", "title": "Location" },
+        "photos": {
+          "type": "array",
+          "title": "Photos",
+          "items": { "type": "string", "format": "uri" }
+        },
+        "notes": { "type": "string", "title": "Notes" }
+      }
+    },
+    "sla_seconds": 86400,
+    "visibility": "public"
+  }
+]

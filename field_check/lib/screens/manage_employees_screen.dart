@@ -1,0 +1,1179 @@
+// ignore_for_file: unnecessary_underscores
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../services/user_service.dart';
+import '../services/realtime_service.dart';
+import '../models/user_model.dart';
+import 'dart:async';
+import '../widgets/app_widgets.dart';
+import '../widgets/admin_control_bar.dart';
+
+class ManageEmployeesScreen extends StatefulWidget {
+  const ManageEmployeesScreen({super.key, this.showInactiveOnly = false});
+  final bool showInactiveOnly;
+  @override
+  State<ManageEmployeesScreen> createState() => _ManageEmployeesScreenState();
+}
+
+class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
+  final UserService _userService = UserService();
+  final RealtimeService _realtimeService = RealtimeService();
+  late Future<List<UserModel>> _employeesFuture;
+  final TextEditingController _searchController = TextEditingController();
+  String _filterStatus = 'all'; // all, active, inactive, verified, unverified
+  final Set<String> _selectedEmployeeIds = {};
+  bool _isSelectMode = false;
+  bool _isEditIdsMode = false;
+  bool _isSavingIds = false;
+  final Map<String, TextEditingController> _employeeIdControllers = {};
+  late StreamSubscription<Map<String, dynamic>> _userEventSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _employeesFuture = _userService.fetchEmployees();
+    _initializeRealtimeSync();
+  }
+
+  Future<void> _resetPassword(UserModel user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Text(
+          'Reset password for ${user.name}? A temporary password will be generated.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      final tempPassword = await _userService.resetUserPasswordByAdmin(
+        user.id,
+        null,
+      );
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Temporary Password'),
+          content: SelectableText(
+            tempPassword.isNotEmpty
+                ? tempPassword
+                : 'Password reset successfully. (No temporary password returned)',
+          ),
+          actions: [
+            if (tempPassword.isNotEmpty)
+              TextButton(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: tempPassword));
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Temporary password copied')),
+                  );
+                },
+                child: const Text('Copy'),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to reset password',
+        ),
+      );
+    }
+  }
+
+  void _initializeRealtimeSync() {
+    // Listen for real-time user account changes
+    _userEventSubscription = _realtimeService.userStream.listen((event) {
+      final action = event['action'];
+      if (mounted &&
+          (action == 'created' ||
+              action == 'deleted' ||
+              action == 'deactivated' ||
+              action == 'reactivated')) {
+        // Automatically refresh the employee list when changes are detected
+        _refresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    for (final c in _employeeIdControllers.values) {
+      c.dispose();
+    }
+    _employeeIdControllers.clear();
+    _userEventSubscription.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _employeesFuture = _userService.fetchEmployees();
+      _selectedEmployeeIds.clear();
+      _isSelectMode = false;
+      _isEditIdsMode = false;
+      _isSavingIds = false;
+      for (final c in _employeeIdControllers.values) {
+        c.dispose();
+      }
+      _employeeIdControllers.clear();
+    });
+  }
+
+  TextEditingController _employeeIdControllerFor(UserModel user) {
+    return _employeeIdControllers.putIfAbsent(
+      user.id,
+      () => TextEditingController(text: (user.employeeId ?? '').toString()),
+    );
+  }
+
+  String _normalizeEmployeeId(String raw) {
+    return raw.trim().toUpperCase();
+  }
+
+  Set<String> _findDuplicateEmployeeIds(List<UserModel> employees) {
+    final Map<String, int> counts = {};
+    for (final e in employees) {
+      final controller = _employeeIdControllerFor(e);
+      final normalized = _normalizeEmployeeId(controller.text);
+      if (normalized.isEmpty) continue;
+      counts[normalized] = (counts[normalized] ?? 0) + 1;
+    }
+    return counts.entries
+        .where((entry) => entry.value > 1)
+        .map((entry) => entry.key)
+        .toSet();
+  }
+
+  Future<void> _saveAllEmployeeIds(List<UserModel> employees) async {
+    if (_isSavingIds) return;
+
+    final duplicates = _findDuplicateEmployeeIds(employees);
+    if (duplicates.isNotEmpty) {
+      AppWidgets.showErrorSnackbar(
+        context,
+        'Duplicate Employee ID(s): ${duplicates.join(', ')}',
+      );
+      return;
+    }
+
+    final changes = <UserModel, String>{};
+    for (final e in employees) {
+      final next = _normalizeEmployeeId(_employeeIdControllerFor(e).text);
+      final current = _normalizeEmployeeId((e.employeeId ?? '').toString());
+      if (next != current) {
+        if (next.isEmpty) {
+          AppWidgets.showErrorSnackbar(
+            context,
+            'Employee ID cannot be empty (${e.name})',
+          );
+          return;
+        }
+        changes[e] = next;
+      }
+    }
+
+    if (changes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No Employee ID changes to save')),
+      );
+      return;
+    }
+
+    setState(() => _isSavingIds = true);
+    int ok = 0;
+    try {
+      for (final entry in changes.entries) {
+        final user = entry.key;
+        final nextId = entry.value;
+        final updated = await _userService.updateUserByAdmin(
+          user.id,
+          employeeId: nextId,
+        );
+        ok += 1;
+        _applyLocalEmployeeUpdate(updated);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saved $ok Employee ID(s)')));
+      await _refresh();
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to save Employee IDs',
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingIds = false);
+    }
+  }
+
+  void _applyLocalEmployeeUpdate(UserModel updated) {
+    setState(() {
+      _employeesFuture = _employeesFuture.then((employees) {
+        return employees
+            .map((e) => e.id == updated.id ? updated : e)
+            .toList(growable: false);
+      });
+    });
+  }
+
+  Future<void> _resendVerification(UserModel user) async {
+    try {
+      await _userService.resendVerificationByAdmin(user.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Verification email sent')));
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(
+          e,
+          fallback: 'Failed to resend verification',
+        ),
+      );
+    }
+  }
+
+  Future<void> _markVerified(UserModel user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Verify Account'),
+        content: Text('Mark ${user.name} as verified?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Verify'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      final updated = await _userService.verifyUserByAdmin(user.id);
+      if (!mounted) return;
+      _applyLocalEmployeeUpdate(updated);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('User verified')));
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(
+        context,
+        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to verify user'),
+      );
+    }
+  }
+
+  List<UserModel> _filterEmployees(List<UserModel> employees) {
+    List<UserModel> filtered = employees;
+
+    // Apply search filter
+    if (_searchController.text.isNotEmpty) {
+      final query = _searchController.text.toLowerCase();
+      filtered = filtered
+          .where(
+            (e) =>
+                e.name.toLowerCase().contains(query) ||
+                e.email.toLowerCase().contains(query) ||
+                (e.username?.toLowerCase().contains(query) ?? false),
+          )
+          .toList();
+    }
+
+    // Apply status filter
+    if (_filterStatus == 'active') {
+      filtered = filtered.where((e) => e.isActive).toList();
+    } else if (_filterStatus == 'inactive') {
+      filtered = filtered.where((e) => !e.isActive).toList();
+    } else if (_filterStatus == 'verified') {
+      filtered = filtered.where((e) => e.isVerified).toList();
+    } else if (_filterStatus == 'unverified') {
+      filtered = filtered.where((e) => !e.isVerified).toList();
+    }
+
+    return filtered;
+  }
+
+  Future<void> _deactivateSelected() async {
+    if (_selectedEmployeeIds.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Deactivate Multiple'),
+        content: Text('Deactivate ${_selectedEmployeeIds.length} employee(s)?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Deactivate'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      try {
+        for (final id in _selectedEmployeeIds) {
+          await _userService.deactivateUser(id);
+        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${_selectedEmployeeIds.length} employee(s) deactivated',
+            ),
+          ),
+        );
+        await _refresh();
+      } catch (e) {
+        if (!mounted) return;
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to deactivate'),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selectedEmployeeIds.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Multiple'),
+        content: Text(
+          'Permanently delete ${_selectedEmployeeIds.length} employee(s)? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      try {
+        for (final id in _selectedEmployeeIds) {
+          await _userService.deleteUser(id);
+        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_selectedEmployeeIds.length} employee(s) deleted'),
+          ),
+        );
+        await _refresh();
+      } catch (e) {
+        if (!mounted) return;
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete'),
+        );
+      }
+    }
+  }
+
+  Future<void> _addEmployee() async {
+    final nameController = TextEditingController();
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    final phoneController = TextEditingController();
+
+    final formKey = GlobalKey<FormState>();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Employee'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Full Name'),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                TextFormField(
+                  controller: emailController,
+                  decoration: const InputDecoration(labelText: 'Email'),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (v) => (v == null || !v.contains('@'))
+                      ? 'Enter a valid email'
+                      : null,
+                ),
+                TextFormField(
+                  controller: phoneController,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone (SMS)',
+                    hintText: '+63...',
+                  ),
+                  keyboardType: TextInputType.phone,
+                ),
+                TextFormField(
+                  controller: passwordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Temporary Password',
+                  ),
+                  obscureText: true,
+                  validator: (v) =>
+                      (v == null || v.length < 6) ? 'Min 6 characters' : null,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, true);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      try {
+        await _userService.register(
+          nameController.text.trim(),
+          emailController.text.trim(),
+          passwordController.text,
+          role: 'employee',
+          phone: phoneController.text.trim().isEmpty
+              ? null
+              : phoneController.text.trim(),
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee added')));
+        await _refresh();
+      } catch (e) {
+        if (!mounted) return;
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to add employee',
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmAndDelete(UserModel user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Employee'),
+        content: Text('Are you sure you want to delete ${user.name}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      try {
+        await _userService.deleteUser(user.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee deleted')));
+        await _refresh();
+      } catch (e) {
+        if (!mounted) return;
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to delete'),
+        );
+      }
+    }
+  }
+
+  Future<void> _deactivate(UserModel user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Deactivate Employee'),
+        content: Text('Deactivate ${user.name}\'s account?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Deactivate'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      try {
+        await _userService.deactivateUser(user.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee deactivated')));
+        await _refresh();
+      } catch (e) {
+        if (!mounted) return;
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to deactivate'),
+        );
+      }
+    }
+  }
+
+  Future<void> _edit(UserModel user) async {
+    final nameController = TextEditingController(text: user.name);
+    final usernameController = TextEditingController(text: user.username ?? '');
+    final employeeIdController = TextEditingController(
+      text: (user.employeeId ?? '').toString(),
+    );
+    final emailController = TextEditingController(text: user.email);
+    final phoneController = TextEditingController(text: user.phone ?? '');
+    String role = user.role;
+    bool isVerified = user.isVerified;
+    final formKey = GlobalKey<FormState>();
+    final existingEmployeeId = (user.employeeId ?? '').toString().trim();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit Employee'),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Full Name',
+                        ),
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      ),
+                      TextFormField(
+                        controller: usernameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Username',
+                        ),
+                      ),
+                      TextFormField(
+                        controller: employeeIdController,
+                        decoration: InputDecoration(
+                          labelText: 'Employee ID',
+                          hintText: existingEmployeeId.isEmpty
+                              ? 'Auto-generated'
+                              : null,
+                        ),
+                        validator: (v) {
+                          final next = (v ?? '').toString().trim();
+                          if (next.isEmpty) return 'Required';
+                          return null;
+                        },
+                      ),
+                      TextFormField(
+                        controller: emailController,
+                        decoration: const InputDecoration(labelText: 'Email'),
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (v) => (v == null || !v.contains('@'))
+                            ? 'Enter a valid email'
+                            : null,
+                      ),
+                      TextFormField(
+                        controller: phoneController,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone (SMS)',
+                          hintText: '+63...',
+                        ),
+                        keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: role,
+                        decoration: const InputDecoration(labelText: 'Role'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'employee',
+                            child: Text('Employee'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'admin',
+                            child: Text('Admin'),
+                          ),
+                        ],
+                        onChanged: (v) => role = v ?? role,
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Verified'),
+                        value: isVerified,
+                        onChanged: (v) {
+                          setDialogState(() => isVerified = v);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    if (formKey.currentState!.validate()) {
+                      Navigator.pop(ctx, true);
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok == true) {
+      try {
+        final nextUsername = usernameController.text.trim();
+        final nextEmployeeId = employeeIdController.text.trim();
+        final updated = await _userService.updateUserByAdmin(
+          user.id,
+          name: nameController.text.trim(),
+          email: emailController.text.trim(),
+          role: role,
+          username: nextUsername.isEmpty ? null : nextUsername,
+          employeeId: nextEmployeeId,
+          phone: phoneController.text.trim(),
+          isVerified: isVerified,
+        );
+        debugPrint(
+          'ManageEmployees: updateUserByAdmin returned isVerified=${updated.isVerified}',
+        );
+        _applyLocalEmployeeUpdate(updated);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee updated')));
+        await _refresh();
+      } catch (e) {
+        if (!mounted) return;
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Update failed'),
+        );
+      }
+    }
+  }
+
+  Future<void> _reactivate(UserModel user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reactivate Employee'),
+        content: Text('Reactivate ${user.name}\'s account?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reactivate'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      try {
+        await _userService.reactivateUser(user.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Employee reactivated')));
+        await _refresh();
+      } catch (e) {
+        if (!mounted) return;
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to reactivate'),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Manage Employees'),
+        backgroundColor: const Color(0xFF2688d4),
+        actions: [
+          if (!_isSelectMode)
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: ElevatedButton.icon(
+                onPressed: _addEmployee,
+                icon: const Icon(Icons.person_add),
+                label: const Text('Add Employee'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  foregroundColor: const Color(0xFF2688d4),
+                ),
+              ),
+            ),
+          if (_isSelectMode && _selectedEmployeeIds.isNotEmpty)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                switch (value) {
+                  case 'deactivate':
+                    _deactivateSelected();
+                    break;
+                  case 'delete':
+                    _deleteSelected();
+                    break;
+                }
+              },
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'deactivate',
+                  child: Text('Deactivate (${_selectedEmployeeIds.length})'),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Text('Delete (${_selectedEmployeeIds.length})'),
+                ),
+              ],
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Search and Filter Section
+          Container(
+            padding: const EdgeInsets.all(12),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.04),
+            child: Column(
+              children: [
+                // Search bar
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search by name, email, or username...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {});
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                AdminControlBar<String, String>(
+                  title: 'Employees',
+                  subtitle: 'Search, filter, and manage workforce accounts',
+                  primaryOptions: const [
+                    AdminControlOption(
+                      value: 'all',
+                      label: 'All',
+                      icon: Icons.blur_on,
+                    ),
+                    AdminControlOption(
+                      value: 'active',
+                      label: 'Active',
+                      icon: Icons.check_circle,
+                    ),
+                    AdminControlOption(
+                      value: 'inactive',
+                      label: 'Inactive',
+                      icon: Icons.remove_circle_outline,
+                    ),
+                    AdminControlOption(
+                      value: 'verified',
+                      label: 'Verified',
+                      icon: Icons.verified,
+                    ),
+                    AdminControlOption(
+                      value: 'unverified',
+                      label: 'Unverified',
+                      icon: Icons.warning_amber_rounded,
+                    ),
+                  ],
+                  primaryValue: _filterStatus,
+                  onPrimaryChanged: (value) {
+                    if (value == _filterStatus) return;
+                    setState(() => _filterStatus = value);
+                  },
+                  actions: [
+                    TextButton.icon(
+                      icon: Icon(
+                        _isSelectMode
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                      ),
+                      label: Text(
+                        _isSelectMode ? 'Exit Select Mode' : 'Select Mode',
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isSelectMode = !_isSelectMode;
+                          if (_isSelectMode) {
+                            _isEditIdsMode = false;
+                          }
+                          if (!_isSelectMode) {
+                            _selectedEmployeeIds.clear();
+                          }
+                        });
+                      },
+                    ),
+                    TextButton.icon(
+                      icon: Icon(_isEditIdsMode ? Icons.edit_off : Icons.edit),
+                      label: Text(
+                        _isEditIdsMode ? 'Exit Edit IDs' : 'Edit IDs',
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isEditIdsMode = !_isEditIdsMode;
+                          if (_isEditIdsMode) {
+                            _isSelectMode = false;
+                            _selectedEmployeeIds.clear();
+                          }
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Filter chips
+                const SizedBox.shrink(),
+                const SizedBox(height: 8),
+                const SizedBox.shrink(),
+              ],
+            ),
+          ),
+          // Employee list
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: FutureBuilder<List<UserModel>>(
+                future: _employeesFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+                  final employees = snapshot.data ?? [];
+                  final filtered = _filterEmployees(employees);
+
+                  if (_isEditIdsMode) {
+                    for (final e in employees) {
+                      _employeeIdControllerFor(e);
+                    }
+                  }
+
+                  final duplicates = _isEditIdsMode
+                      ? _findDuplicateEmployeeIds(employees)
+                      : <String>{};
+
+                  if (filtered.isEmpty) {
+                    return Center(
+                      child: Text(
+                        _searchController.text.isNotEmpty
+                            ? 'No employees match your search'
+                            : 'No employees found',
+                      ),
+                    );
+                  }
+
+                  final listView = ListView.separated(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final UserModel user = filtered[index];
+                      final isSelected = _selectedEmployeeIds.contains(user.id);
+                      final displayName =
+                          (user.username != null &&
+                              user.username!.trim().isNotEmpty)
+                          ? user.username!.trim()
+                          : user.name;
+
+                      return ListTile(
+                        leading: _isSelectMode
+                            ? Checkbox(
+                                value: isSelected,
+                                onChanged: (_) {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedEmployeeIds.remove(user.id);
+                                    } else {
+                                      _selectedEmployeeIds.add(user.id);
+                                    }
+                                  });
+                                },
+                              )
+                            : AppWidgets.userAvatar(
+                                radius: 20,
+                                avatarUrl: user.avatarUrl,
+                                initials: displayName.isNotEmpty
+                                    ? displayName.characters.first.toUpperCase()
+                                    : '?',
+                                fallbackIcon: Icons.person,
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.primary,
+                              ),
+                        title: Text(displayName),
+                        subtitle: _isEditIdsMode
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  SizedBox(
+                                    width: 160,
+                                    child: TextField(
+                                      controller: _employeeIdControllerFor(
+                                        user,
+                                      ),
+                                      enabled: !_isSavingIds,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Employee ID',
+                                        isDense: true,
+                                      ),
+                                      onChanged: (_) => setState(() {}),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                '${user.email} · ${user.role}${user.isActive ? '' : ' · Inactive'}${user.isVerified ? '' : ' · Unverified'}${(user.phone != null && user.phone!.isNotEmpty) ? ' · ${user.phone}' : ''}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                        trailing: _isSelectMode
+                            ? null
+                            : _isEditIdsMode
+                            ? null
+                            : PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  switch (value) {
+                                    case 'edit':
+                                      _edit(user);
+                                      break;
+                                    case 'reset_password':
+                                      _resetPassword(user);
+                                      break;
+                                    case 'resend_verification':
+                                      _resendVerification(user);
+                                      break;
+                                    case 'mark_verified':
+                                      _markVerified(user);
+                                      break;
+                                    case 'deactivate':
+                                      _deactivate(user);
+                                      break;
+                                    case 'reactivate':
+                                      _reactivate(user);
+                                      break;
+                                    case 'delete':
+                                      _confirmAndDelete(user);
+                                      break;
+                                  }
+                                },
+                                itemBuilder: (ctx) => [
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text('Edit'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'reset_password',
+                                    child: Text('Reset Password'),
+                                  ),
+                                  if (!user.isVerified)
+                                    const PopupMenuItem(
+                                      value: 'resend_verification',
+                                      child: Text('Resend Verification'),
+                                    ),
+                                  if (!user.isVerified)
+                                    const PopupMenuItem(
+                                      value: 'mark_verified',
+                                      child: Text('Mark Verified'),
+                                    ),
+                                  PopupMenuItem(
+                                    value: user.isActive
+                                        ? 'deactivate'
+                                        : 'reactivate',
+                                    child: Text(
+                                      user.isActive
+                                          ? 'Deactivate'
+                                          : 'Reactivate',
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                        onTap: _isSelectMode
+                            ? () {
+                                setState(() {
+                                  if (isSelected) {
+                                    _selectedEmployeeIds.remove(user.id);
+                                  } else {
+                                    _selectedEmployeeIds.add(user.id);
+                                  }
+                                });
+                              }
+                            : null,
+                      );
+                    },
+                  );
+
+                  if (!_isEditIdsMode) return listView;
+
+                  return Column(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.03),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: duplicates.isEmpty
+                                  ? const Text(
+                                      'Edit Employee IDs, then Save All',
+                                    )
+                                  : Text(
+                                      'Duplicate IDs: ${duplicates.join(', ')}',
+                                      style: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
+                                    ),
+                            ),
+                            FilledButton(
+                              onPressed: _isSavingIds
+                                  ? null
+                                  : () => _saveAllEmployeeIds(employees),
+                              child: Text(
+                                _isSavingIds ? 'Saving...' : 'Save All',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(child: listView),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

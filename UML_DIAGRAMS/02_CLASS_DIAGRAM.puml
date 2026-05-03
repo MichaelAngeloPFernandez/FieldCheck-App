@@ -1,0 +1,280 @@
+@startuml FieldCheck_ClassDiagram
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #AED6F1
+skinparam classBorderColor #34495E
+skinparam arrowColor #34495E
+
+title FIGURE 3.6 (IPO Model): Class Diagram\nFieldCheck - Object-Oriented Design with All Classes and Relationships
+
+package "Models" {
+  class User {
+    - id: String
+    - email: String
+    - password: String (hashed)
+    - firstName: String
+    - lastName: String
+    - role: Enum [ADMIN, EMPLOYEE]
+    - phone: String
+    - profileImage: String
+    - isActive: Boolean
+    - createdAt: DateTime
+    - updatedAt: DateTime
+    --
+    + login(): JWT
+    + logout(): void
+    + updateProfile(): void
+    + changePassword(): void
+  }
+
+  class Geofence {
+    - id: String
+    - name: String
+    - latitude: Double
+    - longitude: Double
+    - radius: Double (meters)
+    - description: String
+    - isActive: Boolean
+    - createdAt: DateTime
+    - updatedAt: DateTime
+    --
+    + validateLocation(lat, lon): Boolean
+    + calculateDistance(lat, lon): Double
+    + updateBoundary(): void
+  }
+
+  class Attendance {
+    - id: String
+    - userId: String (FK)
+    - geofenceId: String (FK)
+    - checkInTime: DateTime
+    - checkOutTime: DateTime
+    - checkInLocation: {lat, lon}
+    - checkOutLocation: {lat, lon}
+    - status: Enum [CHECKED_IN, CHECKED_OUT]
+    - isOfflineSync: Boolean
+    - createdAt: DateTime
+    --
+    + calculateDuration(): Duration
+    + isValid(): Boolean
+  }
+
+  class Task {
+    - id: String
+    - title: String
+    - description: String
+    - geofenceId: String (FK)
+    - assignedTo: String (FK - User)
+    - status: Enum [PENDING, IN_PROGRESS, COMPLETED]
+    - priority: Enum [LOW, MEDIUM, HIGH]
+    - dueDate: DateTime
+    - isArchived: Boolean
+    - createdAt: DateTime
+    - updatedAt: DateTime
+    --
+    + assignTask(userId): void
+    + completeTask(): void
+    + archiveTask(): void
+    + restoreTask(): void
+  }
+
+  class Report {
+    - id: String
+    - title: String
+    - type: Enum [ATTENDANCE, TASK]
+    - generatedBy: String (FK - User)
+    - dateRange: {startDate, endDate}
+    - data: JSON
+    - isArchived: Boolean
+    - createdAt: DateTime
+    --
+    + generatePDF(): File
+    + generateExcel(): File
+    + archiveReport(): void
+    + restoreReport(): void
+  }
+
+  class Location {
+    - id: String
+    - userId: String (FK)
+    - latitude: Double
+    - longitude: Double
+    - accuracy: Double
+    - timestamp: DateTime
+    --
+    + isWithinGeofence(geofence): Boolean
+  }
+}
+
+package "Services" {
+  class AuthenticationService {
+    - tokenSecret: String
+    - refreshTokenSecret: String
+    --
+    + authenticate(email, password): JWT
+    + refreshToken(token): JWT
+    + verifyToken(token): Boolean
+    + logout(token): void
+  }
+
+  class GeofenceService {
+    --
+    + createGeofence(data): Geofence
+    + updateGeofence(id, data): Geofence
+    + deleteGeofence(id): void
+    + getGeofenceById(id): Geofence
+    + getAllGeofences(): List<Geofence>
+    + validateLocationInGeofence(location, geofence): Boolean
+  }
+
+  class AttendanceService {
+    --
+    + checkIn(userId, location): Attendance
+    + checkOut(userId, location): Attendance
+    + getAttendanceHistory(userId, dateRange): List<Attendance>
+    + syncOfflineData(data): void
+    + generateAttendanceReport(dateRange): Report
+  }
+
+  class TaskService {
+    --
+    + createTask(data): Task
+    + assignTask(taskId, userId): void
+    + updateTaskStatus(taskId, status): void
+    + completeTask(taskId): void
+    + getTasksByUser(userId): List<Task>
+    + getTasksByGeofence(geofenceId): List<Task>
+    + archiveTask(taskId): void
+    + restoreTask(taskId): void
+  }
+
+  class ReportService {
+    --
+    + generateAttendanceReport(dateRange): Report
+    + generateTaskReport(dateRange): Report
+    + exportToPDF(report): File
+    + exportToExcel(report): File
+    + archiveReport(reportId): void
+    + restoreReport(reportId): void
+  }
+
+  class LocationService {
+    --
+    + getCurrentLocation(): Location
+    + startLocationTracking(): void
+    + stopLocationTracking(): void
+    + calculateDistance(loc1, loc2): Double
+    + haversineFormula(lat1, lon1, lat2, lon2): Double
+  }
+
+  class SyncService {
+    --
+    + detectConnectivity(): Boolean
+    + syncOfflineData(): void
+    + queueOfflineOperation(operation): void
+    + processQueue(): void
+  }
+}
+
+package "Controllers" {
+  class UserController {
+    --
+    + login(request): Response
+    + register(request): Response
+    + logout(request): Response
+    + getProfile(request): Response
+    + updateProfile(request): Response
+    + refreshToken(request): Response
+  }
+
+  class GeofenceController {
+    --
+    + createGeofence(request): Response
+    + updateGeofence(request): Response
+    + deleteGeofence(request): Response
+    + getGeofences(request): Response
+    + getGeofenceById(request): Response
+  }
+
+  class AttendanceController {
+    --
+    + checkIn(request): Response
+    + checkOut(request): Response
+    + getHistory(request): Response
+    + syncOfflineData(request): Response
+  }
+
+  class TaskController {
+    --
+    + createTask(request): Response
+    + updateTask(request): Response
+    + deleteTask(request): Response
+    + getTasks(request): Response
+    + completeTask(request): Response
+    + archiveTask(request): Response
+    + restoreTask(request): Response
+  }
+
+  class ReportController {
+    --
+    + generateReport(request): Response
+    + exportPDF(request): Response
+    + exportExcel(request): Response
+    + archiveReport(request): Response
+    + restoreReport(request): Response
+  }
+}
+
+package "Utilities" {
+  class GeoCalculator {
+    --
+    + {static} haversineDistance(lat1, lon1, lat2, lon2): Double
+    + {static} rayCastingAlgorithm(point, polygon): Boolean
+    + {static} calculateBearing(lat1, lon1, lat2, lon2): Double
+  }
+
+  class TokenManager {
+    --
+    + {static} generateAccessToken(userId): String
+    + {static} generateRefreshToken(userId): String
+    + {static} verifyToken(token): Object
+    + {static} decodeToken(token): Object
+  }
+
+  class EncryptionUtil {
+    --
+    + {static} hashPassword(password): String
+    + {static} comparePassword(password, hash): Boolean
+    + {static} encryptData(data): String
+    + {static} decryptData(data): String
+  }
+}
+
+' Relationships
+User "1" --> "*" Attendance : makes
+User "1" --> "*" Task : assigned
+User "1" --> "*" Report : generates
+Geofence "1" --> "*" Attendance : contains
+Geofence "1" --> "*" Task : has
+Attendance "1" --> "1" Location : records
+Task "1" --> "1" Geofence : assigned_to
+Report "1" --> "*" Attendance : contains
+Report "1" --> "*" Task : contains
+
+AuthenticationService --> User : uses
+GeofenceService --> Geofence : manages
+AttendanceService --> Attendance : manages
+AttendanceService --> LocationService : uses
+TaskService --> Task : manages
+ReportService --> Report : manages
+LocationService --> GeoCalculator : uses
+AuthenticationService --> TokenManager : uses
+AuthenticationService --> EncryptionUtil : uses
+
+UserController --> AuthenticationService : uses
+GeofenceController --> GeofenceService : uses
+AttendanceController --> AttendanceService : uses
+TaskController --> TaskService : uses
+ReportController --> ReportService : uses
+
+@enduml

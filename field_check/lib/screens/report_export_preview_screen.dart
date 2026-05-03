@@ -1,0 +1,1173 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:convert';
+import 'package:intl/intl.dart';
+import 'package:field_check/services/user_service.dart';
+import 'package:field_check/config/api_config.dart';
+import 'package:field_check/models/report_model.dart';
+import 'package:http/http.dart' as http;
+import 'dart:async';
+
+import 'package:field_check/utils/file_download/file_download.dart';
+
+class ReportExportPreviewScreen extends StatefulWidget {
+  final List<ReportModel> records;
+  final String reportType; // 'attendance' or 'task'
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final String? locationFilterId;
+  final String? locationFilterLabel;
+  final String? statusFilter;
+  final List<ReportModel>? taskReports;
+  final String? employeeIdFilter;
+
+  const ReportExportPreviewScreen({
+    super.key,
+    required this.records,
+    required this.reportType,
+    this.startDate,
+    this.endDate,
+    this.locationFilterId,
+    this.locationFilterLabel,
+    this.statusFilter,
+    this.taskReports,
+    this.employeeIdFilter,
+  });
+
+  @override
+  State<ReportExportPreviewScreen> createState() =>
+      _ReportExportPreviewScreenState();
+}
+
+class _ReportExportPreviewScreenState extends State<ReportExportPreviewScreen> {
+  static const platform = MethodChannel('com.fieldcheck.field_check/files');
+  bool _isExporting = false;
+  String? _exportError;
+
+  Uint8List? _lastExportBytes;
+  String? _lastExportFilename;
+  String? _lastExportMimeType;
+
+  Future<void> _downloadLastExport() async {
+    final bytes = _lastExportBytes;
+    final filename = _lastExportFilename;
+    final mimeType = _lastExportMimeType;
+    if (bytes == null || filename == null || mimeType == null) return;
+
+    await FileDownload.downloadBytes(
+      bytes: bytes,
+      filename: filename,
+      mimeType: mimeType,
+    );
+  }
+
+  Future<String?> _saveFileToDownloads(
+    String fileName,
+    List<int> fileBytes,
+  ) async {
+    debugPrint('=== Starting file save process ===');
+    debugPrint('File: $fileName, Size: ${fileBytes.length} bytes');
+
+    try {
+      debugPrint('Step 1: Attempting to save file via native channel...');
+      final result = await platform
+          .invokeMethod<Map>('saveFile', {
+            'fileName': fileName,
+            'fileBytes': fileBytes,
+          })
+          .timeout(const Duration(seconds: 10));
+
+      if (result != null) {
+        final path = result['path'] as String?;
+        final size = result['size'] as int?;
+        debugPrint('✓ Step 1 SUCCESS: File saved via native channel');
+        debugPrint('  Path: $path');
+        debugPrint('  Size: $size bytes');
+        return path;
+      } else {
+        debugPrint('❌ Step 1 FAILED: Native channel returned null');
+      }
+    } on PlatformException catch (e) {
+      debugPrint('❌ Step 1 FAILED: Platform exception');
+      debugPrint('  Code: ${e.code}');
+      debugPrint('  Message: ${e.message}');
+      debugPrint('  Details: ${e.details}');
+    } catch (e) {
+      debugPrint('❌ Step 1 FAILED: Native channel error');
+      debugPrint('  Error: $e');
+    }
+
+    debugPrint('Step 2: Falling back to app-managed download...');
+    try {
+      await FileDownload.downloadBytes(
+        bytes: Uint8List.fromList(fileBytes),
+        filename: fileName,
+        mimeType: 'application/octet-stream',
+      );
+      debugPrint('✓ Step 2 SUCCESS: File download triggered');
+      return fileName;
+    } catch (e) {
+      debugPrint('❌ Step 2 FAILED: Download helper error');
+      debugPrint('  Error: $e');
+    }
+
+    debugPrint('=== File save process FAILED ===');
+    return null;
+  }
+
+  Future<void> _exportToPDF() async {
+    setState(() {
+      _isExporting = true;
+      _exportError = null;
+    });
+
+    try {
+      debugPrint('Starting PDF export...');
+      final token = await _getToken();
+      final queryParams = <String, String>{'type': widget.reportType};
+
+      if (widget.startDate != null) {
+        queryParams['startDate'] = widget.startDate!.toIso8601String();
+      }
+      if (widget.endDate != null) {
+        // Treat endDate as inclusive in UI, but send exclusive bound to API
+        final exclusiveEnd = widget.endDate!.add(const Duration(days: 1));
+        queryParams['endDate'] = exclusiveEnd.toIso8601String();
+      }
+      if (widget.locationFilterId != null) {
+        queryParams['geofenceId'] = widget.locationFilterId!;
+      }
+      if (widget.statusFilter != null) {
+        queryParams['status'] = widget.statusFilter!;
+      }
+      if (widget.employeeIdFilter != null) {
+        queryParams['employeeId'] = widget.employeeIdFilter!;
+      }
+
+      final uri = Uri.parse(
+        '${ApiConfig.baseUrl}/api/export/${widget.reportType}/pdf',
+      ).replace(queryParameters: queryParams);
+
+      debugPrint('Requesting PDF from: $uri');
+      final response = await http
+          .get(uri, headers: {'Authorization': 'Bearer $token'})
+          .timeout(const Duration(seconds: 30));
+
+      debugPrint(
+        'Response status: ${response.statusCode}, body length: ${response.bodyBytes.length}',
+      );
+
+      if (response.statusCode == 200) {
+        // Save file using native Android method
+        try {
+          final fileName =
+              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+          setState(() {
+            _lastExportBytes = response.bodyBytes;
+            _lastExportFilename = fileName;
+            _lastExportMimeType = 'application/pdf';
+          });
+
+          final filePath = await _saveFileToDownloads(
+            fileName,
+            response.bodyBytes,
+          );
+
+          if (filePath == null) {
+            throw Exception('Failed to save file via native channel');
+          }
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✓ PDF saved to: $filePath'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+            // Show download completion dialog
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('✓ Export Complete'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Your PDF report has been saved!'),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'File path:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      filePath,
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(
+                          ctx,
+                        ).colorScheme.onSurface.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '📁 Check your Downloads folder',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+        } catch (e) {
+          throw Exception('Failed to save PDF file: $e');
+        }
+      } else {
+        throw Exception('Failed to export PDF: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() {
+        _exportError = 'Export failed: $e';
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isExporting = false;
+      });
+    }
+  }
+
+  Future<String?> _resolveDefaultEmail() async {
+    try {
+      final userService = UserService();
+      final cached = userService.currentUser?.email;
+      if (cached != null && cached.isNotEmpty) return cached;
+      final profile = await userService.getProfile();
+      return profile.email;
+    } catch (e) {
+      debugPrint('Error loading default email: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, String>?> _promptEmailParams(String? defaultEmail) async {
+    final controller = TextEditingController(text: defaultEmail ?? '');
+    String format = 'pdf';
+
+    return showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Email report'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Recipients (comma-separated)',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      hintText: 'admin@company.com, ops@company.com',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Format',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(format),
+                    initialValue: format,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'pdf', child: Text('PDF')),
+                      DropdownMenuItem(
+                        value: 'xlsx',
+                        child: Text('Excel (XLSX)'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setStateDialog(() {
+                        format = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(ctx, {
+                      'recipients': controller.text.trim(),
+                      'format': format,
+                    });
+                  },
+                  child: const Text('Send'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _emailReport() async {
+    setState(() {
+      _isExporting = true;
+      _exportError = null;
+    });
+
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        throw Exception('Missing auth token');
+      }
+
+      final defaultEmail = await _resolveDefaultEmail();
+      final params = await _promptEmailParams(defaultEmail);
+      if (params == null) {
+        setState(() {
+          _isExporting = false;
+        });
+        return;
+      }
+
+      final recipients = params['recipients']?.trim() ?? '';
+      if (recipients.isEmpty) {
+        throw Exception('Please enter at least one recipient email');
+      }
+
+      final format = params['format'] ?? 'pdf';
+      final body = <String, dynamic>{
+        'reportType': widget.reportType,
+        'format': format,
+        'recipients': recipients,
+      };
+
+      if (widget.startDate != null) {
+        body['startDate'] = widget.startDate!.toIso8601String();
+      }
+      if (widget.endDate != null) {
+        final exclusiveEnd = widget.endDate!.add(const Duration(days: 1));
+        body['endDate'] = exclusiveEnd.toIso8601String();
+      }
+      if (widget.locationFilterId != null) {
+        body['geofenceId'] = widget.locationFilterId!;
+      }
+      if (widget.statusFilter != null) {
+        body['status'] = widget.statusFilter!;
+      }
+      if (widget.employeeIdFilter != null) {
+        body['employeeId'] = widget.employeeIdFilter!;
+      }
+
+      final uri = Uri.parse('${ApiConfig.baseUrl}/api/export/email-report');
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 40));
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Report emailed successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to email report: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() {
+        _exportError = 'Email failed: $e';
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Email failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isExporting = false;
+      });
+    }
+  }
+
+  Future<void> _exportToExcel() async {
+    setState(() {
+      _isExporting = true;
+      _exportError = null;
+    });
+
+    try {
+      debugPrint('Starting Excel export...');
+      final token = await _getToken();
+      final queryParams = <String, String>{'type': widget.reportType};
+
+      if (widget.startDate != null) {
+        queryParams['startDate'] = widget.startDate!.toIso8601String();
+      }
+      if (widget.endDate != null) {
+        // Treat endDate as inclusive in UI, but send exclusive bound to API
+        final exclusiveEnd = widget.endDate!.add(const Duration(days: 1));
+        queryParams['endDate'] = exclusiveEnd.toIso8601String();
+      }
+      if (widget.locationFilterId != null) {
+        queryParams['geofenceId'] = widget.locationFilterId!;
+      }
+      if (widget.statusFilter != null) {
+        queryParams['status'] = widget.statusFilter!;
+      }
+      if (widget.employeeIdFilter != null) {
+        queryParams['employeeId'] = widget.employeeIdFilter!;
+      }
+
+      final uri = Uri.parse(
+        '${ApiConfig.baseUrl}/api/export/${widget.reportType}/excel',
+      ).replace(queryParameters: queryParams);
+
+      debugPrint('Requesting Excel from: $uri');
+      final response = await http
+          .get(uri, headers: {'Authorization': 'Bearer $token'})
+          .timeout(const Duration(seconds: 30));
+
+      debugPrint(
+        'Response status: ${response.statusCode}, body length: ${response.bodyBytes.length}',
+      );
+
+      if (response.statusCode == 200) {
+        // Save file using native Android method
+        try {
+          final fileName =
+              'FieldCheck_Report_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+
+          setState(() {
+            _lastExportBytes = response.bodyBytes;
+            _lastExportFilename = fileName;
+            _lastExportMimeType =
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+          });
+
+          final filePath = await _saveFileToDownloads(
+            fileName,
+            response.bodyBytes,
+          );
+
+          if (filePath == null) {
+            throw Exception('Failed to save file via native channel');
+          }
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✓ Excel saved to: $filePath'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+            // Show download completion dialog
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('✓ Export Complete'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Your Excel report has been saved!'),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'File path:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      filePath,
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(
+                          ctx,
+                        ).colorScheme.onSurface.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '📁 Check your Downloads folder',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+        } catch (e) {
+          throw Exception('Failed to save Excel file: $e');
+        }
+      } else {
+        throw Exception('Failed to export Excel: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() {
+        _exportError = 'Export failed: $e';
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isExporting = false;
+      });
+    }
+  }
+
+  Future<String?> _getToken() async {
+    try {
+      return await UserService().getToken();
+    } catch (e) {
+      debugPrint('Error getting token: $e');
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFormat = DateFormat('MMM dd, yyyy');
+    final timeFormat = DateFormat('hh:mm a');
+    final locationLabel = widget.locationFilterLabel ?? widget.locationFilterId;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Export Preview'),
+        backgroundColor: const Color(0xFF2688d4),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            onPressed: (_lastExportBytes == null || _isExporting)
+                ? null
+                : _downloadLastExport,
+            icon: const Icon(Icons.download),
+            tooltip: 'Download last export',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Export format selection
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isExporting ? null : _exportToPDF,
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('Export PDF'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.12),
+                    disabledForegroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _isExporting ? null : _exportToExcel,
+                  icon: const Icon(Icons.table_chart),
+                  label: const Text('Export Excel'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.12),
+                    disabledForegroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _isExporting ? null : _emailReport,
+                  icon: const Icon(Icons.email),
+                  label: const Text('Email Report'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2688d4),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.12),
+                    disabledForegroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          if (_isExporting)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: CircularProgressIndicator(),
+            ),
+
+          if (_exportError != null)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withAlpha(30),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red),
+                ),
+                child: Text(
+                  _exportError!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+            ),
+
+          // Print preview
+          Expanded(
+            child: SingleChildScrollView(
+              child: Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.6),
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 8),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    Center(
+                      child: Column(
+                        children: [
+                          const Text(
+                            'FIELD CHECK REPORT',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.reportType == 'attendance'
+                                ? 'Attendance Report'
+                                : 'Task Report',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.75),
+                                ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Generated on ${dateFormat.format(DateTime.now())} at ${timeFormat.format(DateTime.now())}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(thickness: 2),
+                    const SizedBox(height: 16),
+
+                    // Filter info
+                    if (widget.startDate != null || widget.endDate != null)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Date Range:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            '${widget.startDate != null ? dateFormat.format(widget.startDate!) : 'N/A'} to ${widget.endDate != null ? dateFormat.format(widget.endDate!) : 'N/A'}',
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+
+                    if (locationLabel != null)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Location Filter:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Text(locationLabel),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+
+                    // Records count & Summary
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.blue.shade50, Colors.white],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.summarize_outlined, color: Colors.blue.shade700, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Export Summary',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12,
+                                    color: Colors.blue.shade900,
+                                    letterSpacing: 1.1,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Ready to export ${widget.records.length} total records based on your current filters.',
+                                  style: TextStyle(
+                                    color: Colors.blue.shade900.withValues(alpha: 0.7),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Attendance Table header
+                    if (widget.records.isNotEmpty)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'ATTENDANCE RECORDS',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: const Text(
+                                    'Employee',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Date',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Time',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Location',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Status',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Duration',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+
+                          // Table rows (preview first 10)
+                          ...widget.records.take(10).map((record) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    flex: 2,
+                                    child: Text(
+                                      record.employeeName ?? 'Unknown',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      dateFormat.format(record.submittedAt),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      timeFormat.format(record.submittedAt),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      record.geofenceName ?? 'N/A',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      record.content.toLowerCase().contains(
+                                            'check in',
+                                          )
+                                          ? 'In'
+                                          : 'Out',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color:
+                                            record.content
+                                                .toLowerCase()
+                                                .contains('check in')
+                                            ? Colors.green
+                                            : Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      'N/A',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+
+                          if (widget.records.length > 10)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                '... and ${widget.records.length - 10} more records',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      fontStyle: FontStyle.italic,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.75),
+                                    ),
+                              ),
+                            ),
+                        ],
+                      )
+                    else
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text(
+                            'No attendance records to display',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.75),
+                                ),
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 24),
+
+                    // Tasks section
+                    if (widget.taskReports != null &&
+                        widget.taskReports!.isNotEmpty)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'TASKS COMPLETED',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: const Text(
+                                    'Employee',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: const Text(
+                                    'Task',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Status',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: const Text(
+                                    'Date',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...widget.taskReports!.take(10).map((task) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    flex: 2,
+                                    child: Text(
+                                      task.employeeName ?? 'Unknown',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 2,
+                                    child: Text(
+                                      task.taskTitle ?? 'N/A',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      task.status,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: task.status == 'completed'
+                                            ? Colors.green
+                                            : Colors.orange,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      dateFormat.format(task.submittedAt),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                          if (widget.taskReports!.length > 10)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                '... and ${widget.taskReports!.length - 10} more tasks',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      fontStyle: FontStyle.italic,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.75),
+                                    ),
+                              ),
+                            ),
+                        ],
+                      ),
+
+                    const SizedBox(height: 24),
+                    const Divider(thickness: 2),
+                    const SizedBox(height: 12),
+
+                    // Footer
+                    Center(
+                      child: Text(
+                        'This is a preview of your export. Click "Export PDF" or "Export Excel" to download the complete file.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.75),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

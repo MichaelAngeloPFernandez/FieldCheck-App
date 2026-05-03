@@ -1,0 +1,216 @@
+================================================================================
+                    FIELDCHECK UML DIAGRAMS - ZIP MANIFEST
+================================================================================
+
+ZIP FILE: FieldCheck_UML_Diagrams.zip
+LOCATION: c:\Users\Mark_Karevin\Desktop\SCHOOL FILES\FieldCheck-App\
+SIZE: ~4 MB
+CREATED: December 3, 2025
+STATUS: Ready for Distribution
+
+================================================================================
+                            CONTENTS (22 FILES)
+================================================================================
+
+UML DIAGRAMS (17 Files - PlantUML Format):
+  ✓ 01_USE_CASE_DIAGRAM.puml
+  ✓ 02_CLASS_DIAGRAM.puml
+  ✓ 03_SEQUENCE_CHECKIN.puml
+  ✓ 04_SYSTEM_ARCHITECTURE.puml
+  ✓ 05_ENTITY_RELATIONSHIP_DIAGRAM.puml
+  ✓ 06_DATA_FLOW_DIAGRAM.puml
+  ✓ 07_STATE_DIAGRAM_ATTENDANCE.puml
+  ✓ 08_DEPLOYMENT_DIAGRAM.puml
+  ✓ 09_COMPONENT_DIAGRAM.puml
+  ✓ 10_GEOFENCE_VALIDATION_FLOWCHART.puml
+  ✓ 11_SEQUENCE_TASK_ASSIGNMENT.puml
+  ✓ 12_TIMING_OFFLINE_SYNC.puml
+  ✓ 13_COLLABORATION_DIAGRAM.puml
+  ✓ 14_PACKAGE_DIAGRAM.puml
+  ✓ 15_ACTIVITY_REPORT_GENERATION.puml
+  ✓ 16_STATE_DIAGRAM_TASK_LIFECYCLE.puml
+  ✓ 17_INTERACTION_OVERVIEW.puml
+
+DOCUMENTATION FILES (5 Files):
+  ✓ README.md - Comprehensive documentation
+  ✓ DIAGRAM_INDEX.md - Complete index with descriptions
+  ✓ QUICK_START.md - Quick start guide
+  ✓ SUMMARY.txt - Text summary
+  ✓ INDEX.html - Interactive HTML index
+
+================================================================================
+                          DIAGRAM BREAKDOWN
+================================================================================
+
+STRUCTURAL DIAGRAMS (6):
+  • 02_CLASS_DIAGRAM.puml
+  • 04_SYSTEM_ARCHITECTURE.puml
+  • 05_ENTITY_RELATIONSHIP_DIAGRAM.puml
+  • 08_DEPLOYMENT_DIAGRAM.puml
+  • 09_COMPONENT_DIAGRAM.puml
+  • 14_PACKAGE_DIAGRAM.puml
+
+BEHAVIORAL DIAGRAMS (11):
+  • 01_USE_CASE_DIAGRAM.puml
+  • 03_SEQUENCE_CHECKIN.puml
+  • 06_DATA_FLOW_DIAGRAM.puml
+  • 07_STATE_DIAGRAM_ATTENDANCE.puml
+  • 10_GEOFENCE_VALIDATION_FLOWCHART.puml
+  • 11_SEQUENCE_TASK_ASSIGNMENT.puml
+  • 12_TIMING_OFFLINE_SYNC.puml
+  • 13_COLLABORATION_DIAGRAM.puml
+  • 15_ACTIVITY_REPORT_GENERATION.puml
+  • 16_STATE_DIAGRAM_TASK_LIFECYCLE.puml
+  • 17_INTERACTION_OVERVIEW.puml
+
+================================================================================
+                          HOW TO USE THIS ZIP
+================================================================================
+
+1. EXTRACT THE ZIP:
+   - Right-click FieldCheck_UML_Diagrams.zip
+   - Select "Extract All..."
+   - Choose destination folder
+
+2. VIEW THE DIAGRAMS:
+   Option A - Online (Recommended):
+     - Visit: https://www.plantuml.com/plantuml/uml/
+     - Copy content from any .puml file
+     - Paste into editor
+     - Click "Submit"
+
+   Option B - VS Code:
+     - Install "PlantUML" extension by jebbs
+     - Open any .puml file
+     - Press Alt+D to preview
+
+   Option C - Command Line:
+     - Install: npm install -g plantuml
+     - Run: plantuml *.puml
+
+3. READ THE DOCUMENTATION:
+   - Start with: QUICK_START.md
+   - Then read: README.md
+   - Reference: DIAGRAM_INDEX.md
+   - Browse: INDEX.html (open in web browser)
+
+================================================================================
+                          PROJECT INFORMATION
+================================================================================
+
+PROJECT: FieldCheck - Mobile Geofenced Attendance Verification App
+INSTITUTION: New Era University
+DEPARTMENT: College of Informatics and Computing Studies
+DATE: February 2025
+AUTHORS: Fernandez, Michael Angelo; Perfecto, Mark Karevin D.; Songco, Carl; Maquiling, Patrick
+
+================================================================================
+                          KEY DIAGRAMS
+================================================================================
+
+START HERE:
+  1. 04_SYSTEM_ARCHITECTURE.puml - Overall system design
+  2. 01_USE_CASE_DIAGRAM.puml - All features and actors
+  3. 02_CLASS_DIAGRAM.puml - Data model
+
+FOR DEVELOPERS:
+  • 09_COMPONENT_DIAGRAM.puml - Code structure
+  • 03_SEQUENCE_CHECKIN.puml - Check-in workflow
+  • 10_GEOFENCE_VALIDATION_FLOWCHART.puml - GPS algorithm
+
+FOR DATABASE:
+  • 05_ENTITY_RELATIONSHIP_DIAGRAM.puml - Schema design
+  • 06_DATA_FLOW_DIAGRAM.puml - Data movement
+
+FOR DEPLOYMENT:
+  • 08_DEPLOYMENT_DIAGRAM.puml - Infrastructure
+  • 14_PACKAGE_DIAGRAM.puml - Package organization
+
+FOR WORKFLOWS:
+  • 17_INTERACTION_OVERVIEW.puml - Daily workflows
+  • 11_SEQUENCE_TASK_ASSIGNMENT.puml - Task assignment
+  • 15_ACTIVITY_REPORT_GENERATION.puml - Report generation
+
+================================================================================
+                          TECHNOLOGY STACK
+================================================================================
+
+FRONTEND:
+  Flutter 3.9.0 | Flutter Map 8.2.2 | Provider 6.0.0
+  Geolocator 14.0.2 | Socket IO Client 3.1.2
+
+BACKEND:
+  Node.js 16+ | Express.js | MongoDB 4.4+
+  Socket.io 4.0+ | JWT | bcryptjs
+
+================================================================================
+                          SYSTEM REQUIREMENTS
+================================================================================
+
+TO VIEW DIAGRAMS:
+  • Web Browser (for online editor)
+  • VS Code + PlantUML extension (for local viewing)
+  • PlantUML CLI (for command-line generation)
+
+TO EDIT DIAGRAMS:
+  • Text Editor (VS Code, Sublime, etc.)
+  • PlantUML knowledge (simple syntax)
+
+================================================================================
+                          SUPPORT & RESOURCES
+================================================================================
+
+PlantUML Online Editor:
+  https://www.plantuml.com/plantuml/uml/
+
+PlantUML Documentation:
+  https://plantuml.com/
+
+GitHub Repository:
+  https://github.com/MichaelAngeloPFernandez/FieldCheck-App
+
+New Era University:
+  https://www.neu.edu.ph/
+
+================================================================================
+                          QUICK REFERENCE
+================================================================================
+
+Total Diagrams: 17
+Total Documentation Files: 5
+Total Files in ZIP: 22
+ZIP Size: ~4 MB
+Format: PlantUML (.puml)
+Status: Complete and Ready for Use
+
+STRUCTURAL: 6 diagrams
+BEHAVIORAL: 11 diagrams
+
+RECOMMENDED READING ORDER:
+  1. QUICK_START.md (5 minutes)
+  2. 04_SYSTEM_ARCHITECTURE.puml (10 minutes)
+  3. 01_USE_CASE_DIAGRAM.puml (5 minutes)
+  4. Role-specific diagrams (varies)
+
+================================================================================
+                          VERSION INFORMATION
+================================================================================
+
+Version: 1.0
+Release Date: December 3, 2025
+Status: Complete and Ready for Distribution
+Last Updated: December 3, 2025
+
+================================================================================
+                              END OF MANIFEST
+================================================================================
+
+For detailed information about each diagram, please refer to:
+  - README.md (Comprehensive guide)
+  - DIAGRAM_INDEX.md (Complete index)
+  - QUICK_START.md (Quick reference)
+
+Questions? Check the documentation files or visit the GitHub repository.
+
+Archive Created: December 3, 2025
+Ready for: Distribution, Presentation, Documentation, Development

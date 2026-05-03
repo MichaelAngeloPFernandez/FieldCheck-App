@@ -1,0 +1,153 @@
+// ignore_for_file: deprecated_member_use
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../providers/auth_provider.dart';
+
+/// Splash screen that checks authentication status on app startup
+/// Routes user to appropriate screen based on login state
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAuthStatus();
+    });
+  }
+
+  /// Check authentication status and route accordingly
+  Future<void> _checkAuthStatus() async {
+    if (!mounted) return;
+
+    final authProvider = context.read<AuthProvider>();
+
+    // Initialize auth provider (load saved token, etc)
+    await authProvider.initialize();
+
+    if (!mounted) return;
+
+    // Route based on authentication status
+    if (authProvider.isAuthenticated) {
+      // User is logged in, go to appropriate dashboard
+      if (!mounted) return;
+
+      // Check if we should preserve a specific path or tab
+      final uri = Uri.base;
+      final path = uri.path;
+
+      if (path.contains('/admin-dashboard') && authProvider.isAdmin) {
+        Navigator.of(context).pushReplacementNamed(uri.toString());
+      } else if (path.contains('/dashboard') && !authProvider.isAdmin) {
+        Navigator.of(context).pushReplacementNamed(uri.toString());
+      } else {
+        // Read last tab from SharedPreferences for refresh persistence
+        final prefs = await SharedPreferences.getInstance();
+        final lastTab = authProvider.isAdmin
+            ? prefs.getInt('admin.lastTab')
+            : prefs.getInt('employee.lastTab');
+        final routeName = authProvider.isAdmin
+            ? '/admin-dashboard'
+            : '/dashboard';
+        if (!mounted) return;
+        if (lastTab != null && lastTab > 0) {
+          Navigator.of(context).pushReplacementNamed('$routeName?tab=$lastTab');
+        } else {
+          Navigator.of(context).pushReplacementNamed(routeName);
+        }
+      }
+    } else {
+      // User not logged in, go to login screen
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/landing');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              Theme.of(context).colorScheme.secondary.withOpacity(0.1),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // App icon/logo
+                  Icon(
+                    Icons.location_on,
+                    size: 80,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 24),
+                  // App name
+                  const Text(
+                    'FieldCheck',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2688d4),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Tagline
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                      'Mobile Geofenced Attendance Verification',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: onSurface.withValues(alpha: 0.75),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 48),
+                  // Loading indicator
+                  SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Loading text
+                  Text(
+                    'Checking your session...',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: onSurface.withValues(alpha: 0.75),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
