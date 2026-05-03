@@ -110,6 +110,18 @@ class TicketService {
     throw Exception(err['message'] ?? 'Failed to change status');
   }
 
+  /// Fetch active employees in the current admin's company.
+  /// Returns a list of maps with keys: _id, name, employeeId, status.
+  static Future<List<Map<String, dynamic>>> getEmployees() async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/tickets/employees');
+    final res = await http.get(url, headers: await _headers());
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body);
+      return data.cast<Map<String, dynamic>>();
+    }
+    throw Exception('Failed to load employees: ${res.statusCode}');
+  }
+
   /// Get audit trail for a ticket.
   static Future<List<Map<String, dynamic>>> getAuditTrail(
     String ticketId,

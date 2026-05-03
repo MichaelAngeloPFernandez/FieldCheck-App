@@ -30,27 +30,27 @@ The backend routes (`ticketRoutes.js`, `templateRoutes.js`) and Flutter models/s
   - [x] 2.3 Rewrite `generateTicketNumber(companyId, companyCode)` to use `Counter.getNextSequence(companyId)` and format as `<companyCode>-<NNNN>`
   - [x] 2.4 Add `finalizeSlaStatus(ticket)` static method — sets `sla_status` to `'on_time'` or keeps `'overdue'` based on `completedAt` vs `sla_deadline`
 
-- [ ] 3. Add missing Mongoose indexes to `models/Ticket.js`
-  - [ ] 3.1 Add compound index `{ company: 1, isArchived: 1, createdAt: -1 }` for list query performance
-  - [ ] 3.2 Add compound index `{ sla_deadline: 1, status: 1 }` for SLA job performance
+- [x] 3. Add missing Mongoose indexes to `models/Ticket.js`
+  - [x] 3.1 Add compound index `{ company: 1, isArchived: 1, createdAt: -1 }` for list query performance
+  - [x] 3.2 Add compound index `{ sla_deadline: 1, status: 1 }` for SLA job performance
 
-- [ ] 4. Enhance Flutter `TicketService` with employees endpoint
-  - [ ] 4.1 Add `getEmployees()` static method to `lib/services/ticket_service.dart` — calls `GET /api/tickets/employees`, returns `List<Map<String, dynamic>>`
+- [x] 4. Enhance Flutter `TicketService` with employees endpoint
+  - [x] 4.1 Add `getEmployees()` static method to `lib/services/ticket_service.dart` — calls `GET /api/tickets/employees`, returns `List<Map<String, dynamic>>`
 
-- [ ] 5. Update `EmployeeTicketCreateScreen` to support admin employee assignment
-  - [ ] 5.1 Add `isAdmin` parameter (or detect from `UserService`) to `employee_ticket_create_screen.dart`
-  - [ ] 5.2 When admin, load employees via `TicketService.getEmployees()` and render a `DropdownButtonFormField` for assignee selection
-  - [ ] 5.3 Pass selected `assigneeId` to `TicketService.createTicket()`
+- [x] 5. Update `EmployeeTicketCreateScreen` to support admin employee assignment
+  - [x] 5.1 Add `isAdmin` parameter (or detect from `UserService`) to `employee_ticket_create_screen.dart`
+  - [x] 5.2 When admin, load employees via `TicketService.getEmployees()` and render a `DropdownButtonFormField` for assignee selection
+  - [x] 5.3 Pass selected `assigneeId` to `TicketService.createTicket()`
 
-- [ ] 6. Wire ticket screens into admin dashboard navigation
-  - [ ] 6.1 Confirm `AdminTicketListScreen` is already imported and used in `admin_dashboard_screen.dart` (it is — verify the tab index and label are correct)
-  - [ ] 6.2 Add a "Tickets" nav item to the admin navigation rail/drawer if not already present
+- [x] 6. Wire ticket screens into admin dashboard navigation
+  - [x] 6.1 Confirm `AdminTicketListScreen` is already imported and used in `admin_dashboard_screen.dart` (it is — verify the tab index and label are correct)
+  - [x] 6.2 Add a "Tickets" nav item to the admin navigation rail/drawer if not already present
 
-- [ ] 7. Write property-based and unit tests
-  - [ ] 7.1 Create `__tests__/unit/ticketing/validationService.property.test.js` — Property 2: for any schema + data, `validationService.validate()` result matches AJV directly (100 runs)
-  - [ ] 7.2 Create `__tests__/unit/ticketing/ticketCreation.property.test.js` — Property 3: ticket creation invariants (status=open, ticket_no format, SLA math) using fast-check (100 runs)
-  - [ ] 7.3 Create `__tests__/unit/ticketing/workflowTransition.property.test.js` — Property 10: workflow transition enforcement — allowed transitions return 200, disallowed return 400 (100 runs)
-  - [ ] 7.4 Create `__tests__/unit/ticketing/slaFinalization.unit.test.js` — unit tests for `TicketService.finalizeSlaStatus()`: on_time when completedAt ≤ sla_deadline, overdue when completedAt > sla_deadline, null when no sla_deadline
+- [x] 7. Write property-based and unit tests
+  - [x] 7.1 Create `__tests__/unit/ticketing/validationService.property.test.js` — Property 2: for any schema + data, `validationService.validate()` result matches AJV directly (100 runs)
+  - [x] 7.2 Create `__tests__/unit/ticketing/ticketCreation.property.test.js` — Property 3: ticket creation invariants (status=open, ticket_no format, SLA math) using fast-check (100 runs)
+  - [x] 7.3 Create `__tests__/unit/ticketing/workflowTransition.property.test.js` — Property 10: workflow transition enforcement — allowed transitions return 200, disallowed return 400 (100 runs)
+  - [x] 7.4 Create `__tests__/unit/ticketing/slaFinalization.unit.test.js` — unit tests for `TicketService.finalizeSlaStatus()`: on_time when completedAt ≤ sla_deadline, overdue when completedAt > sla_deadline, null when no sla_deadline
 
-- [ ] 8. Write integration test for full ticket lifecycle
-  - [ ] 8.1 Create `__tests__/integration/ticketing.integration.test.js` — full lifecycle: create ticket → in_progress → completed → verified → closed; assert status, completedAt, sla_status at each step; assert audit log entries exist; assert 403 on cross-company access
+- [x] 8. Write integration test for full ticket lifecycle
+  - [x] 8.1 Create `__tests__/integration/ticketing.integration.test.js` — full lifecycle: create ticket → in_progress → completed → verified → closed; assert status, completedAt, sla_status at each step; assert audit log entries exist; assert 403 on cross-company access

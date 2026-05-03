@@ -44,7 +44,7 @@ const ticketSchema = new mongoose.Schema(
     sla_deadline: { type: Date, default: null },
     sla_status: {
       type: String,
-      enum: ['on_time', 'at_risk', 'overdue', null],
+      enum: ['on_time', 'at_risk', 'overdue'],
       default: null,
     },
     // GPS captured at submission.
@@ -67,5 +67,9 @@ const ticketSchema = new mongoose.Schema(
 
 ticketSchema.index({ company: 1, status: 1 });
 ticketSchema.index({ assignee: 1, status: 1 });
+// List query: filter by company + archive flag, sorted by creation date
+ticketSchema.index({ company: 1, isArchived: 1, createdAt: -1 });
+// SLA job: find tickets approaching/past deadline by status
+ticketSchema.index({ sla_deadline: 1, status: 1 });
 
 module.exports = mongoose.model('Ticket', ticketSchema);

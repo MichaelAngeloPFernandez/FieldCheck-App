@@ -162,7 +162,7 @@ class _AdminTicketListScreenState extends State<AdminTicketListScreen>
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) => const EmployeeTicketCreateScreen()),
+                builder: (_) => const EmployeeTicketCreateScreen(isAdmin: true)),
           );
           if (result == true) _loadTickets();
         },

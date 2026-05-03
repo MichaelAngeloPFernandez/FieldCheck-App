@@ -7,7 +7,11 @@ import 'package:field_check/widgets/dynamic_form_renderer.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 class EmployeeTicketCreateScreen extends StatefulWidget {
-  const EmployeeTicketCreateScreen({super.key});
+  /// When [isAdmin] is true the screen shows an assignee dropdown so the
+  /// admin can assign the ticket to a specific employee at creation time.
+  final bool isAdmin;
+
+  const EmployeeTicketCreateScreen({super.key, this.isAdmin = false});
 
   @override
   State<EmployeeTicketCreateScreen> createState() =>
@@ -24,10 +28,25 @@ class _EmployeeTicketCreateScreenState
   bool _submitting = false;
   String? _error;
 
+  // Admin-only: list of assignable employees and the selected one.
+  List<Map<String, dynamic>> _employees = [];
+  String? _selectedAssigneeId;
+
   @override
   void initState() {
     super.initState();
     _loadTemplates();
+    if (widget.isAdmin) _loadEmployees();
+  }
+
+  Future<void> _loadEmployees() async {
+    try {
+      final employees = await TicketService.getEmployees();
+      if (!mounted) return;
+      setState(() => _employees = employees);
+    } catch (_) {
+      // Non-fatal — admin can still create without assigning.
+    }
   }
 
   Future<void> _loadTemplates() async {
@@ -114,6 +133,7 @@ class _EmployeeTicketCreateScreenState
       await TicketService.createTicket(
         templateId: _selectedTemplate!.id,
         data: _formData,
+        assigneeId: widget.isAdmin ? _selectedAssigneeId : null,
         notes: _notesController.text.trim().isNotEmpty
             ? _notesController.text.trim()
             : null,
@@ -253,7 +273,59 @@ class _EmployeeTicketCreateScreenState
                         ),
                         const Divider(height: 32),
 
-                        // Step 2: Dynamic form
+                        // Admin-only: assignee selection
+                        if (widget.isAdmin) ...[
+                          Text(
+                            'Assign To (optional)',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Select an employee to assign this ticket to.',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            value: _selectedAssigneeId,
+                            decoration: InputDecoration(
+                              labelText: 'Assignee',
+                              prefixIcon: const Icon(Icons.person_outline),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              filled: true,
+                              fillColor: theme.colorScheme
+                                  .surfaceContainerHighest
+                                  .withValues(alpha: 0.15),
+                            ),
+                            items: [
+                              const DropdownMenuItem<String>(
+                                value: null,
+                                child: Text('Unassigned'),
+                              ),
+                              ..._employees.map((emp) {
+                                final name =
+                                    (emp['name'] as String? ?? '').trim();
+                                final code =
+                                    (emp['employeeId'] as String? ?? '').trim();
+                                final label = code.isNotEmpty
+                                    ? '$name ($code)'
+                                    : name;
+                                return DropdownMenuItem<String>(
+                                  value: emp['_id'] as String?,
+                                  child: Text(label),
+                                );
+                              }),
+                            ],
+                            onChanged: (id) =>
+                                setState(() => _selectedAssigneeId = id),
+                            hint: const Text('Select an employee...'),
+                            isExpanded: true,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
                         Text(
                           'Step 2: Fill in Details',
                           style: theme.textTheme.titleMedium?.copyWith(
