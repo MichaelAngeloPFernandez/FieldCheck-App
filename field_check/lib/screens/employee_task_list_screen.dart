@@ -8,7 +8,7 @@ import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/screens/task_report_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
-import 'package:field_check/screens/employee_profile_screen.dart';
+import 'package:field_check/screens/employee_profile_page.dart';
 import 'package:field_check/screens/task_submission_viewer_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/manila_time.dart';
@@ -1194,7 +1194,7 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const EmployeeProfileScreen(),
+                    builder: (_) => const EmployeeProfilePage(),
                   ),
                 );
               },

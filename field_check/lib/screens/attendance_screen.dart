@@ -32,11 +32,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   // Admin-enforced settings
   final bool _allowOfflineModeAdmin = true;
-  final bool _requireBeaconVerificationAdmin = false;
   final bool _enableLocationTrackingAdmin = true;
 
   // User preferences
-  bool _userUseBluetoothBeacons = false;
   bool _userEnableLocationTracking = true;
 
   final LocationService _locationService = LocationService();
@@ -66,11 +64,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     setState(() {
       // Admin settings could be fetched from backend; keeping current defaults
       // _allowOfflineModeAdmin = _allowOfflineModeAdmin;
-      // _requireBeaconVerificationAdmin = _requireBeaconVerificationAdmin;
       // _enableLocationTrackingAdmin = _enableLocationTrackingAdmin;
       // User preferences from Settings screen
-      _userUseBluetoothBeacons =
-          prefs.getBool('user.useBluetoothBeacons') ?? _userUseBluetoothBeacons;
       _userEnableLocationTracking =
           prefs.getBool('user.locationTrackingEnabled') ??
           _userEnableLocationTracking;
@@ -286,12 +281,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     // Admin-enforced: block offline check if not allowed
     if (!_isOnline && !_allowOfflineModeAdmin) {
       _showOfflineNotAllowedDialog();
-      return;
-    }
-
-    // Admin-enforced: require beacon usage
-    if (_requireBeaconVerificationAdmin && !_userUseBluetoothBeacons) {
-      _showBeaconRequiredDialog();
       return;
     }
 
@@ -820,24 +809,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         title: const Text('Offline Check-in Disabled'),
         content: const Text(
           'Your administrator has disabled offline check-in/check-out. Please switch to online mode to proceed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showBeaconRequiredDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Beacon Verification Required'),
-        content: const Text(
-          'Your administrator requires Bluetooth beacon verification. Enable beacons in Settings to proceed.',
         ),
         actions: [
           TextButton(

@@ -25,11 +25,16 @@ import 'package:field_check/screens/chat_screen.dart';
 import 'package:field_check/screens/admin_chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/app_theme.dart';
+import 'package:field_check/services/migration_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   usePathUrlStrategy();
+
+  // Run data migrations first to ensure clean upgrade path
+  final migrationService = MigrationService();
+  await migrationService.runMigrations();
 
   // Initialize only essential services immediately
   final syncService = SyncService();

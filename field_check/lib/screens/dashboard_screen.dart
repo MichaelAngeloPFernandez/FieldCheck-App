@@ -7,7 +7,7 @@ import 'package:field_check/screens/map_screen.dart';
 import 'package:field_check/screens/settings_screen.dart';
 import 'package:field_check/screens/employee_task_list_screen.dart';
 import 'package:field_check/screens/employee_ticket_list_screen.dart';
-import 'package:field_check/screens/employee_profile_screen.dart';
+import 'package:field_check/screens/employee_profile_page.dart';
 import 'package:field_check/screens/employee_task_details_screen.dart';
 import 'package:field_check/screens/employee_reports_screen.dart';
 import 'package:field_check/providers/auth_provider.dart';
@@ -54,7 +54,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _taskBadgeDebounce;
   String? _userModelId;
   bool _loadingUserId = true;
-  bool _isTrackingLocation = true;
 
   int _tasksBadgeCount = 0;
   int _notificationsBadgeCount = 0;
@@ -120,11 +119,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       enabled = prefs.getBool('user.locationTrackingEnabled') ?? true;
     } catch (_) {}
 
-    if (mounted) {
-      setState(() {
-        _isTrackingLocation = enabled;
-      });
-    }
+    // Update the service's state to reflect the saved preference
+    _locationSyncService.sharingEnabledState = enabled;
 
     if (enabled) {
       _locationSyncService.startSharing();
@@ -329,11 +325,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _toggleLocationTracking() async {
-    final newValue = !_isTrackingLocation;
-
-    setState(() {
-      _isTrackingLocation = newValue;
-    });
+    final newValue = !_locationSyncService.isSharingEnabled;
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -696,17 +688,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
               },
             ),
             const Divider(),
-            SwitchListTile(
-              title: const Text('Share live location with admin'),
-              value: _isTrackingLocation,
-              secondary: Icon(
-                _isTrackingLocation
-                    ? Icons.location_searching
-                    : Icons.location_disabled,
-              ),
-              onChanged: (_) async {
-                Navigator.pop(context);
-                await _toggleLocationTracking();
+            ValueListenableBuilder<bool>(
+              valueListenable: _locationSyncService.sharingEnabledListenable,
+              builder: (context, isSharing, _) {
+                return SwitchListTile(
+                  title: const Text('Share live location with admin'),
+                  value: isSharing,
+                  secondary: Icon(
+                    isSharing
+                        ? Icons.location_searching
+                        : Icons.location_disabled,
+                  ),
+                  onChanged: (_) async {
+                    Navigator.pop(context);
+                    await _toggleLocationTracking();
+                  },
+                );
               },
             ),
             ValueListenableBuilder<DateTime?>(
@@ -765,7 +762,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary;
     final List<Widget> screens = [
       const EnhancedAttendanceScreen(),
-      const EmployeeProfileScreen(),
+      const EmployeeProfilePage(),
       const HistoryScreen(),
       const MapScreen(),
       const SettingsScreen(),
@@ -845,17 +842,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                   ],
                 ),
-                _buildAppBarIconButton(
-                  tooltip: _isTrackingLocation
-                      ? 'Share live location with admin: ON'
-                      : 'Share live location with admin: OFF',
-                  icon: _isTrackingLocation
-                      ? Icons.location_searching
-                      : Icons.location_disabled,
-                  onPressed: _toggleLocationTracking,
-                  color: _isTrackingLocation
-                      ? appBarForeground
-                      : appBarForeground.withValues(alpha: 0.7),
+                ValueListenableBuilder<bool>(
+                  valueListenable: _locationSyncService.sharingEnabledListenable,
+                  builder: (context, isSharing, _) {
+                    return _buildAppBarIconButton(
+                      tooltip: isSharing
+                          ? 'Share live location with admin: ON'
+                          : 'Share live location with admin: OFF',
+                      icon: isSharing
+                          ? Icons.location_searching
+                          : Icons.location_disabled,
+                      onPressed: _toggleLocationTracking,
+                      color: isSharing
+                          ? appBarForeground
+                          : appBarForeground.withValues(alpha: 0.7),
+                    );
+                  },
                 ),
                 ValueListenableBuilder<DateTime?>(
                   valueListenable: _locationSyncService.lastSharedListenable,

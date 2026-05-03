@@ -42,6 +42,8 @@ class _MapScreenState extends State<MapScreen> {
   bool _isSearchingLocation = false;
   bool _showLocationSearchBar = false;
   List<Location> _locationSearchResults = [];
+  List<Geofence> _geofenceSearchResults = [];
+  List<String> _searchHistory = [];
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   late MapController _mapController;
@@ -326,6 +328,7 @@ class _MapScreenState extends State<MapScreen> {
       if (!mounted) return;
       setState(() {
         _locationSearchResults = [];
+        _geofenceSearchResults = [];
         _isSearchingLocation = false;
       });
       return;
@@ -337,17 +340,40 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     try {
-      final locations = await locationFromAddress(query);
+      // Step 1: Search geofences first (prioritize known locations)
+      final geofenceMatches = _searchGeofences(query);
+      
+      // Step 2: Search external locations via geocoding
+      List<Location> externalLocations = [];
+      try {
+        externalLocations = await locationFromAddress(query);
+      } catch (e) {
+        if (kDebugMode) print('Geocoding search failed: $e');
+      }
+      
+      // Step 3: Validate and filter external locations
+      final validatedLocations = _validateAndFilterLocations(
+        externalLocations,
+        geofenceMatches,
+      );
+
       if (mounted) {
         setState(() {
-          _locationSearchResults = locations;
+          _geofenceSearchResults = geofenceMatches;
+          _locationSearchResults = validatedLocations;
         });
+        
+        // Add to search history if results found
+        if (geofenceMatches.isNotEmpty || validatedLocations.isNotEmpty) {
+          _addToSearchHistory(query);
+        }
       }
     } catch (e) {
       if (kDebugMode) print('Error searching location: $e');
       if (mounted) {
         setState(() {
           _locationSearchResults = [];
+          _geofenceSearchResults = [];
         });
       }
     } finally {
@@ -357,6 +383,85 @@ class _MapScreenState extends State<MapScreen> {
         });
       }
     }
+  }
+
+  /// Search geofences by name or address (Requirement 14.2)
+  List<Geofence> _searchGeofences(String query) {
+    final lowerQuery = query.toLowerCase();
+    return _allGeofences.where((geofence) {
+      return geofence.name.toLowerCase().contains(lowerQuery) ||
+          geofence.address.toLowerCase().contains(lowerQuery);
+    }).toList();
+  }
+
+  /// Validate search results against known location database (Requirement 14.1)
+  /// Filter out irrelevant or distant matches (Requirement 14.3)
+  List<Location> _validateAndFilterLocations(
+    List<Location> locations,
+    List<Geofence> geofenceMatches,
+  ) {
+    if (locations.isEmpty) return [];
+    
+    // If we have a user location, filter by distance
+    if (_userLatLng != null) {
+      const maxDistanceKm = 100.0; // 100km radius filter
+      return locations.where((location) {
+        final distance = Geofence.calculateDistance(
+          _userLatLng!.latitude,
+          _userLatLng!.longitude,
+          location.latitude,
+          location.longitude,
+        );
+        return distance <= maxDistanceKm * 1000; // Convert to meters
+      }).toList();
+    }
+    
+    // If no user location but we have geofences, filter by proximity to geofences
+    if (geofenceMatches.isNotEmpty) {
+      const maxDistanceKm = 50.0;
+      return locations.where((location) {
+        return geofenceMatches.any((geofence) {
+          final distance = Geofence.calculateDistance(
+            geofence.latitude,
+            geofence.longitude,
+            location.latitude,
+            location.longitude,
+          );
+          return distance <= maxDistanceKm * 1000;
+        });
+      }).toList();
+    }
+    
+    // Return first 5 results if no filtering criteria
+    return locations.take(5).toList();
+  }
+
+  /// Add query to search history (Requirement 7.5)
+  void _addToSearchHistory(String query) {
+    if (!_searchHistory.contains(query)) {
+      _searchHistory.insert(0, query);
+      // Keep only last 10 searches
+      if (_searchHistory.length > 10) {
+        _searchHistory = _searchHistory.take(10).toList();
+      }
+    }
+  }
+
+  /// Get confidence indicator for search result (Requirement 14.4)
+  String _getConfidenceIndicator(Location location) {
+    if (_userLatLng == null) return 'Unknown';
+    
+    final distance = Geofence.calculateDistance(
+      _userLatLng!.latitude,
+      _userLatLng!.longitude,
+      location.latitude,
+      location.longitude,
+    );
+    
+    if (distance < 5000) return 'High'; // Within 5km
+    if (distance < 20000) return 'Medium'; // Within 20km
+    if (distance < 50000) return 'Low'; // Within 50km
+    return 'Very Low';
   }
 
   Future<void> _searchLocation(String query) async {
@@ -380,13 +485,15 @@ class _MapScreenState extends State<MapScreen> {
   void _onLocationSelected(Location location) {
     final latLng = LatLng(location.latitude, location.longitude);
 
-    // Animate to the location with smooth transition
+    // Animate to the location with smooth transition (Requirement 7.3)
     _mapController.move(latLng, 17);
 
     setState(() {
       _locationSearchResults = [];
+      _geofenceSearchResults = [];
       _locationSearchController.clear();
-      // Update user location to show the searched location
+      _showLocationSearchBar = false;
+      // Update user location to show the searched location (Requirement 7.4)
       _userLatLng = latLng;
     });
 
@@ -403,6 +510,145 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Handle geofence selection from search results (Requirement 7.3, 7.4)
+  void _onGeofenceSelected(Geofence geofence) {
+    final latLng = LatLng(geofence.latitude, geofence.longitude);
+
+    // Animate to the geofence with appropriate zoom (Requirement 7.3)
+    _mapController.move(latLng, 17);
+
+    setState(() {
+      _locationSearchResults = [];
+      _geofenceSearchResults = [];
+      _locationSearchController.clear();
+      _showLocationSearchBar = false;
+    });
+
+    // Show a snackbar confirming the selection (Requirement 7.4)
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Geofence: ${geofence.name}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  /// Center map on current geofence location (Requirements 8.1, 8.2, 8.4)
+  /// Falls back to GPS location if no geofence exists (Requirements 8.3, 8.5)
+  Future<void> _centerMapOnGeofence() async {
+    try {
+      // Step 1: Try to find the current geofence (user is inside)
+      Geofence? currentGeofence;
+      if (_userLatLng != null && _assignedGeofences.isNotEmpty) {
+        for (final geofence in _assignedGeofences) {
+          if (!geofence.isActive) continue;
+          
+          final distance = Geofence.calculateDistance(
+            geofence.latitude,
+            geofence.longitude,
+            _userLatLng!.latitude,
+            _userLatLng!.longitude,
+          );
+          
+          if (distance <= geofence.radius) {
+            currentGeofence = geofence;
+            break;
+          }
+        }
+      }
+      
+      // Step 2: If current geofence found, center on it
+      if (currentGeofence != null) {
+        final targetLatLng = LatLng(
+          currentGeofence.latitude,
+          currentGeofence.longitude,
+        );
+        
+        // Calculate appropriate zoom level to show complete geofence boundary (Requirement 8.4)
+        double zoom = 17.0;
+        if (currentGeofence.radius > 500) {
+          zoom = 15.0;
+        } else if (currentGeofence.radius > 200) {
+          zoom = 16.0;
+        }
+        
+        // Animate to the geofence with smooth transition (Requirement 8.2)
+        _mapController.move(targetLatLng, zoom);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Centered on geofence: ${currentGeofence.name}'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Step 3: Fallback to GPS location if no current geofence (Requirement 8.3)
+      if (_userLatLng != null) {
+        _mapController.move(_userLatLng!, 17.0);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Centered on your GPS location'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Step 4: If no GPS location, try to get current location
+      try {
+        final position = await _locationService.getCurrentLocation();
+        final latLng = LatLng(position.latitude, position.longitude);
+        
+        setState(() {
+          _userLatLng = latLng;
+        });
+        
+        _mapController.move(latLng, 17.0);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Centered on your current location'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        // Step 5: Display error message if all attempts fail (Requirement 8.5)
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Unable to center map: ${e.toString()}'),
+              duration: const Duration(seconds: 3),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('Error centering map: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to center map: ${e.toString()}'),
+            duration: const Duration(seconds: 3),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Fit map to show all visible items (Requirements 9.1, 9.2, 9.3, 9.4, 9.5)
   void _fitToVisibleBounds() {
     LatLngBounds? bounds;
     void extendBounds(LatLng point) {
@@ -413,6 +659,7 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
+    // Calculate bounds of all visible geofences and markers (Requirement 9.1)
     for (final geofence in _geofences) {
       extendBounds(LatLng(geofence.latitude, geofence.longitude));
     }
@@ -421,12 +668,33 @@ class _MapScreenState extends State<MapScreen> {
       extendBounds(_userLatLng!);
     }
 
-    if (bounds == null) return;
+    // Default to current location when no items visible (Requirement 9.5)
+    if (bounds == null) {
+      if (_userLatLng != null) {
+        _mapController.move(_userLatLng!, 17.0);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No items to fit - showing your location'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+      return;
+    }
+    
     try {
+      // Adjust zoom and position to include all visible items with padding (Requirements 9.2, 9.4)
       _mapController.fitCamera(
-        CameraFit.bounds(bounds: bounds!, padding: const EdgeInsets.all(48)),
+        CameraFit.bounds(
+          bounds: bounds!,
+          padding: const EdgeInsets.all(48), // Appropriate padding (Requirement 9.4)
+          maxZoom: 18.0, // Maintain minimum zoom level for readability (Requirement 9.3)
+        ),
       );
     } catch (_) {
+      // Fallback if fitCamera fails
       _mapController.move(bounds!.center, 14);
     }
   }
@@ -779,6 +1047,7 @@ class _MapScreenState extends State<MapScreen> {
                                     _locationSearchController.clear();
                                     setState(() {
                                       _locationSearchResults = [];
+                                      _geofenceSearchResults = [];
                                     });
                                   },
                                 ),
@@ -792,83 +1061,396 @@ class _MapScreenState extends State<MapScreen> {
                               padding: const EdgeInsets.all(12),
                               child: const SizedBox(
                                 height: 30,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
+                        // Display geofence results first (prioritized - Requirement 14.2)
+                        if (_geofenceSearchResults.isNotEmpty)
+                          Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            constraints: const BoxConstraints(maxHeight: 300),
+                            child: _buildSurfaceCard(
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.location_city,
+                                          size: 16,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Geofence Locations',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Divider(height: 1),
+                                  Flexible(
+                                    child: ListView.separated(
+                                      shrinkWrap: true,
+                                      itemCount: _geofenceSearchResults.length >
+                                              5
+                                          ? 5
+                                          : _geofenceSearchResults.length,
+                                      separatorBuilder: (context, index) =>
+                                          const Divider(height: 1),
+                                      itemBuilder: (context, index) {
+                                        final geofence =
+                                            _geofenceSearchResults[index];
+                                        return Material(
+                                          color: Colors.transparent,
+                                          child: InkWell(
+                                            onTap: () =>
+                                                _onGeofenceSelected(geofence),
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 12,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.all(8),
+                                                    decoration: BoxDecoration(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .primary
+                                                          .withValues(
+                                                            alpha: 0.12,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                        8,
+                                                      ),
+                                                    ),
+                                                    child: Icon(
+                                                      Icons.location_city,
+                                                      size: 20,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .primary,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          geofence.name,
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 2,
+                                                        ),
+                                                        Text(
+                                                          geofence.address,
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Theme.of(
+                                                              context,
+                                                            )
+                                                                .colorScheme
+                                                                .onSurface
+                                                                .withValues(
+                                                                  alpha: 0.7,
+                                                                ),
+                                                          ),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  _buildStatusPill(
+                                                    label: 'KNOWN',
+                                                    color: Colors.green,
+                                                    icon: Icons.verified,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        // Display external location results with confidence indicators (Requirement 14.4)
                         if (_locationSearchResults.isNotEmpty)
                           Container(
                             margin: const EdgeInsets.only(top: 8),
                             constraints: const BoxConstraints(maxHeight: 300),
                             child: _buildSurfaceCard(
                               padding: EdgeInsets.zero,
-                              child: ListView.separated(
-                                shrinkWrap: true,
-                                itemCount: _locationSearchResults.length > 5
-                                    ? 5
-                                    : _locationSearchResults.length,
-                                separatorBuilder: (context, index) =>
-                                    const Divider(height: 1),
-                                itemBuilder: (context, index) {
-                                  final location =
-                                      _locationSearchResults[index];
-                                  return Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      onTap: () =>
-                                          _onLocationSelected(location),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 12,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.public,
+                                          size: 16,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .secondary,
                                         ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.location_on,
-                                              size: 20,
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Other Locations',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .secondary,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Divider(height: 1),
+                                  Flexible(
+                                    child: ListView.separated(
+                                      shrinkWrap: true,
+                                      itemCount:
+                                          _locationSearchResults.length > 5
+                                              ? 5
+                                              : _locationSearchResults.length,
+                                      separatorBuilder: (context, index) =>
+                                          const Divider(height: 1),
+                                      itemBuilder: (context, index) {
+                                        final location =
+                                            _locationSearchResults[index];
+                                        final confidence =
+                                            _getConfidenceIndicator(location);
+                                        Color confidenceColor;
+                                        switch (confidence) {
+                                          case 'High':
+                                            confidenceColor = Colors.green;
+                                            break;
+                                          case 'Medium':
+                                            confidenceColor = Colors.orange;
+                                            break;
+                                          case 'Low':
+                                            confidenceColor = Colors.red;
+                                            break;
+                                          default:
+                                            confidenceColor = Colors.grey;
+                                        }
+                                        return Material(
+                                          color: Colors.transparent,
+                                          child: InkWell(
+                                            onTap: () =>
+                                                _onLocationSelected(location),
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 12,
+                                              ),
+                                              child: Row(
                                                 children: [
-                                                  Text(
-                                                    '${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}',
-                                                    style: const TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.w500,
+                                                  Icon(
+                                                    Icons.location_on,
+                                                    size: 20,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .secondary,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          '${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}',
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 13,
+                                                            fontWeight:
+                                                                FontWeight.w500,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 2,
+                                                        ),
+                                                        Text(
+                                                          'Tap to navigate',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Theme.of(
+                                                              context,
+                                                            )
+                                                                .colorScheme
+                                                                .onSurface
+                                                                .withValues(
+                                                                  alpha: 0.7,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    'Tap to navigate',
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .onSurface
-                                                          .withValues(
-                                                            alpha: 0.7,
-                                                          ),
-                                                    ),
+                                                  const SizedBox(width: 8),
+                                                  _buildStatusPill(
+                                                    label: confidence,
+                                                    color: confidenceColor,
                                                   ),
                                                 ],
                                               ),
                                             ),
-                                          ],
-                                        ),
-                                      ),
+                                          ),
+                                        );
+                                      },
                                     ),
-                                  );
-                                },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        // Show message when no results found (Requirement 14.5)
+                        if (!_isSearchingLocation &&
+                            _locationSearchController.text.isNotEmpty &&
+                            _geofenceSearchResults.isEmpty &&
+                            _locationSearchResults.isEmpty)
+                          Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            child: _buildSurfaceCard(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.search_off,
+                                    size: 48,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.4),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No results found',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Try searching with different terms or check spelling',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.7),
+                                        ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  if (_searchHistory.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    const Divider(),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Recent searches:',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: _searchHistory
+                                          .take(3)
+                                          .map(
+                                            (query) => InkWell(
+                                              onTap: () {
+                                                _locationSearchController.text =
+                                                    query;
+                                                _searchDebounce?.cancel();
+                                                _performLocationSearch(query);
+                                              },
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 6,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary
+                                                      .withValues(alpha: 0.12),
+                                                  borderRadius:
+                                                      BorderRadius.circular(16),
+                                                ),
+                                                child: Text(
+                                                  query,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ),
@@ -911,6 +1493,7 @@ class _MapScreenState extends State<MapScreen> {
                               if (!_showLocationSearchBar) {
                                 _locationSearchController.clear();
                                 _locationSearchResults = [];
+                                _geofenceSearchResults = [];
                               }
                             });
                           },
@@ -921,7 +1504,7 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                       const SizedBox(height: 8),
                       Tooltip(
-                        message: 'Center map on your current location',
+                        message: 'Center map on current geofence',
                         child: FloatingActionButton.small(
                           heroTag: 'center',
                           backgroundColor: Theme.of(
@@ -930,7 +1513,7 @@ class _MapScreenState extends State<MapScreen> {
                           foregroundColor: Theme.of(
                             context,
                           ).colorScheme.primary,
-                          onPressed: () => _loadData(),
+                          onPressed: _centerMapOnGeofence,
                           child: const Icon(Icons.my_location),
                         ),
                       ),

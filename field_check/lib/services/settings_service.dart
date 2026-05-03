@@ -109,8 +109,6 @@ class SettingsService {
       final settings = {
         'geofenceRadius': prefs.getInt('geofenceRadius')?.toDouble() ?? 100.0,
         'allowOfflineMode': prefs.getBool('allowOfflineMode') ?? true,
-        'requireBeaconVerification':
-            prefs.getBool('requireBeaconVerification') ?? false,
         'enableLocationTracking':
             prefs.getBool('enableLocationTracking') ?? true,
         'syncFrequency': prefs.getString('syncFrequency') ?? 'Every 15 minutes',
@@ -135,12 +133,6 @@ class SettingsService {
       }
       if (settings.containsKey('allowOfflineMode')) {
         await prefs.setBool('allowOfflineMode', settings['allowOfflineMode']);
-      }
-      if (settings.containsKey('requireBeaconVerification')) {
-        await prefs.setBool(
-          'requireBeaconVerification',
-          settings['requireBeaconVerification'],
-        );
       }
       if (settings.containsKey('enableLocationTracking')) {
         await prefs.setBool(

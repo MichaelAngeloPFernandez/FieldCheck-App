@@ -1,16 +1,19 @@
 // ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/main.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
+import 'package:field_check/services/settings_service.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/widgets/app_page.dart';
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/utils/manila_time.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -22,24 +25,87 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _offlineMode = false;
   bool _locationTracking = true;
-  bool _useBluetoothBeacons = false;
   final UserService _userService = UserService();
+  final SettingsService _settingsService = SettingsService();
   UserModel? _profile;
   bool _loadingProfile = true;
   String? _profileError;
   bool _isSyncing = false;
   Uint8List? _pickedAvatarBytes;
   String? _pickedAvatarFilename;
+  
+  // State management for unsaved changes tracking (Task 3.1)
+  bool _hasUnsavedChanges = false;
+  bool _isSaving = false;
+  
+  // Original values to track changes
+  bool _originalOfflineMode = false;
+  bool _originalLocationTracking = true;
+  ThemeMode? _originalThemeMode;
+  
+  // Offline sync status tracking (Task 4.1)
+  bool _isConnected = true;
+  int _pendingSyncCount = 0;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
     _loadUserPreferences();
     _loadProfile();
+    _initializeConnectivityMonitoring();
+    _updatePendingSyncCount();
+  }
+  
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    super.dispose();
   }
 
   String _formatTime(DateTime time) {
     return formatManilaTimeOfDay(context, time);
+  }
+  
+  /// Initialize connectivity monitoring to track online/offline status
+  /// Updates _isConnected state when connectivity changes
+  void _initializeConnectivityMonitoring() async {
+    // Check initial connectivity status
+    final results = await Connectivity().checkConnectivity();
+    setState(() {
+      _isConnected = !results.contains(ConnectivityResult.none);
+    });
+    
+    // Subscribe to connectivity changes
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((results) {
+      final isConnected = !results.contains(ConnectivityResult.none);
+      if (mounted && isConnected != _isConnected) {
+        setState(() {
+          _isConnected = isConnected;
+        });
+        // Update pending sync count when connectivity changes
+        _updatePendingSyncCount();
+      }
+    });
+  }
+  
+  /// Update the count of pending sync items from the sync service
+  /// Validates Requirements: 4.2
+  Future<void> _updatePendingSyncCount() async {
+    try {
+      final app = MyApp.of(context);
+      final syncService = app?.widget.syncService;
+      if (syncService != null) {
+        final offlineData = await syncService.getOfflineData();
+        if (mounted) {
+          setState(() {
+            _pendingSyncCount = offlineData.length;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error updating pending sync count: $e');
+    }
   }
 
   Future<void> _loadUserPreferences() async {
@@ -48,8 +114,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _offlineMode = prefs.getBool('user.offlineMode') ?? _offlineMode;
       _locationTracking =
           prefs.getBool('user.locationTrackingEnabled') ?? _locationTracking;
-      _useBluetoothBeacons =
-          prefs.getBool('user.useBluetoothBeacons') ?? _useBluetoothBeacons;
+      
+      // Store original values for change detection
+      _originalOfflineMode = _offlineMode;
+      _originalLocationTracking = _locationTracking;
+      _originalThemeMode = MyApp.of(context)?.themeMode;
     });
   }
 
@@ -242,10 +311,262 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+  
+  /// Build offline sync status indicator widget
+  /// Displays clear offline mode indicator, pending sync count, and explanatory text
+  /// Validates Requirements: 4.1, 4.2, 4.4
+  Widget _buildOfflineSyncStatus() {
+    final theme = Theme.of(context);
+    final isOffline = !_isConnected;
+    
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.md),
+      decoration: BoxDecoration(
+        color: isOffline 
+            ? theme.colorScheme.errorContainer.withValues(alpha: 0.3)
+            : theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(
+          color: isOffline 
+              ? theme.colorScheme.error.withValues(alpha: 0.5)
+              : theme.colorScheme.primary.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Status indicator row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(AppTheme.sm),
+                decoration: BoxDecoration(
+                  color: isOffline 
+                      ? theme.colorScheme.error.withValues(alpha: 0.15)
+                      : theme.colorScheme.primary.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isOffline ? Icons.cloud_off : Icons.cloud_done,
+                  size: 20,
+                  color: isOffline 
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: AppTheme.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isOffline ? 'Offline Mode' : 'Online',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: isOffline 
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isOffline 
+                          ? 'No internet connection'
+                          : 'Connected to server',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Pending sync count badge
+              if (_pendingSyncCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.secondary,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$_pendingSyncCount pending',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSecondary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.md),
+          // Explanatory text
+          Container(
+            padding: const EdgeInsets.all(AppTheme.sm),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                const SizedBox(width: AppTheme.sm),
+                Expanded(
+                  child: Text(
+                    isOffline
+                        ? 'Your data is being saved locally and will automatically sync when you\'re back online. You can continue working normally.'
+                        : _pendingSyncCount > 0
+                            ? 'You have $_pendingSyncCount item${_pendingSyncCount == 1 ? '' : 's'} waiting to sync. Tap "Sync data" below to upload now.'
+                            : 'All your data is synced. Any changes you make will be saved immediately.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  /// Detects if any settings have been modified from their original values
+  /// Updates _hasUnsavedChanges state accordingly
+  void _checkForUnsavedChanges() {
+    final currentThemeMode = MyApp.of(context)?.themeMode;
+    final hasChanges = _offlineMode != _originalOfflineMode ||
+        _locationTracking != _originalLocationTracking ||
+        currentThemeMode != _originalThemeMode;
+    
+    if (hasChanges != _hasUnsavedChanges) {
+      setState(() {
+        _hasUnsavedChanges = hasChanges;
+      });
+    }
+  }
+  
+  /// Synchronizes location toggle state with Target_Icon widget
+  /// Ensures synchronization happens within 100ms as per requirement 1.3
+  void _syncLocationToggleWithIcon(bool isEnabled) {
+    // Notify LocationSyncService to update its state
+    final locationService = LocationSyncService();
+    if (isEnabled) {
+      locationService.startSharing();
+    } else {
+      locationService.stopSharing();
+    }
+  }
 
-  Future<void> _saveUserPreference(String key, bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(key, value);
+  /// Saves all settings to local storage and syncs with server
+  /// Validates Requirements: 3.3, 3.4, 3.5, 13.1, 13.2
+  Future<void> _saveSettings() async {
+    if (_isSaving) return;
+    
+    setState(() {
+      _isSaving = true;
+    });
+    
+    try {
+      // Save all settings to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('user.offlineMode', _offlineMode);
+      await prefs.setBool('user.locationTrackingEnabled', _locationTracking);
+      
+      // Save theme mode
+      final currentThemeMode = MyApp.of(context)?.themeMode;
+      if (currentThemeMode != null) {
+        await prefs.setString('user.themeMode', currentThemeMode.toString());
+      }
+      
+      // Sync location toggle state with LocationSyncService
+      _syncLocationToggleWithIcon(_locationTracking);
+      
+      // Backup settings to server (best effort - don't fail if server is unavailable)
+      try {
+        await _settingsService.updateSettings({
+          'offlineMode': _offlineMode,
+          'locationTrackingEnabled': _locationTracking,
+          'themeMode': currentThemeMode?.toString() ?? 'ThemeMode.system',
+        });
+      } catch (serverError) {
+        // Server backup failed, but local save succeeded - log but don't fail
+        debugPrint('Settings server backup failed: $serverError');
+      }
+      
+      // Update original values to match current values
+      setState(() {
+        _originalOfflineMode = _offlineMode;
+        _originalLocationTracking = _locationTracking;
+        _originalThemeMode = currentThemeMode;
+        _hasUnsavedChanges = false;
+        _isSaving = false;
+      });
+      
+      // Show success confirmation message
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Settings saved successfully',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      // Error occurred during save
+      setState(() {
+        _isSaving = false;
+      });
+      
+      if (!mounted) return;
+      
+      // Show error message with retry option
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Failed to save settings: ${e.toString()}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: _saveSettings,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _logout() async {
@@ -439,6 +760,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final syncedCount = pending.length - remaining.length;
 
       if (mounted) {
+        // Update pending sync count after sync completes
+        await _updatePendingSyncCount();
+        
         if (syncedCount > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -493,9 +817,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         AppTheme.lg,
         AppTheme.xl,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           _buildSurfaceCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -612,10 +938,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: () {
+                      // Navigate to existing Map page (Requirements 6.1, 6.2, 6.3, 6.4)
                       Navigator.of(context).pushNamedAndRemoveUntil(
                         '/dashboard',
                         (route) => false,
-                        arguments: 1,
+                        arguments: 3, // Map screen is at index 3
                       );
                     },
                     icon: const Icon(Icons.map),
@@ -674,6 +1001,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           if (mode == null) return;
                           await MyApp.of(context)?.setThemeMode(mode);
                           setState(() {});
+                          _checkForUnsavedChanges();
                         },
                       ),
                     ),
@@ -698,11 +1026,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.cloud_off_outlined,
                   trailing: Switch.adaptive(
                     value: _offlineMode,
-                    onChanged: (value) async {
+                    onChanged: (value) {
                       setState(() {
                         _offlineMode = value;
                       });
-                      await _saveUserPreference('user.offlineMode', value);
+                      _checkForUnsavedChanges();
                     },
                   ),
                 ),
@@ -723,32 +1051,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.location_searching,
                   trailing: Switch.adaptive(
                     value: _locationTracking,
-                    onChanged: (value) async {
+                    onChanged: (value) {
                       setState(() {
                         _locationTracking = value;
                       });
-                      await _saveUserPreference(
-                        'user.locationTrackingEnabled',
-                        value,
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: AppTheme.md),
-                _buildSettingTile(
-                  title: 'Bluetooth beacons',
-                  subtitle: 'Enhance location accuracy with Bluetooth beacons.',
-                  icon: Icons.bluetooth_searching,
-                  trailing: Switch.adaptive(
-                    value: _useBluetoothBeacons,
-                    onChanged: (value) async {
-                      setState(() {
-                        _useBluetoothBeacons = value;
-                      });
-                      await _saveUserPreference(
-                        'user.useBluetoothBeacons',
-                        value,
-                      );
+                      _checkForUnsavedChanges();
                     },
                   ),
                 ),
@@ -764,6 +1071,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Sync & Account',
                   subtitle: 'Keep your data updated and secure.',
                 ),
+                const SizedBox(height: AppTheme.md),
+                // Offline sync status indicator (Task 4.1)
+                _buildOfflineSyncStatus(),
                 const SizedBox(height: AppTheme.md),
                 SizedBox(
                   width: double.infinity,
@@ -810,6 +1120,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+        ],
+      ),
+          // Save button positioned at the bottom
+          if (_hasUnsavedChanges || _isSaving)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.all(AppTheme.lg),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isSaving ? null : _saveSettings,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.save),
+                      label: Text(_isSaving ? 'Saving...' : 'Save Changes'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        textStyle: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                        backgroundColor: theme.colorScheme.primary,
+                        disabledBackgroundColor: theme.colorScheme.primary.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

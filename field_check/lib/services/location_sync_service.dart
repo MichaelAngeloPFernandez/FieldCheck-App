@@ -22,6 +22,7 @@ class LocationSyncService {
       ValueNotifier<Map<String, dynamic>?>(null);
   final ValueNotifier<geolocator.Position?> _lastPosition =
       ValueNotifier<geolocator.Position?>(null);
+  final ValueNotifier<bool> _sharingEnabledNotifier = ValueNotifier<bool>(true);
   String _socketUrl = ApiConfig.baseUrl;
 
   bool _isCheckedIn = false;
@@ -174,6 +175,7 @@ class LocationSyncService {
   /// This powers the admin map "online/roaming" status.
   void startSharing() {
     _sharingEnabled = true;
+    _sharingEnabledNotifier.value = true;
     _lastSyncTime = null;
     if (!_isTracking) {
       _isTracking = true;
@@ -290,6 +292,7 @@ class LocationSyncService {
 
   void stopSharing() {
     _sharingEnabled = false;
+    _sharingEnabledNotifier.value = false;
     try {
       if (_initialized && _socket.connected) {
         final profile = _userService.currentUser;
@@ -474,6 +477,13 @@ class LocationSyncService {
   bool get isTracking => _isTracking;
 
   bool get isSharingEnabled => _sharingEnabled;
+  
+  /// Set the sharing enabled state without starting/stopping the service
+  /// Used for initialization from saved preferences
+  set sharingEnabledState(bool value) {
+    _sharingEnabled = value;
+    _sharingEnabledNotifier.value = value;
+  }
 
   /// Check if socket is connected
   bool get isConnected => _socket.connected;
@@ -484,6 +494,7 @@ class LocationSyncService {
       _lastEmitted;
   ValueListenable<geolocator.Position?> get lastPositionListenable =>
       _lastPosition;
+  ValueListenable<bool> get sharingEnabledListenable => _sharingEnabledNotifier;
   String get socketUrl => _socketUrl;
 
   ValueListenable<DateTime?> get lastSharedListenable => _lastSharedAt;
