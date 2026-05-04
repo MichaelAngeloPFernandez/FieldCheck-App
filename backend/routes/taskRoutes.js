@@ -30,9 +30,14 @@ const {
   escalateTask,
   gradeUserTask,
   addCommentToUserTask,
+  createAdHocTask,
+  getTicketTasks,
+  assignTaskToEmployee,
+  updateTaskStatus,
+  completeChecklistItem,
 } = require('../controllers/taskController');
 
-const { protect, admin } = require('../middleware/authMiddleware');
+const { protect, admin, requireCompany } = require('../middleware/authMiddleware');
 
 // List and create tasks
 router.get('/', protect, getTasks);
@@ -65,6 +70,22 @@ router.post('/:id/escalate', protect, admin, escalateTask);
 // Employee/admin actions on a specific task
 router.put('/:id/checklist-item', protect, updateTaskChecklistItem);
 router.put('/:id/block', protect, blockTask);
+
+// Task Template System endpoints (must be BEFORE /:id routes)
+// Create ad-hoc task for ticket
+router.post('/ticket/:ticketId/create', protect, admin, requireCompany, createAdHocTask);
+
+// Get tasks for ticket with filtering
+router.get('/ticket/:ticketId/list', protect, requireCompany, getTicketTasks);
+
+// Assign task to employee
+router.put('/:id/assign', protect, admin, requireCompany, assignTaskToEmployee);
+
+// Change task status
+router.put('/:id/status', protect, requireCompany, updateTaskStatus);
+
+// Complete checklist item
+router.post('/:id/checklist/:itemIndex/complete', protect, requireCompany, completeChecklistItem);
 
 // Generic /:id routes (must be LAST to avoid conflicts)
 router.get('/:id', protect, getTask);

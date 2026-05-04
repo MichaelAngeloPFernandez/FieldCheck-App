@@ -2,12 +2,14 @@ const asyncHandler = require('express-async-handler');
 const Task = require('../models/Task');
 const UserTask = require('../models/UserTask');
 const User = require('../models/User');
-const { io } = require('../server');
 const Report = require('../models/Report');
 const Attendance = require('../models/Attendance');
 const Settings = require('../models/Settings');
 const notificationService = require('../services/notificationService');
 const appNotificationService = require('../services/appNotificationService');
+
+// Use global.io which is set by server.js
+const getIO = () => global.io;
 
 async function getMaxActiveTasksPerEmployee() {
   return 3;
@@ -1676,6 +1678,329 @@ const addCommentToUserTask = asyncHandler(async (req, res) => {
   res.status(201).json(saved);
 });
 
+/**
+ * POST /api/tasks/ticket/:ticketId/create
+ * Create ad-hoc task for ticket
+ * Auth: Admin only
+ */
+const createAdHocTask = asyncHandler(async (req, res) => {
+  const { ticketId } = req.params;
+  const companyId = req.companyId;
+  const userId = req.user._id;
+  const { title, description, type, difficulty, checklist } = req.body;
+
+  // Validate required fields
+  if (!title || !title.trim()) {
+    res.status(400);
+    throw new Error('Task title is required');
+  }
+
+  // Validate type and difficulty if provided
+  const validTypes = ['general', 'inspection', 'maintenance', 'delivery', 'other'];
+  const validDifficulties = ['easy', 'medium', 'hard'];
+
+  if (type && !validTypes.includes(type)) {
+    res.status(400);
+    throw new Error(`Invalid type. Must be one of: ${validTypes.join(', ')}`);
+  }
+
+  if (difficulty && !validDifficulties.includes(difficulty)) {
+    res.status(400);
+    throw new Error(`Invalid difficulty. Must be one of: ${validDifficulties.join(', ')}`);
+  }
+
+  // Process checklist
+  let processedChecklist = [];
+  if (checklist && Array.isArray(checklist)) {
+    processedChecklist = checklist.map((item) => ({
+      label: item.label ? String(item.label).trim() : '',
+      isCompleted: false,
+      completedAt: null,
+    }));
+
+    // Filter out empty labels
+    processedChecklist = processedChecklist.filter((item) => item.label);
+  }
+
+  // Create task
+  const task = await Task.create({
+    title: title.trim(),
+    description: description ? description.trim() : '',
+    type: type || 'general',
+    difficulty: difficulty || 'medium',
+    checklist: processedChecklist,
+    taskOrigin: 'ad_hoc',
+    ticketId,
+    companyId,
+    assignedBy: userId,
+    status: 'pending',
+  });
+
+  res.status(201).json(task);
+});
+
+/**
+ * GET /api/tasks/ticket/:ticketId/list
+ * List tasks for ticket with filtering
+ * Auth: Admin, Employee (own tasks)
+ * Query: ?status=pending&taskOrigin=template&sort=createdAt
+ */
+const getTicketTasks = asyncHandler(async (req, res) => {
+  const { ticketId } = req.params;
+  const companyId = req.companyId;
+  const userId = req.user._id;
+  const userRole = req.user.role;
+  const { status, taskOrigin, sort } = req.query;
+
+  // Build filter
+  const filter = {
+    ticketId,
+    companyId,
+  };
+
+  if (status) {
+    filter.status = status;
+  }
+
+  if (taskOrigin) {
+    filter.taskOrigin = taskOrigin;
+  }
+
+  // If employee, only show tasks assigned to them
+  if (userRole === 'employee') {
+    filter.assignedTo = userId;
+  }
+
+  // Build sort
+  let sortObj = { createdAt: -1 };
+  if (sort === 'title') {
+    sortObj = { title: 1 };
+  } else if (sort === 'status') {
+    sortObj = { status: 1 };
+  }
+
+  const tasks = await Task.find(filter)
+    .sort(sortObj)
+    .populate('assignedTo', 'name employeeId')
+    .populate('templateId', 'title description');
+
+  res.json(tasks);
+});
+
+/**
+ * PUT /api/tasks/:id/assign
+ * Assign task to employee
+ * Auth: Admin only
+ * Body: { assignedTo }
+ */
+const assignTaskToEmployee = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const companyId = req.companyId;
+  const { assignedTo } = req.body;
+
+  if (!assignedTo) {
+    res.status(400);
+    throw new Error('assignedTo is required');
+  }
+
+  // Get task
+  const task = await Task.findOne({
+    _id: id,
+    companyId,
+  });
+
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  // Verify employee exists and belongs to company
+  const employee = await User.findOne({
+    _id: assignedTo,
+    company: companyId,
+    role: 'employee',
+  });
+
+  if (!employee) {
+    res.status(404);
+    throw new Error('Employee not found');
+  }
+
+  // Update task
+  task.assignedTo = assignedTo;
+
+  // Record status change if status is still pending
+  if (task.status === 'pending') {
+    task.status = 'assigned';
+    task.statusHistory.push({
+      status: 'assigned',
+      changedBy: req.user._id,
+      changedAt: new Date(),
+      reason: 'Task assigned to employee',
+    });
+  }
+
+  await task.save();
+
+  // Emit notification
+  try {
+    const io = getIO();
+    if (io) {
+      io.emit('taskAssigned', {
+        taskId: task._id.toString(),
+        employeeId: assignedTo.toString(),
+        title: task.title,
+        ticketId: task.ticketId ? task.ticketId.toString() : null,
+      });
+    }
+  } catch (_) {}
+
+  res.json(task);
+});
+
+/**
+ * PUT /api/tasks/:id/status
+ * Change task status
+ * Auth: Admin, assigned Employee
+ * Body: { status, reason }
+ */
+const updateTaskStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const companyId = req.companyId;
+  const userId = req.user._id;
+  const userRole = req.user.role;
+  const { status, reason } = req.body;
+
+  if (!status) {
+    res.status(400);
+    throw new Error('status is required');
+  }
+
+  // Get task
+  const task = await Task.findOne({
+    _id: id,
+    companyId,
+  });
+
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  // Check authorization
+  if (userRole === 'employee') {
+    if (!task.assignedTo || task.assignedTo.toString() !== userId.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to update this task');
+    }
+  }
+
+  // Validate status
+  const validStatuses = ['pending', 'in_progress', 'completed', 'blocked', 'reviewed', 'closed'];
+  if (!validStatuses.includes(status)) {
+    res.status(400);
+    throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+  }
+
+  // Update status
+  const oldStatus = task.status;
+  task.status = status;
+
+  // Record completion details
+  if (status === 'completed' && oldStatus !== 'completed') {
+    task.completedBy = userId;
+    task.completedAt = new Date();
+
+    // Calculate duration if task was assigned
+    if (task.assignedTo) {
+      const assignmentTime = task.updatedAt || task.createdAt;
+      task.taskDuration = Math.floor((new Date() - assignmentTime) / 1000 / 60); // in minutes
+    }
+  }
+
+  // Record status change
+  task.statusHistory.push({
+    status,
+    changedBy: userId,
+    changedAt: new Date(),
+    reason: reason || '',
+  });
+
+  await task.save();
+
+  // Emit event
+  try {
+    const io = getIO();
+    if (io) {
+      io.emit('taskStatusChanged', {
+        taskId: task._id.toString(),
+        status,
+        changedBy: userId.toString(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (_) {}
+
+  res.json(task);
+});
+
+/**
+ * POST /api/tasks/:id/checklist/:itemIndex/complete
+ * Mark checklist item as complete
+ * Auth: Employee assigned to task
+ * Body: {} (no body required)
+ */
+const completeChecklistItem = asyncHandler(async (req, res) => {
+  const { id, itemIndex } = req.params;
+  const companyId = req.companyId;
+  const userId = req.user._id;
+
+  // Get task
+  const task = await Task.findOne({
+    _id: id,
+    companyId,
+  });
+
+  if (!task) {
+    res.status(404);
+    throw new Error('Task not found');
+  }
+
+  // Check authorization - only assigned employee can complete checklist items
+  if (!task.assignedTo || task.assignedTo.toString() !== userId.toString()) {
+    res.status(403);
+    throw new Error('Not authorized to complete checklist items for this task');
+  }
+
+  // Validate item index
+  const index = parseInt(itemIndex, 10);
+  if (isNaN(index) || index < 0 || index >= task.checklist.length) {
+    res.status(400);
+    throw new Error('Invalid checklist item index');
+  }
+
+  // Mark item as complete
+  task.checklist[index].isCompleted = true;
+  task.checklist[index].completedAt = new Date();
+
+  await task.save();
+
+  // Emit event
+  try {
+    const io = getIO();
+    if (io) {
+      io.emit('checklistItemCompleted', {
+        taskId: task._id.toString(),
+        itemIndex: index,
+        completedBy: userId.toString(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (_) {}
+
+  res.json(task);
+});
+
 module.exports = {
   getTask,
   getTasks,
@@ -1706,4 +2031,9 @@ module.exports = {
   gradeUserTask,
   addCommentToUserTask,
   cancelUserTask,
+  createAdHocTask,
+  getTicketTasks,
+  assignTaskToEmployee,
+  updateTaskStatus,
+  completeChecklistItem,
 };

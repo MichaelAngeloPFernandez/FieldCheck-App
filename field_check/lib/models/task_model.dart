@@ -107,6 +107,10 @@ class Task {
   final List<TaskComment> comments;
   final List<TaskChecklistItem> checklist;
   final String? blockReason;
+  final String taskOrigin; // 'template' or 'ad_hoc'
+  final String? templateId; // Source template ID if origin is 'template'
+  final String? serviceId; // Associated service ID
+  final String? serviceName; // Associated service name (denormalized)
 
   Task({
     required this.id,
@@ -150,6 +154,10 @@ class Task {
     this.comments = const [],
     this.checklist = const [],
     this.blockReason,
+    this.taskOrigin = 'ad_hoc',
+    this.templateId,
+    this.serviceId,
+    this.serviceName,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -291,6 +299,10 @@ class Task {
       comments: comments,
       checklist: checklist,
       blockReason: json['blockReason'],
+      taskOrigin: json['taskOrigin'] ?? 'ad_hoc',
+      templateId: json['templateId']?.toString(),
+      serviceId: json['serviceId']?.toString(),
+      serviceName: json['serviceName']?.toString(),
     );
   }
 
@@ -329,6 +341,10 @@ class Task {
       'comments': comments.map((c) => c.toJson()).toList(),
       'checklist': checklist.map((c) => c.toJson()).toList(),
       'blockReason': blockReason,
+      'taskOrigin': taskOrigin,
+      'templateId': templateId,
+      'serviceId': serviceId,
+      'serviceName': serviceName,
     };
   }
 
@@ -366,6 +382,10 @@ class Task {
     List<TaskComment>? comments,
     List<TaskChecklistItem>? checklist,
     String? blockReason,
+    String? taskOrigin,
+    String? templateId,
+    String? serviceId,
+    String? serviceName,
   }) {
     return Task(
       id: id ?? this.id,
@@ -401,6 +421,10 @@ class Task {
       comments: comments ?? this.comments,
       checklist: checklist ?? this.checklist,
       blockReason: blockReason ?? this.blockReason,
+      taskOrigin: taskOrigin ?? this.taskOrigin,
+      templateId: templateId ?? this.templateId,
+      serviceId: serviceId ?? this.serviceId,
+      serviceName: serviceName ?? this.serviceName,
     );
   }
 }

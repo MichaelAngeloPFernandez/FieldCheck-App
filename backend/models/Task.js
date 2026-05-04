@@ -7,6 +7,11 @@ const taskSchema = new mongoose.Schema(
     description: { type: String, default: '' },
     dueDate: { type: Date, required: false },
     assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Company',
+      default: null,
+    },
     status: {
       type: String,
       enum: [
@@ -59,9 +64,73 @@ const taskSchema = new mongoose.Schema(
       others: [{ type: String }],
     },
     blockReason: { type: String },
+    // Task Template System fields
+    taskOrigin: {
+      type: String,
+      enum: ['template', 'ad_hoc'],
+      default: 'ad_hoc',
+    },
+    templateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TaskTemplate',
+      default: null,
+    },
+    ticketId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Ticket',
+      default: null,
+    },
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    completedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    completedAt: {
+      type: Date,
+      default: null,
+    },
+    taskDuration: {
+      type: Number,
+      default: null,
+    },
+    notes: {
+      type: String,
+      default: '',
+    },
+    statusHistory: [
+      {
+        status: {
+          type: String,
+          required: true,
+        },
+        changedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        changedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        reason: {
+          type: String,
+          default: '',
+        },
+      },
+    ],
   },
 
   { timestamps: true }
 );
+
+// Indexes for Task Template System
+taskSchema.index({ ticketId: 1, taskOrigin: 1 });
+taskSchema.index({ assignedTo: 1, status: 1 });
+taskSchema.index({ companyId: 1, createdAt: 1 });
 
 module.exports = mongoose.model('Task', taskSchema);

@@ -28,21 +28,8 @@ global.console.error = console.error;
 // Set default timeout
 jest.setTimeout(10000);
 
-// Mock Date for consistent testing
-const mockDate = new Date('2024-11-28T10:00:00Z');
-global.Date = class extends Date {
-  constructor(...args) {
-    if (args.length === 0) {
-      super(mockDate);
-    } else {
-      super(...args);
-    }
-  }
-
-  static now() {
-    return mockDate.getTime();
-  }
-};
+// Note: Do NOT mock the global Date object as it breaks Mongoose's timestamp functionality
+// Mongoose relies on Date.now() and the Date constructor working correctly
 
 // Mock fetch if not available
 if (typeof global.fetch === 'undefined') {

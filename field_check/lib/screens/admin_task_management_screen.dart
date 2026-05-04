@@ -11,6 +11,7 @@ import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/widgets/admin_control_bar.dart';
+import 'package:field_check/widgets/service_management_widget.dart';
 
 class AdminTaskManagementScreen extends StatefulWidget {
   final bool embedded;
@@ -26,6 +27,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   final TaskService _taskService = TaskService();
   final UserService _userService = UserService();
   final AvailabilityService _availabilityService = AvailabilityService();
+
   List<Task> _tasks = [];
   List<Task> _archivedTasks = [];
   bool _isLoading = true;
@@ -42,6 +44,15 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   static const int _taskLimitPerEmployee = 3;
 
   Timer? _fetchDebounce;
+
+  // Task filtering state
+  String _statusFilter = 'all';
+  final String _typeFilter = 'all';
+  String _originFilter = 'all'; // 'all', 'template', 'ad_hoc'
+  final String _assigneeFilter = 'all';
+  String _searchQuery = '';
+
+  // Task details state
 
   Future<String?> _promptAdminReviewNote({
     required BuildContext context,
@@ -109,6 +120,57 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     if (user.id.isNotEmpty) return user.id;
     final fallback = user.employeeId;
     return (fallback ?? '').trim();
+  }
+
+  /// Get task origin (template or ad_hoc)
+  String _getTaskOrigin(Task task) {
+    return task.taskOrigin;
+  }
+
+  /// Filter tasks based on current filter state
+  List<Task> _getFilteredTasks(List<Task> tasks) {
+    return tasks.where((task) {
+      // Search filter
+      if (_searchQuery.isNotEmpty) {
+        final query = _searchQuery.toLowerCase();
+        if (!task.title.toLowerCase().contains(query) &&
+            !task.description.toLowerCase().contains(query)) {
+          return false;
+        }
+      }
+
+      // Type filter
+      if (_typeFilter != 'all' && (task.type ?? 'general') != _typeFilter) {
+        return false;
+      }
+
+      // Origin filter
+      if (_originFilter != 'all') {
+        final origin = _getTaskOrigin(task);
+        if (origin != _originFilter) {
+          return false;
+        }
+      }
+
+      // Assignee filter
+      if (_assigneeFilter != 'all') {
+        final assignees = task.assignedToMultiple.map(_canonicalUserId);
+        if (!assignees.contains(_assigneeFilter)) {
+          return false;
+        }
+      }
+
+      // Search query
+      if (_searchQuery.isNotEmpty) {
+        final query = _searchQuery.toLowerCase();
+        if (!task.title.toLowerCase().contains(query) &&
+            !task.description.toLowerCase().contains(query)) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
   }
 
   @override
@@ -438,14 +500,15 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.error_outline,
-                                color: Colors.red.shade700),
+                            Icon(
+                              Icons.error_outline,
+                              color: Colors.red.shade700,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 dialogError!,
-                                style:
-                                    TextStyle(color: Colors.red.shade800),
+                                style: TextStyle(color: Colors.red.shade800),
                               ),
                             ),
                           ],
@@ -459,7 +522,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                         labelText: 'Title *',
                         border: OutlineInputBorder(),
                         contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                       ),
                       onChanged: (_) {
                         if (dialogError != null) {
@@ -477,7 +542,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                         labelText: 'Description *',
                         border: OutlineInputBorder(),
                         contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                       ),
                       onChanged: (_) {
                         if (dialogError != null) {
@@ -489,26 +556,33 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
                     // ── Task Type ────────────────────────────────────────────
                     DropdownButtonFormField<String>(
-                      value: taskType,
+                      initialValue: taskType,
                       decoration: const InputDecoration(
                         labelText: 'Task Type',
                         border: OutlineInputBorder(),
                         contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                       ),
                       items: const [
                         DropdownMenuItem(
-                            value: 'general', child: Text('General')),
+                          value: 'general',
+                          child: Text('General'),
+                        ),
                         DropdownMenuItem(
-                            value: 'inspection',
-                            child: Text('Inspection')),
+                          value: 'inspection',
+                          child: Text('Inspection'),
+                        ),
                         DropdownMenuItem(
-                            value: 'maintenance',
-                            child: Text('Maintenance')),
+                          value: 'maintenance',
+                          child: Text('Maintenance'),
+                        ),
                         DropdownMenuItem(
-                            value: 'delivery', child: Text('Delivery')),
-                        DropdownMenuItem(
-                            value: 'other', child: Text('Other')),
+                          value: 'delivery',
+                          child: Text('Delivery'),
+                        ),
+                        DropdownMenuItem(value: 'other', child: Text('Other')),
                       ],
                       onChanged: (value) {
                         if (value == null) return;
@@ -522,20 +596,22 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
                     // ── Difficulty ───────────────────────────────────────────
                     DropdownButtonFormField<String>(
-                      value: taskDifficulty,
+                      initialValue: taskDifficulty,
                       decoration: const InputDecoration(
                         labelText: 'Difficulty',
                         border: OutlineInputBorder(),
                         contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                       ),
                       items: const [
+                        DropdownMenuItem(value: 'easy', child: Text('Easy')),
                         DropdownMenuItem(
-                            value: 'easy', child: Text('Easy')),
-                        DropdownMenuItem(
-                            value: 'medium', child: Text('Medium')),
-                        DropdownMenuItem(
-                            value: 'hard', child: Text('Hard')),
+                          value: 'medium',
+                          child: Text('Medium'),
+                        ),
+                        DropdownMenuItem(value: 'hard', child: Text('Hard')),
                       ],
                       onChanged: (value) {
                         if (value == null) return;
@@ -568,9 +644,13 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           labelText: 'Due Date *',
                           border: const OutlineInputBorder(),
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
                           suffixIcon: const Icon(Icons.calendar_today),
-                          errorText: dueDate == null && dialogError != null &&
+                          errorText:
+                              dueDate == null &&
+                                  dialogError != null &&
                                   dialogError!.contains('due')
                               ? 'Required'
                               : null,
@@ -593,11 +673,13 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     const Text(
                       'Assign To (optional)',
                       style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
-                      value: selectedEmployee?.id,
+                      initialValue: selectedEmployee?.id,
                       decoration: InputDecoration(
                         hintText: employees.isEmpty
                             ? 'No employees available'
@@ -605,22 +687,25 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                         prefixIcon: const Icon(Icons.person_outline),
                         border: const OutlineInputBorder(),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                       ),
                       items: [
                         const DropdownMenuItem<String>(
                           value: null,
-                          child: Text('— Unassigned —',
-                              style: TextStyle(color: Colors.grey)),
+                          child: Text(
+                            '— Unassigned —',
+                            style: TextStyle(color: Colors.grey),
+                          ),
                         ),
                         ...employees.map((e) {
-                          final label = e.employeeId != null &&
-                                  e.employeeId!.isNotEmpty
+                          final label =
+                              e.employeeId != null && e.employeeId!.isNotEmpty
                               ? '${e.name} (${e.employeeId})'
                               : e.name;
                           final activeTasks = e.activeTaskCount ?? 0;
-                          final atLimit =
-                              activeTasks >= _taskLimitPerEmployee;
+                          final atLimit = activeTasks >= _taskLimitPerEmployee;
                           return DropdownMenuItem<String>(
                             value: e.id,
                             child: Row(
@@ -657,10 +742,12 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                               final emp = id == null
                                   ? null
                                   : employees
-                                      .where((e) => e.id == id)
-                                      .cast<UserModel?>()
-                                      .firstWhere((_) => true,
-                                          orElse: () => null);
+                                        .where((e) => e.id == id)
+                                        .cast<UserModel?>()
+                                        .firstWhere(
+                                          (_) => true,
+                                          orElse: () => null,
+                                        );
                               dialogSetState(() {
                                 selectedEmployee = emp;
                                 dialogError = null;
@@ -682,24 +769,26 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                   onPressed: isSubmitting
                       ? null
                       : () async {
-                          final String title =
-                              titleController.text.trim();
-                          final String description =
-                              descriptionController.text.trim();
+                          final String title = titleController.text.trim();
+                          final String description = descriptionController.text
+                              .trim();
 
                           if (title.isEmpty) {
-                            dialogSetState(() =>
-                                dialogError = 'Title is required.');
+                            dialogSetState(
+                              () => dialogError = 'Title is required.',
+                            );
                             return;
                           }
                           if (description.isEmpty) {
-                            dialogSetState(() =>
-                                dialogError = 'Description is required.');
+                            dialogSetState(
+                              () => dialogError = 'Description is required.',
+                            );
                             return;
                           }
                           if (dueDate == null) {
-                            dialogSetState(() =>
-                                dialogError = 'Due date is required.');
+                            dialogSetState(
+                              () => dialogError = 'Due date is required.',
+                            );
                             return;
                           }
 
@@ -715,8 +804,8 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                             type: taskType,
                             difficulty: taskDifficulty,
                             dueDate: dueDate!,
-                            assignedBy: _userService.currentUser?.id ??
-                                'unknown_admin',
+                            assignedBy:
+                                _userService.currentUser?.id ?? 'unknown_admin',
                             createdAt: DateTime.now(),
                             updatedAt: DateTime.now(),
                             lastViewedAt: null,
@@ -731,8 +820,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           );
 
                           try {
-                            final created =
-                                await _taskService.createTask(newTask);
+                            final created = await _taskService.createTask(
+                              newTask,
+                            );
 
                             // Auto-assign the selected employee if one was chosen
                             if (selectedEmployee != null &&
@@ -744,7 +834,8 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                 );
                               } catch (assignErr) {
                                 debugPrint(
-                                    'Task created but assignment failed: $assignErr');
+                                  'Task created but assignment failed: $assignErr',
+                                );
                                 // Task was created — show a partial-success message
                                 _fetchTasks();
                                 if (mounted) {
@@ -1623,6 +1714,29 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     );
   }
 
+  Future<void> _changeTaskStatus(Task task, String newStatus) async {
+    try {
+      await _taskService.updateTask(task.copyWith(status: newStatus));
+      await _fetchTasks();
+      if (!mounted) return;
+      AppWidgets.showSuccessSnackbar(
+        context,
+        'Task status updated to ${newStatus.replaceAll('_', ' ')}',
+      );
+    } catch (e) {
+      debugPrint('Error changing task status: $e');
+      if (mounted) {
+        AppWidgets.showErrorSnackbar(
+          context,
+          AppWidgets.friendlyErrorMessage(
+            e,
+            fallback: 'Failed to change task status',
+          ),
+        );
+      }
+    }
+  }
+
   void _showTaskDetailsDialog(Task task) {
     showDialog(
       context: context,
@@ -1648,14 +1762,119 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
               children: [
                 if (task.description.isNotEmpty) Text(task.description),
                 const SizedBox(height: 12),
-                if (due != null)
-                  Text('Due: ${formatManila(due, 'yyyy-MM-dd HH:mm')}'),
-                if (task.status != null && task.status!.isNotEmpty)
-                  Text('Status: ${task.status}'),
-                if (task.type != null && task.type!.isNotEmpty)
-                  Text('Type: ${task.type}'),
-                if (task.difficulty != null && task.difficulty!.isNotEmpty)
-                  Text('Difficulty: ${task.difficulty}'),
+
+                // ── Metadata section ──
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 6,
+                  children: [
+                    if (due != null)
+                      _detailRow(
+                        Icons.calendar_today,
+                        'Due: ${formatManila(due, 'yyyy-MM-dd HH:mm')}',
+                      ),
+                    _detailRow(
+                      Icons.flag,
+                      'Status: ${task.status.replaceAll('_', ' ')}',
+                    ),
+                    if (task.type != null && task.type!.isNotEmpty)
+                      _detailRow(Icons.category, 'Type: ${task.type}'),
+                    if (task.difficulty != null && task.difficulty!.isNotEmpty)
+                      _detailRow(Icons.speed, 'Difficulty: ${task.difficulty}'),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // ── Origin & Service info ──
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            task.taskOrigin == 'template'
+                                ? Icons.content_copy
+                                : Icons.edit_note,
+                            size: 16,
+                            color: task.taskOrigin == 'template'
+                                ? const Color(0xFF7C4DFF)
+                                : const Color(0xFF00897B),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Origin: ${task.taskOrigin == 'template' ? 'Template' : 'Ad-hoc'}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (task.serviceName != null &&
+                          task.serviceName!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Service: ${task.serviceName}',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // ── Checklist ──
+                if (task.checklist.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Checklist (${task.checklist.where((c) => c.isCompleted).length}/${task.checklist.length})',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 6),
+                  ...task.checklist.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            item.isCompleted
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                            size: 18,
+                            color: item.isCompleted
+                                ? const Color(0xFF43A047)
+                                : Colors.grey.shade400,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              item.label,
+                              style: TextStyle(
+                                fontSize: 13,
+                                decoration: item.isCompleted
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                color: item.isCompleted
+                                    ? Colors.grey.shade500
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 16),
                 const Text(
                   'Assignees',
@@ -1865,6 +2084,43 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
               onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('Close'),
             ),
+            // Status change
+            PopupMenuButton<String>(
+              tooltip: 'Change Status',
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFF2688d4)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.sync, size: 16, color: Color(0xFF2688d4)),
+                    SizedBox(width: 4),
+                    Text('Status', style: TextStyle(color: Color(0xFF2688d4))),
+                  ],
+                ),
+              ),
+              onSelected: (newStatus) {
+                Navigator.of(ctx).pop();
+                _changeTaskStatus(task, newStatus);
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'pending', child: Text('Pending')),
+                const PopupMenuItem(
+                  value: 'in_progress',
+                  child: Text('In Progress'),
+                ),
+                const PopupMenuItem(
+                  value: 'completed',
+                  child: Text('Completed'),
+                ),
+              ],
+            ),
             TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
@@ -1885,6 +2141,154 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     );
   }
 
+  // ── Helper widgets for enhanced task cards ──
+
+  Widget _detailRow(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: Colors.grey.shade600),
+        const SizedBox(width: 5),
+        Text(text, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+      ],
+    );
+  }
+
+  Widget _filterChip(String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF2688d4).withValues(alpha: 0.12)
+              : Colors.grey.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF2688d4)
+                : Colors.grey.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? const Color(0xFF2688d4) : Colors.grey.shade700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _statusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return const Color(0xFF2E7D32);
+      case 'in_progress':
+        return const Color(0xFF1565C0);
+      case 'blocked':
+        return const Color(0xFFC62828);
+      case 'overdue':
+        return const Color(0xFFE65100);
+      case 'pending':
+      default:
+        return const Color(0xFF757575);
+    }
+  }
+
+  Color _difficultyColor(String difficulty) {
+    switch (difficulty.toLowerCase()) {
+      case 'easy':
+        return const Color(0xFF43A047);
+      case 'hard':
+        return const Color(0xFFE53935);
+      case 'medium':
+      default:
+        return const Color(0xFFFB8C00);
+    }
+  }
+
+  IconData _difficultyIcon(String difficulty) {
+    switch (difficulty.toLowerCase()) {
+      case 'easy':
+        return Icons.sentiment_satisfied_alt;
+      case 'hard':
+        return Icons.local_fire_department;
+      case 'medium':
+      default:
+        return Icons.trending_up;
+    }
+  }
+
+  Widget _buildBadge({
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChecklistProgress(Task task) {
+    final total = task.checklist.length;
+    final completed = task.checklist.where((c) => c.isCompleted).length;
+    final progress = total > 0 ? completed / total : 0.0;
+    return Row(
+      children: [
+        Icon(Icons.checklist, size: 14, color: Colors.grey.shade500),
+        const SizedBox(width: 6),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                progress >= 1.0
+                    ? const Color(0xFF43A047)
+                    : const Color(0xFF2688d4),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$completed/$total',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade600,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const brandColor = Color(0xFF2688d4);
@@ -1896,9 +2300,14 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
           child: Column(
             children: [
               AdminControlBar<String, String>(
-                title: 'Tasks',
-                subtitle: 'Monitor task workload, deadlines, and assignments',
+                title: 'Tasks & Services',
+                subtitle: 'Manage tasks, services, and templates',
                 primaryOptions: const [
+                  AdminControlOption(
+                    value: 'services',
+                    label: 'Services',
+                    icon: Icons.business,
+                  ),
                   AdminControlOption(
                     value: 'current',
                     label: 'Active',
@@ -1925,83 +2334,167 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                   if (value == _tab) return;
                   setState(() => _tab = value);
                 },
-                secondaryLabel: 'Difficulty',
-                secondaryOptions: const [
-                  AdminControlOption(value: 'all', label: 'All'),
-                  AdminControlOption(
-                    value: 'easy',
-                    label: 'Easy',
-                    icon: Icons.sentiment_satisfied_alt,
-                  ),
-                  AdminControlOption(
-                    value: 'medium',
-                    label: 'Medium',
-                    icon: Icons.trending_up,
-                  ),
-                  AdminControlOption(
-                    value: 'hard',
-                    label: 'Hard',
-                    icon: Icons.local_fire_department,
-                  ),
-                ],
+                secondaryLabel: _tab == 'services' ? null : 'Difficulty',
+                secondaryOptions: _tab == 'services'
+                    ? const []
+                    : const [
+                        AdminControlOption(value: 'all', label: 'All'),
+                        AdminControlOption(
+                          value: 'easy',
+                          label: 'Easy',
+                          icon: Icons.sentiment_satisfied_alt,
+                        ),
+                        AdminControlOption(
+                          value: 'medium',
+                          label: 'Medium',
+                          icon: Icons.trending_up,
+                        ),
+                        AdminControlOption(
+                          value: 'hard',
+                          label: 'Hard',
+                          icon: Icons.local_fire_department,
+                        ),
+                      ],
                 secondaryValue: _difficultyFilter,
                 onSecondaryChanged: (value) {
                   if (value == _difficultyFilter) return;
                   setState(() => _difficultyFilter = value);
                 },
-                actions: [
-                  FilledButton.icon(
-                    onPressed: _addTask,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Create Task'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: brandColor,
-                      foregroundColor: Colors.white,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final selected = await showMenu<String>(
-                        context: context,
-                        position: const RelativeRect.fromLTRB(999, 80, 12, 0),
-                        items: const [
-                          PopupMenuItem(
-                            value: 'dueDate',
-                            child: Text('Sort by Due Date'),
+                actions: _tab == 'services'
+                    ? []
+                    : [
+                        FilledButton.icon(
+                          onPressed: _addTask,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Create Task'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: brandColor,
+                            foregroundColor: Colors.white,
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
-                          PopupMenuItem(
-                            value: 'difficulty',
-                            child: Text('Sort by Difficulty'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final selected = await showMenu<String>(
+                              context: context,
+                              position: const RelativeRect.fromLTRB(
+                                999,
+                                80,
+                                12,
+                                0,
+                              ),
+                              items: const [
+                                PopupMenuItem(
+                                  value: 'dueDate',
+                                  child: Text('Sort by Due Date'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'difficulty',
+                                  child: Text('Sort by Difficulty'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'status',
+                                  child: Text('Sort by Status'),
+                                ),
+                              ],
+                            );
+                            if (selected == null || !mounted) return;
+                            setState(() => _sortBy = selected);
+                          },
+                          icon: const Icon(Icons.sort),
+                          label: const Text('Sort'),
+                          style: OutlinedButton.styleFrom(
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
-                          PopupMenuItem(
-                            value: 'status',
-                            child: Text('Sort by Status'),
-                          ),
-                        ],
-                      );
-                      if (selected == null || !mounted) return;
-                      setState(() => _sortBy = selected);
-                    },
-                    icon: const Icon(Icons.sort),
-                    label: const Text('Sort'),
-                    style: OutlinedButton.styleFrom(
-                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                ],
+                        ),
+                      ],
               ),
               const SizedBox(height: 12),
-              const SizedBox.shrink(),
+              // Search bar
+              if (_tab != 'services')
+                TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Search tasks...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed: () {
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (value) {
+                    setState(() => _searchQuery = value.trim());
+                  },
+                ),
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-          child: const SizedBox.shrink(),
-        ),
+        // Origin & Status filter chips
+        if (_tab != 'services')
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // Origin filter
+                  _filterChip('All Origins', _originFilter == 'all', () {
+                    setState(() => _originFilter = 'all');
+                  }),
+                  const SizedBox(width: 6),
+                  _filterChip('Template', _originFilter == 'template', () {
+                    setState(() => _originFilter = 'template');
+                  }),
+                  const SizedBox(width: 6),
+                  _filterChip('Ad-hoc', _originFilter == 'ad_hoc', () {
+                    setState(() => _originFilter = 'ad_hoc');
+                  }),
+                  const SizedBox(width: 14),
+                  Container(width: 1, height: 24, color: Colors.grey.shade300),
+                  const SizedBox(width: 14),
+                  // Status filter
+                  _filterChip('All Status', _statusFilter == 'all', () {
+                    setState(() => _statusFilter = 'all');
+                  }),
+                  const SizedBox(width: 6),
+                  _filterChip('Pending', _statusFilter == 'pending', () {
+                    setState(() => _statusFilter = 'pending');
+                  }),
+                  const SizedBox(width: 6),
+                  _filterChip(
+                    'In Progress',
+                    _statusFilter == 'in_progress',
+                    () {
+                      setState(() => _statusFilter = 'in_progress');
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _filterChip('Completed', _statusFilter == 'completed', () {
+                    setState(() => _statusFilter = 'completed');
+                  }),
+                ],
+              ),
+            ),
+          ),
         Expanded(
-          child: _isLoading
+          child: _tab == 'services'
+              ? const ServiceManagementWidget()
+              : _isLoading
               ? const Center(child: CircularProgressIndicator())
               : () {
                   final List<Task> source;
@@ -2011,25 +2504,26 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     source = _tasks;
                   }
 
-                  final filtered = source.where((task) {
+                  // Apply tab filtering first
+                  final tabFiltered = source.where((task) {
                     final isCompleted = task.status == 'completed';
-
-                    // Tab filtering
-                    if (_tab == 'completed' && !isCompleted) {
-                      return false;
-                    }
+                    if (_tab == 'completed' && !isCompleted) return false;
                     if (_tab == 'current' && (task.isOverdue || isCompleted)) {
                       return false;
                     }
                     if (_tab == 'expired' && (!task.isOverdue || isCompleted)) {
                       return false;
                     }
-
                     // Difficulty filtering
-                    if (_difficultyFilter == 'all') return true;
-                    final d = (task.difficulty ?? '').toLowerCase();
-                    return d == _difficultyFilter;
+                    if (_difficultyFilter != 'all') {
+                      final d = (task.difficulty ?? '').toLowerCase();
+                      if (d != _difficultyFilter) return false;
+                    }
+                    return true;
                   }).toList();
+
+                  // Apply search/status/origin/assignee filters
+                  final filtered = _getFilteredTasks(tabFiltered);
 
                   _sortTasks(filtered);
 
@@ -2053,153 +2547,221 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       final task = filtered[index];
                       final isOverdue = task.isOverdue;
                       return Card(
-                        margin: const EdgeInsets.all(8.0),
-                        child: ListTile(
-                          title: Text(
-                            task.title,
-                            style: TextStyle(
-                              color: isOverdue
-                                  ? Colors.redAccent
-                                  : Colors.black,
-                              fontWeight: isOverdue
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 5,
+                        ),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(
+                            color: isOverdue
+                                ? Colors.red.withValues(alpha: 0.3)
+                                : Colors.grey.withValues(alpha: 0.15),
+                          ),
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => _showTaskDetailsDialog(task),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Title row
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        task.title,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          color: isOverdue
+                                              ? Colors.red.shade700
+                                              : null,
+                                        ),
+                                      ),
+                                    ),
+                                    // Status chip
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _statusColor(
+                                          task.status,
+                                        ).withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        task.status.replaceAll('_', ' '),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: _statusColor(task.status),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    // Actions menu
+                                    PopupMenuButton<String>(
+                                      padding: EdgeInsets.zero,
+                                      iconSize: 20,
+                                      tooltip: 'Actions',
+                                      icon: Icon(
+                                        Icons.more_vert,
+                                        size: 20,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                      onSelected: (value) {
+                                        switch (value) {
+                                          case 'edit':
+                                            _editTask(task);
+                                            return;
+                                          case 'assign':
+                                            _assignTask(task);
+                                            return;
+                                          case 'escalate':
+                                            _escalateTask(task);
+                                            return;
+                                          case 'archive':
+                                            _archiveTask(task);
+                                            return;
+                                          case 'restore':
+                                            _restoreTask(task);
+                                            return;
+                                          case 'delete':
+                                            _deleteTask(task.id);
+                                            return;
+                                        }
+                                      },
+                                      itemBuilder: (context) {
+                                        if (_tab == 'archived') {
+                                          return <PopupMenuEntry<String>>[
+                                            const PopupMenuItem(
+                                              value: 'restore',
+                                              child: Text('Restore'),
+                                            ),
+                                            const PopupMenuDivider(),
+                                            const PopupMenuItem(
+                                              value: 'delete',
+                                              child: Text('Delete'),
+                                            ),
+                                          ];
+                                        }
+                                        final items = <PopupMenuEntry<String>>[
+                                          const PopupMenuItem(
+                                            value: 'edit',
+                                            child: Text('Edit'),
+                                          ),
+                                          const PopupMenuItem(
+                                            value: 'assign',
+                                            child: Text('Assign'),
+                                          ),
+                                        ];
+                                        if (isOverdue &&
+                                            task.status != 'completed') {
+                                          items.add(
+                                            const PopupMenuItem(
+                                              value: 'escalate',
+                                              child: Text('Escalate (SMS)'),
+                                            ),
+                                          );
+                                        }
+                                        items.addAll([
+                                          const PopupMenuItem(
+                                            value: 'archive',
+                                            child: Text('Archive'),
+                                          ),
+                                          const PopupMenuDivider(),
+                                          const PopupMenuItem(
+                                            value: 'delete',
+                                            child: Text('Delete'),
+                                          ),
+                                        ]);
+                                        return items;
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                if (task.description.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    task.description,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 8),
+                                // Badges row
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: [
+                                    // Origin badge
+                                    _buildBadge(
+                                      label: task.taskOrigin == 'template'
+                                          ? 'Template'
+                                          : 'Ad-hoc',
+                                      icon: task.taskOrigin == 'template'
+                                          ? Icons.content_copy
+                                          : Icons.edit_note,
+                                      color: task.taskOrigin == 'template'
+                                          ? const Color(0xFF7C4DFF)
+                                          : const Color(0xFF00897B),
+                                    ),
+                                    if (task.type != null &&
+                                        task.type!.isNotEmpty)
+                                      _buildBadge(
+                                        label: task.type!,
+                                        icon: Icons.category,
+                                        color: const Color(0xFF2688d4),
+                                      ),
+                                    if (task.difficulty != null &&
+                                        task.difficulty!.isNotEmpty)
+                                      _buildBadge(
+                                        label: task.difficulty!,
+                                        icon: _difficultyIcon(task.difficulty!),
+                                        color: _difficultyColor(
+                                          task.difficulty!,
+                                        ),
+                                      ),
+                                    if (task.serviceName != null &&
+                                        task.serviceName!.isNotEmpty)
+                                      _buildBadge(
+                                        label: task.serviceName!,
+                                        icon: Icons.business,
+                                        color: const Color(0xFFFF6F00),
+                                      ),
+                                    if (task.isLate)
+                                      _buildBadge(
+                                        label: 'Late',
+                                        icon: Icons.schedule,
+                                        color: Colors.orange.shade700,
+                                      ),
+                                    if (task.assignedToMultiple.isNotEmpty)
+                                      _buildBadge(
+                                        label:
+                                            '${task.assignedToMultiple.length} assigned',
+                                        icon: Icons.people,
+                                        color: Colors.blueGrey,
+                                      ),
+                                  ],
+                                ),
+                                // Checklist progress
+                                if (task.checklist.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  _buildChecklistProgress(task),
+                                ],
+                              ],
                             ),
                           ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(task.description),
-                              if ((task.type != null &&
-                                      task.type!.isNotEmpty) ||
-                                  (task.difficulty != null &&
-                                      task.difficulty!.isNotEmpty))
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4.0),
-                                  child: Row(
-                                    children: [
-                                      if (task.type != null &&
-                                          task.type!.isNotEmpty)
-                                        Chip(
-                                          label: Text(task.type!),
-                                          visualDensity: VisualDensity.compact,
-                                        ),
-                                      if (task.difficulty != null &&
-                                          task.difficulty!.isNotEmpty) ...[
-                                        const SizedBox(width: 4),
-                                        Chip(
-                                          label: Text(task.difficulty!),
-                                          visualDensity: VisualDensity.compact,
-                                        ),
-                                      ],
-                                      if (task.isLate) ...[
-                                        const SizedBox(width: 4),
-                                        Chip(
-                                          label: const Text('Late'),
-                                          visualDensity: VisualDensity.compact,
-                                          backgroundColor: Colors.orangeAccent,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_tab == 'current' ||
-                                  _tab == 'expired' ||
-                                  _tab == 'completed')
-                                PopupMenuButton<String>(
-                                  tooltip: 'Actions',
-                                  icon: const Icon(Icons.more_vert),
-                                  onSelected: (value) {
-                                    switch (value) {
-                                      case 'edit':
-                                        _editTask(task);
-                                        return;
-                                      case 'assign':
-                                        _assignTask(task);
-                                        return;
-                                      case 'escalate':
-                                        _escalateTask(task);
-                                        return;
-                                      case 'archive':
-                                        _archiveTask(task);
-                                        return;
-                                      case 'delete':
-                                        _deleteTask(task.id);
-                                        return;
-                                    }
-                                  },
-                                  itemBuilder: (context) {
-                                    final items = <PopupMenuEntry<String>>[
-                                      const PopupMenuItem<String>(
-                                        value: 'edit',
-                                        child: Text('Edit'),
-                                      ),
-                                      const PopupMenuItem<String>(
-                                        value: 'assign',
-                                        child: Text('Assign'),
-                                      ),
-                                    ];
-
-                                    if (isOverdue &&
-                                        task.status != 'completed') {
-                                      items.add(
-                                        const PopupMenuItem<String>(
-                                          value: 'escalate',
-                                          child: Text('Escalate (SMS)'),
-                                        ),
-                                      );
-                                    }
-
-                                    items.addAll([
-                                      const PopupMenuItem<String>(
-                                        value: 'archive',
-                                        child: Text('Archive'),
-                                      ),
-                                      const PopupMenuDivider(),
-                                      const PopupMenuItem<String>(
-                                        value: 'delete',
-                                        child: Text('Delete'),
-                                      ),
-                                    ]);
-
-                                    return items;
-                                  },
-                                )
-                              else
-                                PopupMenuButton<String>(
-                                  tooltip: 'Actions',
-                                  icon: const Icon(Icons.more_vert),
-                                  onSelected: (value) {
-                                    switch (value) {
-                                      case 'restore':
-                                        _restoreTask(task);
-                                        return;
-                                      case 'delete':
-                                        _deleteTask(task.id);
-                                        return;
-                                    }
-                                  },
-                                  itemBuilder: (context) =>
-                                      const <PopupMenuEntry<String>>[
-                                        PopupMenuItem<String>(
-                                          value: 'restore',
-                                          child: Text('Restore'),
-                                        ),
-                                        PopupMenuDivider(),
-                                        PopupMenuItem<String>(
-                                          value: 'delete',
-                                          child: Text('Delete'),
-                                        ),
-                                      ],
-                                ),
-                            ],
-                          ),
-                          onTap: () => _showTaskDetailsDialog(task),
                         ),
                       );
                     },
