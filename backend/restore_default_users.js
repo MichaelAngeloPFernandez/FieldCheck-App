@@ -56,7 +56,7 @@ async function main() {
   await mongoose.connect(process.env.MONGO_URI);
 
   const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
+  const passwordHashForUpdate = await bcrypt.hash(password, salt);
 
   const results = [];
 
@@ -73,7 +73,9 @@ async function main() {
     };
 
     if (resetPasswords) {
-      update.password = hashedPassword;
+      // If we're doing an update (updateOne), we must write a bcrypt hash.
+      // If we're creating (save), we must write plaintext so the pre-save hook hashes once.
+      update.password = createMissingOnly ? password : passwordHashForUpdate;
     }
 
     if (!createMissingOnly) {
@@ -86,7 +88,7 @@ async function main() {
       if (existing) {
         results.push({ action: 'skipped_existing', employeeId: adminId, id: String(existing._id) });
       } else {
-        const user = new User({ ...update, password: hashedPassword });
+        const user = new User({ ...update, password });
         await user.save();
         results.push({ action: 'created', employeeId: adminId, id: String(user._id) });
       }
@@ -108,7 +110,7 @@ async function main() {
     };
 
     if (resetPasswords) {
-      update.password = hashedPassword;
+      update.password = createMissingOnly ? password : passwordHashForUpdate;
     }
 
     if (!createMissingOnly) {
@@ -121,7 +123,7 @@ async function main() {
     if (existing) {
       results.push({ action: 'skipped_existing', employeeId: empId, id: String(existing._id) });
     } else {
-      const user = new User({ ...update, password: hashedPassword });
+      const user = new User({ ...update, password });
       await user.save();
       results.push({ action: 'created', employeeId: empId, id: String(user._id) });
     }
