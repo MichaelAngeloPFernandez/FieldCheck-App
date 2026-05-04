@@ -3,7 +3,7 @@ services:
     name: fieldcheck-backend
     runtime: node
     plan: standard
-    buildCommand: npm ci
+    buildCommand: rm -rf node_modules && npm cache clean --force && npm ci --omit=dev --no-audit --no-fund
     startCommand: npm start
     envVars:
       - key: NODE_ENV
