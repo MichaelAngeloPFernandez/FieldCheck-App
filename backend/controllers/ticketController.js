@@ -147,20 +147,8 @@ const getTicketById = asyncHandler(async (req, res) => {
   });
 });
 
-/**
- * Clone all template tasks for a ticket
- * Internal helper function - now delegated to taskCloningService
- */
-async function cloneTemplateTasksForTicket(ticketId, serviceId, companyId, userId) {
-  // This function is now in taskCloningService
-  // Kept here for backward compatibility
-  const { cloneTemplateTasksForTicket: cloneService } = require('../services/taskCloningService');
-  return cloneService(ticketId, serviceId, companyId, userId);
-}
-
 module.exports = {
   createTicket,
   getTickets,
   getTicketById,
-  cloneTemplateTasksForTicket,
 };
