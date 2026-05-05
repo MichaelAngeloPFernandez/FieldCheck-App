@@ -142,6 +142,89 @@ class TaskService {
     }
   }
 
+  Future<void> submitUserTask(String userTaskId) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/submit'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to submit task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+            message = decoded['message'].toString();
+          }
+        } catch (_) {}
+      }
+      throw Exception(message);
+    }
+  }
+
+  Future<void> blockUserTask(String userTaskId, String reason) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/block'),
+      headers: await _headers(),
+      body: json.encode({'reason': reason}),
+    );
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to block task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+            message = decoded['message'].toString();
+          }
+        } catch (_) {}
+      }
+      throw Exception(message);
+    }
+  }
+
+  Future<void> approveUserTask(String userTaskId, String? notes) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/approve'),
+      headers: await _headers(),
+      body: json.encode({'notes': notes ?? ''}),
+    );
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to approve task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+            message = decoded['message'].toString();
+          }
+        } catch (_) {}
+      }
+      throw Exception(message);
+    }
+  }
+
+  Future<void> rejectUserTask(String userTaskId, String reason) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/user-task/$userTaskId/reject'),
+      headers: await _headers(),
+      body: json.encode({'reason': reason}),
+    );
+
+    if (response.statusCode != 200) {
+      String message = 'Failed to reject task';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+            message = decoded['message'].toString();
+          }
+        } catch (_) {}
+      }
+      throw Exception(message);
+    }
+  }
+
   Future<void> unblockUserTask(
     String userTaskId,
     String adminReviewNote,
@@ -958,26 +1041,5 @@ class TaskService {
     }
 
     return <String, dynamic>{};
-  }
-
-  Future<void> gradeTask(String userTaskId, int score, String feedback) async {
-    final response = await http.put(
-      Uri.parse('$_baseUrl/user-task/$userTaskId/grade'),
-      headers: await _headers(),
-      body: json.encode({'score': score, 'feedback': feedback}),
-    );
-
-    if (response.statusCode != 200) {
-      String message = 'Failed to grade task';
-      if (response.body.isNotEmpty) {
-        try {
-          final decoded = json.decode(response.body);
-          if (decoded is Map<String, dynamic> && decoded['message'] != null) {
-            message = decoded['message'].toString();
-          }
-        } catch (_) {}
-      }
-      throw Exception(message);
-    }
   }
 }

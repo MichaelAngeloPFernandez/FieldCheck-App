@@ -13,9 +13,10 @@ const userTaskSchema = new mongoose.Schema(
         'pending_acceptance',
         'accepted',
         'in_progress',
+        'pending_review',    // NEW: Submitted for admin review
         'blocked',
         'completed',
-        'reviewed',
+        'reviewed',          // DEPRECATED: Will be migrated to 'completed'
         'closed',
       ],
       default: 'pending_acceptance',
@@ -45,12 +46,13 @@ const userTaskSchema = new mongoose.Schema(
     },
     adminActionAt: { type: Date, required: false },
     adminActionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
-    grade: {
-      score: { type: Number, min: 0, max: 100, required: false },
-      feedback: { type: String, required: false },
-      gradedAt: { type: Date, required: false },
-      gradedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
-    },
+    
+    // New status tracking fields
+    submittedAt: { type: Date, required: false },
+    submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
+    reviewedAt: { type: Date, required: false },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
+    
     cancelReason: { type: String, required: false },
     cancelledAt: { type: Date, required: false },
     comments: [

@@ -11,7 +11,6 @@ import 'package:field_check/config/api_config.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/widgets/admin_control_bar.dart';
-import 'package:field_check/widgets/service_management_widget.dart';
 
 class AdminTaskManagementScreen extends StatefulWidget {
   final bool embedded;
@@ -46,9 +45,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   Timer? _fetchDebounce;
 
   // Task filtering state
-  String _statusFilter = 'all';
   final String _typeFilter = 'all';
-  String _originFilter = 'all'; // 'all', 'template', 'ad_hoc'
   final String _assigneeFilter = 'all';
   String _searchQuery = '';
 
@@ -122,11 +119,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     return (fallback ?? '').trim();
   }
 
-  /// Get task origin (template or ad_hoc)
-  String _getTaskOrigin(Task task) {
-    return task.taskOrigin;
-  }
-
   /// Filter tasks based on current filter state
   List<Task> _getFilteredTasks(List<Task> tasks) {
     return tasks.where((task) {
@@ -144,27 +136,10 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
         return false;
       }
 
-      // Origin filter
-      if (_originFilter != 'all') {
-        final origin = _getTaskOrigin(task);
-        if (origin != _originFilter) {
-          return false;
-        }
-      }
-
       // Assignee filter
       if (_assigneeFilter != 'all') {
         final assignees = task.assignedToMultiple.map(_canonicalUserId);
         if (!assignees.contains(_assigneeFilter)) {
-          return false;
-        }
-      }
-
-      // Search query
-      if (_searchQuery.isNotEmpty) {
-        final query = _searchQuery.toLowerCase();
-        if (!task.title.toLowerCase().contains(query) &&
-            !task.description.toLowerCase().contains(query)) {
           return false;
         }
       }
@@ -1714,29 +1689,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
     );
   }
 
-  Future<void> _changeTaskStatus(Task task, String newStatus) async {
-    try {
-      await _taskService.updateTask(task.copyWith(status: newStatus));
-      await _fetchTasks();
-      if (!mounted) return;
-      AppWidgets.showSuccessSnackbar(
-        context,
-        'Task status updated to ${newStatus.replaceAll('_', ' ')}',
-      );
-    } catch (e) {
-      debugPrint('Error changing task status: $e');
-      if (mounted) {
-        AppWidgets.showErrorSnackbar(
-          context,
-          AppWidgets.friendlyErrorMessage(
-            e,
-            fallback: 'Failed to change task status',
-          ),
-        );
-      }
-    }
-  }
-
   void _showTaskDetailsDialog(Task task) {
     showDialog(
       context: context,
@@ -1793,43 +1745,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                     color: Colors.grey.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            task.taskOrigin == 'template'
-                                ? Icons.content_copy
-                                : Icons.edit_note,
-                            size: 16,
-                            color: task.taskOrigin == 'template'
-                                ? const Color(0xFF7C4DFF)
-                                : const Color(0xFF00897B),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Origin: ${task.taskOrigin == 'template' ? 'Template' : 'Ad-hoc'}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (task.serviceName != null &&
-                          task.serviceName!.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Service: ${task.serviceName}',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                  child: const SizedBox.shrink(),
                 ),
 
                 // ── Checklist ──
@@ -2069,6 +1985,96 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                   ],
                                 ),
                               ],
+                              if (status.toLowerCase() == 'pending_review') ...[
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed: userTaskId.isEmpty
+                                            ? null
+                                            : () async {
+                                                final note =
+                                                    await _promptAdminReviewNote(
+                                                      context: context,
+                                                      title: 'Reject submission',
+                                                      actionLabel: 'Reject',
+                                                    );
+                                                if (note == null) return;
+                                                try {
+                                                  await TaskService()
+                                                      .rejectUserTask(
+                                                        userTaskId,
+                                                        note,
+                                                      );
+                                                  if (!mounted) return;
+                                                  AppWidgets.showSuccessSnackbar(
+                                                    context,
+                                                    'Task rejected',
+                                                  );
+                                                } catch (e) {
+                                                  if (!mounted) return;
+                                                  AppWidgets.showErrorSnackbar(
+                                                    context,
+                                                    AppWidgets.friendlyErrorMessage(
+                                                      e,
+                                                      fallback:
+                                                          'Failed to reject task',
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                        style: OutlinedButton.styleFrom(
+                                          side: BorderSide(color: Colors.orange.shade600),
+                                        ),
+                                        child: const Text('Reject'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: FilledButton(
+                                        onPressed: userTaskId.isEmpty
+                                            ? null
+                                            : () async {
+                                                final note =
+                                                    await _promptAdminReviewNote(
+                                                      context: context,
+                                                      title: 'Approve submission',
+                                                      actionLabel: 'Approve',
+                                                    );
+                                                if (note == null) return;
+                                                try {
+                                                  await TaskService()
+                                                      .approveUserTask(
+                                                        userTaskId,
+                                                        note,
+                                                      );
+                                                  if (!mounted) return;
+                                                  AppWidgets.showSuccessSnackbar(
+                                                    context,
+                                                    'Task approved',
+                                                  );
+                                                } catch (e) {
+                                                  if (!mounted) return;
+                                                  AppWidgets.showErrorSnackbar(
+                                                    context,
+                                                    AppWidgets.friendlyErrorMessage(
+                                                      e,
+                                                      fallback:
+                                                          'Failed to approve task',
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: Colors.green.shade600,
+                                        ),
+                                        child: const Text('Approve'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         );
@@ -2083,43 +2089,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('Close'),
-            ),
-            // Status change
-            PopupMenuButton<String>(
-              tooltip: 'Change Status',
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFF2688d4)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.sync, size: 16, color: Color(0xFF2688d4)),
-                    SizedBox(width: 4),
-                    Text('Status', style: TextStyle(color: Color(0xFF2688d4))),
-                  ],
-                ),
-              ),
-              onSelected: (newStatus) {
-                Navigator.of(ctx).pop();
-                _changeTaskStatus(task, newStatus);
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'pending', child: Text('Pending')),
-                const PopupMenuItem(
-                  value: 'in_progress',
-                  child: Text('In Progress'),
-                ),
-                const PopupMenuItem(
-                  value: 'completed',
-                  child: Text('Completed'),
-                ),
-              ],
             ),
             TextButton(
               onPressed: () {
@@ -2151,35 +2120,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
         const SizedBox(width: 5),
         Text(text, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
       ],
-    );
-  }
-
-  Widget _filterChip(String label, bool selected, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF2688d4).withValues(alpha: 0.12)
-              : Colors.grey.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected
-                ? const Color(0xFF2688d4)
-                : Colors.grey.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? const Color(0xFF2688d4) : Colors.grey.shade700,
-          ),
-        ),
-      ),
     );
   }
 
@@ -2300,14 +2240,9 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
           child: Column(
             children: [
               AdminControlBar<String, String>(
-                title: 'Tasks & Services',
-                subtitle: 'Manage tasks, services, and templates',
+                title: 'Task Management',
+                subtitle: 'Manage and assign tasks to employees',
                 primaryOptions: const [
-                  AdminControlOption(
-                    value: 'services',
-                    label: 'Services',
-                    icon: Icons.business,
-                  ),
                   AdminControlOption(
                     value: 'current',
                     label: 'Active',
@@ -2334,10 +2269,8 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                   if (value == _tab) return;
                   setState(() => _tab = value);
                 },
-                secondaryLabel: _tab == 'services' ? null : 'Difficulty',
-                secondaryOptions: _tab == 'services'
-                    ? const []
-                    : const [
+                secondaryLabel: 'Difficulty',
+                secondaryOptions: const [
                         AdminControlOption(value: 'all', label: 'All'),
                         AdminControlOption(
                           value: 'easy',
@@ -2415,86 +2348,37 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
               ),
               const SizedBox(height: 12),
               // Search bar
-              if (_tab != 'services')
-                TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Search tasks...',
-                    prefixIcon: const Icon(Icons.search, size: 20),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close, size: 18),
-                            onPressed: () {
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
+              TextField(
+                decoration: InputDecoration(
+                  hintText: 'Search tasks...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
                   ),
-                  onChanged: (value) {
-                    setState(() => _searchQuery = value.trim());
-                  },
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () {
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
                 ),
+                onChanged: (value) {
+                  setState(() => _searchQuery = value.trim());
+                },
+              ),
             ],
           ),
         ),
-        // Origin & Status filter chips
-        if (_tab != 'services')
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  // Origin filter
-                  _filterChip('All Origins', _originFilter == 'all', () {
-                    setState(() => _originFilter = 'all');
-                  }),
-                  const SizedBox(width: 6),
-                  _filterChip('Template', _originFilter == 'template', () {
-                    setState(() => _originFilter = 'template');
-                  }),
-                  const SizedBox(width: 6),
-                  _filterChip('Ad-hoc', _originFilter == 'ad_hoc', () {
-                    setState(() => _originFilter = 'ad_hoc');
-                  }),
-                  const SizedBox(width: 14),
-                  Container(width: 1, height: 24, color: Colors.grey.shade300),
-                  const SizedBox(width: 14),
-                  // Status filter
-                  _filterChip('All Status', _statusFilter == 'all', () {
-                    setState(() => _statusFilter = 'all');
-                  }),
-                  const SizedBox(width: 6),
-                  _filterChip('Pending', _statusFilter == 'pending', () {
-                    setState(() => _statusFilter = 'pending');
-                  }),
-                  const SizedBox(width: 6),
-                  _filterChip(
-                    'In Progress',
-                    _statusFilter == 'in_progress',
-                    () {
-                      setState(() => _statusFilter = 'in_progress');
-                    },
-                  ),
-                  const SizedBox(width: 6),
-                  _filterChip('Completed', _statusFilter == 'completed', () {
-                    setState(() => _statusFilter = 'completed');
-                  }),
-                ],
-              ),
-            ),
-          ),
+        // Status filter chips
         Expanded(
-          child: _tab == 'services'
-              ? const ServiceManagementWidget()
-              : _isLoading
+          child: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : () {
                   final List<Task> source;
@@ -2704,18 +2588,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                   spacing: 6,
                                   runSpacing: 4,
                                   children: [
-                                    // Origin badge
-                                    _buildBadge(
-                                      label: task.taskOrigin == 'template'
-                                          ? 'Template'
-                                          : 'Ad-hoc',
-                                      icon: task.taskOrigin == 'template'
-                                          ? Icons.content_copy
-                                          : Icons.edit_note,
-                                      color: task.taskOrigin == 'template'
-                                          ? const Color(0xFF7C4DFF)
-                                          : const Color(0xFF00897B),
-                                    ),
                                     if (task.type != null &&
                                         task.type!.isNotEmpty)
                                       _buildBadge(
@@ -2731,13 +2603,6 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                         color: _difficultyColor(
                                           task.difficulty!,
                                         ),
-                                      ),
-                                    if (task.serviceName != null &&
-                                        task.serviceName!.isNotEmpty)
-                                      _buildBadge(
-                                        label: task.serviceName!,
-                                        icon: Icons.business,
-                                        color: const Color(0xFFFF6F00),
                                       ),
                                     if (task.isLate)
                                       _buildBadge(

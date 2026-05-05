@@ -108,16 +108,59 @@ async function trimOverLimitAssignmentsForUser(userId, maxActive) {
   return toArchive.length;
 }
 
-function canTransitionTaskStatus(fromStatus, toStatus) {
+function canTransitionTaskStatus(fromStatus, toStatus, userRole, actionType) {
   const from = normalizeTaskStatus(fromStatus);
   const to = normalizeTaskStatus(toStatus);
 
   if (from === to) return true;
-  if (isTerminalTaskStatus(from) && !isTerminalTaskStatus(to)) {
-    return false;
+  
+  // Prevent manual status changes - only allow through specific actions
+  if (actionType === 'manual_update') {
+    return false; // Block all manual status updates
   }
+  
+  // Define allowed automated transitions
+  const allowedTransitions = {
+    'pending': ['in_progress'], // Only through employee acceptance
+    'pending_acceptance': ['accepted', 'in_progress'], // Through acceptance
+    'accepted': ['in_progress'], // Through starting work
+    'in_progress': ['pending_review', 'blocked'], // Through submission or blocking
+    'pending_review': ['completed', 'in_progress'], // Through admin approval or rejection
+    'blocked': ['in_progress', 'closed'], // Through admin unblock or close
+    'completed': [], // Terminal state
+    'reviewed': ['completed'], // Migration path
+    'closed': [] // Terminal state
+  };
+  
+  return allowedTransitions[from]?.includes(to) || false;
+}
 
-  return true;
+function validateStatusTransition(currentStatus, targetStatus, userRole, actionType) {
+  const transitions = {
+    employee: {
+      accept: { from: ['pending', 'pending_acceptance'], to: 'in_progress' },
+      submit: { from: ['in_progress'], to: 'pending_review' },
+      block: { from: ['in_progress'], to: 'blocked' },
+      cancel: { from: ['accepted', 'in_progress'], to: 'pending_acceptance' }
+    },
+    admin: {
+      approve: { from: ['pending_review'], to: 'completed' },
+      reject: { from: ['pending_review'], to: 'in_progress' },
+      unblock: { from: ['blocked'], to: 'in_progress' },
+      close: { from: ['blocked'], to: 'closed' }
+    }
+  };
+
+  const userTransitions = transitions[userRole];
+  if (!userTransitions) return false;
+
+  const action = userTransitions[actionType];
+  if (!action) return false;
+
+  const normalizedCurrent = normalizeTaskStatus(currentStatus);
+  const normalizedTarget = normalizeTaskStatus(targetStatus);
+
+  return action.from.includes(normalizedCurrent) && action.to === normalizedTarget;
 }
 
 function recalculateChecklistProgress(taskDoc) {
@@ -1053,8 +1096,14 @@ const acceptUserTask = asyncHandler(async (req, res) => {
     throw new Error('Not authorized to accept this task assignment');
   }
 
-  const current = String(ut.status || '').toLowerCase();
-  if (['accepted', 'in_progress', 'completed'].includes(current)) {
+  // Validate status transition using new automated workflow
+  if (!validateStatusTransition(ut.status, 'in_progress', 'employee', 'accept')) {
+    res.status(400);
+    throw new Error('Cannot accept task in current status');
+  }
+
+  const current = normalizeTaskStatus(ut.status);
+  if (['in_progress', 'pending_review', 'completed'].includes(current)) {
     return res.status(200).json({
       id: ut._id.toString(),
       userId: ut.userId.toString(),
@@ -1065,8 +1114,24 @@ const acceptUserTask = asyncHandler(async (req, res) => {
     });
   }
 
-  ut.status = 'accepted';
+  // Auto-transition to 'in_progress' on acceptance
+  ut.status = 'in_progress';
   ut.completedAt = undefined;
+  
+  // Add to status history for audit trail
+  const task = await Task.findById(ut.taskId);
+  if (task) {
+    task.statusHistory.push({
+      status: 'in_progress',
+      changedBy: req.user._id,
+      changedAt: new Date(),
+      reason: 'Task accepted by employee',
+      actionType: 'accept',
+      automated: true
+    });
+    await task.save();
+  }
+  
   await ut.save();
 
   io.emit('updatedUserTaskStatus', {
@@ -1181,6 +1246,290 @@ const cancelUserTask = asyncHandler(async (req, res) => {
     status: ut.status,
     cancelReason: ut.cancelReason,
     cancelledAt: ut.cancelledAt ? ut.cancelledAt.toISOString() : null,
+  });
+});
+
+// @route POST /api/tasks/user-task/:userTaskId/submit
+// @desc Employee submits a task for admin review (auto-transitions to pending_review)
+// @access Private
+const submitUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const { notes } = req.body;
+
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authenticated');
+  }
+
+  if (req.user.role !== 'admin' && ut.userId.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error('Not authorized to submit this task');
+  }
+
+  // Validate status transition using new automated workflow
+  if (!validateStatusTransition(ut.status, 'pending_review', 'employee', 'submit')) {
+    res.status(400);
+    throw new Error('Cannot submit task in current status. Task must be in progress.');
+  }
+
+  // Auto-transition to 'pending_review' on submission
+  ut.status = 'pending_review';
+  ut.submittedAt = new Date();
+  ut.submittedBy = req.user._id;
+  
+  // Add to status history for audit trail
+  const task = await Task.findById(ut.taskId);
+  if (task) {
+    task.statusHistory.push({
+      status: 'pending_review',
+      changedBy: req.user._id,
+      changedAt: new Date(),
+      reason: notes || 'Task submitted for review',
+      actionType: 'submit',
+      automated: true
+    });
+    await task.save();
+  }
+  
+  await ut.save();
+
+  // Emit real-time event
+  const io = getIO();
+  if (io) {
+    io.emit('updatedUserTaskStatus', {
+      id: ut._id.toString(),
+      userId: ut.userId.toString(),
+      taskId: ut.taskId.toString(),
+      status: ut.status,
+      submittedAt: ut.submittedAt.toISOString(),
+    });
+  }
+
+  // Notify admins of submission
+  setImmediate(async () => {
+    try {
+      const who = [
+        (req.user?.name || '').toString().trim(),
+        (req.user?.employeeId || '').toString().trim(),
+      ].filter(Boolean);
+      const whoLabel = who.join(' • ');
+      const taskTitle = task ? task.title : 'Unknown task';
+      const msg = whoLabel
+        ? `${whoLabel} submitted task for review: ${taskTitle}`
+        : `Task submitted for review: ${taskTitle}`;
+
+      await appNotificationService.createForAdmins({
+        excludeUserId: req.user?._id,
+        type: 'task',
+        action: 'task_submitted',
+        title: 'Task Submitted for Review',
+        message: msg,
+        payload: {
+          taskId: String(ut.taskId),
+          userTaskId: String(ut._id),
+          employeeId: (req.user?.employeeId || '').toString(),
+          employeeName: (req.user?.name || '').toString(),
+          userId: String(req.user?._id || ''),
+          submissionNotes: notes || '',
+          destination: 'tasks.pending_review',
+        },
+      });
+    } catch (e) {
+      console.error('Failed to create task submission notification:', e.message || e);
+    }
+  });
+
+  res.status(200).json({
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+    status: ut.status,
+    submittedAt: ut.submittedAt.toISOString(),
+    submittedBy: ut.submittedBy.toString(),
+  });
+});
+
+// @route POST /api/tasks/user-task/:userTaskId/approve
+// @desc Admin approves a submitted task (auto-transitions to completed)
+// @access Private (Admin only)
+const approveUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const { notes } = req.body;
+
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authenticated');
+  }
+
+  if (req.user.role !== 'admin') {
+    res.status(403);
+    throw new Error('Only admins can approve tasks');
+  }
+
+  // Validate status transition using new automated workflow
+  if (!validateStatusTransition(ut.status, 'completed', 'admin', 'approve')) {
+    res.status(400);
+    throw new Error('Cannot approve task in current status. Task must be pending review.');
+  }
+
+  // Auto-transition to 'completed' on approval
+  ut.status = 'completed';
+  ut.completedAt = new Date();
+  ut.reviewedAt = new Date();
+  ut.reviewedBy = req.user._id;
+  
+  // Add to status history for audit trail
+  const task = await Task.findById(ut.taskId);
+  if (task) {
+    task.statusHistory.push({
+      status: 'completed',
+      changedBy: req.user._id,
+      changedAt: new Date(),
+      reason: notes || 'Task approved by admin',
+      actionType: 'approve',
+      automated: true
+    });
+    await task.save();
+  }
+  
+  await ut.save();
+
+  // Emit real-time event
+  const io = getIO();
+  if (io) {
+    io.emit('updatedUserTaskStatus', {
+      id: ut._id.toString(),
+      userId: ut.userId.toString(),
+      taskId: ut.taskId.toString(),
+      status: ut.status,
+      completedAt: ut.completedAt.toISOString(),
+      reviewedAt: ut.reviewedAt.toISOString(),
+    });
+  }
+
+  res.status(200).json({
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+    status: ut.status,
+    completedAt: ut.completedAt.toISOString(),
+    reviewedAt: ut.reviewedAt.toISOString(),
+    reviewedBy: ut.reviewedBy.toString(),
+  });
+});
+
+// @route POST /api/tasks/user-task/:userTaskId/reject
+// @desc Admin rejects a submitted task (auto-transitions back to in_progress)
+// @access Private (Admin only)
+const rejectUserTask = asyncHandler(async (req, res) => {
+  const { userTaskId } = req.params;
+  const { reason } = req.body;
+
+  const rejectionReason = (reason ?? '').toString().trim();
+  if (!rejectionReason) {
+    res.status(400);
+    throw new Error('Rejection reason is required');
+  }
+
+  const ut = await UserTask.findById(userTaskId);
+  if (!ut) {
+    res.status(404);
+    throw new Error('UserTask not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authenticated');
+  }
+
+  if (req.user.role !== 'admin') {
+    res.status(403);
+    throw new Error('Only admins can reject tasks');
+  }
+
+  // Validate status transition using new automated workflow
+  if (!validateStatusTransition(ut.status, 'in_progress', 'admin', 'reject')) {
+    res.status(400);
+    throw new Error('Cannot reject task in current status. Task must be pending review.');
+  }
+
+  // Auto-transition back to 'in_progress' on rejection
+  ut.status = 'in_progress';
+  ut.submittedAt = null; // Clear submission timestamp
+  ut.submittedBy = null;
+  
+  // Add to status history for audit trail
+  const task = await Task.findById(ut.taskId);
+  if (task) {
+    task.statusHistory.push({
+      status: 'in_progress',
+      changedBy: req.user._id,
+      changedAt: new Date(),
+      reason: rejectionReason,
+      actionType: 'reject',
+      automated: true
+    });
+    await task.save();
+  }
+  
+  await ut.save();
+
+  // Emit real-time event
+  const io = getIO();
+  if (io) {
+    io.emit('updatedUserTaskStatus', {
+      id: ut._id.toString(),
+      userId: ut.userId.toString(),
+      taskId: ut.taskId.toString(),
+      status: ut.status,
+    });
+  }
+
+  // Notify employee of rejection
+  setImmediate(async () => {
+    try {
+      const adminName = (req.user?.name || '').toString().trim();
+      const taskTitle = task ? task.title : 'Unknown task';
+      const msg = `Task "${taskTitle}" was rejected and needs revision`;
+
+      await appNotificationService.createNotification({
+        recipientUserId: ut.userId,
+        scope: 'tasks',
+        type: 'warning',
+        action: 'task_rejected',
+        title: 'Task Rejected',
+        message: msg,
+        payload: {
+          taskId: String(ut.taskId),
+          userTaskId: String(ut._id),
+          rejectionReason,
+          rejectedBy: adminName,
+          destination: 'tasks.in_progress',
+        },
+      });
+    } catch (e) {
+      console.error('Failed to create task rejection notification:', e.message || e);
+    }
+  });
+
+  res.status(200).json({
+    id: ut._id.toString(),
+    userId: ut.userId.toString(),
+    taskId: ut.taskId.toString(),
+    status: ut.status,
+    rejectionReason,
   });
 });
 
@@ -1615,38 +1964,6 @@ const escalateTask = asyncHandler(async (req, res) => {
   res.json(toTaskJson(task));
 });
 
-const gradeUserTask = asyncHandler(async (req, res) => {
-  const { userTaskId } = req.params;
-  const { score, feedback } = req.body;
-  const ut = await UserTask.findById(userTaskId);
-  if (!ut) { res.status(404); throw new Error('UserTask not found'); }
-  ut.grade = {
-    score: typeof score === 'number' ? Math.min(100, Math.max(0, score)) : undefined,
-    feedback: feedback || '',
-    gradedAt: new Date(),
-    gradedBy: req.user._id,
-  };
-  if (ut.status !== 'closed') ut.status = 'reviewed';
-  await ut.save();
-  io.emit('updatedUserTaskStatus', {
-    id: ut._id.toString(), userId: ut.userId.toString(),
-    taskId: ut.taskId.toString(), status: ut.status,
-  });
-  // Notify the employee
-  try {
-    await appNotificationService.createNotification({
-      recipientUserId: ut.userId,
-      scope: 'tasks', type: 'info', action: 'task_graded',
-      title: 'Task Graded',
-      message: `Your task was graded: ${score}/100`,
-      payload: { userTaskId: String(ut._id), score },
-    });
-  } catch (_) {}
-  res.json({
-    id: ut._id.toString(), grade: ut.grade, status: ut.status,
-  });
-});
-
 const addCommentToUserTask = asyncHandler(async (req, res) => {
   const { userTaskId } = req.params;
   const { body: commentBody } = req.body;
@@ -1678,329 +1995,6 @@ const addCommentToUserTask = asyncHandler(async (req, res) => {
   res.status(201).json(saved);
 });
 
-/**
- * POST /api/tasks/ticket/:ticketId/create
- * Create ad-hoc task for ticket
- * Auth: Admin only
- */
-const createAdHocTask = asyncHandler(async (req, res) => {
-  const { ticketId } = req.params;
-  const companyId = req.companyId;
-  const userId = req.user._id;
-  const { title, description, type, difficulty, checklist } = req.body;
-
-  // Validate required fields
-  if (!title || !title.trim()) {
-    res.status(400);
-    throw new Error('Task title is required');
-  }
-
-  // Validate type and difficulty if provided
-  const validTypes = ['general', 'inspection', 'maintenance', 'delivery', 'other'];
-  const validDifficulties = ['easy', 'medium', 'hard'];
-
-  if (type && !validTypes.includes(type)) {
-    res.status(400);
-    throw new Error(`Invalid type. Must be one of: ${validTypes.join(', ')}`);
-  }
-
-  if (difficulty && !validDifficulties.includes(difficulty)) {
-    res.status(400);
-    throw new Error(`Invalid difficulty. Must be one of: ${validDifficulties.join(', ')}`);
-  }
-
-  // Process checklist
-  let processedChecklist = [];
-  if (checklist && Array.isArray(checklist)) {
-    processedChecklist = checklist.map((item) => ({
-      label: item.label ? String(item.label).trim() : '',
-      isCompleted: false,
-      completedAt: null,
-    }));
-
-    // Filter out empty labels
-    processedChecklist = processedChecklist.filter((item) => item.label);
-  }
-
-  // Create task
-  const task = await Task.create({
-    title: title.trim(),
-    description: description ? description.trim() : '',
-    type: type || 'general',
-    difficulty: difficulty || 'medium',
-    checklist: processedChecklist,
-    taskOrigin: 'ad_hoc',
-    ticketId,
-    companyId,
-    assignedBy: userId,
-    status: 'pending',
-  });
-
-  res.status(201).json(task);
-});
-
-/**
- * GET /api/tasks/ticket/:ticketId/list
- * List tasks for ticket with filtering
- * Auth: Admin, Employee (own tasks)
- * Query: ?status=pending&taskOrigin=template&sort=createdAt
- */
-const getTicketTasks = asyncHandler(async (req, res) => {
-  const { ticketId } = req.params;
-  const companyId = req.companyId;
-  const userId = req.user._id;
-  const userRole = req.user.role;
-  const { status, taskOrigin, sort } = req.query;
-
-  // Build filter
-  const filter = {
-    ticketId,
-    companyId,
-  };
-
-  if (status) {
-    filter.status = status;
-  }
-
-  if (taskOrigin) {
-    filter.taskOrigin = taskOrigin;
-  }
-
-  // If employee, only show tasks assigned to them
-  if (userRole === 'employee') {
-    filter.assignedTo = userId;
-  }
-
-  // Build sort
-  let sortObj = { createdAt: -1 };
-  if (sort === 'title') {
-    sortObj = { title: 1 };
-  } else if (sort === 'status') {
-    sortObj = { status: 1 };
-  }
-
-  const tasks = await Task.find(filter)
-    .sort(sortObj)
-    .populate('assignedTo', 'name employeeId')
-    .populate('templateId', 'title description');
-
-  res.json(tasks);
-});
-
-/**
- * PUT /api/tasks/:id/assign
- * Assign task to employee
- * Auth: Admin only
- * Body: { assignedTo }
- */
-const assignTaskToEmployee = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const companyId = req.companyId;
-  const { assignedTo } = req.body;
-
-  if (!assignedTo) {
-    res.status(400);
-    throw new Error('assignedTo is required');
-  }
-
-  // Get task
-  const task = await Task.findOne({
-    _id: id,
-    companyId,
-  });
-
-  if (!task) {
-    res.status(404);
-    throw new Error('Task not found');
-  }
-
-  // Verify employee exists and belongs to company
-  const employee = await User.findOne({
-    _id: assignedTo,
-    company: companyId,
-    role: 'employee',
-  });
-
-  if (!employee) {
-    res.status(404);
-    throw new Error('Employee not found');
-  }
-
-  // Update task
-  task.assignedTo = assignedTo;
-
-  // Record status change if status is still pending
-  if (task.status === 'pending') {
-    task.status = 'assigned';
-    task.statusHistory.push({
-      status: 'assigned',
-      changedBy: req.user._id,
-      changedAt: new Date(),
-      reason: 'Task assigned to employee',
-    });
-  }
-
-  await task.save();
-
-  // Emit notification
-  try {
-    const io = getIO();
-    if (io) {
-      io.emit('taskAssigned', {
-        taskId: task._id.toString(),
-        employeeId: assignedTo.toString(),
-        title: task.title,
-        ticketId: task.ticketId ? task.ticketId.toString() : null,
-      });
-    }
-  } catch (_) {}
-
-  res.json(task);
-});
-
-/**
- * PUT /api/tasks/:id/status
- * Change task status
- * Auth: Admin, assigned Employee
- * Body: { status, reason }
- */
-const updateTaskStatus = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const companyId = req.companyId;
-  const userId = req.user._id;
-  const userRole = req.user.role;
-  const { status, reason } = req.body;
-
-  if (!status) {
-    res.status(400);
-    throw new Error('status is required');
-  }
-
-  // Get task
-  const task = await Task.findOne({
-    _id: id,
-    companyId,
-  });
-
-  if (!task) {
-    res.status(404);
-    throw new Error('Task not found');
-  }
-
-  // Check authorization
-  if (userRole === 'employee') {
-    if (!task.assignedTo || task.assignedTo.toString() !== userId.toString()) {
-      res.status(403);
-      throw new Error('Not authorized to update this task');
-    }
-  }
-
-  // Validate status
-  const validStatuses = ['pending', 'in_progress', 'completed', 'blocked', 'reviewed', 'closed'];
-  if (!validStatuses.includes(status)) {
-    res.status(400);
-    throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
-  }
-
-  // Update status
-  const oldStatus = task.status;
-  task.status = status;
-
-  // Record completion details
-  if (status === 'completed' && oldStatus !== 'completed') {
-    task.completedBy = userId;
-    task.completedAt = new Date();
-
-    // Calculate duration if task was assigned
-    if (task.assignedTo) {
-      const assignmentTime = task.updatedAt || task.createdAt;
-      task.taskDuration = Math.floor((new Date() - assignmentTime) / 1000 / 60); // in minutes
-    }
-  }
-
-  // Record status change
-  task.statusHistory.push({
-    status,
-    changedBy: userId,
-    changedAt: new Date(),
-    reason: reason || '',
-  });
-
-  await task.save();
-
-  // Emit event
-  try {
-    const io = getIO();
-    if (io) {
-      io.emit('taskStatusChanged', {
-        taskId: task._id.toString(),
-        status,
-        changedBy: userId.toString(),
-        timestamp: new Date().toISOString(),
-      });
-    }
-  } catch (_) {}
-
-  res.json(task);
-});
-
-/**
- * POST /api/tasks/:id/checklist/:itemIndex/complete
- * Mark checklist item as complete
- * Auth: Employee assigned to task
- * Body: {} (no body required)
- */
-const completeChecklistItem = asyncHandler(async (req, res) => {
-  const { id, itemIndex } = req.params;
-  const companyId = req.companyId;
-  const userId = req.user._id;
-
-  // Get task
-  const task = await Task.findOne({
-    _id: id,
-    companyId,
-  });
-
-  if (!task) {
-    res.status(404);
-    throw new Error('Task not found');
-  }
-
-  // Check authorization - only assigned employee can complete checklist items
-  if (!task.assignedTo || task.assignedTo.toString() !== userId.toString()) {
-    res.status(403);
-    throw new Error('Not authorized to complete checklist items for this task');
-  }
-
-  // Validate item index
-  const index = parseInt(itemIndex, 10);
-  if (isNaN(index) || index < 0 || index >= task.checklist.length) {
-    res.status(400);
-    throw new Error('Invalid checklist item index');
-  }
-
-  // Mark item as complete
-  task.checklist[index].isCompleted = true;
-  task.checklist[index].completedAt = new Date();
-
-  await task.save();
-
-  // Emit event
-  try {
-    const io = getIO();
-    if (io) {
-      io.emit('checklistItemCompleted', {
-        taskId: task._id.toString(),
-        itemIndex: index,
-        completedBy: userId.toString(),
-        timestamp: new Date().toISOString(),
-      });
-    }
-  } catch (_) {}
-
-  res.json(task);
-});
-
 module.exports = {
   getTask,
   getTasks,
@@ -2018,6 +2012,9 @@ module.exports = {
   unassignTaskFromUser,
   updateUserTaskStatus,
   acceptUserTask,
+  submitUserTask,
+  approveUserTask,
+  rejectUserTask,
   markUserTaskViewed,
   updateTaskChecklistItem,
   blockTask,
@@ -2028,12 +2025,6 @@ module.exports = {
   archiveTask,
   restoreTask,
   escalateTask,
-  gradeUserTask,
   addCommentToUserTask,
   cancelUserTask,
-  createAdHocTask,
-  getTicketTasks,
-  assignTaskToEmployee,
-  updateTaskStatus,
-  completeChecklistItem,
 };

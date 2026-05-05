@@ -31,7 +31,6 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCompleted = task.status == 'completed';
-    final isGraded = task.isGraded == true;
     final effectiveStatus = (task.userTaskStatus ?? '').trim().isNotEmpty
         ? task.userTaskStatus!.trim()
         : task.status;
@@ -151,47 +150,6 @@ class EmployeeTaskDetailsScreen extends StatelessWidget {
                 ),
             ],
           ),
-
-          if (isGraded) ...[
-            const SizedBox(height: AppTheme.lg),
-            Text(
-              'Grade',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: AppTheme.sm),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppTheme.md),
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.primary.withValues(alpha: 0.18),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${task.gradeScore?.toInt() ?? 0}/100',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  if ((task.gradeFeedback ?? '').trim().isNotEmpty) ...[
-                    const SizedBox(height: AppTheme.sm),
-                    Text(task.gradeFeedback!.trim(), style: AppTheme.bodyMd),
-                  ],
-                ],
-              ),
-            ),
-          ],
 
           if (task.checklist.isNotEmpty) ...[
             const SizedBox(height: AppTheme.lg),

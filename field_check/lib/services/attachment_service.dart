@@ -20,7 +20,7 @@ class AttachmentService {
   /// Returns: Map with _id, fileName, fileSize, url, uploadedAt
   Future<Map<String, dynamic>> uploadAttachment({
     required File file,
-    required String resourceType, // 'report', 'task', 'ticket'
+    required String resourceType, // 'report', 'task'
     required String resourceId,
   }) async {
     if (_authToken == null) {

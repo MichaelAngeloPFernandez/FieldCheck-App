@@ -38,9 +38,6 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
   String _avatarInitials = '';
   int _avatarCacheBuster = 0;
 
-  String _statusFilter =
-      'all'; // all, pending, accepted, in_progress, completed
-
   @override
   void initState() {
     super.initState();
@@ -324,42 +321,6 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
     }
   }
 
-  Widget _buildSectionHeader(
-    String title, {
-    String? subtitle,
-    Widget? trailing,
-  }) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.85),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        if (trailing != null) trailing,
-      ],
-    );
-  }
-
   Widget _buildSurfaceCard({
     required Widget child,
     EdgeInsetsGeometry? padding,
@@ -412,40 +373,6 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildFilterChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onSelected,
-  }) {
-    final theme = Theme.of(context);
-    final activeColor = theme.colorScheme.primary;
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (value) {
-        if (!value) return;
-        onSelected();
-      },
-      labelStyle: theme.textTheme.labelMedium?.copyWith(
-        fontWeight: FontWeight.w700,
-        color: selected
-            ? activeColor
-            : theme.colorScheme.onSurface.withValues(alpha: 0.85),
-      ),
-      selectedColor: activeColor.withValues(alpha: 0.16),
-      backgroundColor: theme.colorScheme.surface,
-      shape: StadiumBorder(
-        side: BorderSide(
-          color: selected
-              ? activeColor.withValues(alpha: 0.45)
-              : theme.dividerColor.withValues(alpha: 0.35),
-        ),
-      ),
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 
@@ -1267,12 +1194,8 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
                   return true;
                 })
                 .where((t) {
-                  if (_statusFilter == 'all') return true;
-                  final s = _effectiveStatus(t);
-                  if (_statusFilter == 'pending') {
-                    return s == 'pending' || s == 'pending_acceptance';
-                  }
-                  return s == _statusFilter;
+                  // Only filter by tab (current/overdue/archived), no additional status filtering
+                  return true;
                 })
                 .toList();
 
@@ -1292,69 +1215,8 @@ class _EmployeeTaskListScreenState extends State<EmployeeTaskListScreen>
               return a.title.compareTo(b.title);
             });
 
-            final activeLabel = _statusFilter == 'all'
-                ? 'All'
-                : _statusFilter.replaceAll('_', ' ');
-
             return Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: _buildSurfaceCard(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionHeader(
-                          'Filter tasks',
-                          subtitle: 'Showing $activeLabel tasks',
-                          trailing: _buildStatusPill(
-                            label: '${tasks.length} tasks',
-                            color: theme.colorScheme.primary,
-                            icon: Icons.list_alt,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _buildFilterChip(
-                              label: 'All',
-                              selected: _statusFilter == 'all',
-                              onSelected: () =>
-                                  setState(() => _statusFilter = 'all'),
-                            ),
-                            _buildFilterChip(
-                              label: 'Pending',
-                              selected: _statusFilter == 'pending',
-                              onSelected: () =>
-                                  setState(() => _statusFilter = 'pending'),
-                            ),
-                            _buildFilterChip(
-                              label: 'Accepted',
-                              selected: _statusFilter == 'accepted',
-                              onSelected: () =>
-                                  setState(() => _statusFilter = 'accepted'),
-                            ),
-                            _buildFilterChip(
-                              label: 'In Progress',
-                              selected: _statusFilter == 'in_progress',
-                              onSelected: () =>
-                                  setState(() => _statusFilter = 'in_progress'),
-                            ),
-                            _buildFilterChip(
-                              label: 'Completed',
-                              selected: _statusFilter == 'completed',
-                              onSelected: () =>
-                                  setState(() => _statusFilter = 'completed'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
                 if (tasks.isEmpty)
                   _buildStateCard(
                     icon: Icons.filter_alt_off,

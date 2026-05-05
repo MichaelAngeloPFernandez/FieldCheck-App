@@ -7,7 +7,6 @@ import 'package:field_check/services/report_service.dart';
 import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
-import 'package:field_check/services/user_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/utils/manila_time.dart';
@@ -43,10 +42,6 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   late Task _task;
   bool _isSubmitting = false;
   bool _isBlocking = false;
-  bool _isSubmittingGrade = false;
-  double _gradeScore = 100.0;
-  final TextEditingController _gradeFeedbackController =
-      TextEditingController();
   bool _hasUnsavedChanges = false;
   bool _statusMarkedInProgress = false;
   int _reportProgressPercent = 0;
@@ -154,88 +149,8 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   @override
   void dispose() {
     _textController.dispose();
-    _gradeFeedbackController.dispose();
     _autosaveTimer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _submitGrade() async {
-    final userTaskId = _task.userTaskId;
-    if (userTaskId == null || userTaskId.trim().isEmpty) return;
-
-    if (_isSubmittingGrade) return;
-
-    final score = _gradeScore.toInt();
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Grading'),
-        content: Text('Are you sure you want to submit a grade of $score/100?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() {
-      _isSubmittingGrade = true;
-    });
-
-    try {
-      // In the backend, gradeUserTask already updates history.
-      // We retrieve updated UserTask to get comments correctly if possible,
-      // but for now we'll rely on the local state update.
-      await TaskService().gradeTask(
-        userTaskId,
-        score,
-        _gradeFeedbackController.text.trim(),
-      );
-      if (!mounted) return;
-
-      // Refresh task to get the consolidated comment history
-      try {
-        final updated = await TaskService().getTaskById(_task.id);
-        if (mounted) {
-          setState(() {
-            _task = updated;
-          });
-        }
-      } catch (_) {
-        // Fallback to manual local update if refresh fails
-        setState(() {
-          _task = _task.copyWith(
-            isGraded: true,
-            gradeScore: score,
-            gradeFeedback: _gradeFeedbackController.text.trim(),
-            userTaskStatus: 'reviewed',
-          );
-        });
-      }
-
-      if (!mounted) return;
-      AppWidgets.showSuccessSnackbar(context, 'Task successfully graded!');
-    } catch (e) {
-      if (!mounted) return;
-      AppWidgets.showErrorSnackbar(
-        context,
-        AppWidgets.friendlyErrorMessage(e, fallback: 'Failed to submit grade'),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmittingGrade = false;
-        });
-      }
-    }
   }
 
   void _startAutosave() {
@@ -763,13 +678,15 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     });
 
     try {
-      final updated = await TaskService().blockTask(_task.id, result.trim());
+      final userTaskId = _task.userTaskId;
+      if (userTaskId == null || userTaskId.trim().isEmpty) {
+        throw Exception('User task ID not found');
+      }
+      
+      await TaskService().blockUserTask(userTaskId, result.trim());
       if (!mounted) return;
-      setState(() {
-        _task = updated;
-      });
 
-      AppWidgets.showErrorSnackbar(context, 'Task has been marked as blocked');
+      AppWidgets.showSuccessSnackbar(context, 'Task has been marked as blocked');
 
       Navigator.pop(context, true);
     } catch (e) {
@@ -1044,195 +961,6 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
       i++;
     }
     return '${size.toStringAsFixed(i == 0 ? 0 : 1)} ${units[i]}';
-  }
-
-  Widget _buildGradingSection() {
-    final isAdmin = UserService().currentUser?.role == 'admin';
-    final isCompleted = _task.userTaskStatus == 'completed';
-    final isReviewed = _task.userTaskStatus == 'reviewed' || _task.isGraded;
-
-    if (!isAdmin && !isReviewed) return const SizedBox.shrink();
-
-    if (isReviewed) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        margin: const EdgeInsets.only(top: 16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.green.shade50, Colors.white],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.green.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.green.shade900.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.stars, color: Colors.green.shade700, size: 24),
-                const SizedBox(width: 8),
-                Text(
-                  'Performance Grade',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.green.shade900,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade600,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'REVIEWED',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Text(
-                  '${_task.gradeScore ?? 0}',
-                  style: TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.green.shade700,
-                  ),
-                ),
-                Text(
-                  ' / 100',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.shade700.withValues(alpha: 0.6),
-                  ),
-                ),
-              ],
-            ),
-            if ((_task.gradeFeedback ?? '').isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text(
-                'Admin Feedback:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.green.shade900.withValues(alpha: 0.7),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _task.gradeFeedback!,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.green.shade900,
-                  height: 1.5,
-                ),
-              ),
-            ],
-          ],
-        ),
-      );
-    }
-
-    if (isAdmin && isCompleted) {
-      return Container(
-        padding: const EdgeInsets.all(AppTheme.lg),
-        margin: const EdgeInsets.only(top: AppTheme.md),
-        decoration: BoxDecoration(
-          color: Colors.orange.withValues(alpha: 0.05),
-          border: Border(
-            top: BorderSide(color: Colors.orange.withValues(alpha: 0.2)),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.grading, color: Colors.orange),
-                SizedBox(width: 8),
-                Text('Admin Grading', style: AppTheme.headingSm),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Text('Score (0 - 100)'),
-            Slider(
-              value: _gradeScore,
-              min: 0,
-              max: 100,
-              divisions: 100,
-              label: _gradeScore.round().toString(),
-              activeColor: Colors.orange,
-              onChanged: (value) {
-                setState(() {
-                  _gradeScore = value;
-                });
-              },
-            ),
-            TextField(
-              controller: _gradeFeedbackController,
-              decoration: const InputDecoration(
-                labelText: 'Feedback (Optional)',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isSubmittingGrade ? null : _submitGrade,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: _isSubmittingGrade
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
-                    : const Text(
-                        'Submit Grade',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
   }
 
   @override
@@ -1686,13 +1414,8 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
               ),
             ),
 
-          // Admin Grading Section
-          _buildGradingSection(),
-
           // Submit button
-          if (!_task.isGraded &&
-              _task.userTaskStatus != 'reviewed' &&
-              _task.userTaskStatus != 'completed')
+          if (_task.userTaskStatus != 'completed')
             Container(
               padding: const EdgeInsets.all(AppTheme.lg),
               child: Row(

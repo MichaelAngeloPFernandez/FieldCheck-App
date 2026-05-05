@@ -7,7 +7,7 @@ import '../services/attachment_service.dart';
 /// Widget for picking and uploading attachments
 /// Supports: Camera, Gallery, File picker
 class AttachmentPickerWidget extends StatefulWidget {
-  final String resourceType; // 'report', 'task', 'ticket'
+  final String resourceType; // 'report', 'task'
   final String resourceId;
   final AttachmentService attachmentService;
   final Function(Map<String, dynamic>) onAttachmentUploaded;

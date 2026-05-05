@@ -101,16 +101,12 @@ class Task {
   final bool isArchived;
   final bool isOverdue;
   final bool isLate;
-  final num? gradeScore;
-  final String? gradeFeedback;
-  final bool isGraded;
+  final DateTime? submittedAt;
+  final DateTime? reviewedAt;
+  final String? reviewNote;
   final List<TaskComment> comments;
   final List<TaskChecklistItem> checklist;
   final String? blockReason;
-  final String taskOrigin; // 'template' or 'ad_hoc'
-  final String? templateId; // Source template ID if origin is 'template'
-  final String? serviceId; // Associated service ID
-  final String? serviceName; // Associated service name (denormalized)
 
   Task({
     required this.id,
@@ -148,16 +144,12 @@ class Task {
     this.isArchived = false,
     this.isOverdue = false,
     this.isLate = false,
-    this.gradeScore,
-    this.gradeFeedback,
-    this.isGraded = false,
+    this.submittedAt,
+    this.reviewedAt,
+    this.reviewNote,
     this.comments = const [],
     this.checklist = const [],
     this.blockReason,
-    this.taskOrigin = 'ad_hoc',
-    this.templateId,
-    this.serviceId,
-    this.serviceName,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -293,16 +285,12 @@ class Task {
       isArchived: json['isArchived'] ?? false,
       isOverdue: json['isOverdue'] ?? false,
       isLate: json['isLate'] ?? false,
-      gradeScore: json['gradeScore'] ?? json['grade']?['score'],
-      gradeFeedback: json['gradeFeedback'] ?? json['grade']?['feedback'],
-      isGraded: json['isGraded'] ?? (json['grade'] != null),
+      submittedAt: json['submittedAt'] != null ? DateTime.parse(json['submittedAt']) : null,
+      reviewedAt: json['reviewedAt'] != null ? DateTime.parse(json['reviewedAt']) : null,
+      reviewNote: json['reviewNote'],
       comments: comments,
       checklist: checklist,
       blockReason: json['blockReason'],
-      taskOrigin: json['taskOrigin'] ?? 'ad_hoc',
-      templateId: json['templateId']?.toString(),
-      serviceId: json['serviceId']?.toString(),
-      serviceName: json['serviceName']?.toString(),
     );
   }
 
@@ -335,16 +323,12 @@ class Task {
       'isArchived': isArchived,
       'isOverdue': isOverdue,
       'isLate': isLate,
-      'gradeScore': gradeScore,
-      'gradeFeedback': gradeFeedback,
-      'isGraded': isGraded,
+      'submittedAt': submittedAt?.toIso8601String(),
+      'reviewedAt': reviewedAt?.toIso8601String(),
+      'reviewNote': reviewNote,
       'comments': comments.map((c) => c.toJson()).toList(),
       'checklist': checklist.map((c) => c.toJson()).toList(),
       'blockReason': blockReason,
-      'taskOrigin': taskOrigin,
-      'templateId': templateId,
-      'serviceId': serviceId,
-      'serviceName': serviceName,
     };
   }
 
@@ -376,16 +360,12 @@ class Task {
     bool? isArchived,
     bool? isOverdue,
     bool? isLate,
-    num? gradeScore,
-    String? gradeFeedback,
-    bool? isGraded,
+    DateTime? submittedAt,
+    DateTime? reviewedAt,
+    String? reviewNote,
     List<TaskComment>? comments,
     List<TaskChecklistItem>? checklist,
     String? blockReason,
-    String? taskOrigin,
-    String? templateId,
-    String? serviceId,
-    String? serviceName,
   }) {
     return Task(
       id: id ?? this.id,
@@ -415,16 +395,12 @@ class Task {
       isArchived: isArchived ?? this.isArchived,
       isOverdue: isOverdue ?? this.isOverdue,
       isLate: isLate ?? this.isLate,
-      gradeScore: gradeScore ?? this.gradeScore,
-      gradeFeedback: gradeFeedback ?? this.gradeFeedback,
-      isGraded: isGraded ?? this.isGraded,
+      submittedAt: submittedAt ?? this.submittedAt,
+      reviewedAt: reviewedAt ?? this.reviewedAt,
+      reviewNote: reviewNote ?? this.reviewNote,
       comments: comments ?? this.comments,
       checklist: checklist ?? this.checklist,
       blockReason: blockReason ?? this.blockReason,
-      taskOrigin: taskOrigin ?? this.taskOrigin,
-      templateId: templateId ?? this.templateId,
-      serviceId: serviceId ?? this.serviceId,
-      serviceName: serviceName ?? this.serviceName,
     );
   }
 }

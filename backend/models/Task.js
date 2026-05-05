@@ -64,22 +64,6 @@ const taskSchema = new mongoose.Schema(
       others: [{ type: String }],
     },
     blockReason: { type: String },
-    // Task Template System fields
-    taskOrigin: {
-      type: String,
-      enum: ['template', 'ad_hoc'],
-      default: 'ad_hoc',
-    },
-    templateId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'TaskTemplate',
-      default: null,
-    },
-    ticketId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Ticket',
-      default: null,
-    },
     assignedTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -128,8 +112,7 @@ const taskSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Indexes for Task Template System
-taskSchema.index({ ticketId: 1, taskOrigin: 1 });
+// Indexes for efficient queries
 taskSchema.index({ assignedTo: 1, status: 1 });
 taskSchema.index({ companyId: 1, createdAt: 1 });
 
