@@ -13,6 +13,7 @@ import 'package:field_check/screens/admin_task_management_screen.dart';
 import 'package:field_check/screens/admin_world_map_screen.dart';
 import 'package:field_check/screens/manage_employees_screen.dart';
 import 'package:field_check/screens/manage_admins_screen.dart';
+import 'package:field_check/screens/client_tickets_screen.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/dashboard_service.dart';
@@ -125,7 +126,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   static const int _navDashboard = 0;
   static const int _navEmployees = 1;
   static const int _navReports = 2;
-  static const int _navMore = 3;
+  static const int _navClientTickets = 3;
+  static const int _navMore = 4;
 
   DashboardStats? _dashboardStats;
   RealtimeUpdates? _realtimeUpdates;
@@ -1212,12 +1214,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 1:
         return const ManageEmployeesScreen();
       case 2:
-        return const ManageAdminsScreen();
-      case 3:
-        return const AdminGeofenceScreen();
-      case 4:
         return const AdminReportsHubScreen(embedded: true);
+      case 3:
+        return const ClientTicketsScreen();
+      case 4:
+        return const ManageAdminsScreen();
       case 5:
+        return const AdminGeofenceScreen();
+      case 6:
         return AdminSettingsScreen(
           onTabRequested: (idx) {
             setState(() {
@@ -1225,7 +1229,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             });
           },
         );
-      case 6:
+      case 7:
         return const AdminTaskManagementScreen(embedded: true);
       default:
         return _buildDashboardOverview();
@@ -4301,7 +4305,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _selectAdminScreen(1);
         break;
       case _navReports:
-        _selectAdminScreen(4);
+        _selectAdminScreen(2);
+        break;
+      case _navClientTickets:
+        _selectAdminScreen(3);
         break;
       default:
         _selectAdminScreen(0);
@@ -4340,12 +4347,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return _navDashboard;
       case 1:
         return _navEmployees;
-      case 4:
-        return _navReports;
       case 2:
+        return _navReports;
       case 3:
+        return _navClientTickets;
+      case 4:
       case 5:
       case 6:
+      case 7:
         return _navMore;
       default:
         return _navDashboard;
@@ -5094,6 +5103,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         label: 'Reports',
                       ),
                       BottomNavigationBarItem(
+                        icon: Icon(Icons.support_agent),
+                        label: 'Tickets',
+                      ),
+                      BottomNavigationBarItem(
                         icon: Icon(Icons.more_horiz),
                         label: 'More',
                       ),
@@ -5114,14 +5127,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 1:
         return 'Manage Employees';
       case 2:
-        return 'Manage Administrators';
-      case 3:
-        return 'Geofence Management';
-      case 4:
         return 'Reports & Analytics';
+      case 3:
+        return 'Client Tickets';
+      case 4:
+        return 'Manage Administrators';
       case 5:
-        return 'System Settings';
+        return 'Geofence Management';
       case 6:
+        return 'System Settings';
+      case 7:
         return 'Task Management';
       default:
         return 'Admin Dashboard';

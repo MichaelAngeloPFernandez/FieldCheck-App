@@ -31,7 +31,7 @@ const taskSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['general', 'inspection', 'maintenance', 'delivery', 'other'],
+      enum: ['general', 'inspection', 'maintenance', 'delivery', 'client_support', 'other'],
       default: 'general',
     },
     difficulty: {

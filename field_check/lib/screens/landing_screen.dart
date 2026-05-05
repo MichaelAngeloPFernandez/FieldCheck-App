@@ -3,6 +3,8 @@
 import 'package:field_check/main.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:field_check/widgets/client_ticket_modal.dart';
+import 'package:field_check/services/client_ticket_service.dart';
 
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
@@ -17,6 +19,8 @@ class _LandingScreenState extends State<LandingScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _messageController = TextEditingController();
+  final _contactSubjectController = TextEditingController();
+  final _contactCategoryController = TextEditingController();
 
   static const String _adminEmail = 'perfectomark077@gmail.com';
   static const String _adminPhone = '09945304513';
@@ -31,9 +35,38 @@ class _LandingScreenState extends State<LandingScreen> {
     ('Attendance History', 'assets/features/image7.png'),
   ];
 
+  // FAQ items for Support section
+  final List<Map<String, String>> _faqItems = [
+    {
+      'question': 'How do I submit a support ticket?',
+      'answer': 'You can submit a support ticket by clicking the "Submit Ticket" button in the Client Support Tickets section above, or use the Contact form below. Our team will respond to your ticket via email within 24 hours.',
+    },
+    {
+      'question': 'How can I track my ticket status?',
+      'answer': 'After submitting a ticket, you\'ll receive a confirmation email with a tracking link. Click the link to view your ticket status, see assigned employee details, and leave comments or feedback.',
+    },
+    {
+      'question': 'What should I include in my ticket?',
+      'answer': 'Include a clear description of your issue, specify the service type (facility inspection, maintenance, etc.), and attach any relevant photos or documents. The more details you provide, the faster we can resolve your issue.',
+    },
+    {
+      'question': 'I forgot my login password. What do I do?',
+      'answer': 'Contact your administrator directly. They can reset your password or help you regain access to your account. Use the Contact form below to reach the appropriate support team.',
+    },
+    {
+      'question': 'How long does it take to resolve a ticket?',
+      'answer': 'Most tickets are acknowledged within 24 hours. Resolution time depends on the complexity of your issue. You\'ll receive updates via email throughout the process.',
+    },
+    {
+      'question': 'Can I add comments to my ticket after submission?',
+      'answer': 'Yes! Use your tracking link to view your ticket and add comments anytime. This helps our team stay updated on your progress and any new information you might have.',
+    },
+  ];
+
   final _homeKey = GlobalKey();
   final _aboutKey = GlobalKey();
   final _featuresKey = GlobalKey();
+  final _clientTicketKey = GlobalKey();
   final _supportKey = GlobalKey();
   final _contactKey = GlobalKey();
 
@@ -57,22 +90,81 @@ class _LandingScreenState extends State<LandingScreen> {
   Future<void> _submitContactForm() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
+    final subject = _contactSubjectController.text.trim();
     final message = _messageController.text.trim();
+    final category = _contactCategoryController.text.trim();
 
-    final body = [
-      'Name: ${name.isEmpty ? '-' : name}',
-      'Email: ${email.isEmpty ? '-' : email}',
-      '',
-      message.isEmpty ? '(No message provided)' : message,
-    ].join('\n');
+    if (name.isEmpty || email.isEmpty || subject.isEmpty || message.isEmpty || category.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill in all fields'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
-    final uri = Uri(
-      scheme: 'mailto',
-      path: _adminEmail,
-      queryParameters: {'subject': 'FieldCheck Inquiry', 'body': body},
+    try {
+      final service = ClientTicketService();
+      final response = await service.submitContactInquiry(
+        name: name,
+        email: email,
+        subject: subject,
+        message: message,
+        serviceCategory: category,
+      );
+
+      if (response['success'] == true && mounted) {
+        _nameController.clear();
+        _emailController.clear();
+        _contactSubjectController.clear();
+        _messageController.clear();
+        _contactCategoryController.clear();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Message sent successfully! We will respond soon.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response['error'] ?? 'Failed to send message'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _openClientTicketModal() {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return ClientTicketModal(
+          onSuccess: (ticketNumber) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Ticket $ticketNumber submitted! Check your email.'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          },
+        );
+      },
     );
-
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   void _scrollTo(GlobalKey key) {
@@ -183,28 +275,6 @@ class _LandingScreenState extends State<LandingScreen> {
   Future<void> _launchPhone() async {
     final uri = Uri(scheme: 'tel', path: _adminPhone);
     await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
-  void _openSupportDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Support'),
-          content: const Text(
-            'For support, please contact your administrator.\n\n'
-            'FieldCheck is designed for organizations to verify attendance via geofencing, '
-            'manage tasks, and track on-field activity with accountability.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   Widget _pill({required IconData icon, required String label}) {
@@ -346,8 +416,35 @@ class _LandingScreenState extends State<LandingScreen> {
                         _navLink('Features', _featuresKey),
                         _navLink('Support', _supportKey),
                         _navLink('Contact', _contactKey),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: _openClientTicketModal,
+                          icon: const Icon(Icons.support_agent, size: 18),
+                          label: const Text('Submit Ticket'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _brandPrimary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                          ),
+                        ),
                       ] else ...[
                         const Spacer(),
+                        ElevatedButton.icon(
+                          onPressed: _openClientTicketModal,
+                          icon: const Icon(Icons.support_agent, size: 18),
+                          label: const Text('Ticket'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _brandPrimary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          ),
+                        ),
                         PopupMenuButton<String>(
                           tooltip: 'Menu',
                           onSelected: (v) {
@@ -931,8 +1028,8 @@ class _LandingScreenState extends State<LandingScreen> {
                   ),
                 ),
                 _section(
-                  key: _supportKey,
-                  background: section2,
+                  key: _clientTicketKey,
+                  background: section1,
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 920),
@@ -956,7 +1053,7 @@ class _LandingScreenState extends State<LandingScreen> {
                         child: Column(
                           children: [
                             Text(
-                              'Need Help?',
+                              '🎫 Client Support Tickets',
                               textAlign: TextAlign.center,
                               style: theme.textTheme.headlineSmall?.copyWith(
                                 fontWeight: FontWeight.w900,
@@ -965,7 +1062,7 @@ class _LandingScreenState extends State<LandingScreen> {
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              'If you can\'t log in or you need an account, contact your administrator. For technical issues, use the support contact details below.',
+                              'Have a service request or need assistance? Submit a support ticket and our team will get back to you promptly via email.',
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodyLarge?.copyWith(
                                 height: 1.6,
@@ -974,9 +1071,9 @@ class _LandingScreenState extends State<LandingScreen> {
                             ),
                             const SizedBox(height: 18),
                             FilledButton.icon(
-                              onPressed: _openSupportDialog,
+                              onPressed: _openClientTicketModal,
                               icon: const Icon(Icons.support_agent),
-                              label: const Text('Open Support Center'),
+                              label: const Text('Submit a Ticket'),
                               style: FilledButton.styleFrom(
                                 backgroundColor: _brandPrimary,
                                 foregroundColor: Colors.white,
@@ -984,6 +1081,231 @@ class _LandingScreenState extends State<LandingScreen> {
                                   horizontal: 20,
                                   vertical: 14,
                                 ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      Icon(Icons.numbers, color: _brandPrimary, size: 28),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Ticket Tracking',
+                                        style: theme.textTheme.labelLarge?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Get a unique ticket number for tracking',
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      Icon(Icons.email_outlined, color: _brandPrimary, size: 28),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Email Updates',
+                                        style: theme.textTheme.labelLarge?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Receive updates via email',
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      Icon(Icons.rate_review_outlined, color: _brandPrimary, size: 28),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Rate Service',
+                                        style: theme.textTheme.labelLarge?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Give feedback after completion',
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                _section(
+                  key: _supportKey,
+                  background: section2,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1000),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 26,
+                          vertical: 26,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Header
+                            Text(
+                              '🆘 Support & Frequently Asked Questions',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Find answers to common questions or submit a ticket for additional support.',
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                height: 1.6,
+                                color: textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+
+                            // Quick Action Button
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _openClientTicketModal,
+                                icon: const Icon(Icons.add_circle_outline),
+                                label: const Text('Submit a Support Ticket'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _brandPrimary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 32),
+
+                            // FAQ Section
+                            Text(
+                              'Common Questions',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+
+                            // FAQ Items
+                            ..._faqItems.asMap().entries.map((entry) {
+                              int idx = entry.key;
+                              Map<String, String> item = entry.value;
+                              return Container(
+                                margin: EdgeInsets.only(
+                                  bottom: idx < _faqItems.length - 1 ? 8 : 0,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: cardBg,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: borderColor,
+                                  ),
+                                ),
+                                child: ExpansionTile(
+                                  title: Text(
+                                    item['question'] ?? '',
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: textPrimary,
+                                    ),
+                                  ),
+                                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  collapsedShape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  children: [
+                                    Text(
+                                      item['answer'] ?? '',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        height: 1.6,
+                                        color: textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+
+                            const SizedBox(height: 28),
+
+                            // Still Need Help?
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: _brandPrimary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: _brandPrimary.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Didn\'t find what you\'re looking for?',
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: _brandPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Scroll down to the Contact section to send us a message. Our support team will get back to you as soon as possible.',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: textSecondary,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      _scrollTo(_contactKey);
+                                    },
+                                    icon: const Icon(Icons.arrow_downward),
+                                    label: const Text('Go to Contact Form'),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -1286,8 +1608,52 @@ class _LandingScreenState extends State<LandingScreen> {
           ),
           const SizedBox(height: 12),
           TextField(
+            controller: _contactSubjectController,
+            decoration: InputDecoration(
+              labelText: 'Subject',
+              filled: true,
+              fillColor: isDark
+                  ? Colors.black.withOpacity(0.12)
+                  : Colors.black.withOpacity(0.04),
+              border: fieldBorder,
+              enabledBorder: fieldBorder,
+              focusedBorder: fieldBorder.copyWith(
+                borderSide: const BorderSide(color: _brandPrimary, width: 1.4),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _contactCategoryController.text.isEmpty ? 'other' : _contactCategoryController.text,
+            items: const [
+              DropdownMenuItem(value: 'billing', child: Text('Billing')),
+              DropdownMenuItem(value: 'technical', child: Text('Technical')),
+              DropdownMenuItem(value: 'account', child: Text('Account')),
+              DropdownMenuItem(value: 'service', child: Text('Service')),
+              DropdownMenuItem(value: 'other', child: Text('Other')),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                _contactCategoryController.text = value;
+              }
+            },
+            decoration: InputDecoration(
+              labelText: 'Category',
+              filled: true,
+              fillColor: isDark
+                  ? Colors.black.withOpacity(0.12)
+                  : Colors.black.withOpacity(0.04),
+              border: fieldBorder,
+              enabledBorder: fieldBorder,
+              focusedBorder: fieldBorder.copyWith(
+                borderSide: const BorderSide(color: _brandPrimary, width: 1.4),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
             controller: _messageController,
-            maxLines: isMobile ? 5 : 6,
+            maxLines: isMobile ? 4 : 5,
             decoration: InputDecoration(
               labelText: 'Message',
               alignLabelWithHint: true,
@@ -1318,7 +1684,7 @@ class _LandingScreenState extends State<LandingScreen> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Submit opens your email client with a prefilled message (no backend required).',
+            'Your message will be received by our support team and we will respond shortly.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: isDark
                   ? theme.colorScheme.onSurface.withOpacity(0.62)

@@ -1068,6 +1068,8 @@ const locationRoutes = require('./routes/locationRoutes');
 const attachmentRoutes = require('./routes/attachmentRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const auditRoutes = require('./routes/auditRoutes');
+const clientTicketRoutes = require('./routes/clientTicketRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 
 
 app.use(express.json({ limit: '200kb' })); 
@@ -1338,6 +1340,8 @@ app.use('/api/location', locationRoutes);
 app.use('/api/attachments', attachmentRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/client-tickets', clientTicketRoutes);
+app.use('/api/contact', contactRoutes);
 
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) {

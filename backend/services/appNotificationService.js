@@ -115,6 +115,7 @@ async function createNotification({
 
 async function createForAdmins({
   excludeUserId,
+  scope = 'adminFeed',
   type,
   action,
   title,
@@ -133,7 +134,7 @@ async function createForAdmins({
     created.push(
       await createNotification({
         recipientUserId: adminId,
-        scope: 'adminFeed',
+        scope: scope || 'adminFeed',
         type: type || 'info',
         action: action || 'info',
         title: title || 'Notification',
@@ -146,12 +147,32 @@ async function createForAdmins({
   return created;
 }
 
+async function createForUser(userId, {
+  scope = 'tasks',
+  type,
+  action,
+  title,
+  message,
+  payload,
+}) {
+  return await createNotification({
+    recipientUserId: userId,
+    scope: scope || 'tasks',
+    type: type || 'info',
+    action: action || 'info',
+    title: title || 'Notification',
+    message: message || '',
+    payload: payload || {},
+  });
+}
+
 module.exports = {
   getUnreadCountsForUser,
   emitUnreadCounts,
   emitUnreadNotifications,
   createNotification,
   createForAdmins,
+  createForUser,
   
   // Additional methods for notification management
   async getNotificationsByScope(userId, scope, { limit = 50, offset = 0 } = {}) {
