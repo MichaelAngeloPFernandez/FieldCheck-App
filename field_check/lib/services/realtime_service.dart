@@ -37,6 +37,16 @@ class RealtimeService {
   int _reconnectAttempts = 0;
   static const int maxReconnectAttempts = 5;
   final Set<String> _rooms = <String>{};
+  
+  // Connection management enhancements
+  Timer? _healthCheckTimer;
+  DateTime? _lastConnectionTime;
+  DateTime? _lastDisconnectionTime;
+  String? _lastConnectionError;
+  final StreamController<Map<String, dynamic>> _connectionStatusController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _connectionRecoveryController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
   Stream<int> get onlineCountStream => _onlineCountController.stream;
@@ -52,8 +62,78 @@ class RealtimeService {
       _unreadCountsController.stream;
   Stream<Map<String, dynamic>> get adminNearbyStream =>
       _adminNearbyController.stream;
+  Stream<Map<String, dynamic>> get connectionStatusStream =>
+      _connectionStatusController.stream;
+  Stream<Map<String, dynamic>> get connectionRecoveryStream =>
+      _connectionRecoveryController.stream;
 
   bool get isConnected => _isConnected;
+  
+  /// Public getter for connection status validation
+  /// Returns detailed connection information for external validation
+  Map<String, dynamic> get connectionStatus => {
+    'isConnected': _isConnected,
+    'reconnectAttempts': _reconnectAttempts,
+    'lastConnectionTime': _lastConnectionTime?.toIso8601String(),
+    'lastDisconnectionTime': _lastDisconnectionTime?.toIso8601String(),
+    'lastError': _lastConnectionError,
+    'hasSocket': _socket != null,
+    'roomsJoined': _rooms.toList(),
+  };
+  
+  /// Connection health check method that can be called externally
+  /// Returns true if connection is healthy, false otherwise
+  Future<bool> performHealthCheck() async {
+    try {
+      if (_socket == null || !_isConnected) {
+        print('RealtimeService: Health check failed - not connected');
+        return false;
+      }
+      
+      // Test connection by emitting a ping event
+      final completer = Completer<bool>();
+      Timer? timeoutTimer;
+      
+      // Set up timeout for health check
+      timeoutTimer = Timer(const Duration(seconds: 5), () {
+        if (!completer.isCompleted) {
+          completer.complete(false);
+        }
+      });
+      
+      // Listen for pong response
+      _socket!.once('pong', (_) {
+        timeoutTimer?.cancel();
+        if (!completer.isCompleted) {
+          completer.complete(true);
+        }
+      });
+      
+      // Send ping
+      _socket!.emit('ping');
+      
+      final result = await completer.future;
+      print('RealtimeService: Health check result: $result');
+      
+      // Emit health check result
+      _connectionStatusController.add({
+        'type': 'health_check',
+        'healthy': result,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      
+      return result;
+    } catch (e) {
+      print('RealtimeService: Health check error: $e');
+      _connectionStatusController.add({
+        'type': 'health_check',
+        'healthy': false,
+        'error': e.toString(),
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      return false;
+    }
+  }
 
   Future<void> initialize() async {
     final token = await UserService().getToken();
@@ -105,7 +185,23 @@ class RealtimeService {
         print('RealtimeService: Connected to Socket.IO');
         _isConnected = true;
         _reconnectAttempts = 0;
+        _lastConnectionTime = DateTime.now();
+        _lastConnectionError = null;
         _reconnectTimer?.cancel();
+        
+        // Emit connection recovery notification
+        _connectionRecoveryController.add({
+          'type': 'connected',
+          'timestamp': _lastConnectionTime!.toIso8601String(),
+          'reconnectAttempts': _reconnectAttempts,
+        });
+        
+        // Emit connection status update
+        _connectionStatusController.add({
+          'type': 'connection_status',
+          'connected': true,
+          'timestamp': _lastConnectionTime!.toIso8601String(),
+        });
 
         // Re-join any rooms after reconnect.
         for (final room in _rooms) {
@@ -113,22 +209,61 @@ class RealtimeService {
             _socket!.emit('joinRoom', {'room': room});
           } catch (_) {}
         }
+        
+        // Start periodic health checks
+        _startHealthCheckTimer();
       });
 
       _socket!.onDisconnect((_) {
         print('RealtimeService: Disconnected from Socket.IO');
         _isConnected = false;
+        _lastDisconnectionTime = DateTime.now();
+        _healthCheckTimer?.cancel();
+        
+        // Emit connection status update
+        _connectionStatusController.add({
+          'type': 'connection_status',
+          'connected': false,
+          'timestamp': _lastDisconnectionTime!.toIso8601String(),
+        });
+        
         // Socket.IO client will auto-reconnect; keep a lightweight fallback.
-        _scheduleReconnect();
+        _scheduleReconnectWithBackoff();
       });
 
       _socket!.onConnectError((err) {
         print('RealtimeService: Connect Error: $err');
         _isConnected = false;
+        _lastConnectionError = err.toString();
+        _lastDisconnectionTime = DateTime.now();
+        
+        // Classify connection error type
+        final errorType = _classifyConnectionError(err);
+        
+        // Emit connection error notification
+        _connectionStatusController.add({
+          'type': 'connection_error',
+          'error': err.toString(),
+          'errorType': errorType,
+          'timestamp': _lastDisconnectionTime!.toIso8601String(),
+          'reconnectAttempts': _reconnectAttempts,
+        });
       });
 
       _socket!.onError((err) {
         print('RealtimeService: Error: $err');
+        _lastConnectionError = err.toString();
+        
+        // Classify error type for better handling
+        final errorType = _classifyConnectionError(err);
+        
+        // Emit error notification
+        _connectionStatusController.add({
+          'type': 'socket_error',
+          'error': err.toString(),
+          'errorType': errorType,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
       });
 
       // Listen for real-time events
@@ -484,31 +619,104 @@ class RealtimeService {
     });
   }
 
-  void _scheduleReconnect() {
+  void _scheduleReconnectWithBackoff() {
     _reconnectTimer?.cancel();
-    // Avoid aggressive loops; keep a slow fallback reconnect in case the
-    // underlying client reconnection is blocked by a transient error.
+    
+    // Exponential backoff with jitter
+    final baseDelay = 1000; // 1 second base
+    final maxDelay = 30000; // 30 seconds max
+    final backoffMultiplier = 2;
+    
+    final delay = (baseDelay * 
+        (backoffMultiplier * _reconnectAttempts).clamp(1, maxDelay ~/ baseDelay))
+        .clamp(baseDelay, maxDelay);
+    
+    // Add jitter (±25% of delay)
+    final jitter = (delay * 0.25 * (2 * (DateTime.now().millisecond / 1000) - 1)).round();
+    final finalDelay = (delay + jitter).clamp(baseDelay, maxDelay);
+    
+    print('RealtimeService: Scheduling reconnect in ${finalDelay}ms (attempt ${_reconnectAttempts + 1})');
+    
     _reconnectTimer = Timer(
-      Duration(seconds: 5 + (2 * _reconnectAttempts)),
+      Duration(milliseconds: finalDelay),
       () {
         _reconnectAttempts = (_reconnectAttempts + 1).clamp(0, 999999);
+        
+        // Emit reconnection attempt notification
+        _connectionRecoveryController.add({
+          'type': 'reconnect_attempt',
+          'attempt': _reconnectAttempts,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        
         try {
           if (_socket != null && !_isConnected) {
             _socket!.connect();
             return;
           }
-        } catch (_) {}
+        } catch (e) {
+          print('RealtimeService: Reconnect attempt failed: $e');
+        }
 
+        // Fallback to full reinitialization
         initialize();
       },
     );
   }
+  
+  /// Classify connection errors for better error handling
+  String _classifyConnectionError(dynamic error) {
+    final errorStr = error.toString().toLowerCase();
+    
+    if (errorStr.contains('timeout') || errorStr.contains('timed out')) {
+      return 'timeout';
+    } else if (errorStr.contains('network') || errorStr.contains('connection refused') || 
+               errorStr.contains('unreachable') || errorStr.contains('dns')) {
+      return 'network';
+    } else if (errorStr.contains('auth') || errorStr.contains('unauthorized') || 
+               errorStr.contains('forbidden') || errorStr.contains('token')) {
+      return 'authentication';
+    } else if (errorStr.contains('websocket') || errorStr.contains('transport')) {
+      return 'transport';
+    } else {
+      return 'unknown';
+    }
+  }
+  
+  /// Start periodic health check timer
+  void _startHealthCheckTimer() {
+    _healthCheckTimer?.cancel();
+    
+    // Perform health check every 30 seconds
+    _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_isConnected) {
+        performHealthCheck();
+      }
+    });
+  }
 
   void emit(String event, Map<String, dynamic> data) {
     if (_socket != null && _isConnected) {
-      _socket!.emit(event, data);
+      try {
+        _socket!.emit(event, data);
+        print('RealtimeService: Emitted event "$event" with data: $data');
+      } catch (e) {
+        print('RealtimeService: Failed to emit event "$event": $e');
+        _connectionStatusController.add({
+          'type': 'emit_error',
+          'event': event,
+          'error': e.toString(),
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
     } else {
-      print('RealtimeService: Cannot emit $event - not connected');
+      print('RealtimeService: Cannot emit $event - not connected (socket: ${_socket != null}, connected: $_isConnected)');
+      _connectionStatusController.add({
+        'type': 'emit_failed',
+        'event': event,
+        'reason': 'not_connected',
+        'timestamp': DateTime.now().toIso8601String(),
+      });
     }
   }
 
@@ -517,7 +725,14 @@ class RealtimeService {
     if (r.isEmpty) return;
     _rooms.add(r);
     if (_socket != null && _isConnected) {
-      _socket!.emit('joinRoom', {'room': r});
+      try {
+        _socket!.emit('joinRoom', {'room': r});
+        print('RealtimeService: Joined room "$r"');
+      } catch (e) {
+        print('RealtimeService: Failed to join room "$r": $e');
+      }
+    } else {
+      print('RealtimeService: Queued room "$r" for joining when connected');
     }
   }
 
@@ -526,18 +741,34 @@ class RealtimeService {
     if (r.isEmpty) return;
     _rooms.remove(r);
     if (_socket != null && _isConnected) {
-      _socket!.emit('leaveRoom', {'room': r});
+      try {
+        _socket!.emit('leaveRoom', {'room': r});
+        print('RealtimeService: Left room "$r"');
+      } catch (e) {
+        print('RealtimeService: Failed to leave room "$r": $e');
+      }
+    } else {
+      print('RealtimeService: Removed room "$r" from queue');
     }
   }
 
   void disconnect() {
     _reconnectTimer?.cancel();
+    _healthCheckTimer?.cancel();
+    
     try {
       _socket?.disconnect();
       _socket?.dispose();
     } catch (_) {}
     _socket = null;
     _isConnected = false;
+    _lastDisconnectionTime = DateTime.now();
+    
+    // Emit disconnection notification
+    _connectionStatusController.add({
+      'type': 'manual_disconnect',
+      'timestamp': _lastDisconnectionTime!.toIso8601String(),
+    });
   }
 
   /// Hard reset for logout flows.
@@ -549,6 +780,9 @@ class RealtimeService {
     _lastAuthToken = null;
     _rooms.clear();
     _reconnectAttempts = 0;
+    _lastConnectionTime = null;
+    _lastDisconnectionTime = null;
+    _lastConnectionError = null;
   }
 
   void dispose() {
@@ -562,5 +796,7 @@ class RealtimeService {
     _notificationController.close();
     _chatController.close();
     _adminNearbyController.close();
+    _connectionStatusController.close();
+    _connectionRecoveryController.close();
   }
 }

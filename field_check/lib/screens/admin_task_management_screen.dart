@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/availability_service.dart';
+import 'package:field_check/services/client_ticket_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -26,6 +27,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   final TaskService _taskService = TaskService();
   final UserService _userService = UserService();
   final AvailabilityService _availabilityService = AvailabilityService();
+  final ClientTicketService _clientTicketService = ClientTicketService();
 
   List<Task> _tasks = [];
   List<Task> _archivedTasks = [];
@@ -33,7 +35,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   String _tab = 'current';
   String _difficultyFilter = 'all';
   String _sortBy = 'dueDate'; // 'dueDate', 'difficulty', 'status'
-  late io.Socket _socket;
+  io.Socket? _socket;
 
   // Workload tracking
   final Map<String, int> _employeeActiveTaskCount = {};
@@ -232,7 +234,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
   @override
   void dispose() {
     _fetchDebounce?.cancel();
-    _socket.disconnect();
+    _socket?.disconnect();
     super.dispose();
   }
 
@@ -263,62 +265,62 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       }
       _socket = io.io(ApiConfig.baseUrl, options);
 
-      _socket.onConnect((_) => debugPrint('Connected to Socket.IO'));
-      _socket.onDisconnect((_) => debugPrint('Disconnected from Socket.IO'));
-      _socket.onConnectError(
+      _socket?.onConnect((_) => debugPrint('Connected to Socket.IO'));
+      _socket?.onDisconnect((_) => debugPrint('Disconnected from Socket.IO'));
+      _socket?.onConnectError(
         (err) => debugPrint('Socket.IO Connect Error: $err'),
       );
-      _socket.onError((err) => debugPrint('Socket.IO Error: $err'));
-      _socket.on(
+      _socket?.onError((err) => debugPrint('Socket.IO Error: $err'));
+      _socket?.on(
         'reconnect_attempt',
         (_) => debugPrint('Socket.IO reconnect attempt'),
       );
-      _socket.on('reconnect', (_) => debugPrint('Socket.IO reconnected'));
-      _socket.on(
+      _socket?.on('reconnect', (_) => debugPrint('Socket.IO reconnected'));
+      _socket?.on(
         'reconnect_error',
         (err) => debugPrint('Socket.IO reconnect error: $err'),
       );
-      _socket.on(
+      _socket?.on(
         'reconnect_failed',
         (_) => debugPrint('Socket.IO reconnect failed'),
       );
 
-      _socket.on('newTask', (data) {
+      _socket?.on('newTask', (data) {
         debugPrint('New task received: $data');
         _scheduleFetchTasks();
       });
 
-      _socket.on('updatedTask', (data) {
+      _socket?.on('updatedTask', (data) {
         debugPrint('Task updated: $data');
         _scheduleFetchTasks();
       });
 
-      _socket.on('deletedTask', (data) {
+      _socket?.on('deletedTask', (data) {
         debugPrint('Task deleted: $data');
         _scheduleFetchTasks();
       });
 
-      _socket.on('taskAssignedToMultiple', (data) {
+      _socket?.on('taskAssignedToMultiple', (data) {
         debugPrint('Task assigned to multiple: $data');
         _scheduleFetchTasks();
       });
 
-      _socket.on('taskUnassigned', (data) {
+      _socket?.on('taskUnassigned', (data) {
         debugPrint('Task unassigned: $data');
         _scheduleFetchTasks();
       });
 
-      _socket.on('userTaskArchived', (data) {
+      _socket?.on('userTaskArchived', (data) {
         debugPrint('User task archived: $data');
         _scheduleFetchTasks();
       });
 
-      _socket.on('userTaskRestored', (data) {
+      _socket?.on('userTaskRestored', (data) {
         debugPrint('User task restored: $data');
         _scheduleFetchTasks();
       });
 
-      _socket.on('updatedUserTask', (data) {
+      _socket?.on('updatedUserTask', (data) {
         debugPrint('User task updated: $data');
         _scheduleFetchTasks();
       });
@@ -448,12 +450,92 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
     // ── New fields ───────────────────────────────────────────────────────────
     UserModel? selectedEmployee;
-
+    
+    // ── Ticket linking fields ────────────────────────────────────────────────
+    List<Map<String, dynamic>> pendingTickets = [];
+    bool loadingTickets = false;
+    String? selectedTicketId;
+    Map<String, dynamic>? selectedTicket;
+    final TextEditingController manualTicketController = TextEditingController();
+    
     await showDialog(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter dialogSetState) {
+            
+            // Helper functions for ticket linking (moved inside StatefulBuilder)
+            Future<void> fetchPendingTickets() async {
+              dialogSetState(() {
+                loadingTickets = true;
+                dialogError = null;
+              });
+              
+              try {
+                final response = await _clientTicketService.fetchPendingTickets(limit: 50);
+                final tickets = response['data'] as List<dynamic>? ?? [];
+                
+                dialogSetState(() {
+                  pendingTickets = tickets.cast<Map<String, dynamic>>();
+                  loadingTickets = false;
+                });
+              } catch (e) {
+                dialogSetState(() {
+                  loadingTickets = false;
+                  dialogError = 'Failed to load pending tickets: ${e.toString()}';
+                });
+              }
+            }
+            
+            void onTicketSelected(String? ticketId) {
+              dialogSetState(() {
+                selectedTicketId = ticketId;
+                selectedTicket = ticketId == null 
+                    ? null 
+                    : pendingTickets.firstWhere(
+                        (ticket) => ticket['_id'] == ticketId,
+                        orElse: () => <String, dynamic>{},
+                      );
+                
+                // Auto-fill description when ticket is selected
+                if (selectedTicket != null && selectedTicket!.isNotEmpty) {
+                  final ticketNumber = selectedTicket!['ticketNumber'] ?? 'Unknown';
+                  final clientName = selectedTicket!['clientName'] ?? 'Unknown Client';
+                  final serviceType = selectedTicket!['serviceType'] ?? 'Unknown Service';
+                  final description = selectedTicket!['description'] ?? '';
+                  
+                  // Auto-fill task details based on ticket
+                  titleController.text = 'Task for Ticket $ticketNumber';
+                  descriptionController.text = 'Client: $clientName\n'
+                      'Service Type: $serviceType\n'
+                      'Request: $description\n\n'
+                      'Follow standard workflow: Accept → Work → Submit for Review';
+                  
+                  // Clear manual ticket field when dropdown is used
+                  manualTicketController.clear();
+                }
+                
+                dialogError = null;
+              });
+            }
+            
+            void onManualTicketChanged(String value) {
+              dialogSetState(() {
+                // Clear dropdown selection when manual field is used
+                if (value.trim().isNotEmpty) {
+                  selectedTicketId = null;
+                  selectedTicket = null;
+                }
+                dialogError = null;
+              });
+            }
+            
+            // Load pending tickets when dialog opens (only once)
+            if (pendingTickets.isEmpty && !loadingTickets) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                fetchPendingTickets();
+              });
+            }
             return AlertDialog(
               title: const Text('Create New Task'),
               content: SingleChildScrollView(
@@ -595,6 +677,91 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                           dialogError = null;
                         });
                       },
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── Link to Pending Ticket dropdown ─────────────────────
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: selectedTicketId,
+                            decoration: const InputDecoration(
+                              labelText: 'Link to Pending Ticket (optional)',
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              prefixIcon: Icon(Icons.link),
+                            ),
+                            hint: loadingTickets 
+                                ? const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text('Loading tickets...'),
+                                    ],
+                                  )
+                                : const Text('Select a pending ticket...'),
+                            items: [
+                              const DropdownMenuItem<String>(
+                                value: null,
+                                child: Text('— No ticket linking —'),
+                              ),
+                              ...pendingTickets.map((ticket) {
+                                final ticketNumber = ticket['ticketNumber'] ?? 'Unknown';
+                                final clientName = ticket['clientName'] ?? 'Unknown Client';
+                                final serviceType = ticket['serviceType'] ?? 'Unknown Service';
+                                return DropdownMenuItem<String>(
+                                  value: ticket['_id'],
+                                  child: Text(
+                                    '$ticketNumber - $clientName - $serviceType',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }),
+                            ],
+                            onChanged: loadingTickets ? null : onTicketSelected,
+                            isExpanded: true,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: loadingTickets ? null : fetchPendingTickets,
+                          icon: loadingTickets 
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.refresh),
+                          tooltip: 'Refresh pending tickets',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── Manual Client Ticket Number field ───────────────────
+                    TextField(
+                      controller: manualTicketController,
+                      decoration: const InputDecoration(
+                        labelText: 'Client Ticket Number (optional)',
+                        hintText: 'e.g., RNG-20240101-ABCD',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        prefixIcon: Icon(Icons.confirmation_number),
+                        helperText: 'Alternative to dropdown - enter ticket number manually',
+                      ),
+                      onChanged: onManualTicketChanged,
                     ),
                     const SizedBox(height: 10),
 
@@ -772,10 +939,32 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                             isSubmitting = true;
                           });
 
+                          // Determine final ticket information for linking
+                          String? linkedTicketNumber;
+                          String? linkedTicketId;
+                          
+                          if (selectedTicket != null && selectedTicket!.isNotEmpty) {
+                            // Use dropdown selection
+                            linkedTicketNumber = selectedTicket!['ticketNumber'];
+                            linkedTicketId = selectedTicket!['_id'];
+                          } else if (manualTicketController.text.trim().isNotEmpty) {
+                            // Use manual entry
+                            linkedTicketNumber = manualTicketController.text.trim();
+                            // Note: Manual entry doesn't have an ID, just the number
+                          }
+                          
+                          // Enhance description with ticket linking info if provided
+                          String finalDescription = description;
+                          if (linkedTicketNumber != null) {
+                            finalDescription = '$description\n\n--- LINKED TO CLIENT TICKET ---\n'
+                                'Ticket Number: $linkedTicketNumber\n'
+                                'Linked at: ${DateTime.now().toIso8601String()}';
+                          }
+
                           final newTask = Task(
                             id: '',
                             title: title,
-                            description: description,
+                            description: finalDescription,
                             type: taskType,
                             difficulty: taskDifficulty,
                             dueDate: dueDate!,
@@ -830,9 +1019,12 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                               final assignMsg = selectedEmployee != null
                                   ? ' and assigned to ${selectedEmployee!.name}'
                                   : '';
+                              final ticketMsg = linkedTicketNumber != null
+                                  ? ' (linked to ticket $linkedTicketNumber)'
+                                  : '';
                               AppWidgets.showSuccessSnackbar(
                                 context,
-                                'Task created$assignMsg!',
+                                'Task created$assignMsg$ticketMsg!',
                               );
                             }
                             Navigator.of(context).pop();
@@ -1605,8 +1797,8 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                         );
                       }
 
-                      if (_socket.connected) {
-                        _socket.emit('taskAssigned', {
+                      if (_socket?.connected == true) {
+                        _socket!.emit('taskAssigned', {
                           'taskId': task.id,
                           'employeeIds': idsToAssign,
                         });

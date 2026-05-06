@@ -1,11 +1,16 @@
 import 'package:field_check/utils/http_util.dart';
 import 'package:field_check/services/user_service.dart';
+import 'package:field_check/services/realtime_service.dart';
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
+import 'dart:developer' as developer;
 
 class ClientTicketService {
   static const String _basePath = '/api/client-tickets';
   static const String _contactPath = '/api/contact';
+  
+  final RealtimeService _realtimeService = RealtimeService();
 
   Future<Map<String, String>> _getHeaders({String? emailToken}) async {
     final token = await UserService().getToken();
@@ -17,25 +22,117 @@ class ClientTicketService {
     return headers;
   }
 
+  /// Enhanced error response structure with type classification and retry-ability
+  Map<String, dynamic> _createErrorResponse({
+    required String errorType,
+    required String errorCode,
+    required String message,
+    required bool canRetry,
+    String? details,
+    int? statusCode,
+  }) {
+    developer.log(
+      'ClientTicketService Error: $errorType - $errorCode - $message',
+      name: 'ClientTicketService',
+      error: details,
+    );
+    
+    return {
+      'success': false,
+      'error': message,
+      'errorType': errorType,
+      'errorCode': errorCode,
+      'canRetry': canRetry,
+      'statusCode': statusCode,
+      'details': details,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+  }
+
+  /// Check Socket.IO connection before making requests
+  Future<Map<String, dynamic>?> _validateConnection() async {
+    try {
+      if (!_realtimeService.isConnected) {
+        developer.log(
+          'Socket.IO connection not available for ticket submission',
+          name: 'ClientTicketService',
+        );
+        
+        return _createErrorResponse(
+          errorType: 'socket',
+          errorCode: 'SOCKET_DISCONNECTED',
+          message: 'Real-time connection unavailable. Please check your internet connection.',
+          canRetry: true,
+          details: 'Socket.IO connection is not established',
+        );
+      }
+      
+      developer.log(
+        'Socket.IO connection validated successfully',
+        name: 'ClientTicketService',
+      );
+      
+      return null; // No error
+    } catch (e) {
+      developer.log(
+        'Error validating Socket.IO connection: $e',
+        name: 'ClientTicketService',
+        error: e,
+      );
+      
+      return _createErrorResponse(
+        errorType: 'socket',
+        errorCode: 'SOCKET_VALIDATION_ERROR',
+        message: 'Connection validation failed. Please try again.',
+        canRetry: true,
+        details: e.toString(),
+      );
+    }
+  }
+
   /// Submit a new client support ticket (public - no auth required)
-  /// Returns: { success: bool, ticketNumber: string, message: string, trackingLink: string? }
+  /// Returns: success: bool, ticketNumber: string, message: string, trackingLink: string?
+  /// Enhanced with Socket.IO validation and detailed error handling
   Future<Map<String, dynamic>> submitClientTicket({
     required String clientName,
     required String clientEmail,
     required String serviceType,
     required String description,
     String? otherServiceDetails,
-    List<Map<String, String>>? attachments, // [{ fileName, fileUrl, fileType }]
+    List<Map<String, String>>? attachments, // [fileName, fileUrl, fileType]
     bool signupForTracking = false,
   }) async {
+    developer.log(
+      'Starting client ticket submission for: $clientEmail',
+      name: 'ClientTicketService',
+    );
+
+    // Check Socket.IO connection before proceeding
+    final connectionError = await _validateConnection();
+    if (connectionError != null) {
+      return connectionError;
+    }
+
     // Input validation
     if (clientName.trim().isEmpty || clientName.trim().length < 2) {
-      throw Exception('Client name must be at least 2 characters');
+      return _createErrorResponse(
+        errorType: 'validation',
+        errorCode: 'INVALID_CLIENT_NAME',
+        message: 'Client name must be at least 2 characters',
+        canRetry: false,
+        details: 'Client name validation failed',
+      );
     }
 
     final emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
     if (!emailRegex.hasMatch(clientEmail)) {
-      throw Exception('Invalid email address');
+      return _createErrorResponse(
+        errorType: 'validation',
+        errorCode: 'INVALID_EMAIL',
+        message: 'Invalid email address',
+        canRetry: false,
+        details: 'Email format validation failed',
+      );
     }
 
     final validServiceTypes = [
@@ -48,23 +145,46 @@ class ClientTicketService {
       'other'
     ];
     if (!validServiceTypes.contains(serviceType)) {
-      throw Exception('Invalid service type');
+      return _createErrorResponse(
+        errorType: 'validation',
+        errorCode: 'INVALID_SERVICE_TYPE',
+        message: 'Invalid service type',
+        canRetry: false,
+        details: 'Service type not in allowed list',
+      );
     }
 
     if (description.trim().isEmpty || description.trim().length < 10) {
-      throw Exception('Description must be at least 10 characters');
+      return _createErrorResponse(
+        errorType: 'validation',
+        errorCode: 'INVALID_DESCRIPTION',
+        message: 'Description must be at least 10 characters',
+        canRetry: false,
+        details: 'Description length validation failed',
+      );
     }
 
     if (serviceType == 'other' &&
         (otherServiceDetails == null ||
             otherServiceDetails.trim().isEmpty ||
             otherServiceDetails.trim().length < 5)) {
-      throw Exception(
-          'Please provide service details for "Other" service type (min 5 characters)');
+      return _createErrorResponse(
+        errorType: 'validation',
+        errorCode: 'MISSING_OTHER_DETAILS',
+        message: 'Please provide service details for "Other" service type (min 5 characters)',
+        canRetry: false,
+        details: 'Other service details validation failed',
+      );
     }
 
     if (attachments != null && attachments.length > 5) {
-      throw Exception('Maximum 5 file attachments allowed');
+      return _createErrorResponse(
+        errorType: 'validation',
+        errorCode: 'TOO_MANY_ATTACHMENTS',
+        message: 'Maximum 5 file attachments allowed',
+        canRetry: false,
+        details: 'Attachment count exceeds limit',
+      );
     }
 
     final body = {
@@ -78,6 +198,11 @@ class ClientTicketService {
       'signupForTracking': signupForTracking,
     };
 
+    developer.log(
+      'Sending HTTP request for ticket submission',
+      name: 'ClientTicketService',
+    );
+
     try {
       final response = await HttpUtil()
           .post(
@@ -89,27 +214,184 @@ class ClientTicketService {
         throw TimeoutException('Request timed out');
       });
 
+      developer.log(
+        'HTTP response received: ${response.statusCode}',
+        name: 'ClientTicketService',
+      );
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         try {
           final decoded = jsonDecode(response.body);
-          return decoded is Map<String, dynamic>
-              ? decoded
-              : {'success': false, 'error': 'Invalid response format'};
-        } catch (_) {
-          return {'success': false, 'error': 'Failed to parse response'};
+          if (decoded is Map<String, dynamic>) {
+            developer.log(
+              'Ticket submission successful: ${decoded['ticketNumber'] ?? 'Unknown'}',
+              name: 'ClientTicketService',
+            );
+            return decoded;
+          } else {
+            return _createErrorResponse(
+              errorType: 'server',
+              errorCode: 'INVALID_RESPONSE_FORMAT',
+              message: 'Server returned invalid response format',
+              canRetry: true,
+              statusCode: response.statusCode,
+            );
+          }
+        } catch (e) {
+          return _createErrorResponse(
+            errorType: 'server',
+            errorCode: 'RESPONSE_PARSE_ERROR',
+            message: 'Failed to parse server response',
+            canRetry: true,
+            details: e.toString(),
+            statusCode: response.statusCode,
+          );
         }
       } else {
-        try {
-          final error = jsonDecode(response.body);
-          throw Exception(error['error'] ?? 'Failed to submit ticket');
-        } catch (_) {
-          throw Exception('Failed to submit ticket (Status: ${response.statusCode})');
-        }
+        // Enhanced error handling for different HTTP status codes
+        return _handleHttpError(response);
       }
-    } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+    } on TimeoutException catch (e) {
+      return _createErrorResponse(
+        errorType: 'timeout',
+        errorCode: 'REQUEST_TIMEOUT',
+        message: 'Request timeout. Please check your connection and try again.',
+        canRetry: true,
+        details: e.toString(),
+      );
+    } on SocketException catch (e) {
+      return _createErrorResponse(
+        errorType: 'network',
+        errorCode: 'NETWORK_ERROR',
+        message: 'Network connection failed. Please check your internet connection.',
+        canRetry: true,
+        details: e.toString(),
+      );
     } catch (e) {
-      rethrow;
+      return _createErrorResponse(
+        errorType: 'unknown',
+        errorCode: 'UNEXPECTED_ERROR',
+        message: 'An unexpected error occurred. Please try again.',
+        canRetry: true,
+        details: e.toString(),
+      );
+    }
+  }
+
+  /// Handle HTTP error responses with specific error codes
+  Map<String, dynamic> _handleHttpError(dynamic response) {
+    final statusCode = response.statusCode;
+    
+    try {
+      final errorBody = jsonDecode(response.body);
+      final serverMessage = errorBody['error'] ?? 'Server error occurred';
+      
+      switch (statusCode) {
+        case 400:
+          return _createErrorResponse(
+            errorType: 'validation',
+            errorCode: 'BAD_REQUEST',
+            message: serverMessage,
+            canRetry: false,
+            statusCode: statusCode,
+          );
+        case 401:
+          return _createErrorResponse(
+            errorType: 'authentication',
+            errorCode: 'UNAUTHORIZED',
+            message: 'Authentication required or invalid',
+            canRetry: false,
+            statusCode: statusCode,
+          );
+        case 403:
+          return _createErrorResponse(
+            errorType: 'authorization',
+            errorCode: 'FORBIDDEN',
+            message: 'Access denied',
+            canRetry: false,
+            statusCode: statusCode,
+          );
+        case 404:
+          return _createErrorResponse(
+            errorType: 'server',
+            errorCode: 'NOT_FOUND',
+            message: 'Service endpoint not found',
+            canRetry: false,
+            statusCode: statusCode,
+          );
+        case 409:
+          return _createErrorResponse(
+            errorType: 'validation',
+            errorCode: 'CONFLICT',
+            message: serverMessage,
+            canRetry: false,
+            statusCode: statusCode,
+          );
+        case 422:
+          return _createErrorResponse(
+            errorType: 'validation',
+            errorCode: 'UNPROCESSABLE_ENTITY',
+            message: serverMessage,
+            canRetry: false,
+            statusCode: statusCode,
+          );
+        case 429:
+          return _createErrorResponse(
+            errorType: 'rate_limit',
+            errorCode: 'TOO_MANY_REQUESTS',
+            message: 'Too many requests. Please wait and try again.',
+            canRetry: true,
+            statusCode: statusCode,
+          );
+        case 500:
+          return _createErrorResponse(
+            errorType: 'server',
+            errorCode: 'INTERNAL_SERVER_ERROR',
+            message: 'Server error occurred. Please try again later.',
+            canRetry: true,
+            statusCode: statusCode,
+          );
+        case 502:
+          return _createErrorResponse(
+            errorType: 'server',
+            errorCode: 'BAD_GATEWAY',
+            message: 'Service temporarily unavailable. Please try again.',
+            canRetry: true,
+            statusCode: statusCode,
+          );
+        case 503:
+          return _createErrorResponse(
+            errorType: 'server',
+            errorCode: 'SERVICE_UNAVAILABLE',
+            message: 'Service temporarily unavailable. Please try again later.',
+            canRetry: true,
+            statusCode: statusCode,
+          );
+        case 504:
+          return _createErrorResponse(
+            errorType: 'timeout',
+            errorCode: 'GATEWAY_TIMEOUT',
+            message: 'Server timeout. Please try again.',
+            canRetry: true,
+            statusCode: statusCode,
+          );
+        default:
+          return _createErrorResponse(
+            errorType: 'server',
+            errorCode: 'HTTP_ERROR',
+            message: serverMessage,
+            canRetry: statusCode >= 500,
+            statusCode: statusCode,
+          );
+      }
+    } catch (_) {
+      return _createErrorResponse(
+        errorType: 'server',
+        errorCode: 'HTTP_ERROR',
+        message: 'Server error occurred (Status: $statusCode)',
+        canRetry: statusCode >= 500,
+        statusCode: statusCode,
+      );
     }
   }
 
@@ -117,7 +399,7 @@ class ClientTicketService {
   /// Returns: ticket data or error
   /// Fetch a client ticket by ticket number (public - optional email token)
   /// emailToken: Token provided via email link for authentication
-  /// Returns: { data: {...ticket details...}, ... } or throws Exception
+  /// Returns: data: ticket details or throws Exception
   Future<Map<String, dynamic>> getClientTicket(String ticketNumber,
       {String? emailToken}) async {
     if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
@@ -158,10 +440,10 @@ class ClientTicketService {
   }
 
   /// Submit rating for completed ticket (client only)
-  /// Returns: { success: bool, message: string }
+  /// Returns: success: bool, message: string
   /// Submit rating for completed ticket (client only, requires email token)
   /// emailToken: Token provided via email link for authentication
-  /// Returns: { success: bool, message: string } or throws Exception
+  /// Returns: success: bool, message: string or throws Exception
   Future<Map<String, dynamic>> submitTicketRating({
     required String ticketNumber,
     required int stars,
@@ -229,7 +511,7 @@ class ClientTicketService {
   /// Submit a comment on a ticket (client, admin, or employee)
   /// authorType: 'client', 'admin', or 'employee'
   /// emailToken: Required for client comments
-  /// Returns: { success: bool, message: string } or throws Exception
+  /// Returns: success: bool, message: string or throws Exception
   Future<Map<String, dynamic>> submitTicketComment({
     required String ticketNumber,
     required String text,
@@ -297,7 +579,7 @@ class ClientTicketService {
   }
 
   /// Submit a contact inquiry (redesigned Contact tab)
-  /// Returns: { success: bool, message: string }
+  /// Returns: success: bool, message: string
   Future<Map<String, dynamic>> submitContactInquiry({
     required String name,
     required String email,
@@ -363,6 +645,48 @@ class ClientTicketService {
         } catch (_) {
           throw Exception(
               'Failed to submit inquiry (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception('Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Fetch pending client tickets (admin only)
+  /// Returns: success: bool, data: List of Map with String dynamic, pagination: Map
+  Future<Map<String, dynamic>> fetchPendingTickets({
+    int page = 1,
+    int limit = 50,
+  }) async {
+    try {
+      final response = await HttpUtil()
+          .get(
+            '$_basePath?status=pending&page=$page&limit=$limit',
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'success': false, 'error': 'Invalid response format'};
+        } catch (_) {
+          return {'success': false, 'error': 'Failed to parse response'};
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to fetch pending tickets');
+        } catch (_) {
+          throw Exception('Failed to fetch pending tickets (Status: ${response.statusCode})');
         }
       }
     } on TimeoutException {

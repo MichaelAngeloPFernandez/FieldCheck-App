@@ -25,6 +25,7 @@ import 'package:field_check/services/employee_tracking_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/chat_service.dart';
+import 'package:field_check/services/client_ticket_service.dart';
 import 'package:field_check/widgets/admin_info_modal.dart';
 import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
@@ -1142,9 +1143,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   // Notification and Inbox State
   final List<DashboardNotification> _notifications = [];
-  int _inboxTabIndex = 0; // 0: Online, 1: Reports & Tasks, 2: Messages
+  int _inboxTabIndex = 0; // 0: Online, 1: Reports & Tasks, 2: Messages, 3: Pending Tickets
   bool _notifSelectionMode = false;
   final Set<String> _selectedNotifIds = {};
+
+  // Pending tickets state
+  final ClientTicketService _clientTicketService = ClientTicketService();
+  List<Map<String, dynamic>> _pendingTickets = [];
+  bool _pendingTicketsLoading = false;
+  String? _pendingTicketsError;
+  int _pendingTicketsCount = 0;
   int _unreadNotificationsCount = 0;
   StreamSubscription<Map<String, dynamic>>? _unreadCountsSub;
   final Set<String> _snackDedupKeys = {};
@@ -1258,6 +1266,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _subscribeToUnreadCounts();
     _refreshUnreadNotificationsCount();
     _loadInboxNotifications();
+    _loadPendingTickets();
     _prefetchMessageNotifications();
     _initMapData();
     _initLocationService();
@@ -2567,6 +2576,43 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return out;
   }
 
+  Future<void> _loadPendingTickets() async {
+    if (_pendingTicketsLoading) return;
+    
+    setState(() {
+      _pendingTicketsLoading = true;
+      _pendingTicketsError = null;
+    });
+
+    try {
+      // Fetch pending tickets from backend
+      final response = await _fetchPendingTicketsFromBackend();
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _pendingTickets = response['data'] ?? [];
+        _pendingTicketsCount = _pendingTickets.length;
+        _pendingTicketsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pendingTicketsError = e.toString();
+        _pendingTicketsLoading = false;
+      });
+      debugPrint('Error loading pending tickets: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> _fetchPendingTicketsFromBackend() async {
+    try {
+      return await _clientTicketService.fetchPendingTickets(limit: 50);
+    } catch (e) {
+      throw Exception('Error fetching pending tickets: $e');
+    }
+  }
+
   Widget _buildNotificationSidebar() {
     final width = MediaQuery.sizeOf(context).width;
     final sidebarWidth = (width * 0.35).clamp(320.0, 420.0);
@@ -2575,7 +2621,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ? _groupMessageNotifications(_notifications)
         : _inboxTabIndex == 1
             ? _notifications.where((n) => n.type == 'task' || n.type == 'report' || n.type == 'attendance').toList()
-            : _notifications.where((n) => n.type == 'employee' || n.type == 'geofence').toList();
+            : _inboxTabIndex == 3
+                ? [] // Pending tickets will be handled separately
+                : _notifications.where((n) => n.type == 'employee' || n.type == 'geofence').toList();
 
     final int onlineUnreadCount = _notifications
         .where((n) => (n.type == 'employee' || n.type == 'geofence') && !n.isRead)
@@ -2684,6 +2732,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         child: const Icon(Icons.mail_outline),
                       ),
                     ),
+                    ButtonSegment(
+                      value: 3,
+                      label: const Text('Pending'),
+                      icon: Badge(
+                        isLabelVisible: _pendingTicketsCount > 0,
+                        label: Text(
+                          _pendingTicketsCount > 999
+                              ? '999+'
+                              : _pendingTicketsCount.toString(),
+                        ),
+                        child: const Icon(Icons.pending_actions),
+                      ),
+                    ),
                   ],
                   selected: {_inboxTabIndex},
                   onSelectionChanged: (vals) {
@@ -2785,30 +2846,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
             const Divider(height: 1),
             Expanded(
-              child: items.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _inboxTabIndex == 1
-                                ? Icons.mail_outline
-                                : Icons.notifications_off_outlined,
-                            size: 48,
-                            color: Theme.of(context).colorScheme.outline,
+              child: (_inboxTabIndex == 3) 
+                  ? _buildPendingTicketsList()
+                  : items.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _inboxTabIndex == 1
+                                    ? Icons.assignment_outlined
+                                    : _inboxTabIndex == 2
+                                        ? Icons.mail_outline
+                                        : Icons.notifications_off_outlined,
+                                size: 48,
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _inboxTabIndex == 1
+                                    ? 'No reports or tasks'
+                                    : _inboxTabIndex == 2
+                                        ? 'No messages'
+                                        : 'No notifications',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _inboxTabIndex == 1
-                                ? 'No messages'
-                                : 'No notifications',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.outline,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
+                        )
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -3460,6 +3527,292 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  Widget _buildPendingTicketsList() {
+    if (_pendingTicketsLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_pendingTicketsError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Error loading pending tickets',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _pendingTicketsError!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  fontSize: 12,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _loadPendingTickets,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_pendingTickets.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.pending_actions,
+              size: 48,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No pending tickets',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadPendingTickets,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 12,
+        ),
+        itemCount: _pendingTickets.length,
+        itemBuilder: (context, index) {
+          final ticket = _pendingTickets[index];
+          return _buildPendingTicketItem(ticket);
+        },
+      ),
+    );
+  }
+
+  Widget _buildPendingTicketItem(Map<String, dynamic> ticket) {
+    final ticketNumber = ticket['ticketNumber'] ?? 'Unknown';
+    final clientName = ticket['clientName'] ?? 'Unknown Client';
+    final serviceType = ticket['serviceType'] ?? 'unknown';
+    final description = ticket['description'] ?? '';
+    final createdAt = ticket['createdAt'] != null 
+        ? DateTime.tryParse(ticket['createdAt']) 
+        : null;
+    
+    // Format service type for display
+    final serviceTypeDisplay = serviceType
+        .split('_')
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(
+            Icons.pending_actions,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+        title: Text(
+          ticketNumber,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Client: $clientName'),
+            Text('Service: $serviceTypeDisplay'),
+            if (description.isNotEmpty)
+              Text(
+                description.length > 60 
+                    ? '${description.substring(0, 60)}...' 
+                    : description,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  fontSize: 12,
+                ),
+              ),
+            if (createdAt != null)
+              Text(
+                'Created: ${_formatTicketDate(createdAt)}',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                  fontSize: 11,
+                ),
+              ),
+          ],
+        ),
+        trailing: PopupMenuButton<String>(
+          tooltip: 'Actions',
+          onSelected: (value) async {
+            switch (value) {
+              case 'view':
+                _viewTicketDetails(ticket);
+                break;
+              case 'assign':
+                _assignTicketToEmployee(ticket);
+                break;
+              case 'createTask':
+                _createTaskFromTicket(ticket);
+                break;
+            }
+          },
+          itemBuilder: (_) => <PopupMenuEntry<String>>[
+            const PopupMenuItem(
+              value: 'view',
+              child: ListTile(
+                leading: Icon(Icons.visibility),
+                title: Text('View Details'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'assign',
+              child: ListTile(
+                leading: Icon(Icons.person_add),
+                title: Text('Assign to Employee'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'createTask',
+              child: ListTile(
+                leading: Icon(Icons.add_task),
+                title: Text('Create Task'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+        ),
+        onTap: () => _viewTicketDetails(ticket),
+      ),
+    );
+  }
+
+  String _formatTicketDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
+  }
+
+  void _viewTicketDetails(Map<String, dynamic> ticket) {
+    // TODO: Implement ticket details view
+    // This could navigate to a detailed ticket screen or show a dialog
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('View details for ticket ${ticket['ticketNumber']}'),
+      ),
+    );
+  }
+
+  void _assignTicketToEmployee(Map<String, dynamic> ticket) {
+    // TODO: Implement ticket assignment to employee
+    // This could show a dialog to select an employee
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Assign ticket ${ticket['ticketNumber']} to employee'),
+      ),
+    );
+  }
+
+  void _createTaskFromTicket(Map<String, dynamic> ticket) {
+    // Navigate to task management screen and trigger task creation with pre-filled data
+    final ticketNumber = ticket['ticketNumber'] ?? 'Unknown';
+    final clientName = ticket['clientName'] ?? 'Unknown Client';
+    final serviceType = ticket['serviceType'] ?? 'unknown';
+    final description = ticket['description'] ?? '';
+    
+    // Format service type for display
+    final serviceTypeDisplay = serviceType
+        .split('_')
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
+    
+    // Pre-filled task data
+    final prefilledData = {
+      'title': 'Client Ticket: $ticketNumber',
+      'description': '⚠️ CLIENT SUPPORT TICKET\n\n'
+          'Ticket #: $ticketNumber\n'
+          'Client: $clientName\n'
+          'Service Type: $serviceTypeDisplay\n\n'
+          'Client\'s Request:\n'
+          '"$description"\n\n'
+          'Follow standard task workflow: Accept → Work → Submit for Review\n'
+          'Updates will be sent to client via email.\n'
+          'Rating by: CLIENT (not admin)',
+      'type': 'client_support',
+      'difficulty': 'medium',
+      'linkedTicketNumber': ticketNumber,
+      'linkedTicketId': ticket['_id'],
+    };
+    
+    // Navigate to task management screen with index 6 (Tasks tab)
+    setState(() {
+      _selectedIndex = 6; // Tasks tab
+    });
+    
+    // Use a post-frame callback to ensure the navigation is complete
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Trigger task creation dialog with pre-filled data
+      _triggerTaskCreationWithTicket(prefilledData);
+    });
+  }
+  
+  void _triggerTaskCreationWithTicket(Map<String, dynamic> prefilledData) {
+    // This will be called after navigation to trigger the task creation dialog
+    // We'll need to pass this data to the AdminTaskManagementScreen
+    // For now, show a success message that navigation occurred
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Navigated to Tasks. Create task for ticket ${prefilledData['linkedTicketNumber']}'),
+        action: SnackBarAction(
+          label: 'Create Task',
+          onPressed: () {
+            // This would ideally trigger the task creation dialog
+            // with the pre-filled data in the AdminTaskManagementScreen
+          },
+        ),
+      ),
+    );
+  }
+
   void _showEmployeeAvailabilityDialog() {
     if (!mounted) return;
     showDialog<void>(
@@ -4037,7 +4390,65 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return;
       }
 
-      if (type != 'attendance' && type != 'report') {
+      if (type != 'attendance' && type != 'report' && type != 'client_ticket_created' && type != 'client_ticket_status_updated') {
+        return;
+      }
+
+      // Handle client ticket events
+      if (type == 'client_ticket_created') {
+        // Refresh pending tickets count and list
+        _loadPendingTickets();
+        
+        // Show notification
+        final ticketNumber = event['ticketNumber'] as String? ?? 'Unknown';
+        final clientName = event['clientName'] as String? ?? 'Unknown Client';
+        final serviceType = event['serviceType'] as String? ?? 'unknown';
+        
+        setState(() {
+          _notifications.insert(
+            0,
+            DashboardNotification(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              title: 'New Client Ticket',
+              message: '$clientName submitted a $serviceType ticket ($ticketNumber)',
+              type: 'client_ticket',
+              timestamp: DateTime.now(),
+              payload: event,
+            ),
+          );
+          if (_notifications.length > 50) {
+            _notifications.removeLast();
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('New pending ticket: $ticketNumber from $clientName'),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'View',
+              onPressed: () {
+                // Switch to pending tickets tab
+                setState(() {
+                  _inboxTabIndex = 3;
+                });
+              },
+            ),
+          ),
+        );
+        return;
+      }
+      
+      // Handle client ticket status updates
+      if (type == 'client_ticket_status_updated') {
+        final ticketNumber = event['ticketNumber'] as String? ?? 'Unknown';
+        final newStatus = event['status'] as String? ?? 'unknown';
+        
+        // If ticket is no longer pending, refresh the list
+        if (newStatus != 'pending') {
+          _loadPendingTickets();
+          debugPrint('Ticket $ticketNumber status changed to $newStatus, refreshing pending tickets');
+        }
         return;
       }
 

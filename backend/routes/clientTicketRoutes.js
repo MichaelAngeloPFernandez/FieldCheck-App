@@ -1,7 +1,35 @@
 const express = require('express');
 const router = express.Router();
 const clientTicketController = require('../controllers/clientTicketController');
-const { authenticate, authorize } = require('../middleware/auth');
+const { protect, admin } = require('../middleware/authMiddleware');
+
+/**
+ * Admin-only routes (authentication required)
+ */
+
+// GET - List all client tickets with filters (admin only)
+router.get(
+  '/',
+  protect,
+  admin,
+  clientTicketController.listClientTickets
+);
+
+// POST - Assign ticket to employee
+router.post(
+  '/:ticketNumber/assign/:employeeId',
+  protect,
+  admin,
+  clientTicketController.assignTicketToEmployee
+);
+
+// PUT - Update ticket status
+router.put(
+  '/:ticketNumber/status',
+  protect,
+  admin,
+  clientTicketController.updateTicketStatus
+);
 
 /**
  * Public routes (no authentication required)
@@ -18,33 +46,5 @@ router.post('/:ticketNumber/rating', clientTicketController.submitTicketRating);
 
 // POST - Add comment as client
 router.post('/:ticketNumber/comment', clientTicketController.addTicketComment);
-
-/**
- * Admin-only routes (authentication required)
- */
-
-// GET - List all client tickets with filters
-router.get(
-  '/',
-  authenticate,
-  authorize('admin'),
-  clientTicketController.listClientTickets
-);
-
-// POST - Assign ticket to employee
-router.post(
-  '/:ticketNumber/assign/:employeeId',
-  authenticate,
-  authorize('admin'),
-  clientTicketController.assignTicketToEmployee
-);
-
-// PUT - Update ticket status
-router.put(
-  '/:ticketNumber/status',
-  authenticate,
-  authorize('admin'),
-  clientTicketController.updateTicketStatus
-);
 
 module.exports = router;
