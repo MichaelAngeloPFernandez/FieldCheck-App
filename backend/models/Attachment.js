@@ -47,7 +47,6 @@ const attachmentSchema = new mongoose.Schema(
     checksum: {
       type: String,
       required: false,
-      index: true,
       description: 'SHA256 hash for deduplication',
     },
 
