@@ -670,7 +670,7 @@ class ClientTicketService {
     try {
       final response = await HttpUtil()
           .get(
-            '$_basePath?status=pending&page=$page&limit=$limit',
+            '$_basePath?status=open&page=$page&limit=$limit',
             headers: await _getHeaders(),
           )
           .timeout(const Duration(seconds: 30), onTimeout: () {

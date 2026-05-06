@@ -1222,14 +1222,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 1:
         return const ManageEmployeesScreen();
       case 2:
-        return const AdminReportsHubScreen(embedded: true);
-      case 3:
-        return const ClientTicketsScreen();
-      case 4:
         return const ManageAdminsScreen();
-      case 5:
+      case 3:
         return const AdminGeofenceScreen();
-      case 6:
+      case 4:
+        return const AdminReportsHubScreen(embedded: true);
+      case 5:
         return AdminSettingsScreen(
           onTabRequested: (idx) {
             setState(() {
@@ -1237,8 +1235,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             });
           },
         );
-      case 7:
+      case 6:
         return const AdminTaskManagementScreen(embedded: true);
+      case 7:
+        return const ClientTicketsScreen();
       default:
         return _buildDashboardOverview();
     }
@@ -2692,10 +2692,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   vertical: 8,
                 ),
                 child: SegmentedButton<int>(
+                  showSelectedIcon: false,
                   segments: [
                     ButtonSegment(
                       value: 0,
-                      label: const Text('Online'),
+                      label: const Text('Online', style: TextStyle(fontSize: 12)),
                       icon: Badge(
                         isLabelVisible: onlineUnreadCount > 0,
                         label: Text(
@@ -2703,12 +2704,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               ? '999+'
                               : onlineUnreadCount.toString(),
                         ),
-                        child: const Icon(Icons.people_outline),
+                        child: const Icon(Icons.people_outline, size: 20),
                       ),
                     ),
                     ButtonSegment(
                       value: 1,
-                      label: const Text('Reports'),
+                      label: const Text('Reports', style: TextStyle(fontSize: 12)),
                       icon: Badge(
                         isLabelVisible: reportsTasksUnreadCount > 0,
                         label: Text(
@@ -2716,12 +2717,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               ? '999+'
                               : reportsTasksUnreadCount.toString(),
                         ),
-                        child: const Icon(Icons.assignment_outlined),
+                        child: const Icon(Icons.assignment_outlined, size: 20),
                       ),
                     ),
                     ButtonSegment(
                       value: 2,
-                      label: const Text('Messages'),
+                      label: const Text('Messages', style: TextStyle(fontSize: 12)),
                       icon: Badge(
                         isLabelVisible: messagesUnreadCount > 0,
                         label: Text(
@@ -2729,12 +2730,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               ? '999+'
                               : messagesUnreadCount.toString(),
                         ),
-                        child: const Icon(Icons.mail_outline),
+                        child: const Icon(Icons.mail_outline, size: 20),
                       ),
                     ),
                     ButtonSegment(
                       value: 3,
-                      label: const Text('Pending'),
+                      label: const Text('Tickets', style: TextStyle(fontSize: 12)),
                       icon: Badge(
                         isLabelVisible: _pendingTicketsCount > 0,
                         label: Text(
@@ -2742,7 +2743,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               ? '999+'
                               : _pendingTicketsCount.toString(),
                         ),
-                        child: const Icon(Icons.pending_actions),
+                        child: const Icon(Icons.pending_actions, size: 20),
                       ),
                     ),
                   ],
@@ -4846,6 +4847,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.support_agent),
+                title: const Text('Client Tickets'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  setState(() {
+                    _selectedIndex = 7;
+                  });
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.settings),
                 title: const Text('Settings'),
                 onTap: () {
@@ -5538,17 +5550,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 1:
         return 'Manage Employees';
       case 2:
-        return 'Reports & Analytics';
-      case 3:
-        return 'Client Tickets';
-      case 4:
         return 'Manage Administrators';
-      case 5:
+      case 3:
         return 'Geofence Management';
-      case 6:
+      case 4:
+        return 'Reports & Analytics';
+      case 5:
         return 'System Settings';
-      case 7:
+      case 6:
         return 'Task Management';
+      case 7:
+        return 'Client Tickets';
       default:
         return 'Admin Dashboard';
     }

@@ -6,7 +6,7 @@ const Task = require('../models/Task');
 const UserTask = require('../models/UserTask');
 const User = require('../models/User');
 const appNotificationService = require('../services/appNotificationService');
-const emailService = require('../utils/emailService');
+const sendEmail = require('../utils/emailService');
 const ticketConfirmationEmail = require('../utils/templates/ticketConfirmationEmail');
 const ticketAssignedEmail = require('../utils/templates/ticketAssignedEmail');
 const ticketCompletedEmail = require('../utils/templates/ticketCompletedEmail');
@@ -97,8 +97,8 @@ exports.createClientTicket = asyncHandler(async (req, res) => {
     const trackingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}?token=${token}`;
     const confirmationEmailHtml = ticketConfirmationEmail(ticketNumber, clientName, serviceType, description, trackingLink);
     
-    await emailService.sendEmail({
-      to: clientEmail,
+    await sendEmail({
+      email: clientEmail,
       subject: `Support Ticket Confirmed - ${ticketNumber}`,
       html: confirmationEmailHtml,
     });
@@ -354,8 +354,8 @@ exports.assignTicketToEmployee = asyncHandler(async (req, res) => {
       ticket.description
     );
 
-    await emailService.sendEmail({
-      to: employee.email,
+    await sendEmail({
+      email: employee.email,
       subject: `New Client Support Ticket Assigned: ${ticketNumber}`,
       html: assignedEmployeeEmailHtml,
     });
@@ -430,8 +430,8 @@ exports.updateTicketStatus = asyncHandler(async (req, res) => {
           ratingLink
         );
 
-        await emailService.sendEmail({
-          to: ticket.clientEmail,
+        await sendEmail({
+          email: ticket.clientEmail,
           subject: `Your Support Ticket is Complete - ${ticketNumber}`,
           html: completedEmailHtml,
         });
@@ -542,8 +542,8 @@ exports.addTicketComment = asyncHandler(async (req, res) => {
     } else if (authorType === 'employee') {
       // Notify client
       const ratingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}`;
-      await emailService.sendEmail({
-        to: ticket.clientEmail,
+      await sendEmail({
+        email: ticket.clientEmail,
         subject: `Update on Your Support Ticket - ${ticketNumber}`,
         html: `<p>Hello ${ticket.clientName},</p>
                <p>Our team has posted an update on your ticket:</p>
