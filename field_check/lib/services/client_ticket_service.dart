@@ -49,6 +49,10 @@ class ClientTicketService {
     };
   }
 
+  // NOTE: Socket.IO validation removed - HTTP submission proceeds independently
+  // Socket.IO is only needed for real-time updates AFTER submission succeeds
+  // Keeping method for reference but not used anymore
+  /*
   /// Check Socket.IO connection before making requests
   Future<Map<String, dynamic>?> _validateConnection() async {
     try {
@@ -89,10 +93,11 @@ class ClientTicketService {
       );
     }
   }
+  */
 
   /// Submit a new client support ticket (public - no auth required)
   /// Returns: success: bool, ticketNumber: string, message: string, trackingLink: string?
-  /// Enhanced with Socket.IO validation and detailed error handling
+  /// Enhanced with detailed error handling
   Future<Map<String, dynamic>> submitClientTicket({
     required String clientName,
     required String clientEmail,
@@ -107,10 +112,12 @@ class ClientTicketService {
       name: 'ClientTicketService',
     );
 
-    // Check Socket.IO connection before proceeding
-    final connectionError = await _validateConnection();
-    if (connectionError != null) {
-      return connectionError;
+    // Optional: Log Socket.IO status for debugging (non-blocking)
+    if (!_realtimeService.isConnected) {
+      developer.log(
+        'Socket.IO disconnected during ticket submission (HTTP will proceed independently)',
+        name: 'ClientTicketService',
+      );
     }
 
     // Input validation
