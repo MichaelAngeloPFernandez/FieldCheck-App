@@ -620,33 +620,14 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
       _logInfo('Other service details validation passed');
     }
 
-    // Check Socket.IO connection before form submission
-    _logInfo('Checking Socket.IO connection status');
+    // Optional warning logging for Socket.IO status (non-blocking)
     final realtimeService = RealtimeService();
-    final isConnected = realtimeService.isConnected;
-    
-    _logInfo('Socket.IO connection status checked', context: {
-      'isConnected': isConnected,
-      'connectionCheckTime': DateTime.now().toIso8601String(),
-    });
-    
-    if (!isConnected) {
-      _logError('Socket.IO connection not available', context: {
+    if (!realtimeService.isConnected) {
+      _logWarning('Socket.IO disconnected during submission attempt', context: {
         'submissionId': _currentSubmissionId,
-        'connectionStatus': 'disconnected',
-        'action': 'preventing_submission',
+        'note': 'HTTP submission will proceed independently',
       });
-      
-      // Show retry dialog for Socket.IO disconnection
-      _showRetryDialog(
-        'Connection issue detected. Please check your internet connection and try again.',
-        isSocketIOError: true,
-      );
-      // Prevent form submission when Socket.IO is not available
-      return;
     }
-
-    _logInfo('Socket.IO connection verified, proceeding with submission');
 
     setState(() {
       _isSubmitting = true;
