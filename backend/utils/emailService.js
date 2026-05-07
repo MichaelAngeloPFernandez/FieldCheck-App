@@ -42,7 +42,7 @@ function buildTransportConfig() {
       // Avoid hanging connections on providers that are slow or blocked.
       connectionTimeout: 15000,
       greetingTimeout: 15000,
-      socketTimeout: 30000,
+      socketTimeout: 15000, // Reduced from 30000 to 15000 for faster fallback
       tls: {
         minVersion: 'TLSv1.2',
       },
@@ -198,6 +198,96 @@ function _sendWithGmailApi({ from, to, subject, html }) {
   });
 }
 
+/**
+ * Initialize and verify email service configuration at server startup.
+ * Checks available providers (SMTP, Resend API, Gmail API) and logs their status.
+ * @returns {Promise<Object>} Initialization result with provider status
+ */
+const initializeEmailService = async () => {
+  const config = buildTransportConfig();
+  const result = {
+    initialized: true,
+    providers: {
+      smtp: { available: false, verified: false },
+      resend: { available: false, verified: false },
+      gmailApi: { available: false, verified: false },
+    },
+    mode: 'none',
+  };
+
+  // Check if email is disabled
+  if (config.disableEmail) {
+    result.mode = 'disabled';
+    console.warn('Email: DISABLE_EMAIL=true (emails will not be delivered)');
+    return result;
+  }
+
+  // Check SMTP configuration
+  if (config.hasSmtp) {
+    result.providers.smtp.available = true;
+    result.mode = 'smtp';
+    console.log(
+      `Email: SMTP configured host=${config.smtp.host} user=${config.smtp.auth.user}`,
+    );
+
+    // Optionally verify SMTP connectivity
+    if (process.env.EMAIL_VERIFY === 'true') {
+      try {
+        const transporter = nodemailer.createTransport({
+          ...config.smtp,
+          logger: false,
+          debug: false,
+        });
+        await withTimeout(transporter.verify(), 12000, 'smtpVerify');
+        result.providers.smtp.verified = true;
+        console.log('Email: SMTP verification successful');
+      } catch (e) {
+        console.warn('Email: SMTP verification failed', {
+          host: config.smtp.host,
+          port: config.smtp.port,
+          user: config.smtp.auth.user,
+          error: e && e.message ? e.message : String(e),
+        });
+      }
+    }
+  }
+
+  // Check Resend API configuration
+  const resendApiKey = (process.env.RESEND_API_KEY || '').toString().trim();
+  if (resendApiKey) {
+    result.providers.resend.available = true;
+    if (!config.hasSmtp) {
+      result.mode = 'resend';
+    }
+    console.log('Email: Resend API configured (available as fallback)');
+  }
+
+  // Check Gmail API configuration
+  const hasGmailApiEnv =
+    (process.env.CLIENT_ID || '').toString().trim() &&
+    (process.env.CLIENT_SECRET || '').toString().trim() &&
+    (process.env.REFRESH_TOKEN || '').toString().trim() &&
+    (process.env.EMAIL_USER || process.env.EMAIL_USERNAME || '').toString().trim();
+
+  if (hasGmailApiEnv) {
+    result.providers.gmailApi.available = true;
+    const provider = (process.env.EMAIL_PROVIDER || '').toString().trim().toLowerCase();
+    const preferGmailApi = provider === 'gmail_api' || provider === 'gmailapi' || provider === 'gmail-api';
+    if (preferGmailApi) {
+      result.mode = 'gmail_api';
+    }
+    console.log('Email: Gmail API configured (available as fallback)');
+  }
+
+  // Warn if no providers configured in production
+  if (process.env.NODE_ENV === 'production' && result.mode === 'none') {
+    console.error('Email: No email providers configured in production environment');
+    result.initialized = false;
+  }
+
+  return result;
+};
+
 const sendEmail = async (options) => {
   // Dev bypass: allow disabling emails entirely
   const config = buildTransportConfig();
@@ -275,6 +365,7 @@ const sendEmail = async (options) => {
 
   const provider = (process.env.EMAIL_PROVIDER || '').toString().trim().toLowerCase();
   const preferGmailApi = provider === 'gmail_api' || provider === 'gmailapi' || provider === 'gmail-api';
+  const preferResend = provider === 'resend';
   const hasGmailApiEnv =
     (process.env.CLIENT_ID || '').toString().trim() &&
     (process.env.CLIENT_SECRET || '').toString().trim() &&
@@ -282,7 +373,8 @@ const sendEmail = async (options) => {
     (process.env.EMAIL_USER || process.env.EMAIL_USERNAME || '').toString().trim();
 
   try {
-    if (!config.disableEmail && hasResend && !preferGmailApi) {
+    // If Resend is explicitly preferred OR SMTP not configured but Resend is available, try Resend first
+    if (!config.disableEmail && hasResend && (preferResend || !config.hasSmtp)) {
       const from = mailOptions.from;
       const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
 
@@ -309,7 +401,8 @@ const sendEmail = async (options) => {
       }
     }
 
-    if (!config.disableEmail && (preferGmailApi || hasGmailApiEnv)) {
+    // If Gmail API is explicitly preferred OR SMTP not configured but Gmail API is available, try Gmail API first
+    if (!config.disableEmail && hasGmailApiEnv && (preferGmailApi || (!config.hasSmtp && !hasResend))) {
       const from = mailOptions.from;
       const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
       await withTimeout(
@@ -324,9 +417,10 @@ const sendEmail = async (options) => {
       return { provider: 'gmail_api' };
     }
 
+    // Default: try SMTP (if configured), with Resend/Gmail API as fallbacks
     const info = await withTimeout(
       transporter.sendMail(mailOptions),
-      30000,
+      15000, // Reduced from 30000 to 15000 for faster fallback
       'sendMail',
     );
 
@@ -348,8 +442,24 @@ const sendEmail = async (options) => {
       msg.toLowerCase().includes('timed out') ||
       msg.toLowerCase().includes('timeout');
 
-    // If SMTP is blocked (common on some hosts), optionally fall back to Resend.
-    if (transportMode === 'smtp' && isTimeout && (process.env.RESEND_API_KEY || '').toString().trim()) {
+    const isAuthError =
+      code === 'EAUTH' ||
+      msg.toLowerCase().includes('authentication') ||
+      msg.toLowerCase().includes('invalid credentials') ||
+      msg.toLowerCase().includes('username and password not accepted');
+
+    const isConnectionError =
+      code === 'ECONNREFUSED' ||
+      code === 'ENOTFOUND' ||
+      code === 'ECONNRESET' ||
+      msg.toLowerCase().includes('connection refused') ||
+      msg.toLowerCase().includes('getaddrinfo');
+
+    // Enhanced fallback logic: trigger for all SMTP failures (timeout, auth, connection)
+    const shouldFallback = transportMode === 'smtp' && (isTimeout || isAuthError || isConnectionError);
+
+    // If SMTP fails, optionally fall back to Resend.
+    if (shouldFallback && (process.env.RESEND_API_KEY || '').toString().trim()) {
       try {
         const from = mailOptions.from;
         const to = Array.isArray(mailOptions.to) ? mailOptions.to.join(',') : String(mailOptions.to);
@@ -358,11 +468,13 @@ const sendEmail = async (options) => {
           12000,
           'resend',
         );
-        console.warn('Email: SMTP timed out; delivered via Resend fallback', {
+        const reason = isTimeout ? 'timed out' : isAuthError ? 'authentication failed' : 'connection failed';
+        console.warn(`Email: SMTP ${reason}; delivered via Resend fallback`, {
           to: mailOptions.to,
           subject: mailOptions.subject,
+          smtpError: code || msg,
         });
-        return { fallback: 'resend' };
+        return { fallback: 'resend', reason };
       } catch (fallbackErr) {
         console.error('Email: Resend fallback failed', {
           to: mailOptions.to,
@@ -372,9 +484,9 @@ const sendEmail = async (options) => {
       }
     }
 
+    // If Resend fallback failed or not available, try Gmail API
     if (
-      transportMode === 'smtp' &&
-      isTimeout &&
+      shouldFallback &&
       (process.env.CLIENT_ID || '').toString().trim() &&
       (process.env.CLIENT_SECRET || '').toString().trim() &&
       (process.env.REFRESH_TOKEN || '').toString().trim()
@@ -387,11 +499,13 @@ const sendEmail = async (options) => {
           12000,
           'gmailApiFallback',
         );
-        console.warn('Email: SMTP timed out; delivered via Gmail API fallback', {
+        const reason = isTimeout ? 'timed out' : isAuthError ? 'authentication failed' : 'connection failed';
+        console.warn(`Email: SMTP ${reason}; delivered via Gmail API fallback`, {
           to: mailOptions.to,
           subject: mailOptions.subject,
+          smtpError: code || msg,
         });
-        return { fallback: 'gmail_api' };
+        return { fallback: 'gmail_api', reason };
       } catch (fallbackErr) {
         console.error('Email: Gmail API fallback failed', {
           to: mailOptions.to,
@@ -419,3 +533,4 @@ const sendEmail = async (options) => {
 };
 
 module.exports = sendEmail;
+module.exports.initializeEmailService = initializeEmailService;

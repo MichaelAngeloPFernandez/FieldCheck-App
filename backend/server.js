@@ -1575,6 +1575,22 @@ process.on('uncaughtException', (error) => {
             await seedDevData();
           }
           
+          // Initialize email service after database connection
+          try {
+            const { initializeEmailService } = require('./utils/emailService');
+            await initializeEmailService();
+          } catch (emailErr) {
+            console.error('Email service initialization failed (non-blocking):', emailErr && emailErr.message ? emailErr.message : emailErr);
+          }
+          
+          // Initialize GridFS buckets after database connection
+          try {
+            const { initializeGridFSBuckets } = require('./services/storageService');
+            await initializeGridFSBuckets();
+          } catch (gridfsErr) {
+            console.error('GridFS initialization failed (non-blocking):', gridfsErr && gridfsErr.message ? gridfsErr.message : gridfsErr);
+          }
+          
           if (runBackgroundJobs) {
             const { initializeAutomation } = require('./utils/automationService');
             initializeAutomation();

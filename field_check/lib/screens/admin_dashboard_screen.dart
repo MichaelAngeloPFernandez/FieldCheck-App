@@ -691,6 +691,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final rosterIndex = roster.indexOf(canonical);
     if (rosterIndex >= 0) {
       _setInspectionFromRoster(roster, rosterIndex);
+      _markEmployeeNotificationsRead(canonical);
       return;
     }
 
@@ -707,6 +708,34 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
 
     _ensureEmployeeLoaded(canonical);
+    _markEmployeeNotificationsRead(canonical);
+  }
+
+  void _markEmployeeNotificationsRead(String employeeId) {
+    // Find all unread employee online notifications for this employee
+    final employeeNotifs = _notifications
+        .where((n) => 
+            n.type == 'employee' && 
+            !n.isRead && 
+            n.payload?['userId'] == employeeId)
+        .toList();
+    
+    if (employeeNotifs.isEmpty) return;
+    
+    // Mark them as read locally
+    setState(() {
+      for (final notif in employeeNotifs) {
+        notif.isRead = true;
+      }
+    });
+    
+    // Mark them as read on backend
+    final ids = employeeNotifs.map((n) => n.id).toList();
+    TaskService().markNotificationIdsRead(ids).then((_) {
+      _refreshUnreadNotificationsCount();
+    }).catchError((e) {
+      debugPrint('Error marking employee notifications as read: $e');
+    });
   }
 
   void _toggleInspectorCollapsed() {
@@ -2590,9 +2619,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       
       if (!mounted) return;
       
+      final data = response['data'];
+      final List<Map<String, dynamic>> tickets = data is List
+          ? data.map((item) => item as Map<String, dynamic>).toList()
+          : [];
+      
       setState(() {
-        _pendingTickets = response['data'] ?? [];
-        _pendingTicketsCount = _pendingTickets.length;
+        _pendingTickets = tickets;
+        _pendingTicketsCount = tickets.length;
         _pendingTicketsLoading = false;
       });
     } catch (e) {
@@ -2691,67 +2725,78 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   horizontal: 16,
                   vertical: 8,
                 ),
-                child: SegmentedButton<int>(
-                  showSelectedIcon: false,
-                  segments: [
-                    ButtonSegment(
-                      value: 0,
-                      label: const Text('Online', style: TextStyle(fontSize: 12)),
-                      icon: Badge(
-                        isLabelVisible: onlineUnreadCount > 0,
-                        label: Text(
-                          onlineUnreadCount > 999
-                              ? '999+'
-                              : onlineUnreadCount.toString(),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Use icon-only mode if width is too small
+                    final useIconOnly = constraints.maxWidth < 400;
+                    
+                    return SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      segments: [
+                        ButtonSegment(
+                          value: 0,
+                          label: useIconOnly ? null : const Text('Online', style: TextStyle(fontSize: 11)),
+                          icon: Badge(
+                            isLabelVisible: onlineUnreadCount > 0,
+                            label: Text(
+                              onlineUnreadCount > 999
+                                  ? '999+'
+                                  : onlineUnreadCount.toString(),
+                              style: const TextStyle(fontSize: 9),
+                            ),
+                            child: const Icon(Icons.people_outline, size: 20),
+                          ),
                         ),
-                        child: const Icon(Icons.people_outline, size: 20),
-                      ),
-                    ),
-                    ButtonSegment(
-                      value: 1,
-                      label: const Text('Reports', style: TextStyle(fontSize: 12)),
-                      icon: Badge(
-                        isLabelVisible: reportsTasksUnreadCount > 0,
-                        label: Text(
-                          reportsTasksUnreadCount > 999
-                              ? '999+'
-                              : reportsTasksUnreadCount.toString(),
+                        ButtonSegment(
+                          value: 1,
+                          label: useIconOnly ? null : const Text('Reports', style: TextStyle(fontSize: 11)),
+                          icon: Badge(
+                            isLabelVisible: reportsTasksUnreadCount > 0,
+                            label: Text(
+                              reportsTasksUnreadCount > 999
+                                  ? '999+'
+                                  : reportsTasksUnreadCount.toString(),
+                              style: const TextStyle(fontSize: 9),
+                            ),
+                            child: const Icon(Icons.assignment_outlined, size: 20),
+                          ),
                         ),
-                        child: const Icon(Icons.assignment_outlined, size: 20),
-                      ),
-                    ),
-                    ButtonSegment(
-                      value: 2,
-                      label: const Text('Messages', style: TextStyle(fontSize: 12)),
-                      icon: Badge(
-                        isLabelVisible: messagesUnreadCount > 0,
-                        label: Text(
-                          messagesUnreadCount > 999
-                              ? '999+'
-                              : messagesUnreadCount.toString(),
+                        ButtonSegment(
+                          value: 2,
+                          label: useIconOnly ? null : const Text('Messages', style: TextStyle(fontSize: 11)),
+                          icon: Badge(
+                            isLabelVisible: messagesUnreadCount > 0,
+                            label: Text(
+                              messagesUnreadCount > 999
+                                  ? '999+'
+                                  : messagesUnreadCount.toString(),
+                              style: const TextStyle(fontSize: 9),
+                            ),
+                            child: const Icon(Icons.mail_outline, size: 20),
+                          ),
                         ),
-                        child: const Icon(Icons.mail_outline, size: 20),
-                      ),
-                    ),
-                    ButtonSegment(
-                      value: 3,
-                      label: const Text('Tickets', style: TextStyle(fontSize: 12)),
-                      icon: Badge(
-                        isLabelVisible: _pendingTicketsCount > 0,
-                        label: Text(
-                          _pendingTicketsCount > 999
-                              ? '999+'
-                              : _pendingTicketsCount.toString(),
+                        ButtonSegment(
+                          value: 3,
+                          label: useIconOnly ? null : const Text('Tickets', style: TextStyle(fontSize: 11)),
+                          icon: Badge(
+                            isLabelVisible: _pendingTicketsCount > 0,
+                            label: Text(
+                              _pendingTicketsCount > 999
+                                  ? '999+'
+                                  : _pendingTicketsCount.toString(),
+                              style: const TextStyle(fontSize: 9),
+                            ),
+                            child: const Icon(Icons.pending_actions, size: 20),
+                          ),
                         ),
-                        child: const Icon(Icons.pending_actions, size: 20),
-                      ),
-                    ),
-                  ],
-                  selected: {_inboxTabIndex},
-                  onSelectionChanged: (vals) {
-                    setState(() {
-                      _inboxTabIndex = vals.first;
-                    });
+                      ],
+                      selected: {_inboxTabIndex},
+                      onSelectionChanged: (vals) {
+                        setState(() {
+                          _inboxTabIndex = vals.first;
+                        });
+                      },
+                    );
                   },
                 ),
               ),
