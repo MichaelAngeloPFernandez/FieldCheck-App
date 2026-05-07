@@ -97,39 +97,73 @@ exports.createClientTicket = asyncHandler(async (req, res) => {
     const trackingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}?token=${token}`;
     const confirmationEmailHtml = ticketConfirmationEmail(ticketNumber, clientName, serviceType, description, trackingLink);
     
-    await sendEmail({
-      email: clientEmail,
-      subject: `Support Ticket Confirmed - ${ticketNumber}`,
-      html: confirmationEmailHtml,
-    });
+    let emailDeliveryFailed = false;
+    let emailErrorMessage = '';
 
-    // Create notification for all admins
-    await appNotificationService.createForAdmins({
-      scope: 'clientTickets',
-      type: 'new_ticket',
-      title: `New Client Ticket: ${ticketNumber}`,
-      message: `${clientName} submitted a ${serviceType} support ticket.`,
-      action: 'view_ticket',
-      payload: {
-        ticketId: ticket._id.toString(),
+    // Send email but don't fail the entire ticket submission if email fails
+    try {
+      await sendEmail({
+        email: clientEmail,
+        subject: `Support Ticket Confirmed - ${ticketNumber}`,
+        html: confirmationEmailHtml,
+      });
+    } catch (emailError) {
+      // Do not fail ticket submission if email delivery fails
+      // Keep track of email failure so we can report it
+      emailDeliveryFailed = true;
+      emailErrorMessage = emailError && emailError.message ? emailError.message : String(emailError);
+      console.warn('Client ticket confirmation email failed to send', {
         ticketNumber,
-      },
-    });
-
-    // Emit real-time notification via socket.io
-    if (global.io) {
-      global.io.emit('client_ticket_created', {
-        ticketId: ticket._id,
-        ticketNumber,
-        clientName,
-        serviceType,
+        clientEmail,
+        error: emailErrorMessage,
       });
     }
 
+    // Create notification for all admins
+    try {
+      await appNotificationService.createForAdmins({
+        scope: 'clientTickets',
+        type: 'new_ticket',
+        title: `New Client Ticket: ${ticketNumber}`,
+        message: `${clientName} submitted a ${serviceType} support ticket.`,
+        action: 'view_ticket',
+        payload: {
+          ticketId: ticket._id.toString(),
+          ticketNumber,
+        },
+      });
+    } catch (notifError) {
+      console.warn('Failed to create admin notification for ticket', {
+        ticketNumber,
+        error: notifError && notifError.message ? notifError.message : String(notifError),
+      });
+    }
+
+    // Emit real-time notification via socket.io
+    if (global.io) {
+      try {
+        global.io.emit('client_ticket_created', {
+          ticketId: ticket._id,
+          ticketNumber,
+          clientName,
+          serviceType,
+        });
+      } catch (socketError) {
+        console.warn('Failed to emit socket.io notification', {
+          ticketNumber,
+          error: socketError && socketError.message ? socketError.message : String(socketError),
+        });
+      }
+    }
+
+    // Return success even if email failed - ticket was created successfully
     res.status(201).json({
       success: true,
       ticketNumber: ticket.ticketNumber,
-      message: 'Support ticket submitted successfully. Check your email for confirmation.',
+      message: emailDeliveryFailed
+        ? 'Support ticket submitted successfully. Email confirmation could not be sent, but you can track your ticket using the ticket number.'
+        : 'Support ticket submitted successfully. Check your email for confirmation.',
+      emailDelivered: !emailDeliveryFailed,
       trackingLink: signupForTracking ? trackingLink : null,
     });
   } catch (error) {
@@ -344,34 +378,50 @@ exports.assignTicketToEmployee = asyncHandler(async (req, res) => {
 
     await userTask.save();
 
-    // Send email to employee
-    const assignedEmployeeEmailHtml = ticketAssignedEmail(
-      employee.name,
-      ticketNumber,
-      ticket.clientName,
-      ticket.clientEmail,
-      ticket.serviceType,
-      ticket.description
-    );
+    // Send email to employee (don't fail if email fails)
+    try {
+      const assignedEmployeeEmailHtml = ticketAssignedEmail(
+        employee.name,
+        ticketNumber,
+        ticket.clientName,
+        ticket.clientEmail,
+        ticket.serviceType,
+        ticket.description
+      );
 
-    await sendEmail({
-      email: employee.email,
-      subject: `New Client Support Ticket Assigned: ${ticketNumber}`,
-      html: assignedEmployeeEmailHtml,
-    });
+      await sendEmail({
+        email: employee.email,
+        subject: `New Client Support Ticket Assigned: ${ticketNumber}`,
+        html: assignedEmployeeEmailHtml,
+      });
+    } catch (emailError) {
+      console.warn('Failed to send ticket assignment email to employee', {
+        ticketNumber,
+        employeeId,
+        error: emailError && emailError.message ? emailError.message : String(emailError),
+      });
+    }
 
     // Create notification for employee
-    await appNotificationService.createForUser(employeeId, {
-      scope: 'clientTickets',
-      type: 'ticket_assigned',
-      title: `Client Ticket Assigned: ${ticketNumber}`,
-      message: `Client ${ticket.clientName} needs assistance with ${ticket.serviceType}.`,
-      action: 'view_task',
-      payload: {
-        taskId: task._id.toString(),
+    try {
+      await appNotificationService.createForUser(employeeId, {
+        scope: 'clientTickets',
+        type: 'ticket_assigned',
+        title: `Client Ticket Assigned: ${ticketNumber}`,
+        message: `Client ${ticket.clientName} needs assistance with ${ticket.serviceType}.`,
+        action: 'view_task',
+        payload: {
+          taskId: task._id.toString(),
+          ticketNumber,
+        },
+      });
+    } catch (notifError) {
+      console.warn('Failed to create notification for ticket assignment', {
         ticketNumber,
-      },
-    });
+        employeeId,
+        error: notifError && notifError.message ? notifError.message : String(notifError),
+      });
+    }
 
     res.json({
       success: true,
@@ -419,22 +469,30 @@ exports.updateTicketStatus = asyncHandler(async (req, res) => {
       ticket.completedAt = new Date();
       ticket.completedBy = req.user._id;
 
-      // Send completion email to client with rating link
+      // Send completion email to client with rating link (don't fail if email fails)
       if (ticket.assignedEmployeeId) {
-        const employee = await User.findById(ticket.assignedEmployeeId);
-        const ratingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}/rate`;
-        const completedEmailHtml = ticketCompletedEmail(
-          ticket.clientName,
-          ticketNumber,
-          employee?.name || 'Our Team',
-          ratingLink
-        );
+        try {
+          const employee = await User.findById(ticket.assignedEmployeeId);
+          const ratingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}/rate`;
+          const completedEmailHtml = ticketCompletedEmail(
+            ticket.clientName,
+            ticketNumber,
+            employee?.name || 'Our Team',
+            ratingLink
+          );
 
-        await sendEmail({
-          email: ticket.clientEmail,
-          subject: `Your Support Ticket is Complete - ${ticketNumber}`,
-          html: completedEmailHtml,
-        });
+          await sendEmail({
+            email: ticket.clientEmail,
+            subject: `Your Support Ticket is Complete - ${ticketNumber}`,
+            html: completedEmailHtml,
+          });
+        } catch (emailError) {
+          console.warn('Failed to send ticket completion email to client', {
+            ticketNumber,
+            clientEmail: ticket.clientEmail,
+            error: emailError && emailError.message ? emailError.message : String(emailError),
+          });
+        }
       }
     }
 
@@ -528,28 +586,43 @@ exports.addTicketComment = asyncHandler(async (req, res) => {
     // Notify relevant parties
     if (authorType === 'client') {
       // Notify admin and employee
-      await appNotificationService.createForAdmins({
-        scope: 'clientTickets',
-        type: 'ticket_comment_added',
-        title: `New Comment on ${ticketNumber}`,
-        message: `Client left a comment on their ticket.`,
-        action: 'view_ticket',
-        payload: {
-          ticketId: ticket._id.toString(),
+      try {
+        await appNotificationService.createForAdmins({
+          scope: 'clientTickets',
+          type: 'ticket_comment_added',
+          title: `New Comment on ${ticketNumber}`,
+          message: `Client left a comment on their ticket.`,
+          action: 'view_ticket',
+          payload: {
+            ticketId: ticket._id.toString(),
+            ticketNumber,
+          },
+        });
+      } catch (notifError) {
+        console.warn('Failed to create notification for client comment', {
           ticketNumber,
-        },
-      });
+          error: notifError && notifError.message ? notifError.message : String(notifError),
+        });
+      }
     } else if (authorType === 'employee') {
-      // Notify client
-      const ratingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}`;
-      await sendEmail({
-        email: ticket.clientEmail,
-        subject: `Update on Your Support Ticket - ${ticketNumber}`,
-        html: `<p>Hello ${ticket.clientName},</p>
-               <p>Our team has posted an update on your ticket:</p>
-               <p>${text}</p>
-               <p><a href="${ratingLink}">View Full Ticket Details</a></p>`,
-      });
+      // Notify client (don't fail if email fails)
+      try {
+        const ratingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}`;
+        await sendEmail({
+          email: ticket.clientEmail,
+          subject: `Update on Your Support Ticket - ${ticketNumber}`,
+          html: `<p>Hello ${ticket.clientName},</p>
+                 <p>Our team has posted an update on your ticket:</p>
+                 <p>${text}</p>
+                 <p><a href="${ratingLink}">View Full Ticket Details</a></p>`,
+        });
+      } catch (emailError) {
+        console.warn('Failed to send ticket update email to client', {
+          ticketNumber,
+          clientEmail: ticket.clientEmail,
+          error: emailError && emailError.message ? emailError.message : String(emailError),
+        });
+      }
     }
 
     res.json({

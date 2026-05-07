@@ -26,9 +26,11 @@ function buildTransportConfig() {
       : port === 465;
 
   const hasSmtp = Boolean(host && username && password);
+  
   return {
     disableEmail,
     hasSmtp,
+    isGmail: useGmailDefaults,
     smtp: {
       host,
       port,
@@ -242,11 +244,26 @@ const initializeEmailService = async () => {
         result.providers.smtp.verified = true;
         console.log('Email: SMTP verification successful');
       } catch (e) {
-        console.warn('Email: SMTP verification failed', {
+        console.error('Email: SMTP verification failed', {
           host: config.smtp.host,
           port: config.smtp.port,
           user: config.smtp.auth.user,
+          isGmail: config.isGmail,
           error: e && e.message ? e.message : String(e),
+          code: e && e.code ? e.code : undefined,
+          responseCode: e && e.responseCode ? e.responseCode : undefined,
+          response: e && e.response ? String(e.response).substring(0, 100) : undefined,
+          // Additional diagnostic info for Gmail
+          ...(config.isGmail ? {
+            diagnosis: 'Gmail SMTP failure - likely causes:',
+            possibleReasons: [
+              '1. Gmail App Password is incorrect or revoked',
+              '2. Less secure app access is not enabled for this account',
+              '3. 2FA needs to be enabled and app password must be generated',
+              '4. Server cannot reach smtp.gmail.com on port 587',
+              '5. ISP blocks SMTP port 587'
+            ]
+          } : {})
         });
       }
     }
