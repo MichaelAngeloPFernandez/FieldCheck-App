@@ -54,7 +54,7 @@ void main() {
         expect(hasSuccessCallback, isTrue,
           reason: 'Success callback should be preserved');
         
-        print('✓ Preservation 2.1: Socket.IO Connected + HTTP Success flow verified');
+        // Debug output removed for production compliance
       }
     });
     
@@ -82,7 +82,7 @@ void main() {
         expect(hasRetryDialog, isTrue,
           reason: 'Retry dialog mechanism should be preserved');
         
-        print('✓ Preservation 2.2: Network failure error handling verified');
+        // Debug output removed for production compliance
       }
     });
     
@@ -105,7 +105,7 @@ void main() {
         expect(hasTimeoutHandling, isTrue,
           reason: 'Timeout handling should be preserved');
         
-        print('✓ Preservation 2.3: HTTP timeout handling verified');
+        // Debug output removed for production compliance
       }
     });
     
@@ -128,7 +128,7 @@ void main() {
         expect(hasResponseErrorHandling, isTrue,
           reason: 'Server error handling should be preserved');
         
-        print('✓ Preservation 2.4: Server error handling verified');
+        // Debug output removed for production compliance
       }
     });
     
@@ -157,7 +157,7 @@ void main() {
         expect(hasOtherServiceValidation, isTrue,
           reason: '"Other" service type validation should be preserved');
         
-        print('✓ Preservation 2.5: Form validation verified');
+        // Debug output removed for production compliance
       }
     });
     
@@ -180,7 +180,7 @@ void main() {
         expect(hasRetryMechanism, isTrue,
           reason: 'Phase 4 retry mechanism should be preserved');
         
-        print('✓ Preservation 2.6: Phase 4 retry mechanism verified');
+        // Debug output removed for production compliance
       }
     });
     
@@ -210,7 +210,7 @@ void main() {
         expect(hasContextLogging, isTrue,
           reason: 'Contextual logging should be preserved');
         
-        print('✓ Preservation 2.7: Phase 4 enhanced logging verified');
+        // Debug output removed for production compliance
       }
     });
     
@@ -239,25 +239,25 @@ void main() {
         expect(hasOtherErrorMessage, isTrue,
           reason: '"Other" service type error message should be preserved');
         
-        print('✓ Preservation 2.8: "Other" service type validation verified');
+        // Debug output removed for production compliance
       }
     });
     
     /// Summary test: Verify all preservation requirements
     test('Preservation Summary: All Phase 4 enhancements and existing behavior preserved', () {
-      print('\n=== PRESERVATION TEST SUMMARY ===');
-      print('All preservation tests verify that non-buggy behavior is unchanged:');
-      print('✓ 2.1: Socket.IO Connected + HTTP Success');
-      print('✓ 2.2: Actual Network Failure');
-      print('✓ 2.3: HTTP Timeout');
-      print('✓ 2.4: Server Error (500)');
-      print('✓ 2.5: Form Validation Failure');
-      print('✓ 2.6: Phase 4 Retry Mechanism');
-      print('✓ 2.7: Phase 4 Enhanced Logging');
-      print('✓ 2.8: "Other" Service Type Validation');
-      print('\nThese tests PASS on unfixed code (baseline behavior)');
-      print('These tests MUST STILL PASS after fix (no regressions)');
-      print('=================================\n');
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
+      // Debug output removed for production compliance
       
       expect(true, isTrue, reason: 'All preservation requirements documented and verified');
     });

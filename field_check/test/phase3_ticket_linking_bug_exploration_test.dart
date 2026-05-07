@@ -144,14 +144,14 @@ void main() {
         // Check for any widget that might provide ticket linking functionality
         if (widget is DropdownButtonFormField) {
           final decoration = widget.decoration;
-          final labelText = decoration.labelText?.toLowerCase() ?? '';
-          final hintText = decoration.hintText?.toLowerCase() ?? '';
+          final labelText = decoration?.labelText?.toLowerCase() ?? '';
+          final hintText = decoration?.hintText?.toLowerCase() ?? '';
           return labelText.contains('ticket') || hintText.contains('ticket');
         }
         if (widget is TextField) {
           final decoration = widget.decoration;
-          final labelText = decoration.labelText?.toLowerCase() ?? '';
-          final hintText = decoration.hintText?.toLowerCase() ?? '';
+          final labelText = decoration?.labelText?.toLowerCase() ?? '';
+          final hintText = decoration?.hintText?.toLowerCase() ?? '';
           return labelText.contains('ticket') || hintText.contains('ticket');
         }
         return false;
@@ -214,8 +214,8 @@ void main() {
         final hasTicketDropdown = find.byWidgetPredicate((widget) {
           if (widget is DropdownButtonFormField<String>) {
             final decoration = widget.decoration;
-            return decoration.labelText?.contains('Ticket') == true ||
-                   decoration.hintText?.contains('Ticket') == true;
+            return decoration?.labelText?.contains('Ticket') == true ||
+                   decoration?.hintText?.contains('Ticket') == true;
           }
           return false;
         });
@@ -223,8 +223,8 @@ void main() {
         final hasTicketTextField = find.byWidgetPredicate((widget) {
           if (widget is TextField) {
             final decoration = widget.decoration;
-            return decoration.labelText?.contains('Ticket') == true ||
-                   decoration.hintText?.contains('Ticket') == true;
+            return decoration?.labelText?.contains('Ticket') == true ||
+                   decoration?.hintText?.contains('Ticket') == true;
           }
           return false;
         });

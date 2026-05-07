@@ -66,18 +66,7 @@ void main() {
         
         // Document the bug condition
         if (hasSocketIOCheck && hasEarlyReturn && hasRetryDialog) {
-          print('\n=== BUG CONDITION CONFIRMED ===');
-          print('Socket.IO blocking code EXISTS in client_ticket_form.dart');
-          print('This confirms the bug described in requirements 1.1, 1.2, 1.3');
-          print('\nCOUNTEREXAMPLES:');
-          print('1. Mobile network with intermittent WebSocket - submission BLOCKED');
-          print('2. Corporate firewall blocking WebSockets - submission BLOCKED');
-          print('3. Socket.IO server restart - submissions BLOCKED during restart');
-          print('\nExpected behavior after fix:');
-          print('- Remove lines 625-648 (Socket.IO check and early return)');
-          print('- Add optional warning logging (non-blocking)');
-          print('- HTTP submission proceeds independently');
-          print('================================\n');
+          // Debug output removed for production compliance
           
           // This test FAILS on unfixed code to confirm bug exists
           fail('BUG CONFIRMED: Socket.IO check blocks HTTP submission. '
@@ -90,10 +79,10 @@ void main() {
                'Expected behavior: HTTP submission proceeds independently.');
         } else {
           // After fix is applied, this branch will execute
-          print('\n=== FIX VERIFIED ===');
-          print('Socket.IO blocking code REMOVED from client_ticket_form.dart');
-          print('Bug fix confirmed - HTTP submission now proceeds independently');
-          print('====================\n');
+          // Debug output removed for production
+          // Debug output removed for production
+          // Debug output removed for production
+          // Debug output removed for production
           
           // After fix, verify the warning logging was added
           final hasWarningLogging = content.contains('Optional warning logging for Socket.IO status') ||
@@ -148,15 +137,7 @@ void main() {
         },
       ];
       
-      print('\n=== PROPERTY-BASED TEST SCENARIOS ===');
-      for (final scenario in scenarios) {
-        print('Scenario: ${scenario['scenario']}');
-        print('  Socket.IO: ${scenario['socketIO']}');
-        print('  HTTP Available: ${scenario['httpAvailable']}');
-        print('  Should Submit: ${scenario['shouldSubmit']}');
-        print('  Expected: HTTP submission proceeds independently\n');
-      }
-      print('======================================\n');
+      // Debug output removed for production compliance
       
       // This property should hold after the fix is applied
       expect(scenarios.length, equals(3),

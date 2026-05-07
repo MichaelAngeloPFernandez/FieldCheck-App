@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:field_check/widgets/client_ticket_form.dart';
-import 'package:field_check/services/realtime_service.dart';
 
 /// **Property 2: Preservation** - Stable Socket.IO Success Flow Preservation
 /// **Validates: Requirements 3.5, 3.6, 3.7**
