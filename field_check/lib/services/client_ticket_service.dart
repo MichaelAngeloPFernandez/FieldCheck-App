@@ -1,6 +1,8 @@
 import 'package:field_check/utils/http_util.dart';
+import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
 import 'package:field_check/services/realtime_service.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -9,8 +11,76 @@ import 'dart:developer' as developer;
 class ClientTicketService {
   static const String _basePath = '/api/client-tickets';
   static const String _contactPath = '/api/contact';
+  static const String _debugEndpoint = 'http://127.0.0.1:7594/ingest/1c924b68-154a-46b7-8559-78da3d47b03c';
+  static const String _debugSessionId = '1d6461';
   
   final RealtimeService _realtimeService = RealtimeService();
+  final Uri _healthUri = Uri.parse('${ApiConfig.baseUrl}/api/health');
+
+  void _debugLog({
+    required String runId,
+    required String hypothesisId,
+    required String location,
+    required String message,
+    required Map<String, dynamic> data,
+  }) {
+    // #region agent log
+    final payload = {
+      'sessionId': _debugSessionId,
+      'runId': runId,
+      'hypothesisId': hypothesisId,
+      'location': location,
+      'message': message,
+      'data': data,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    unawaited(
+      http
+          .post(
+            Uri.parse(_debugEndpoint),
+            headers: const {
+              'Content-Type': 'application/json',
+              'X-Debug-Session-Id': _debugSessionId,
+            },
+            body: jsonEncode(payload),
+          )
+          .then((_) {}, onError: (_) {}),
+    );
+    // #endregion
+  }
+
+  Future<void> _warmUpBackend({
+    Duration maxWait = const Duration(seconds: 45),
+    required String runId,
+  }) async {
+    final deadline = DateTime.now().add(maxWait);
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final response = await http
+            .get(_healthUri)
+            .timeout(const Duration(seconds: 10));
+        _debugLog(
+          runId: runId,
+          hypothesisId: 'H4',
+          location: 'client_ticket_service.dart:_warmUpBackend',
+          message: 'Warm-up health check response',
+          data: {'statusCode': response.statusCode},
+        );
+        if (response.statusCode == 200) {
+          return;
+        }
+      } catch (e) {
+        _debugLog(
+          runId: runId,
+          hypothesisId: 'H4',
+          location: 'client_ticket_service.dart:_warmUpBackend',
+          message: 'Warm-up health check failed',
+          data: {'error': e.toString()},
+        );
+      }
+      await Future<void>.delayed(const Duration(seconds: 2));
+    }
+  }
 
   Future<Map<String, String>> _getHeaders({String? emailToken}) async {
     final token = await UserService().getToken();
@@ -107,9 +177,22 @@ class ClientTicketService {
     List<Map<String, String>>? attachments, // [fileName, fileUrl, fileType]
     bool signupForTracking = false,
   }) async {
+    final runId = 'submit-${DateTime.now().millisecondsSinceEpoch}';
     developer.log(
       'Starting client ticket submission for: $clientEmail',
       name: 'ClientTicketService',
+    );
+    _debugLog(
+      runId: runId,
+      hypothesisId: 'H1',
+      location: 'client_ticket_service.dart:submitClientTicket:start',
+      message: 'Submit called',
+      data: {
+        'baseUrl': ApiConfig.baseUrl,
+        'path': _basePath,
+        'descriptionLength': description.trim().length,
+        'serviceType': serviceType,
+      },
     );
 
     // Optional: Log Socket.IO status for debugging (non-blocking)
@@ -209,17 +292,65 @@ class ClientTicketService {
       'Sending HTTP request for ticket submission',
       name: 'ClientTicketService',
     );
+    _debugLog(
+      runId: runId,
+      hypothesisId: 'H2',
+      location: 'client_ticket_service.dart:submitClientTicket:beforePost',
+      message: 'About to call HttpUtil.post',
+      data: {
+        'requestUrl': '${ApiConfig.baseUrl}$_basePath',
+        'hasOtherServiceDetails': otherServiceDetails != null && otherServiceDetails.trim().isNotEmpty,
+        'attachmentCount': attachments?.length ?? 0,
+      },
+    );
 
     try {
-      final response = await HttpUtil()
-          .post(
-            _basePath,
-            body: body,
-            headers: await _getHeaders(),
-          )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+      await _warmUpBackend(
+        maxWait: const Duration(seconds: 80),
+        runId: runId,
+      );
+      final requestStart = DateTime.now();
+      http.Response response;
+      try {
+        response = await HttpUtil()
+            .post(
+              _basePath,
+              body: body,
+              headers: await _getHeaders(),
+            )
+            .timeout(const Duration(seconds: 90), onTimeout: () {
+          throw TimeoutException('Request timed out');
+        });
+      } on TimeoutException {
+        _debugLog(
+          runId: runId,
+          hypothesisId: 'H4',
+          location: 'client_ticket_service.dart:submitClientTicket:retry',
+          message: 'Initial submit timed out, starting warm-up then retry',
+          data: {'requestUrl': '${ApiConfig.baseUrl}$_basePath'},
+        );
+        await _warmUpBackend(runId: runId);
+        response = await HttpUtil()
+            .post(
+              _basePath,
+              body: body,
+              headers: await _getHeaders(),
+            )
+            .timeout(const Duration(seconds: 90), onTimeout: () {
+          throw TimeoutException('Request timed out after warm-up retry');
+        });
+      }
+      _debugLog(
+        runId: runId,
+        hypothesisId: 'H3',
+        location: 'client_ticket_service.dart:submitClientTicket:afterPost',
+        message: 'HttpUtil.post completed',
+        data: {
+          'elapsedMs': DateTime.now().difference(requestStart).inMilliseconds,
+          'statusCode': response.statusCode,
+          'bodyLength': response.body.length,
+        },
+      );
 
       developer.log(
         'HTTP response received: ${response.statusCode}',
@@ -259,6 +390,16 @@ class ClientTicketService {
         return _handleHttpError(response);
       }
     } on TimeoutException catch (e) {
+      _debugLog(
+        runId: runId,
+        hypothesisId: 'H4',
+        location: 'client_ticket_service.dart:submitClientTicket:timeout',
+        message: 'TimeoutException caught in submitClientTicket',
+        data: {
+          'error': e.toString(),
+          'requestUrl': '${ApiConfig.baseUrl}$_basePath',
+        },
+      );
       return _createErrorResponse(
         errorType: 'timeout',
         errorCode: 'REQUEST_TIMEOUT',
@@ -267,6 +408,16 @@ class ClientTicketService {
         details: e.toString(),
       );
     } on SocketException catch (e) {
+      _debugLog(
+        runId: runId,
+        hypothesisId: 'H5',
+        location: 'client_ticket_service.dart:submitClientTicket:socket',
+        message: 'SocketException caught in submitClientTicket',
+        data: {
+          'error': e.toString(),
+          'requestUrl': '${ApiConfig.baseUrl}$_basePath',
+        },
+      );
       return _createErrorResponse(
         errorType: 'network',
         errorCode: 'NETWORK_ERROR',
@@ -275,6 +426,17 @@ class ClientTicketService {
         details: e.toString(),
       );
     } catch (e) {
+      _debugLog(
+        runId: runId,
+        hypothesisId: 'H5',
+        location: 'client_ticket_service.dart:submitClientTicket:catch',
+        message: 'Unexpected exception caught in submitClientTicket',
+        data: {
+          'errorType': e.runtimeType.toString(),
+          'error': e.toString(),
+          'requestUrl': '${ApiConfig.baseUrl}$_basePath',
+        },
+      );
       return _createErrorResponse(
         errorType: 'unknown',
         errorCode: 'UNEXPECTED_ERROR',

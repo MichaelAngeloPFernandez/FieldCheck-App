@@ -19,48 +19,48 @@ void main() {
 
     // Act: Find and tap the "Create Task" button to open the dialog
     final createTaskButton = find.text('Create Task');
-    print('Create Task buttons found: ${createTaskButton.evaluate().length}');
+    debugPrint('Create Task buttons found: ${createTaskButton.evaluate().length}');
     
     if (createTaskButton.evaluate().isNotEmpty) {
       await tester.tap(createTaskButton.first);
       
       // Wait longer for async operations to complete
-      print('Waiting for dialog to open...');
+      debugPrint('Waiting for dialog to open...');
       await tester.pump(Duration(seconds: 1));
       await tester.pump(Duration(seconds: 1));
       await tester.pump(Duration(seconds: 1));
 
       // Debug: Print all widgets in the dialog
       final allWidgets = find.byType(Widget);
-      print('Total widgets found: ${allWidgets.evaluate().length}');
+      debugPrint('Total widgets found: ${allWidgets.evaluate().length}');
 
       // Look for all DropdownButtonFormField widgets
       final dropdowns = find.byType(DropdownButtonFormField);
-      print('DropdownButtonFormField widgets found: ${dropdowns.evaluate().length}');
+      debugPrint('DropdownButtonFormField widgets found: ${dropdowns.evaluate().length}');
 
       // Look for all TextField widgets
       final textFields = find.byType(TextField);
-      print('TextField widgets found: ${textFields.evaluate().length}');
+      debugPrint('TextField widgets found: ${textFields.evaluate().length}');
 
       // Look for AlertDialog
       final dialog = find.byType(AlertDialog);
-      print('AlertDialog found: ${dialog.evaluate().length}');
+      debugPrint('AlertDialog found: ${dialog.evaluate().length}');
 
       // Look for any text containing "ticket"
       final ticketText = find.textContaining('ticket', findRichText: true);
-      print('Text containing "ticket": ${ticketText.evaluate().length}');
+      debugPrint('Text containing "ticket": ${ticketText.evaluate().length}');
 
       // Look for any text containing "Link"
       final linkText = find.textContaining('Link', findRichText: true);
-      print('Text containing "Link": ${linkText.evaluate().length}');
+      debugPrint('Text containing "Link": ${linkText.evaluate().length}');
 
       // Print all text widgets to see what's actually there
       final allText = find.byType(Text);
-      print('Text widgets found: ${allText.evaluate().length}');
+      debugPrint('Text widgets found: ${allText.evaluate().length}');
       for (final element in allText.evaluate()) {
         final widget = element.widget as Text;
         if (widget.data != null && widget.data!.toLowerCase().contains('create')) {
-          print('Text: "${widget.data}"');
+          debugPrint('Text: "${widget.data}"');
         }
       }
     }

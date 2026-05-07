@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "projectName": "FieldCheck-App",
+  "userName": "developer",
+  "skillLevel": "intermediate",
+  "outputFolder": ".vibecheck/flow",
+  "planningArtifacts": ".vibecheck\\flow\\planning-artifacts",
+  "implementationArtifacts": ".vibecheck\\flow\\implementation-artifacts",
+  "installedAt": "2026-05-07T12:53:06.929Z",
+  "ide": [
+    "cursor"
+  ]
+}

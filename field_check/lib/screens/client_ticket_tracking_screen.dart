@@ -290,7 +290,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                       Text(
                         'Created: ${_formatDate(createdAt)}',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                          color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                         ),
                       ),
                     ],
@@ -305,7 +305,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                 vertical: AppTheme.sm,
               ),
               decoration: BoxDecoration(
-                color: _statusColor(status).withOpacity(0.2),
+                color: _statusColor(status).withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -366,7 +366,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: isPast || isCurrent
                             ? theme.primaryColor
-                            : theme.textTheme.bodySmall?.color?.withOpacity(0.5),
+                            : theme.textTheme.bodySmall?.color?.withValues(alpha: 0.5),
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -456,7 +456,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
           const SizedBox(height: AppTheme.md),
           Card(
             elevation: 1,
-            color: theme.primaryColor.withOpacity(0.1),
+            color: theme.primaryColor.withValues(alpha: 0.1),
             child: Padding(
               padding: const EdgeInsets.all(AppTheme.md),
               child: Column(
@@ -525,14 +525,14 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                     children: [
                       Chip(
                         label: Text(authorLabel),
-                        backgroundColor: authorColor.withOpacity(0.2),
+                        backgroundColor: authorColor.withValues(alpha: 0.2),
                         labelStyle: TextStyle(color: authorColor),
                       ),
                       const SizedBox(width: AppTheme.sm),
                       Text(
                         _formatDate(createdAt),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color?.withOpacity(0.6),
+                          color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -612,7 +612,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
     if (hasRating) {
       return Card(
         elevation: 2,
-        color: Colors.green.withOpacity(0.1),
+        color: Colors.green.withValues(alpha: 0.1),
         child: Padding(
           padding: const EdgeInsets.all(AppTheme.md),
           child: Column(

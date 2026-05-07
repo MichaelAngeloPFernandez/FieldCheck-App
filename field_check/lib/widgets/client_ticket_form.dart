@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/services/client_ticket_service.dart';
 import 'package:field_check/services/realtime_service.dart';
+import 'package:field_check/config/api_config.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
 
@@ -30,7 +31,7 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
   bool _signupForTracking = false;
   bool _isSubmitting = false;
   String? _errorMessage;
-  List<PlatformFile> _selectedFiles = [];
+  final List<PlatformFile> _selectedFiles = [];
   
   // Retry mechanism state variables
   int _retryAttemptCount = 0;
@@ -55,19 +56,22 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
   void _logInfo(String message, {Map<String, dynamic>? context}) {
     final timestamp = DateTime.now().toIso8601String();
     developer.log('CLIENT_TICKET_FORM: $message', name: 'ClientTicketForm');
-    print('[$timestamp] [INFO] [ClientTicketForm] ${_currentSubmissionId != null ? '[${_currentSubmissionId!}] ' : ''}$message${context != null ? ' | Context: $context' : ''}');
+    // Use developer.log instead of print for production
+    developer.log('[$timestamp] [INFO] [ClientTicketForm] ${_currentSubmissionId != null ? '[${_currentSubmissionId!}] ' : ''}$message${context != null ? ' | Context: $context' : ''}');
   }
 
   void _logError(String message, {dynamic error, Map<String, dynamic>? context}) {
     final timestamp = DateTime.now().toIso8601String();
     developer.log('CLIENT_TICKET_FORM ERROR: $message', name: 'ClientTicketForm', error: error);
-    print('[$timestamp] [ERROR] [ClientTicketForm] ${_currentSubmissionId != null ? '[${_currentSubmissionId!}] ' : ''}$message${error != null ? ' | Error: $error' : ''}${context != null ? ' | Context: $context' : ''}');
+    // Use developer.log instead of print for production
+    developer.log('[$timestamp] [ERROR] [ClientTicketForm] ${_currentSubmissionId != null ? '[${_currentSubmissionId!}] ' : ''}$message${error != null ? ' | Error: $error' : ''}${context != null ? ' | Context: $context' : ''}');
   }
 
   void _logWarning(String message, {Map<String, dynamic>? context}) {
     final timestamp = DateTime.now().toIso8601String();
     developer.log('CLIENT_TICKET_FORM WARNING: $message', name: 'ClientTicketForm');
-    print('[$timestamp] [WARNING] [ClientTicketForm] ${_currentSubmissionId != null ? '[${_currentSubmissionId!}] ' : ''}$message${context != null ? ' | Context: $context' : ''}');
+    // Use developer.log instead of print for production
+    developer.log('[$timestamp] [WARNING] [ClientTicketForm] ${_currentSubmissionId != null ? '[${_currentSubmissionId!}] ' : ''}$message${context != null ? ' | Context: $context' : ''}');
   }
 
   String _generateSubmissionId() {
@@ -110,12 +114,12 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
         _logInfo('Files selected from picker', context: {
           'selectedFileCount': result.files.length,
           'fileNames': result.files.map((f) => f.name).toList(),
-          'fileSizes': result.files.map((f) => f.size ?? 0).toList(),
+          'fileSizes': result.files.map((f) => f.size).toList(),
         });
 
         final totalSize = result.files.fold<int>(
           0,
-          (sum, file) => sum + (file.size ?? 0),
+          (sum, file) => sum + (file.size),
         );
 
         // Check total size (50MB limit)
@@ -131,12 +135,12 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
 
         // Check individual file size (10MB each)
         for (final file in result.files) {
-          if ((file.size ?? 0) > 10 * 1024 * 1024) {
+          if (file.size > 10 * 1024 * 1024) {
             _logWarning('Individual file size exceeds limit', context: {
               'fileName': file.name,
-              'fileSizeBytes': file.size ?? 0,
+              'fileSizeBytes': file.size,
               'limitBytes': 10 * 1024 * 1024,
-              'fileSizeMB': ((file.size ?? 0) / (1024 * 1024)).toStringAsFixed(2),
+              'fileSizeMB': (file.size / (1024 * 1024)).toStringAsFixed(2),
             });
             _showError('${file.name} exceeds 10MB limit');
             return;
@@ -163,7 +167,7 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
         _logInfo('Files successfully added', context: {
           'totalFileCount': _selectedFiles.length,
           'newlyAddedCount': result.files.length,
-          'totalSizeBytes': _selectedFiles.fold<int>(0, (sum, file) => sum + (file.size ?? 0)),
+          'totalSizeBytes': _selectedFiles.fold<int>(0, (sum, file) => sum + file.size),
         });
       } else {
         _logInfo('File picker cancelled by user');
@@ -181,7 +185,7 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
       final removedFile = _selectedFiles[index];
       _logInfo('File removed from selection', context: {
         'fileName': removedFile.name,
-        'fileSize': removedFile.size ?? 0,
+        'fileSize': removedFile.size,
         'removedIndex': index,
         'remainingFileCount': _selectedFiles.length - 1,
       });
@@ -655,6 +659,8 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
         'hasDescription': _descriptionController.text.trim().isNotEmpty,
         'hasOtherDetails': _selectedServiceType == 'other' ? _otherServiceDetailsController.text.trim().isNotEmpty : null,
         'signupForTracking': _signupForTracking,
+        'apiBaseUrl': ApiConfig.baseUrl,
+        'ticketEndpoint': '${ApiConfig.baseUrl}/api/client-tickets',
       });
 
       _logInfo('Calling ClientTicketService.submitClientTicket');
@@ -678,8 +684,10 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
       _logInfo('HTTP request completed', context: {
         'httpDurationMs': httpRequestDuration.inMilliseconds,
         'totalDurationMs': totalSubmissionDuration.inMilliseconds,
-        'responseReceived': response != null,
-        'responseKeys': response?.keys.toList(),
+        'responseReceived': true,
+        'responseKeys': response.keys.toList(),
+        'responseStatusCode': response['statusCode'],
+        'responseErrorType': response['errorType'],
       });
 
       if (mounted) {
@@ -792,6 +800,9 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
           _logError('Ticket submission failed with response error', context: {
             'errorMessage': errorMessage,
             'response': response,
+            'responseStatusCode': response['statusCode'],
+            'responseErrorType': response['errorType'],
+            'responseDetails': response['details'],
             'totalDurationMs': totalSubmissionDuration.inMilliseconds,
             'retryAttempt': _retryAttemptCount,
           });
@@ -918,7 +929,7 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
 
               // Service Type Dropdown
               DropdownButtonFormField<String>(
-                value: _selectedServiceType,
+                initialValue: _selectedServiceType,
                 decoration: InputDecoration(
                   labelText: 'Service Type *',
                   border: OutlineInputBorder(
@@ -1054,7 +1065,7 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
                                           style: theme.textTheme.labelSmall,
                                         ),
                                         Text(
-                                          '${(file.size ?? 0) / 1024 ~/ 1024} MB',
+                                          '${file.size / 1024 ~/ 1024} MB',
                                           style: theme.textTheme.labelSmall?.copyWith(
                                             color: Colors.grey,
                                           ),
@@ -1071,7 +1082,7 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
                                 ],
                               ),
                             );
-                          }).toList(),
+                          }),
                         ],
                       ),
                     ),

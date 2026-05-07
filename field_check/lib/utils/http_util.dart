@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
@@ -22,11 +23,50 @@ class HttpUtil {
   Future<http.Response> _retryIfUnauthorized(
     Future<http.Response> Function() send,
   ) async {
+    final runId = 'http-${DateTime.now().millisecondsSinceEpoch}';
+    final start = DateTime.now();
+    // #region agent log
+    developer.log(
+      'H10 _retryIfUnauthorized start runId=$runId',
+      name: 'HttpUtil',
+    );
+    // #endregion
     var res = await send();
+    // #region agent log
+    developer.log(
+      'H10 first response runId=$runId status=${res.statusCode} elapsedMs=${DateTime.now().difference(start).inMilliseconds}',
+      name: 'HttpUtil',
+    );
+    // #endregion
     if (res.statusCode == 401) {
+      final refreshStart = DateTime.now();
+      // #region agent log
+      developer.log(
+        'H11 got 401 runId=$runId attempting refresh token',
+        name: 'HttpUtil',
+      );
+      // #endregion
       final refreshed = await UserService().refreshAccessToken();
+      // #region agent log
+      developer.log(
+        'H11 refresh result runId=$runId refreshed=$refreshed elapsedMs=${DateTime.now().difference(refreshStart).inMilliseconds}',
+        name: 'HttpUtil',
+      );
+      // #endregion
       if (refreshed) {
+        // #region agent log
+        developer.log(
+          'H12 retrying original request after refresh runId=$runId',
+          name: 'HttpUtil',
+        );
+        // #endregion
         res = await send();
+        // #region agent log
+        developer.log(
+          'H12 retry response runId=$runId status=${res.statusCode} totalElapsedMs=${DateTime.now().difference(start).inMilliseconds}',
+          name: 'HttpUtil',
+        );
+        // #endregion
       }
     }
     return res;

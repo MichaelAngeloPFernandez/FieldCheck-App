@@ -824,23 +824,27 @@ class _TicketDetailModalState extends State<_TicketDetailModal> {
 
     setState(() => _isUpdating = true);
 
+    // Store context-dependent objects before async operation
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     try {
       // TODO: Implement actual API call
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text('Status updated to ${_formatStatus(nextStatus)}'),
             backgroundColor: Colors.green,
           ),
         );
-        if (mounted) Navigator.pop(context);
+        navigator.pop();
         widget.onRefresh();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text('Error: $e'),
             backgroundColor: Colors.red,

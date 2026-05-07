@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:field_check/services/client_ticket_service.dart';
-import 'package:field_check/services/realtime_service.dart';
 
 void main() {
   group('Task 12.5 - Enhanced Client Ticket Service', () {

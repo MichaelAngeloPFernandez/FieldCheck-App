@@ -31,8 +31,8 @@ void main() {
       final linkTicketDropdown = find.byWidgetPredicate((widget) {
         if (widget is DropdownButtonFormField<String>) {
           final decoration = widget.decoration;
-          return decoration?.labelText?.contains('Link to Pending Ticket') == true ||
-                 decoration?.hintText?.contains('Link to Pending Ticket') == true;
+          return decoration.labelText?.contains('Link to Pending Ticket') == true ||
+                 decoration.hintText?.contains('Link to Pending Ticket') == true;
         }
         return false;
       });

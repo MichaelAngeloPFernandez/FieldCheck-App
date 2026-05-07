@@ -3,13 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:field_check/screens/admin_dashboard_screen.dart';
-import 'package:field_check/screens/manage_employees_screen.dart';
-import 'package:field_check/screens/admin_reports_hub_screen.dart';
-import 'package:field_check/screens/client_tickets_screen.dart';
-import 'package:field_check/screens/manage_admins_screen.dart';
-import 'package:field_check/screens/admin_geofence_screen.dart';
-import 'package:field_check/screens/admin_settings_screen.dart';
-import 'package:field_check/screens/admin_task_management_screen.dart';
 
 /// Simple test to verify navigation order without Socket.IO dependencies
 void main() {

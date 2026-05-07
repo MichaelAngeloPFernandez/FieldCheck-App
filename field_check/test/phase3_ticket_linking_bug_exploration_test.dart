@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:field_check/screens/admin_task_management_screen.dart';
-import 'package:field_check/services/task_service.dart';
-import 'package:field_check/services/user_service.dart';
-import 'package:field_check/services/availability_service.dart';
-import 'package:field_check/models/user_model.dart';
 
 /// **Property 1: Bug Condition** - Missing Ticket Linking Fields
 /// **Validates: Requirements 1.4**
@@ -19,15 +15,8 @@ import 'package:field_check/models/user_model.dart';
 /// Scoped PBT Approach: Test task creation form for ticket linking fields availability
 void main() {
   group('Phase 3: Missing Ticket Linking Fields Bug Exploration', () {
-    late TaskService mockTaskService;
-    late UserService mockUserService;
-    late AvailabilityService mockAvailabilityService;
-
     setUp(() {
-      // Create mock services
-      mockTaskService = TaskService();
-      mockUserService = UserService();
-      mockAvailabilityService = AvailabilityService();
+      // Test setup - no mock services needed for UI testing
     });
 
     /// Test that admin_task_management_screen task creation dialog lacks "Link to Pending Ticket" dropdown
@@ -58,8 +47,8 @@ void main() {
       final linkTicketDropdown = find.byWidgetPredicate((widget) {
         if (widget is DropdownButtonFormField<String>) {
           final decoration = widget.decoration;
-          return decoration?.labelText?.contains('Link to Pending Ticket') == true ||
-                 decoration?.hintText?.contains('Link to Pending Ticket') == true;
+          return decoration.labelText?.contains('Link to Pending Ticket') == true ||
+                 decoration.hintText?.contains('Link to Pending Ticket') == true;
         }
         return false;
       });
@@ -155,14 +144,14 @@ void main() {
         // Check for any widget that might provide ticket linking functionality
         if (widget is DropdownButtonFormField) {
           final decoration = widget.decoration;
-          final labelText = decoration?.labelText?.toLowerCase() ?? '';
-          final hintText = decoration?.hintText?.toLowerCase() ?? '';
+          final labelText = decoration.labelText?.toLowerCase() ?? '';
+          final hintText = decoration.hintText?.toLowerCase() ?? '';
           return labelText.contains('ticket') || hintText.contains('ticket');
         }
         if (widget is TextField) {
           final decoration = widget.decoration;
-          final labelText = decoration?.labelText?.toLowerCase() ?? '';
-          final hintText = decoration?.hintText?.toLowerCase() ?? '';
+          final labelText = decoration.labelText?.toLowerCase() ?? '';
+          final hintText = decoration.hintText?.toLowerCase() ?? '';
           return labelText.contains('ticket') || hintText.contains('ticket');
         }
         return false;
@@ -225,8 +214,8 @@ void main() {
         final hasTicketDropdown = find.byWidgetPredicate((widget) {
           if (widget is DropdownButtonFormField<String>) {
             final decoration = widget.decoration;
-            return decoration?.labelText?.contains('Ticket') == true ||
-                   decoration?.hintText?.contains('Ticket') == true;
+            return decoration.labelText?.contains('Ticket') == true ||
+                   decoration.hintText?.contains('Ticket') == true;
           }
           return false;
         });
@@ -234,8 +223,8 @@ void main() {
         final hasTicketTextField = find.byWidgetPredicate((widget) {
           if (widget is TextField) {
             final decoration = widget.decoration;
-            return decoration?.labelText?.contains('Ticket') == true ||
-                   decoration?.hintText?.contains('Ticket') == true;
+            return decoration.labelText?.contains('Ticket') == true ||
+                   decoration.hintText?.contains('Ticket') == true;
           }
           return false;
         });

@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/models/user_model.dart';
@@ -159,9 +158,9 @@ void main() {
       
       for (final taskType in expectedTaskTypes) {
         final task = Task(
-          id: 'test-type-${taskType}',
+          id: 'test-type-$taskType',
           title: 'Test ${taskType.toUpperCase()} Task',
-          description: 'Testing ${taskType} task type',
+          description: 'Testing $taskType task type',
           type: taskType,
           difficulty: 'medium',
           dueDate: DateTime.now().add(Duration(days: 1)),
@@ -192,9 +191,9 @@ void main() {
       
       for (final difficulty in expectedDifficulties) {
         final task = Task(
-          id: 'test-difficulty-${difficulty}',
+          id: 'test-difficulty-$difficulty',
           title: 'Test ${difficulty.toUpperCase()} Task',
-          description: 'Testing ${difficulty} difficulty level',
+          description: 'Testing $difficulty difficulty level',
           type: 'general',
           difficulty: difficulty,
           dueDate: DateTime.now().add(Duration(days: 1)),
@@ -225,9 +224,9 @@ void main() {
       
       for (final status in expectedStatuses) {
         final task = Task(
-          id: 'test-status-${status}',
+          id: 'test-status-$status',
           title: 'Test ${status.toUpperCase()} Task',
-          description: 'Testing ${status} status',
+          description: 'Testing $status status',
           type: 'general',
           difficulty: 'medium',
           dueDate: DateTime.now().add(Duration(days: 1)),

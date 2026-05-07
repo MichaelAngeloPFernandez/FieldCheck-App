@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:field_check/widgets/client_ticket_form.dart';
-import 'dart:async';
 
 /// Verification test for Task 12.2: Error type separation and enhanced messaging
 /// This test verifies that the implemented error handling improvements work correctly

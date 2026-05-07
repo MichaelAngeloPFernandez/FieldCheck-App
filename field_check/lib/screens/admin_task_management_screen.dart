@@ -685,7 +685,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: selectedTicketId,
+                            initialValue: selectedTicketId,
                             decoration: const InputDecoration(
                               labelText: 'Link to Pending Ticket (optional)',
                               border: OutlineInputBorder(),
@@ -941,12 +941,10 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
 
                           // Determine final ticket information for linking
                           String? linkedTicketNumber;
-                          String? linkedTicketId;
                           
                           if (selectedTicket != null && selectedTicket!.isNotEmpty) {
                             // Use dropdown selection
                             linkedTicketNumber = selectedTicket!['ticketNumber'];
-                            linkedTicketId = selectedTicket!['_id'];
                           } else if (manualTicketController.text.trim().isNotEmpty) {
                             // Use manual entry
                             linkedTicketNumber = manualTicketController.text.trim();

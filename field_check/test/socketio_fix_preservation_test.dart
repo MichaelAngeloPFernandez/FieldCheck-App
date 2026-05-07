@@ -177,10 +177,6 @@ void main() {
         final hasRetryMechanism = content.contains('_retryAttemptCount') ||
                                   content.contains('retry');
         
-        final hasExponentialBackoff = content.contains('exponential') ||
-                                      content.contains('backoff') ||
-                                      content.contains('_retryAttemptCount');
-        
         expect(hasRetryMechanism, isTrue,
           reason: 'Phase 4 retry mechanism should be preserved');
         

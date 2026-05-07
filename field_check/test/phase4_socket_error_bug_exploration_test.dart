@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:field_check/widgets/client_ticket_form.dart';
-import 'package:field_check/services/client_ticket_service.dart';
-import 'package:field_check/services/realtime_service.dart';
 
 /// **Property 1: Bug Condition** - Socket.IO Submission Error Issues
 /// **Validates: Requirements 1.5, 1.6, 1.7**
@@ -17,13 +15,8 @@ import 'package:field_check/services/realtime_service.dart';
 /// Scoped PBT Approach: Test client ticket submission with Socket.IO connection issues
 void main() {
   group('Phase 4: Socket.IO Submission Error Issues Bug Exploration', () {
-    late ClientTicketService mockClientTicketService;
-    late RealtimeService mockRealtimeService;
-
     setUp(() {
-      // Create mock services
-      mockClientTicketService = ClientTicketService();
-      mockRealtimeService = RealtimeService();
+      // Test setup - no mock services needed for UI testing
     });
 
     /// Test that client_ticket_form.dart shows red error dialogs on Socket.IO failures

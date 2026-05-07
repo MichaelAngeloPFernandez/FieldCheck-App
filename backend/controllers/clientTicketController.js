@@ -13,12 +13,51 @@ const ticketCompletedEmail = require('../utils/templates/ticketCompletedEmail');
 const { generateTicketNumber } = require('../utils/ticketNumberGenerator');
 const { generateEmailToken, verifyEmailToken } = require('../utils/emailTokenGenerator');
 
+// #region agent log
+const DEBUG_ENDPOINT = 'http://127.0.0.1:7594/ingest/1c924b68-154a-46b7-8559-78da3d47b03c';
+const DEBUG_SESSION_ID = '1d6461';
+function debugLog(runId, hypothesisId, location, message, data = {}) {
+  try {
+    if (typeof fetch !== 'function') {
+      return;
+    }
+    fetch(DEBUG_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': DEBUG_SESSION_ID,
+      },
+      body: JSON.stringify({
+        sessionId: DEBUG_SESSION_ID,
+        runId,
+        hypothesisId,
+        location,
+        message,
+        data,
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  } catch (_) {
+    // Never allow debug instrumentation to affect ticket flow
+  }
+}
+// #endregion
+
 /**
  * POST /api/client-tickets
  * Create a new client support ticket (public endpoint, no auth required)
  */
 exports.createClientTicket = asyncHandler(async (req, res) => {
+  const runId = `backend-submit-${Date.now()}`;
   const { clientName, clientEmail, serviceType, description, otherServiceDetails, attachments, signupForTracking } = req.body;
+  // #region agent log
+  debugLog(runId, 'H6', 'clientTicketController.js:createClientTicket:entry', 'Request reached backend createClientTicket', {
+    hasClientName: Boolean(clientName),
+    hasClientEmail: Boolean(clientEmail),
+    serviceType,
+    descriptionLength: typeof description === 'string' ? description.trim().length : null,
+  });
+  // #endregion
 
   // Input validation
   if (!clientName || typeof clientName !== 'string' || clientName.trim().length < 2) {
@@ -54,119 +93,159 @@ exports.createClientTicket = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Generate unique ticket number
-    const ticketNumber = await generateTicketNumber();
-
     // Generate secure email tracking token
     const { token, tokenHash } = generateEmailToken();
 
-    // Create ticket
-    const ticket = new ClientTicket({
-      ticketNumber,
-      clientEmail: clientEmail.toLowerCase(),
-      clientName: clientName.trim(),
-      serviceType,
-      description: description.trim(),
-      otherServiceDetails: serviceType === 'other' ? otherServiceDetails.trim() : null,
-      attachments: attachments || [],
-      trackingToken: tokenHash,
-    });
-
-    await ticket.save();
-
-    // Optional: Create client account if opted in
-    if (signupForTracking) {
-      const existing = await ClientAccount.findOne({ email: clientEmail.toLowerCase() });
-      if (!existing) {
-        const clientAccount = new ClientAccount({
-          email: clientEmail.toLowerCase(),
-          clientName: clientName.trim(),
-          emailVerified: true, // Auto-verify for now
-          submittedTicketIds: [ticket._id],
-        });
-        await clientAccount.save();
-      } else {
-        // Add ticket to existing account
-        existing.submittedTicketIds.push(ticket._id);
-        await existing.save();
-      }
-    }
-
-    // Send confirmation email to client
-    // Include tracking token in the email link for secure tracking
-    const trackingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}?token=${token}`;
-    const confirmationEmailHtml = ticketConfirmationEmail(ticketNumber, clientName, serviceType, description, trackingLink);
-    
-    let emailDeliveryFailed = false;
-    let emailErrorMessage = '';
-
-    // Send email but don't fail the entire ticket submission if email fails
-    try {
-      await sendEmail({
-        email: clientEmail,
-        subject: `Support Ticket Confirmed - ${ticketNumber}`,
-        html: confirmationEmailHtml,
-      });
-    } catch (emailError) {
-      // Do not fail ticket submission if email delivery fails
-      // Keep track of email failure so we can report it
-      emailDeliveryFailed = true;
-      emailErrorMessage = emailError && emailError.message ? emailError.message : String(emailError);
-      console.warn('Client ticket confirmation email failed to send', {
-        ticketNumber,
-        clientEmail,
-        error: emailErrorMessage,
-      });
-    }
-
-    // Create notification for all admins
-    try {
-      await appNotificationService.createForAdmins({
-        scope: 'clientTickets',
-        type: 'new_ticket',
-        title: `New Client Ticket: ${ticketNumber}`,
-        message: `${clientName} submitted a ${serviceType} support ticket.`,
-        action: 'view_ticket',
-        payload: {
-          ticketId: ticket._id.toString(),
-          ticketNumber,
-        },
-      });
-    } catch (notifError) {
-      console.warn('Failed to create admin notification for ticket', {
-        ticketNumber,
-        error: notifError && notifError.message ? notifError.message : String(notifError),
-      });
-    }
-
-    // Emit real-time notification via socket.io
-    if (global.io) {
+    // Create/save ticket with lightweight retries for transient write issues
+    let ticket = null;
+    let ticketNumber = null;
+    let lastCreateError = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        global.io.emit('client_ticket_created', {
-          ticketId: ticket._id,
+        ticketNumber = await generateTicketNumber();
+        ticket = new ClientTicket({
           ticketNumber,
-          clientName,
+          clientEmail: clientEmail.toLowerCase(),
+          clientName: clientName.trim(),
           serviceType,
+          description: description.trim(),
+          otherServiceDetails: serviceType === 'other' ? otherServiceDetails.trim() : null,
+          attachments: attachments || [],
+          trackingToken: tokenHash,
         });
-      } catch (socketError) {
-        console.warn('Failed to emit socket.io notification', {
-          ticketNumber,
-          error: socketError && socketError.message ? socketError.message : String(socketError),
+        await ticket.save();
+        lastCreateError = null;
+        break;
+      } catch (createError) {
+        lastCreateError = createError;
+        console.warn('Client ticket create attempt failed', {
+          attempt: attempt + 1,
+          error: createError && createError.message ? createError.message : String(createError),
         });
       }
     }
 
-    // Return success even if email failed - ticket was created successfully
+    if (!ticket || !ticketNumber) {
+      throw lastCreateError || new Error('Failed to create support ticket after retries');
+    }
+    // #region agent log
+    debugLog(runId, 'H7', 'clientTicketController.js:createClientTicket:afterSave', 'Ticket persisted successfully', {
+      ticketNumber,
+      signupForTracking: Boolean(signupForTracking),
+    });
+    // #endregion
+
+    // Respond immediately with success - don't wait for email or notifications
+    const trackingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}?token=${token}`;
+    
     res.status(201).json({
       success: true,
       ticketNumber: ticket.ticketNumber,
-      message: emailDeliveryFailed
-        ? 'Support ticket submitted successfully. Email confirmation could not be sent, but you can track your ticket using the ticket number.'
-        : 'Support ticket submitted successfully. Check your email for confirmation.',
-      emailDelivered: !emailDeliveryFailed,
+      message: 'Support ticket submitted successfully. Check your email for confirmation.',
       trackingLink: signupForTracking ? trackingLink : null,
     });
+    // #region agent log
+    debugLog(runId, 'H8', 'clientTicketController.js:createClientTicket:response', 'Success response sent to client', {
+      ticketNumber: ticket.ticketNumber,
+      statusCode: 201,
+    });
+    // #endregion
+
+    // Send all notifications in background (don't block response)
+    setImmediate(async () => {
+      try {
+        // Optional tracking enrollment should never fail ticket creation
+        if (signupForTracking) {
+          try {
+            const existing = await ClientAccount.findOne({ email: clientEmail.toLowerCase() });
+            if (!existing) {
+              const clientAccount = new ClientAccount({
+                email: clientEmail.toLowerCase(),
+                clientName: clientName.trim(),
+                emailVerified: true, // Auto-verify for now
+                submittedTicketIds: [ticket._id],
+              });
+              await clientAccount.save();
+            } else {
+              existing.submittedTicketIds.push(ticket._id);
+              await existing.save();
+            }
+          } catch (trackingError) {
+            console.warn('Failed to create/update client tracking account', {
+              ticketNumber,
+              clientEmail,
+              error: trackingError && trackingError.message ? trackingError.message : String(trackingError),
+            });
+          }
+        }
+
+        // Send confirmation email to client
+        const confirmationEmailHtml = ticketConfirmationEmail(ticketNumber, clientName, serviceType, description, trackingLink);
+        
+        try {
+          await sendEmail({
+            email: clientEmail,
+            subject: `Support Ticket Confirmed - ${ticketNumber}`,
+            html: confirmationEmailHtml,
+          });
+          console.log('Client ticket confirmation email sent', { ticketNumber, clientEmail });
+        } catch (emailError) {
+          console.warn('Client ticket confirmation email failed to send', {
+            ticketNumber,
+            clientEmail,
+            error: emailError && emailError.message ? emailError.message : String(emailError),
+          });
+        }
+
+        // Create notification for all admins
+        try {
+          await appNotificationService.createForAdmins({
+            scope: 'clientTickets',
+            type: 'new_ticket',
+            title: `New Client Ticket: ${ticketNumber}`,
+            message: `${clientName} submitted a ${serviceType} support ticket.`,
+            action: 'view_ticket',
+            payload: {
+              ticketId: ticket._id.toString(),
+              ticketNumber,
+            },
+          });
+        } catch (notifError) {
+          console.warn('Failed to create admin notification for ticket', {
+            ticketNumber,
+            error: notifError && notifError.message ? notifError.message : String(notifError),
+          });
+        }
+
+        // Emit real-time notification via socket.io
+        if (global.io) {
+          try {
+            global.io.emit('client_ticket_created', {
+              ticketId: ticket._id,
+              ticketNumber,
+              clientName,
+              serviceType,
+            });
+          } catch (socketError) {
+            console.warn('Failed to emit socket.io notification', {
+              ticketNumber,
+              error: socketError && socketError.message ? socketError.message : String(socketError),
+            });
+          }
+        }
+      } catch (backgroundError) {
+        console.error('Error in background ticket notification processing', {
+          ticketNumber,
+          error: backgroundError && backgroundError.message ? backgroundError.message : String(backgroundError),
+        });
+      }
+    });
   } catch (error) {
+    // #region agent log
+    debugLog(runId, 'H9', 'clientTicketController.js:createClientTicket:catch', 'Backend error while creating ticket', {
+      error: error && error.message ? error.message : String(error),
+    });
+    // #endregion
     console.error('Error creating client ticket:', error);
     res.status(500).json({
       error: 'Failed to create support ticket',
