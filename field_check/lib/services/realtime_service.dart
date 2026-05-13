@@ -527,6 +527,66 @@ class RealtimeService {
       }
     });
 
+    // Handle notifications marked as read from another device/tab
+    _socket!.on('notificationsRead', (data) {
+      try {
+        if (data is Map<String, dynamic>) {
+          final notificationIds = data['notificationIds'];
+          if (notificationIds is List) {
+            _eventController.add({
+              'type': 'notification',
+              'action': 'read',
+              'notificationIds': notificationIds,
+              'data': data,
+            });
+          }
+        } else if (data is Map) {
+          final mapped = Map<String, dynamic>.from(data);
+          final notificationIds = mapped['notificationIds'];
+          if (notificationIds is List) {
+            _eventController.add({
+              'type': 'notification',
+              'action': 'read',
+              'notificationIds': notificationIds,
+              'data': mapped,
+            });
+          }
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing notificationsRead: $e');
+      }
+    });
+
+    // Handle notifications deleted from another device/tab or auto-deleted (employee offline)
+    _socket!.on('notificationsDeleted', (data) {
+      try {
+        if (data is Map<String, dynamic>) {
+          final notificationIds = data['notificationIds'];
+          if (notificationIds is List) {
+            _eventController.add({
+              'type': 'notification',
+              'action': 'deleted',
+              'notificationIds': notificationIds,
+              'data': data,
+            });
+          }
+        } else if (data is Map) {
+          final mapped = Map<String, dynamic>.from(data);
+          final notificationIds = mapped['notificationIds'];
+          if (notificationIds is List) {
+            _eventController.add({
+              'type': 'notification',
+              'action': 'deleted',
+              'notificationIds': notificationIds,
+              'data': mapped,
+            });
+          }
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing notificationsDeleted: $e');
+      }
+    });
+
     // Employee online/offline presence events
     _socket!.on('employeeOnline', (data) {
       print('RealtimeService: Employee online: $data');

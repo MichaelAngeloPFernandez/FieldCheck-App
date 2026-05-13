@@ -336,4 +336,36 @@ module.exports = {
       return 0;
     }
   },
+
+  async emitNotificationsRead(userId, notificationIds) {
+    try {
+      const io = global.io;
+      if (!io || !Array.isArray(notificationIds) || notificationIds.length === 0) return;
+
+      // Broadcast to all admin connections that these notifications were read
+      io.to('role:admin').emit('notificationsRead', {
+        notificationIds: notificationIds.map(id => String(id)),
+        userId: String(userId),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('Error emitting notificationsRead event:', err);
+    }
+  },
+
+  async emitNotificationsDeleted(userId, notificationIds) {
+    try {
+      const io = global.io;
+      if (!io || !Array.isArray(notificationIds) || notificationIds.length === 0) return;
+
+      // Broadcast to all admin connections that these notifications were deleted
+      io.to('role:admin').emit('notificationsDeleted', {
+        notificationIds: notificationIds.map(id => String(id)),
+        userId: String(userId),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('Error emitting notificationsDeleted event:', err);
+    }
+  },
 };

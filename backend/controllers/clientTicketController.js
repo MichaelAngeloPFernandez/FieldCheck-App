@@ -9,6 +9,7 @@ const appNotificationService = require('../services/appNotificationService');
 const sendEmail = require('../utils/emailService');
 const ticketConfirmationEmail = require('../utils/templates/ticketConfirmationEmail');
 const ticketAssignedEmail = require('../utils/templates/ticketAssignedEmail');
+const ticketAssignedClientEmail = require('../utils/templates/ticketAssignedClientEmail');
 const ticketCompletedEmail = require('../utils/templates/ticketCompletedEmail');
 const { generateTicketNumber } = require('../utils/ticketNumberGenerator');
 const { generateEmailToken, verifyEmailToken } = require('../utils/emailTokenGenerator');
@@ -259,10 +260,17 @@ exports.createClientTicket = asyncHandler(async (req, res) => {
  * List client tickets with advanced filtering (admin only)
  */
 exports.listClientTickets = asyncHandler(async (req, res) => {
-  const { status, serviceType, clientEmail, assignedTo, ticketNumber, startDate, endDate, page = 1, limit = 10 } = req.query;
+  const { status, serviceType, clientEmail, assignedTo, ticketNumber, startDate, endDate, includeArchived = false, page = 1, limit = 10 } = req.query;
 
   // Build query
   const query = {};
+
+  // By default, exclude archived tickets unless specifically requested
+  if (includeArchived === 'true' || includeArchived === true) {
+    // Include both archived and non-archived
+  } else {
+    query.archived = { $ne: true };
+  }
 
   if (status) {
     if (!['open', 'in_progress', 'pending_review', 'completed', 'closed'].includes(status)) {
@@ -481,6 +489,28 @@ exports.assignTicketToEmployee = asyncHandler(async (req, res) => {
       });
     }
 
+    // Send email to client to notify about assignment
+    try {
+      const assignedClientEmailHtml = ticketAssignedClientEmail(
+        ticket.clientName,
+        ticketNumber,
+        employee.name,
+        ticket.serviceType
+      );
+
+      await sendEmail({
+        email: ticket.clientEmail,
+        subject: `Your Support Ticket is Being Worked On - ${ticketNumber}`,
+        html: assignedClientEmailHtml,
+      });
+    } catch (emailError) {
+      console.warn('Failed to send ticket assignment email to client', {
+        ticketNumber,
+        clientEmail: ticket.clientEmail,
+        error: emailError && emailError.message ? emailError.message : String(emailError),
+      });
+    }
+
     // Create notification for employee
     try {
       await appNotificationService.createForUser(employeeId, {
@@ -557,7 +587,8 @@ exports.updateTicketStatus = asyncHandler(async (req, res) => {
             ticket.clientName,
             ticketNumber,
             employee?.name || 'Our Team',
-            ratingLink
+            ratingLink,
+            ticket.comments || []
           );
 
           await sendEmail({
@@ -772,12 +803,10 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
       return res.status(400).json({ error: 'Only completed tickets can be rated.' });
     }
 
-    // Check if already rated
-    if (ticket.rating && ticket.rating.stars) {
-      return res.status(400).json({ error: 'This ticket has already been rated.' });
-    }
+    // Track if this is a re-submission
+    const isResubmission = ticket.rating && ticket.rating.stars;
 
-    // Save rating
+    // Save rating (overwrites previous rating in ticket)
     ticket.rating = {
       stars,
       comment: comment ? comment.trim() : null,
@@ -787,7 +816,7 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
 
     await ticket.save();
 
-    // Create TicketRating record
+    // Create TicketRating record (tracks all rating submissions, including re-submissions)
     const rating = new TicketRating({
       ticketId: ticket._id,
       clientEmail,
@@ -839,6 +868,110 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
     console.error('Error submitting rating:', error);
     res.status(500).json({
       error: 'Failed to submit rating',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal error',
+    });
+  }
+});
+
+/**
+ * PUT /api/client-tickets/:ticketNumber/archive
+ * Archive (soft delete) a client ticket (admin only)
+ * Archived tickets are hidden but remain searchable
+ */
+exports.archiveTicket = asyncHandler(async (req, res) => {
+  const { ticketNumber } = req.params;
+  const adminId = req.user._id;
+
+  if (!ticketNumber || !/^RNG-\d{8}-[A-Z0-9]{4}$/.test(ticketNumber)) {
+    return res.status(400).json({ error: 'Invalid ticket number format.' });
+  }
+
+  try {
+    const ticket = await ClientTicket.findOne({ ticketNumber });
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found.' });
+    }
+
+    if (ticket.archived) {
+      return res.status(400).json({ error: 'Ticket is already archived.' });
+    }
+
+    // Archive the ticket
+    ticket.archived = true;
+    ticket.archivedAt = new Date();
+    ticket.archivedBy = adminId;
+    await ticket.save();
+
+    // Notify admins about archive action
+    await appNotificationService.emitEventToAdmins({
+      event: 'ticketArchived',
+      payload: {
+        ticketId: ticket._id.toString(),
+        ticketNumber,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Ticket archived successfully',
+      data: ticket,
+    });
+  } catch (error) {
+    console.error('Error archiving ticket:', error);
+    res.status(500).json({
+      error: 'Failed to archive ticket',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal error',
+    });
+  }
+});
+
+/**
+ * DELETE /api/client-tickets/:ticketNumber
+ * Permanently delete a client ticket (admin only)
+ * This cannot be undone
+ */
+exports.deleteTicket = asyncHandler(async (req, res) => {
+  const { ticketNumber } = req.params;
+
+  if (!ticketNumber || !/^RNG-\d{8}-[A-Z0-9]{4}$/.test(ticketNumber)) {
+    return res.status(400).json({ error: 'Invalid ticket number format.' });
+  }
+
+  try {
+    const ticket = await ClientTicket.findOne({ ticketNumber });
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found.' });
+    }
+
+    // Store ticket ID before deletion (for notification)
+    const ticketId = ticket._id.toString();
+
+    // Delete the ticket
+    await ClientTicket.findByIdAndDelete(ticket._id);
+
+    // Notify admins about deletion
+    await appNotificationService.emitEventToAdmins({
+      event: 'ticketDeleted',
+      payload: {
+        ticketId,
+        ticketNumber,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Ticket deleted permanently',
+      data: {
+        ticketNumber,
+        deletedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error('Error deleting ticket:', error);
+    res.status(500).json({
+      error: 'Failed to delete ticket',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Internal error',
     });
   }

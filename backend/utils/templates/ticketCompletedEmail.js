@@ -1,4 +1,24 @@
-module.exports = (clientName, ticketNumber, employeeName, ratingLink) => {
+module.exports = (clientName, ticketNumber, employeeName, ratingLink, comments = []) => {
+  // Filter to only show employee/admin comments
+  const employeeComments = Array.isArray(comments) 
+    ? comments.filter(c => c.authorType === 'employee' || c.authorType === 'admin')
+    : [];
+
+  const commentsHtml = employeeComments.length > 0
+    ? `
+      <div class="progress-section">
+        <h3>📝 Work Progress & Notes</h3>
+        <p>Here's a summary of the work completed on your ticket:</p>
+        ${employeeComments.map(comment => `
+          <div class="comment-item">
+            <p><strong>${comment.createdAt ? new Date(comment.createdAt).toLocaleDateString() : 'Unknown Date'}:</strong></p>
+            <p style="color: #333; line-height: 1.6; margin: 5px 0 15px 0;">${comment.text}</p>
+          </div>
+        `).join('')}
+      </div>
+    `
+    : '';
+
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -52,6 +72,24 @@ module.exports = (clientName, ticketNumber, employeeName, ratingLink) => {
             .content {
                 padding: 0 20px;
             }
+            .progress-section {
+                background-color: #f9f9f9;
+                border-left: 4px solid #2196f3;
+                padding: 15px;
+                border-radius: 4px;
+                margin: 20px 0;
+            }
+            .progress-section h3 {
+                margin-top: 0;
+                color: #2196f3;
+            }
+            .comment-item {
+                background-color: #ffffff;
+                border: 1px solid #e0e0e0;
+                padding: 12px;
+                border-radius: 4px;
+                margin: 10px 0;
+            }
             .rating-section {
                 background-color: #fff9e6;
                 border: 1px solid #ffc107;
@@ -102,6 +140,8 @@ module.exports = (clientName, ticketNumber, employeeName, ratingLink) => {
                     <p><strong>Completed By:</strong> ${employeeName}</p>
                     <p><strong>Completed On:</strong> ${new Date().toLocaleDateString()}</p>
                 </div>
+                
+                ${commentsHtml}
                 
                 <p>We appreciate your patience and look forward to serving you again. Your feedback is valuable to us!</p>
                 

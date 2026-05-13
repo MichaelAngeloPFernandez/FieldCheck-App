@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const User = require('./models/User');
 const EmployeeLocation = require('./models/EmployeeLocation');
+const AppNotification = require('./models/AppNotification');
 const appNotificationService = require('./services/appNotificationService');
 
 console.log(' Starting server initialization...');
@@ -419,9 +420,23 @@ io.on('connection', (socket) => {
         });
       } catch (_) {}
 
+      // Create persisted notification for admins
       try {
-        // Intentionally no persisted appNotificationService call for employeeOnline.
-      } catch (_) {}
+        await appNotificationService.createForAdmins({
+          scope: 'presenceStatus',
+          type: 'employee_online',
+          action: 'employee_online',
+          title: `${name || 'Employee'} is online`,
+          message: `${name || 'Employee'} (${employeeCode}) has come online`,
+          payload: {
+            employeeId: userId,
+            employeeName: name,
+            employeeCode: employeeCode,
+          },
+        });
+      } catch (err) {
+        console.error('Error creating employee online notification:', err);
+      }
     } catch (_) {}
   });
 
@@ -473,6 +488,34 @@ io.on('connection', (socket) => {
           timestamp: new Date().toISOString(),
         });
       } catch (_) {}
+
+      // Delete corresponding online notification and notify admins
+      try {
+        const deleteResult = await AppNotification.deleteMany({
+          'payload.employeeId': userId,
+          type: 'employee_online',
+          scope: 'presenceStatus',
+          readAt: null,
+        });
+
+        // If notifications were deleted, emit event to update admin UI
+        if (deleteResult.deletedCount > 0) {
+          try {
+            io.to('role:admin').emit('notificationsDeleted', {
+              filter: {
+                employeeId: String(userId),
+                type: 'employee_online',
+                scope: 'presenceStatus',
+              },
+              deletedCount: deleteResult.deletedCount,
+            });
+          } catch (emitErr) {
+            console.error('Error emitting notificationsDeleted event:', emitErr);
+          }
+        }
+      } catch (err) {
+        console.error('Error deleting employee online notifications:', err);
+      }
     } catch (_) {}
   });
   socket.on('adminNearbyModeChanged', async (data) => {
@@ -1069,6 +1112,7 @@ const attachmentRoutes = require('./routes/attachmentRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const clientTicketRoutes = require('./routes/clientTicketRoutes');
+const ticketRatingRoutes = require('./routes/ticketRatingRoutes');
 const contactRoutes = require('./routes/contactRoutes');
 
 
@@ -1341,6 +1385,7 @@ app.use('/api/attachments', attachmentRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/client-tickets', clientTicketRoutes);
+app.use('/api/ticket-ratings', ticketRatingRoutes);
 app.use('/api/contact', contactRoutes);
 
 app.get('*', (req, res, next) => {
@@ -1600,6 +1645,9 @@ process.on('uncaughtException', (error) => {
 
             const initCleanupJob = require('./jobs/cleanup_job');
             initCleanupJob();
+
+            const initializeTicketExpirationJob = require('./jobs/ticket_expiration_job');
+            initializeTicketExpirationJob();
           }
         }
       } catch (err) {

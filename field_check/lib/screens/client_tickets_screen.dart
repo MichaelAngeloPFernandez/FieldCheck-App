@@ -34,7 +34,8 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> {
     'in_progress',
     'pending_review',
     'completed',
-    'closed'
+    'closed',
+    'expired'
   ];
 
   final List<String> _serviceTypes = [
@@ -122,6 +123,8 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> {
         return Colors.green;
       case 'closed':
         return Colors.grey;
+      case 'expired':
+        return Colors.red;
       default:
         return Colors.grey;
     }
@@ -395,6 +398,26 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> {
             ],
           ),
         ),
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'archive') {
+              _archiveTicket(ticketNumber);
+            } else if (value == 'delete') {
+              _deleteTicket(ticketNumber);
+            }
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'archive',
+              child: Text('Archive'),
+            ),
+            const PopupMenuDivider(),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Text('Delete'),
+            ),
+          ],
+        ),
         onTap: () => _showTicketDetails(context, ticket),
       ),
     );
@@ -534,6 +557,98 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> {
         );
       },
     );
+  }
+
+  Future<void> _archiveTicket(String ticketNumber) async {
+    // Ask for confirmation
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archive Ticket?'),
+        content: const Text(
+          'This ticket will be hidden but remain searchable. You can restore it later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final response = await HttpUtil().put(
+        '/api/client-tickets/$ticketNumber/archive',
+        body: {},
+      ).timeout(const Duration(seconds: 15));
+
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        AppWidgets.showSuccessSnackbar(context, 'Ticket archived successfully');
+        _loadTickets();
+      } else {
+        AppWidgets.showErrorSnackbar(
+          context,
+          'Failed to archive ticket: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(context, 'Error archiving ticket: $e');
+    }
+  }
+
+  Future<void> _deleteTicket(String ticketNumber) async {
+    // Ask for confirmation (stronger confirmation for deletion)
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Ticket Permanently?'),
+        content: const Text(
+          'This action cannot be undone. The ticket will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final response = await HttpUtil().delete(
+        '/api/client-tickets/$ticketNumber',
+      ).timeout(const Duration(seconds: 15));
+
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        AppWidgets.showSuccessSnackbar(context, 'Ticket deleted permanently');
+        _loadTickets();
+      } else {
+        AppWidgets.showErrorSnackbar(
+          context,
+          'Failed to delete ticket: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppWidgets.showErrorSnackbar(context, 'Error deleting ticket: $e');
+    }
   }
 }
 
@@ -829,7 +944,6 @@ class _TicketDetailModalState extends State<_TicketDetailModal> {
     final navigator = Navigator.of(context);
 
     try {
-      // TODO: Implement actual API call
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (mounted) {

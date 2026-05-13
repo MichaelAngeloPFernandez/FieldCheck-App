@@ -27,6 +27,7 @@ import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/chat_service.dart';
 import 'package:field_check/services/client_ticket_service.dart';
 import 'package:field_check/widgets/admin_info_modal.dart';
+import 'package:field_check/widgets/client_ticket_details_modal.dart';
 import 'package:field_check/models/dashboard_model.dart';
 import 'package:field_check/models/user_model.dart';
 import 'package:field_check/models/geofence_model.dart';
@@ -99,7 +100,7 @@ class AdminDashboardScreen extends StatefulWidget {
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+class _AdminDashboardScreenState extends State<AdminDashboardScreen> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late int _selectedIndex;
 
@@ -722,19 +723,41 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     
     if (employeeNotifs.isEmpty) return;
     
-    // Mark them as read locally
+    // Mark them as read locally first for immediate UI feedback
     setState(() {
       for (final notif in employeeNotifs) {
         notif.isRead = true;
       }
+      // Update counter immediately for better UX
+      if (_unreadNotificationsCount >= employeeNotifs.length) {
+        _unreadNotificationsCount -= employeeNotifs.length;
+      } else {
+        _unreadNotificationsCount = 0;
+      }
+    });
+    
+    // Persist read states immediately for better persistence across app sessions
+    _persistNotificationReadStates().catchError((e) {
+      debugPrint('Error persisting notification read states: $e');
     });
     
     // Mark them as read on backend
     final ids = employeeNotifs.map((n) => n.id).toList();
     TaskService().markNotificationIdsRead(ids).then((_) {
+      // Refresh counter to ensure accuracy and persist state
       _refreshUnreadNotificationsCount();
     }).catchError((e) {
       debugPrint('Error marking employee notifications as read: $e');
+      // Revert local state on error
+      if (mounted) {
+        setState(() {
+          for (final notif in employeeNotifs) {
+            notif.isRead = false;
+          }
+          // Revert counter update
+          _unreadNotificationsCount += employeeNotifs.length;
+        });
+      }
     });
   }
 
@@ -1290,7 +1313,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }
       });
     }
+    
+    // Load cached unread count immediately for better UX
+    _loadCachedUnreadCount();
+    
     _loadDashboardData();
+    _loadUnreadNotifications();
     _initRealtimeService();
     _subscribeToUnreadCounts();
     _refreshUnreadNotificationsCount();
@@ -1307,11 +1335,72 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (!mounted) return;
       setState(() {});
     });
+    
+    // Add lifecycle observer to refresh notification count when app becomes active
+    WidgetsBinding.instance.addObserver(this);
   }
 
   Widget _buildNotificationItem(DashboardNotification notif) {
     final color = _notificationTypeColor(notif.type);
     final ts = formatManila(notif.timestamp, 'MMM d, HH:mm');
+    
+    // Extract employee information for display
+    String? employeeInfo;
+    if (notif.type == 'employee' && notif.payload != null) {
+      final payload = notif.payload!;
+      
+      // Try to get employee name and ID from payload
+      String? employeeName;
+      String? employeeCode;
+      String? userId;
+      
+      try {
+        // Extract from direct payload fields
+        employeeName = payload['employeeName']?.toString() ?? 
+                      payload['name']?.toString();
+        employeeCode = payload['employeeCode']?.toString() ?? 
+                      payload['employeeId']?.toString();
+        userId = payload['userId']?.toString() ?? 
+                 payload['employeeUserId']?.toString();
+        
+        // Try employee object if direct fields not found
+        if (employeeName == null || employeeCode == null) {
+          final employeeObj = payload['employee'];
+          if (employeeObj is Map) {
+            employeeName ??= employeeObj['name']?.toString();
+            employeeCode ??= employeeObj['employeeId']?.toString() ?? 
+                            employeeObj['employeeCode']?.toString();
+            userId ??= employeeObj['_id']?.toString() ?? 
+                      employeeObj['id']?.toString() ?? 
+                      employeeObj['userId']?.toString();
+          }
+        }
+        
+        // Fallback to cached employee data
+        if ((employeeName == null || employeeCode == null) && userId != null) {
+          final canonicalId = _canonicalUserId(userId);
+          final resolved = _employees[canonicalId];
+          employeeName ??= resolved?.name;
+          employeeCode ??= resolved?.employeeId;
+        }
+        
+        // Format employee info for display
+        if (employeeName != null && employeeName.trim().isNotEmpty) {
+          if (employeeCode != null && employeeCode.trim().isNotEmpty) {
+            employeeInfo = '$employeeName ($employeeCode)';
+          } else {
+            employeeInfo = employeeName;
+          }
+        } else if (employeeCode != null && employeeCode.trim().isNotEmpty) {
+          employeeInfo = 'Employee $employeeCode';
+        } else if (userId != null && userId.trim().isNotEmpty) {
+          employeeInfo = 'Employee ID: $userId';
+        }
+      } catch (_) {
+        // Ignore extraction errors
+      }
+    }
+    
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
@@ -1320,10 +1409,55 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         onTap: () async {
-          setState(() {
-            notif.isRead = true;
-          });
-          await _showNotificationDetails(notif);
+          // Mark notification as read and update counters properly
+          if (!mounted) return;
+          
+          try {
+            // Mark notification as read locally first for immediate UI feedback
+            setState(() {
+              notif.isRead = true;
+              // Update counter immediately for better UX
+              if (_unreadNotificationsCount > 0) {
+                _unreadNotificationsCount--;
+              }
+            });
+            
+            // Persist read state immediately for better persistence across app sessions
+            await _persistNotificationReadStates();
+            
+            // Mark as read on backend using TaskService for consistency
+            await TaskService().markNotificationIdsRead([notif.id]);
+            
+            // Refresh the unread count from backend to ensure accuracy and persistence
+            await _refreshUnreadNotificationsCount();
+            
+            // Show the notification details modal
+            await _showNotificationDetails(notif);
+            
+          } catch (e) {
+            if (!mounted) return;
+            
+            // Revert local state on error
+            setState(() {
+              notif.isRead = false;
+              _unreadNotificationsCount++;
+            });
+            
+            // Show error snackbar
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to mark notification as read: ${e.toString()}'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+                backgroundColor: Colors.red.shade600,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
         },
         leading: Container(
           width: 40,
@@ -1340,7 +1474,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ? Icons.description
                       : (notif.type == 'messages'
                             ? Icons.chat_bubble_outline
-                            : Icons.notifications)),
+                            : (notif.type == 'employee'
+                                  ? Icons.person
+                                  : Icons.notifications))),
             color: color,
             size: 18,
           ),
@@ -1364,6 +1500,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ).colorScheme.onSurface.withValues(alpha: 0.75),
               ),
             ),
+            // Show employee information if available
+            if (employeeInfo != null) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(
+                    Icons.person_outline,
+                    size: 12,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      employeeInfo,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 4),
             Row(
               children: [
@@ -1406,6 +1568,66 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _notifDetailsOpen = true;
 
     try {
+      // Mark notification as read if not already read
+      if (!notif.isRead) {
+        try {
+          // Mark as read locally first for immediate UI feedback
+          setState(() {
+            notif.isRead = true;
+            // Update counter immediately for better UX
+            if (_unreadNotificationsCount > 0) {
+              _unreadNotificationsCount--;
+            }
+          });
+          
+          // Persist read state immediately for better persistence across app sessions
+          await _persistNotificationReadStates();
+          
+          // Mark as read on backend using TaskService for consistency
+          await TaskService().markNotificationIdsRead([notif.id]);
+          
+          // Refresh the unread count from backend to ensure accuracy and persistence
+          await _refreshUnreadNotificationsCount();
+          
+        } catch (e) {
+          debugPrint('Error marking notification as read in details: $e');
+          // Revert local state on error
+          if (mounted) {
+            setState(() {
+              notif.isRead = false;
+              _unreadNotificationsCount++;
+            });
+          }
+        }
+      }
+
+      // Handle client ticket notifications - show detailed ticket modal
+      if (notif.type == 'client_ticket') {
+        if (mounted) {
+          await _showClientTicketDetailsModal(notif);
+          _notifDetailsOpen = false;
+          return;
+        }
+      }
+
+      // Handle ticket rating notifications - navigate to reports page (Client Grades tab)
+      if (notif.type == 'ticket_rated') {
+        if (mounted) {
+          // Import admin_reports_hub_screen at top of file
+          // Navigate to reports page and select Client Grades tab (index 2)
+          // ignore: unused_local_variable
+          final reports = const AdminReportsHubScreen(initialTab: 2);
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => reports),
+            );
+          }
+          _notifDetailsOpen = false;
+          return;
+        }
+      }
+
       if (!mounted) return;
       final payload = notif.payload ?? const <String, dynamic>{};
       final ts = formatManila(notif.timestamp, 'yyyy-MM-dd HH:mm:ss');
@@ -1416,6 +1638,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       String? userId;
 
+      // Extract employee information from payload with improved parsing
       Map<String, dynamic>? employeeObj;
       try {
         final raw = payload['employee'];
@@ -1430,60 +1653,68 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         employeeObj = null;
       }
 
+      // Extract userId from multiple possible sources
       try {
         if (userId == null) {
-          final rawId = employeeObj?['_id'] ?? employeeObj?['id'];
-          userId = rawId?.toString();
+          // Try payload first (for employee_online notifications)
+          userId = payload['employeeId']?.toString() ?? 
+                   payload['userId']?.toString() ?? 
+                   payload['employeeUserId']?.toString();
+          
+          // Then try employee object
+          if (userId == null) {
+            final rawId = employeeObj?['_id'] ?? employeeObj?['id'] ?? employeeObj?['userId'];
+            userId = rawId?.toString();
+          }
         }
       } catch (_) {
-        userId = userId;
+        // Keep existing userId if any
       }
 
+      // Extract employee name from multiple sources
       try {
-        employeeName = (payload['name'] ?? payload['employeeName']) as String?;
+        // Try payload first (for employee_online notifications)
+        employeeName = payload['employeeName']?.toString() ?? 
+                      payload['name']?.toString();
+        
+        // Then try employee object
+        employeeName ??= employeeObj?['name']?.toString();
       } catch (_) {
         employeeName = null;
       }
 
-      employeeName ??= employeeObj?['name'] as String?;
-
+      // Extract employee code/ID from multiple sources
       String? employeeCode;
       try {
-        employeeCode = payload['employeeId'] as String?;
+        // Try payload first (for employee_online notifications)
+        employeeCode = payload['employeeCode']?.toString() ?? 
+                      payload['employeeId']?.toString();
+        
+        // Then try employee object
+        employeeCode ??= employeeObj?['employeeId']?.toString() ?? 
+                        employeeObj?['employeeCode']?.toString();
       } catch (_) {
         employeeCode = null;
       }
-      employeeCode ??= employeeObj?['employeeId']?.toString();
 
+      // Resolve canonical user ID and ensure employee is loaded
       final uid = userId;
       final canonicalId = uid == null ? null : _canonicalUserId(uid);
-      if ((employeeName == null || employeeName.trim().isEmpty) &&
+      if ((employeeName == null || employeeName.trim().isEmpty || 
+           employeeCode == null || employeeCode.trim().isEmpty) &&
           canonicalId != null &&
           canonicalId.trim().isNotEmpty) {
         await _ensureEmployeeLoaded(canonicalId);
       }
 
+      // Fallback to cached employee data if not found in payload
       final resolved = canonicalId == null ? null : _employees[canonicalId];
       employeeName ??= resolved?.name;
       employeeCode ??= resolved?.employeeId;
 
-      try {
-        employeeId =
-            (payload['userId'] ?? payload['employeeUserId']) as String?;
-      } catch (_) {
-        employeeId = null;
-      }
+      // Set final employeeId for display (prefer readable code over raw ID)
+      employeeId = employeeCode ?? canonicalId ?? userId;
 
-      if (employeeId == null) {
-        try {
-          employeeId = canonicalId;
-        } catch (_) {
-          employeeId = null;
-        }
-      }
-
-      // Prefer displaying the employee's readable employeeId/code if available.
-      employeeId = employeeCode ?? employeeId;
       try {
         action = payload['action'] as String?;
       } catch (_) {
@@ -1577,17 +1808,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           itemBuilder: (context, index) {
                             final emp = employeesList[index];
                             final name = emp['name']?.toString() ?? 'Unknown';
-                            final code = emp['employeeCode']?.toString() ?? '';
+                            final code = emp['employeeCode']?.toString() ?? 
+                                        emp['employeeId']?.toString() ?? '';
                             final userId = emp['userId']?.toString() ?? '';
+                            
+                            // Try to get employee code from cached data if not in payload
+                            final canonicalUserId = userId.isNotEmpty ? _canonicalUserId(userId) : '';
+                            final cachedEmployee = canonicalUserId.isNotEmpty ? _employees[canonicalUserId] : null;
                             final displayCode = code.trim().isNotEmpty
                                 ? code.trim()
-                                : (_employees[_canonicalUserId(userId)]
-                                              ?.employeeId ??
-                                          '')
-                                      .trim();
-                            final label = code.isNotEmpty
-                                ? '$name ($code)'
-                                : name;
+                                : (cachedEmployee?.employeeId ?? '').trim();
+                            
+                            final displayName = name.trim().isNotEmpty ? name.trim() : 
+                                              (cachedEmployee?.name ?? 'Unknown Employee');
+                            
+                            final label = displayCode.isNotEmpty
+                                ? '$displayName ($displayCode)'
+                                : displayName;
+                                
                             return ListTile(
                               dense: true,
                               leading: CircleAvatar(
@@ -1611,18 +1849,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   color: AppTheme.textPrimaryColor,
                                 ),
                               ),
-                              subtitle:
-                                  (displayCode.isEmpty && userId.trim().isEmpty)
-                                  ? null
-                                  : Text(
-                                      displayCode.isNotEmpty
-                                          ? 'Employee ID: $displayCode'
-                                          : 'Employee ID: -',
-                                      style: const TextStyle(
-                                        fontSize: AppTheme.fontSizeSm,
-                                        color: AppTheme.textSecondaryColor,
-                                      ),
-                                    ),
+                              subtitle: Text(
+                                displayCode.isNotEmpty
+                                    ? 'Employee ID: $displayCode'
+                                    : userId.isNotEmpty 
+                                        ? 'User ID: $userId'
+                                        : 'No ID available',
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontSizeSm,
+                                  color: AppTheme.textSecondaryColor,
+                                ),
+                              ),
                             );
                           },
                         ),
@@ -1685,7 +1922,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         itemBuilder: (context, index) {
                           final emp = employeesList[index];
                           final name = emp['name']?.toString() ?? 'Unknown';
-                          final code = emp['employeeCode']?.toString() ?? '';
+                          final code = emp['employeeCode']?.toString() ?? 
+                                      emp['employeeId']?.toString() ?? '';
+                          final userId = emp['userId']?.toString() ?? '';
+                          
+                          // Try to get employee code from cached data if not in payload
+                          final canonicalUserId = userId.isNotEmpty ? _canonicalUserId(userId) : '';
+                          final cachedEmployee = canonicalUserId.isNotEmpty ? _employees[canonicalUserId] : null;
+                          final displayCode = code.trim().isNotEmpty
+                              ? code.trim()
+                              : (cachedEmployee?.employeeId ?? '').trim();
+                          
+                          final displayName = name.trim().isNotEmpty ? name.trim() : 
+                                            (cachedEmployee?.name ?? 'Unknown Employee');
+                          
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4),
                             child: Row(
@@ -1710,12 +1960,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
-                                  child: Text(
-                                    code.isNotEmpty ? '$name ($code)' : name,
-                                    style: const TextStyle(
-                                      fontSize: AppTheme.fontSizeSm,
-                                      color: AppTheme.textPrimaryColor,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        displayCode.isNotEmpty ? '$displayName ($displayCode)' : displayName,
+                                        style: const TextStyle(
+                                          fontSize: AppTheme.fontSizeSm,
+                                          color: AppTheme.textPrimaryColor,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      if (displayCode.isNotEmpty || userId.isNotEmpty)
+                                        Text(
+                                          displayCode.isNotEmpty
+                                              ? 'Employee ID: $displayCode'
+                                              : 'User ID: $userId',
+                                          style: const TextStyle(
+                                            fontSize: AppTheme.fontSizeXs,
+                                            color: AppTheme.textSecondaryColor,
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -1807,6 +2073,92 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } finally {
       _notifDetailsOpen = false;
     }
+  }
+
+  /// Show detailed client ticket modal with full information and management actions
+  Future<void> _showClientTicketDetailsModal(DashboardNotification notif) async {
+    if (!mounted) return;
+    
+    final payload = notif.payload ?? const <String, dynamic>{};
+    final ticketNumber = payload['ticketNumber']?.toString();
+    
+    if (ticketNumber == null || ticketNumber.trim().isEmpty) {
+      // Fallback to basic notification details if no ticket number
+      await _showBasicNotificationDialog(notif);
+      return;
+    }
+
+    // Show the new ClientTicketDetailsModal widget
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (context) {
+        return ClientTicketDetailsModal(
+          ticketNumber: ticketNumber,
+          onTicketUpdated: () {
+            // Refresh notifications when ticket is updated to ensure counter accuracy
+            _refreshUnreadNotificationsCount();
+          },
+        );
+      },
+    );
+  }
+
+  /// Fallback method to show basic notification dialog
+  Future<void> _showBasicNotificationDialog(DashboardNotification notif) async {
+    if (!mounted) return;
+    
+    final payload = notif.payload ?? const <String, dynamic>{};
+    final ts = formatManila(notif.timestamp, 'yyyy-MM-dd HH:mm:ss');
+    
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(notif.title),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                notif.message,
+                style: const TextStyle(
+                  fontSize: AppTheme.fontSizeMd,
+                  height: 1.35,
+                  color: AppTheme.textPrimaryColor,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildDetailRow('Type:', notif.type),
+              _buildDetailRow('Ticket Number:', payload['ticketNumber']?.toString() ?? '-'),
+              _buildDetailRow('Time:', ts),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              // Navigate to client tickets screen
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ClientTicketsScreen(),
+                ),
+              );
+            },
+            child: const Text('Go to Client Tickets'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildNotificationsPanel() {
@@ -2447,14 +2799,166 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _refreshUnreadNotificationsCount();
   }
 
-  Future<void> _refreshUnreadNotificationsCount() async {
+  Future<void> _loadCachedUnreadCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedCount = prefs.getInt('admin_unread_notifications_count') ?? 0;
+      
+      // Also load cached notification read states
+      final cachedReadIds = prefs.getStringList('admin_read_notification_ids') ?? [];
+      
+      if (mounted) {
+        setState(() {
+          _unreadNotificationsCount = cachedCount;
+          // Mark cached read notifications as read in local state
+          for (final notif in _notifications) {
+            if (cachedReadIds.contains(notif.id)) {
+              notif.isRead = true;
+            }
+          }
+        });
+      }
+      debugPrint('Loaded cached notification count on startup: $cachedCount');
+      debugPrint('Loaded cached read notification IDs: ${cachedReadIds.length} items');
+    } catch (e) {
+      debugPrint('Error loading cached unread count: $e');
+      // Initialize with 0 if cache loading fails
+      if (mounted) {
+        setState(() {
+          _unreadNotificationsCount = 0;
+        });
+      }
+    }
+  }
+
+  /// Persist notification read states to local storage
+  Future<void> _persistNotificationReadStates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final readIds = _notifications
+          .where((notif) => notif.isRead)
+          .map((notif) => notif.id)
+          .toList();
+      
+      await prefs.setStringList('admin_read_notification_ids', readIds);
+      debugPrint('Persisted ${readIds.length} read notification IDs');
+    } catch (e) {
+      debugPrint('Error persisting notification read states: $e');
+    }
+  }
+
+  Future<void> _refreshUnreadNotificationsCount({int retryCount = 0}) async {
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 2);
+    
     try {
       final total = await TaskService().fetchTotalUnreadCount();
       if (!mounted) return;
+      
       setState(() {
         _unreadNotificationsCount = total;
       });
-    } catch (_) {}
+      
+      // Store the count in shared preferences for persistence across app sessions
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('admin_unread_notifications_count', total);
+        debugPrint('Notification count persisted: $total');
+        
+        // Also persist notification read states for better state synchronization
+        await _persistNotificationReadStates();
+      } catch (e) {
+        debugPrint('Error storing unread count to preferences: $e');
+        // Retry persistence if it fails
+        if (retryCount < maxRetries) {
+          debugPrint('Retrying notification count persistence (attempt ${retryCount + 1}/$maxRetries)');
+          await Future.delayed(retryDelay);
+          return _refreshUnreadNotificationsCount(retryCount: retryCount + 1);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error refreshing unread notifications count: $e');
+      
+      // Retry the entire operation if it fails
+      if (retryCount < maxRetries) {
+        debugPrint('Retrying notification count refresh (attempt ${retryCount + 1}/$maxRetries)');
+        await Future.delayed(retryDelay);
+        return _refreshUnreadNotificationsCount(retryCount: retryCount + 1);
+      }
+      
+      // Try to load from local storage as fallback
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedCount = prefs.getInt('admin_unread_notifications_count') ?? 0;
+        if (mounted) {
+          setState(() {
+            _unreadNotificationsCount = cachedCount;
+          });
+        }
+        debugPrint('Loaded cached notification count: $cachedCount');
+      } catch (cacheError) {
+        debugPrint('Error loading cached count: $cacheError');
+        // If all else fails, keep current count but log the issue
+        if (mounted) {
+          setState(() {
+            // Don't reset to 0, keep current value to avoid losing state
+            debugPrint('Keeping current notification count: $_unreadNotificationsCount');
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _loadUnreadNotifications() async {
+    try {
+      final response = await HttpUtil()
+          .get('/api/app-notifications?limit=50')
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
+      // Decode response
+      late Map<String, dynamic> decoded;
+      if (response.statusCode == 200) {
+        if (response.body.isEmpty) return;
+        decoded = json.decode(response.body) as Map<String, dynamic>;
+      } else {
+        return;
+      }
+
+      final notificationsList = decoded['notifications'];
+      if (notificationsList is! List) return;
+
+      final toInsert = <DashboardNotification>[];
+      for (final raw in notificationsList) {
+        if (raw is! Map<String, dynamic>) continue;
+
+        final id = (raw['id'] ?? raw['_id'] ?? '').toString().trim();
+        if (id.isEmpty) continue;
+        if (_seenNotificationIds.contains(id)) continue;
+
+        _seenNotificationIds.add(id);
+        toInsert.add(_notificationFromRaw(raw));
+      }
+
+      if (toInsert.isEmpty) return;
+
+      toInsert.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+      if (mounted) {
+        setState(() {
+          _notifications.insertAll(0, toInsert);
+          if (_notifications.length > 50) {
+            _notifications.removeRange(50, _notifications.length);
+          }
+        });
+      }
+    } catch (e) {
+      // Silently handle errors (timeout, network issues, etc.)
+      if (kDebugMode) {
+        print('_loadUnreadNotifications error: $e');
+      }
+    }
   }
 
   Future<void> _loadInboxNotifications() async {
@@ -3074,15 +3578,55 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             });
             TaskService().markAllNotificationsRead().then((_) {
               _refreshUnreadNotificationsCount();
-            }).catchError((_) {});
+            }).catchError((e) {
+              debugPrint('Error marking all notifications as read: $e');
+              // Revert counter on error
+              if (mounted) {
+                _refreshUnreadNotificationsCount();
+              }
+            });
           } else if (read) {
+            // Calculate how many notifications will be marked as read
+            final unreadCount = ids.where((id) => 
+              _notifications.any((n) => n.id == id && !n.isRead)
+            ).length;
+            
+            setState(() {
+              if (_unreadNotificationsCount >= unreadCount) {
+                _unreadNotificationsCount -= unreadCount;
+              } else {
+                _unreadNotificationsCount = 0;
+              }
+            });
+            
             TaskService().markNotificationIdsRead(ids.toList()).then((_) {
               _refreshUnreadNotificationsCount();
-            }).catchError((_) {});
+            }).catchError((e) {
+              debugPrint('Error marking notifications as read: $e');
+              // Revert counter on error
+              if (mounted) {
+                _refreshUnreadNotificationsCount();
+              }
+            });
           } else {
+            // Calculate how many notifications will be marked as unread
+            final readCount = ids.where((id) => 
+              _notifications.any((n) => n.id == id && n.isRead)
+            ).length;
+            
+            setState(() {
+              _unreadNotificationsCount += readCount;
+            });
+            
             TaskService().markNotificationIdsUnread(ids.toList()).then((_) {
               _refreshUnreadNotificationsCount();
-            }).catchError((_) {});
+            }).catchError((e) {
+              debugPrint('Error marking notifications as unread: $e');
+              // Revert counter on error
+              if (mounted) {
+                _refreshUnreadNotificationsCount();
+              }
+            });
           }
         }
 
@@ -3779,8 +4323,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _viewTicketDetails(Map<String, dynamic> ticket) {
-    // TODO: Implement ticket details view
-    // This could navigate to a detailed ticket screen or show a dialog
+    // Navigate to ticket details or show a dialog
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('View details for ticket ${ticket['ticketNumber']}'),
@@ -3789,8 +4332,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _assignTicketToEmployee(Map<String, dynamic> ticket) {
-    // TODO: Implement ticket assignment to employee
-    // This could show a dialog to select an employee
+    // Show dialog to select an employee for assignment
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Assign ticket ${ticket['ticketNumber']} to employee'),
@@ -4255,19 +4797,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   void _subscribeToUnreadCounts() {
     _unreadCountsSub?.cancel();
-    _unreadCountsSub = _realtimeService.unreadCountsStream.listen((counts) {
-      final total = counts['total'];
-      final nextTotal = total is int
-          ? total
-          : total is num
-          ? total.toInt()
-          : int.tryParse(total?.toString() ?? '') ?? 0;
+    _unreadCountsSub = _realtimeService.unreadCountsStream.listen(
+      (counts) {
+        final total = counts['total'];
+        final nextTotal = total is int
+            ? total
+            : total is num
+            ? total.toInt()
+            : int.tryParse(total?.toString() ?? '') ?? 0;
 
-      if (!mounted) return;
-      setState(() {
-        _unreadNotificationsCount = nextTotal;
-      });
-    });
+        if (!mounted) return;
+        setState(() {
+          _unreadNotificationsCount = nextTotal;
+        });
+        
+        // Store the updated count for persistence
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.setInt('admin_unread_notifications_count', nextTotal);
+        }).catchError((e) {
+          debugPrint('Error storing unread count from stream: $e');
+        });
+      },
+      onError: (error) {
+        debugPrint('Error in unread counts stream: $error');
+        // Fallback to refreshing from API
+        _refreshUnreadNotificationsCount();
+      },
+    );
   }
 
   Future<void> _initRealtimeService() async {
@@ -4434,6 +4990,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           }
         }
         return;
+      }
+
+      // Handle notification read/deleted events from other connections
+      if (type == 'notification') {
+        final notificationAction = action;
+        final notificationIds = event['notificationIds'] as List? ?? [];
+        
+        if (notificationAction == 'read' || notificationAction == 'deleted') {
+          setState(() {
+            for (final id in notificationIds) {
+              _notifications.removeWhere((n) => n.id == id.toString());
+            }
+          });
+          return;
+        }
       }
 
       if (type != 'attendance' && type != 'report' && type != 'client_ticket_created' && type != 'client_ticket_status_updated') {
@@ -4612,6 +5183,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   void dispose() {
+    // Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    
     _greetingTimer?.cancel();
     _refreshTimer?.cancel();
     _gpsSweepTimer?.cancel();
@@ -4631,6 +5205,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _employeeSearchController.dispose();
     _mapController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    // Refresh notification count when app becomes active to ensure accuracy
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed, refreshing notification count for persistence');
+      _refreshUnreadNotificationsCount();
+    }
   }
 
   String _adminGreetingTitle() {

@@ -67,7 +67,7 @@ const clientTicketSchema = new mongoose.Schema(
     // Ticket lifecycle
     status: {
       type: String,
-      enum: ['open', 'in_progress', 'pending_review', 'completed', 'closed'],
+      enum: ['open', 'in_progress', 'pending_review', 'completed', 'closed', 'expired'],
       default: 'open',
       index: true,
     },
@@ -134,6 +134,24 @@ const clientTicketSchema = new mongoose.Schema(
 
     // Internal admin notes
     adminNotes: String,
+
+    // Archival & expiration tracking
+    archived: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    archivedAt: Date,
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+
+    // Admin read status (when admin first viewed ticket)
+    adminReadAt: Date,
+
+    // Ticket expiration (auto-expire after 3 days if still open)
+    expiresAt: Date,
 
     // Email token for public ticket tracking (hashed for security)
     trackingToken: {

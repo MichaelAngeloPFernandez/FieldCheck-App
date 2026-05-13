@@ -1,0 +1,139 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** - Admin Dashboard Client Ticket Functionality
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bugs exist
+  - **Scoped PBT Approach**: For deterministic bugs, scope the property to the concrete failing case(s) to ensure reproducibility
+  - Test implementation details from Bug Condition in design:
+    - Client ticket notification buttons are non-clickable (input.action == 'click_client_ticket_button')
+    - Missing ticket management UI (input.action == 'organize_tickets' OR 'delete_tickets' OR 'archive_tickets')
+    - Blank employee information display (input.displayField == 'employee_name' AND input.value == null)
+    - Static notification counters (input.action == 'read_notification' AND input.counterUpdate == false)
+    - Notification persistence problems (input.action == 'app_restart' AND input.notificationCountPersisted == true)
+  - The test assertions should match the Expected Behavior Properties from design:
+    - Buttons should be clickable and respond with proper navigation
+    - Ticket management functionality should be available
+    - Employee information should display correctly
+    - Notification counters should update when notifications are read
+    - Notification states should persist correctly across app sessions
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bugs exist)
+  - Document counterexamples found to understand root cause
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Non-Client-Ticket Dashboard Functionality
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for non-buggy inputs:
+    - Dashboard statistics and charts functionality
+    - Employee location tracking and map features
+    - Non-client-ticket notification handling
+    - Admin navigation between dashboard sections
+    - Authentication and user management features
+  - Write property-based tests capturing observed behavior patterns from Preservation Requirements:
+    - Dashboard overview statistics must continue to function correctly
+    - Employee location tracking must remain unchanged
+    - Non-client-ticket notifications must display and function correctly
+    - Real-time updates for functioning notification types must continue
+    - Admin navigation must continue to work properly
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
+
+- [ ] 3. Fix for admin dashboard comprehensive issues
+
+  - [x] 3.1 Implement client ticket notification navigation handlers
+    - Add proper case handling for 'client_ticket' notification type in `_showNotificationDetails` function
+    - Implement navigation to dedicated client ticket details modal or screen
+    - Extract ticket information from notification payload
+    - Integrate with `ClientTicketService.getClientTicket()` method
+    - _Bug_Condition: isBugCondition(input) where input.action == 'click_client_ticket_button' AND input.notificationType == 'client_ticket'_
+    - _Expected_Behavior: expectedBehavior(result) - buttons should be clickable and respond with proper navigation_
+    - _Preservation: Non-client-ticket notifications must continue to display and function correctly_
+    - _Requirements: 1.1, 1.2, 2.1, 2.2, 3.2_
+
+  - [x] 3.2 Create client ticket management UI components
+    - Create `_showClientTicketDetailsModal()` method with full ticket information display
+    - Add organize, delete, and archive action buttons
+    - Implement confirmation dialogs for destructive actions
+    - Connect to appropriate `ClientTicketService` methods
+    - Create new file: `field_check/lib/widgets/client_ticket_details_modal.dart`
+    - Add new methods to `ClientTicketService`: `organizeClientTickets()`, `deleteClientTicket()`, `archiveClientTicket()`
+    - _Bug_Condition: isBugCondition(input) where input.action == 'organize_tickets' OR 'delete_tickets' OR 'archive_tickets'_
+    - _Expected_Behavior: expectedBehavior(result) - system SHALL provide organizational, delete, and archive functionality_
+    - _Preservation: Dashboard overview statistics and charts must remain unchanged_
+    - _Requirements: 1.3, 1.4, 1.5, 2.3, 2.4, 2.5, 3.1_
+
+  - [x] 3.3 Fix employee information display in notifications
+    - Update `_buildNotificationItem()` to properly extract employee data from payloads
+    - Add fallback logic to fetch employee information from `UserService`
+    - Ensure proper null handling and default values
+    - Fix data binding issues for employee names and IDs
+    - _Bug_Condition: isBugCondition(input) where input.displayField == 'employee_name' OR 'employee_id' AND input.value == null_
+    - _Expected_Behavior: expectedBehavior(result) - system SHALL show the correct employee information_
+    - _Preservation: Admin navigation between dashboard sections must continue to work_
+    - _Requirements: 1.6, 2.6, 3.6_
+
+  - [x] 3.4 Implement proper notification counter management
+    - Ensure `_refreshUnreadNotificationsCount()` is called after all notification interactions
+    - Update `_buildNotificationItem()` onTap handler to properly update local state
+    - Fix backend persistence by ensuring `markNotificationIdsRead()` calls succeed
+    - Add proper error handling for counter update failures
+    - _Bug_Condition: isBugCondition(input) where input.action == 'read_notification' AND input.counterUpdate == false_
+    - _Expected_Behavior: expectedBehavior(result) - inbox notification counters SHALL update to reflect the new count_
+    - _Preservation: Real-time updates for non-problematic notification types must remain functional_
+    - _Requirements: 1.7, 1.8, 2.7, 2.8, 3.5_
+
+  - [ ] 3.5 Add notification state persistence across app sessions
+    - Ensure notification read states are properly saved to backend
+    - Update app initialization to load current notification counts from backend
+    - Add retry logic for failed state persistence operations
+    - Fix persistence problems that cause counters to remain static after app restart
+    - _Bug_Condition: isBugCondition(input) where input.action == 'app_restart' AND input.notificationCountPersisted == true_
+    - _Expected_Behavior: expectedBehavior(result) - notification counts SHALL display the current accurate unread count_
+    - _Preservation: Backend processes for non-admin users must continue to function without disruption_
+    - _Requirements: 1.9, 1.10, 2.9, 2.10, 3.7_
+
+  - [ ] 3.6 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Admin Dashboard Client Ticket Functionality
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bugs are fixed)
+    - Verify all client ticket functionality works correctly:
+      - Notification buttons are clickable and responsive
+      - Ticket management UI is available and functional
+      - Employee information displays correctly
+      - Notification counters update properly
+      - Notification states persist across app sessions
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10_
+
+  - [ ] 3.7 Verify preservation tests still pass
+    - **Property 2: Preservation** - Non-Client-Ticket Dashboard Functionality
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all tests still pass after fix (no regressions):
+      - Dashboard statistics and charts continue to function
+      - Employee location tracking remains unchanged
+      - Non-client-ticket notifications work correctly
+      - Admin navigation continues to work properly
+      - Authentication and user management remain functional
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
+
+- [ ] 4. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+  - Verify complete fix implementation:
+    - Bug condition exploration test passes (confirms bugs are fixed)
+    - Preservation tests pass (confirms no regressions)
+    - All client ticket notification functionality works correctly
+    - All existing dashboard functionality remains unchanged
+  - Document any remaining issues or edge cases discovered during testing
+  - Confirm admin dashboard comprehensive fixes are complete and stable

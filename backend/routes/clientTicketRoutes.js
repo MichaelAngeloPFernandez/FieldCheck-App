@@ -31,6 +31,22 @@ router.put(
   clientTicketController.updateTicketStatus
 );
 
+// PUT - Archive ticket (soft delete)
+router.put(
+  '/:ticketNumber/archive',
+  protect,
+  admin,
+  clientTicketController.archiveTicket
+);
+
+// DELETE - Permanently delete ticket
+router.delete(
+  '/:ticketNumber',
+  protect,
+  admin,
+  clientTicketController.deleteTicket
+);
+
 /**
  * Public routes (no authentication required)
  */

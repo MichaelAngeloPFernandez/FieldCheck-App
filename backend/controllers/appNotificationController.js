@@ -71,6 +71,11 @@ const markRead = asyncHandler(async (req, res) => {
 
   await appNotificationService.emitUnreadCounts(req.user._id);
 
+  // Emit notificationsRead event to sync across admin connections
+  if (clean.length > 0) {
+    await appNotificationService.emitNotificationsRead(req.user._id, clean);
+  }
+
   res.json({
     updated:
       typeof result.modifiedCount === 'number'
@@ -100,6 +105,11 @@ const deleteByIds = asyncHandler(async (req, res) => {
   });
 
   await appNotificationService.emitUnreadCounts(req.user._id);
+
+  // Emit notificationsDeleted event to sync across admin connections
+  if (clean.length > 0) {
+    await appNotificationService.emitNotificationsDeleted(req.user._id, clean);
+  }
 
   res.json({
     deleted:

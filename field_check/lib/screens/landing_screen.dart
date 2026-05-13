@@ -154,6 +154,7 @@ class _LandingScreenState extends State<LandingScreen> {
       builder: (context) {
         return ClientTicketModal(
           onSuccess: (ticketNumber) {
+            // Show success message
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Ticket $ticketNumber submitted! Check your email.'),
@@ -161,10 +162,23 @@ class _LandingScreenState extends State<LandingScreen> {
                 duration: const Duration(seconds: 3),
               ),
             );
+            
+            // Auto-refresh landing page after modal closes
+            if (mounted) {
+              Navigator.of(context).pop();
+              setState(() {
+                // Trigger rebuild to reset any form state
+              });
+            }
           },
         );
       },
-    );
+    ).then((_) {
+      // Ensure page is refreshed when dialog closes
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   void _scrollTo(GlobalKey key) {

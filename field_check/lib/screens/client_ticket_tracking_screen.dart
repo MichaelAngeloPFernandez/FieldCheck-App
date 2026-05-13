@@ -199,6 +199,8 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
         return Colors.green;
       case 'closed':
         return Colors.grey;
+      case 'expired':
+        return Colors.red;
       default:
         return Colors.grey;
     }

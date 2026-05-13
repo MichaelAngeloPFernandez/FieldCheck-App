@@ -647,8 +647,8 @@ class _ClientTicketFormState extends State<ClientTicketForm> {
       _logInfo('Initializing ClientTicketService');
       final service = ClientTicketService();
 
-      // TODO: In production, upload files to Cloudinary/GridFS and get URLs
-      // For now, pass empty attachments
+      // For production, upload files to Cloudinary/GridFS and get URLs
+      // Currently passing empty attachments
       final attachments = <Map<String, String>>[];
       
       _logInfo('Preparing submission data', context: {

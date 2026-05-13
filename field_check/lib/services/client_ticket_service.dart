@@ -15,7 +15,6 @@ class ClientTicketService {
   static const String _debugSessionId = '1d6461';
   
   final RealtimeService _realtimeService = RealtimeService();
-  final Uri _healthUri = Uri.parse('${ApiConfig.baseUrl}/api/health');
 
   void _debugLog({
     required String runId,
@@ -47,39 +46,6 @@ class ClientTicketService {
           .then((_) {}, onError: (_) {}),
     );
     // #endregion
-  }
-
-  Future<void> _warmUpBackend({
-    Duration maxWait = const Duration(seconds: 45),
-    required String runId,
-  }) async {
-    final deadline = DateTime.now().add(maxWait);
-    while (DateTime.now().isBefore(deadline)) {
-      try {
-        final response = await http
-            .get(_healthUri)
-            .timeout(const Duration(seconds: 10));
-        _debugLog(
-          runId: runId,
-          hypothesisId: 'H4',
-          location: 'client_ticket_service.dart:_warmUpBackend',
-          message: 'Warm-up health check response',
-          data: {'statusCode': response.statusCode},
-        );
-        if (response.statusCode == 200) {
-          return;
-        }
-      } catch (e) {
-        _debugLog(
-          runId: runId,
-          hypothesisId: 'H4',
-          location: 'client_ticket_service.dart:_warmUpBackend',
-          message: 'Warm-up health check failed',
-          data: {'error': e.toString()},
-        );
-      }
-      await Future<void>.delayed(const Duration(seconds: 2));
-    }
   }
 
   Future<Map<String, String>> _getHeaders({String? emailToken}) async {
@@ -305,10 +271,6 @@ class ClientTicketService {
     );
 
     try {
-      await _warmUpBackend(
-        maxWait: const Duration(seconds: 80),
-        runId: runId,
-      );
       final requestStart = DateTime.now();
       http.Response response;
       try {
@@ -326,10 +288,9 @@ class ClientTicketService {
           runId: runId,
           hypothesisId: 'H4',
           location: 'client_ticket_service.dart:submitClientTicket:retry',
-          message: 'Initial submit timed out, starting warm-up then retry',
+          message: 'Initial submit timed out, retrying',
           data: {'requestUrl': '${ApiConfig.baseUrl}$_basePath'},
         );
-        await _warmUpBackend(runId: runId);
         response = await HttpUtil()
             .post(
               _basePath,
@@ -337,7 +298,7 @@ class ClientTicketService {
               headers: await _getHeaders(),
             )
             .timeout(const Duration(seconds: 90), onTimeout: () {
-          throw TimeoutException('Request timed out after warm-up retry');
+          throw TimeoutException('Request timed out after retry');
         });
       }
       _debugLog(
@@ -856,6 +817,262 @@ class ClientTicketService {
           throw Exception(error['error'] ?? 'Failed to fetch pending tickets');
         } catch (_) {
           throw Exception('Failed to fetch pending tickets (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception('Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Organize client tickets (admin only)
+  /// Allows admins to organize tickets by priority, category, or assignment
+  /// Returns: success: bool, message: string
+  Future<Map<String, dynamic>> organizeClientTickets({
+    required List<String> ticketIds,
+    String? organizationType, // 'priority', 'category', 'assignment'
+    String? organizationValue,
+    Map<String, dynamic>? organizationData,
+  }) async {
+    if (ticketIds.isEmpty) {
+      throw Exception('At least one ticket ID is required');
+    }
+
+    final validOrganizationTypes = ['priority', 'category', 'assignment', 'status'];
+    if (organizationType != null && !validOrganizationTypes.contains(organizationType)) {
+      throw Exception('Invalid organization type. Must be one of: ${validOrganizationTypes.join(', ')}');
+    }
+
+    final body = {
+      'ticketIds': ticketIds,
+      if (organizationType != null) 'organizationType': organizationType,
+      if (organizationValue != null) 'organizationValue': organizationValue,
+      if (organizationData != null) 'organizationData': organizationData,
+    };
+
+    try {
+      final response = await HttpUtil()
+          .post(
+            '$_basePath/organize',
+            body: body,
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'success': false, 'error': 'Invalid response format'};
+        } catch (_) {
+          return {'success': false, 'error': 'Failed to parse response'};
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else if (response.statusCode == 404) {
+        throw Exception('One or more tickets not found');
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to organize tickets');
+        } catch (_) {
+          throw Exception('Failed to organize tickets (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception('Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Delete a client ticket (admin only)
+  /// Permanently removes a ticket from the system
+  /// Returns: success: bool, message: string
+  Future<Map<String, dynamic>> deleteClientTicket(String ticketNumber) async {
+    if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
+      throw Exception('Invalid ticket number format');
+    }
+
+    try {
+      final response = await HttpUtil()
+          .delete(
+            '$_basePath/$ticketNumber',
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'success': true, 'message': 'Ticket deleted successfully'};
+        } catch (_) {
+          return {'success': true, 'message': 'Ticket deleted successfully'};
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else if (response.statusCode == 404) {
+        throw Exception('Ticket not found');
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to delete ticket');
+        } catch (_) {
+          throw Exception('Failed to delete ticket (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception('Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Archive a client ticket (admin only)
+  /// Moves a ticket to archived status
+  /// Returns: success: bool, message: string
+  Future<Map<String, dynamic>> archiveClientTicket(String ticketNumber) async {
+    if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
+      throw Exception('Invalid ticket number format');
+    }
+
+    try {
+      final response = await HttpUtil()
+          .put(
+            '$_basePath/$ticketNumber/archive',
+            body: {},
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'success': true, 'message': 'Ticket archived successfully'};
+        } catch (_) {
+          return {'success': true, 'message': 'Ticket archived successfully'};
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else if (response.statusCode == 404) {
+        throw Exception('Ticket not found');
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to archive ticket');
+        } catch (_) {
+          throw Exception('Failed to archive ticket (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception('Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }er)) {
+      throw Exception('Invalid ticket number format');
+    }
+
+    try {
+      final response = await HttpUtil()
+          .delete(
+            '$_basePath/$ticketNumber',
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'success': true, 'message': 'Ticket deleted successfully'};
+        } catch (_) {
+          return {'success': true, 'message': 'Ticket deleted successfully'};
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else if (response.statusCode == 404) {
+        throw Exception('Ticket not found');
+      } else if (response.statusCode == 403) {
+        throw Exception('Cannot delete ticket. Ticket may be in progress or completed.');
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to delete ticket');
+        } catch (_) {
+          throw Exception('Failed to delete ticket (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception('Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Archive a client ticket (admin only)
+  /// Moves a ticket to archived status without deleting it
+  /// Returns: success: bool, message: string
+  Future<Map<String, dynamic>> archiveClientTicket(String ticketNumber, {
+    String? archiveReason,
+  }) async {
+    if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
+      throw Exception('Invalid ticket number format');
+    }
+
+    final body = {
+      'action': 'archive',
+      if (archiveReason != null && archiveReason.trim().isNotEmpty)
+        'archiveReason': archiveReason.trim(),
+    };
+
+    try {
+      final response = await HttpUtil()
+          .patch(
+            '$_basePath/$ticketNumber/status',
+            body: body,
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'success': true, 'message': 'Ticket archived successfully'};
+        } catch (_) {
+          return {'success': true, 'message': 'Ticket archived successfully'};
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else if (response.statusCode == 404) {
+        throw Exception('Ticket not found');
+      } else if (response.statusCode == 409) {
+        throw Exception('Cannot archive ticket. Ticket may already be archived or in an invalid state.');
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to archive ticket');
+        } catch (_) {
+          throw Exception('Failed to archive ticket (Status: ${response.statusCode})');
         }
       }
     } on TimeoutException {
