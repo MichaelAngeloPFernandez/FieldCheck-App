@@ -18,10 +18,10 @@ import 'package:field_check/services/autosave_service.dart';
 import 'package:field_check/services/checkout_notification_service.dart';
 import 'package:field_check/utils/logger.dart';
 import 'package:field_check/utils/manila_time.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/url_util.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -140,6 +140,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _subscribeToTaskEvents();
     _subscribeToUnreadCounts();
     _subscribeToEmployeeNotifications();
+    
+    // Load cached notification count on startup for persistence across app sessions
+    await _loadCachedNotificationCount();
   }
 
   void _subscribeToUnreadCounts() {
@@ -164,6 +167,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _tasksBadgeCount = nextTasks;
         _notificationsBadgeCount = nextTotal;
       });
+      
+      // Persist notification count for state persistence across app sessions
+      _persistNotificationCount(nextTotal);
     });
   }
 
@@ -237,7 +243,99 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _notificationsBadgeCount = total;
       });
+      
+      // Persist the updated count for state persistence across app sessions
+      await _persistNotificationCount(total);
     } catch (_) {}
+  }
+
+  /// Load cached notification count on app startup for persistence across sessions
+  Future<void> _loadCachedNotificationCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedCount = prefs.getInt('employee_unread_notifications_count') ?? 0;
+      
+      if (mounted) {
+        setState(() {
+          _notificationsBadgeCount = cachedCount;
+        });
+      }
+      
+      // Synchronize with backend after loading cached count
+      await _synchronizeNotificationCountWithBackend();
+    } catch (e) {
+      debugPrint('Error loading cached notification count: $e');
+    }
+  }
+
+  /// Persist notification count to local storage with retry logic
+  /// Enhanced for better state persistence across app sessions
+  Future<void> _persistNotificationCount(int count, {int retryCount = 0}) async {
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 1);
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('employee_unread_notifications_count', count);
+      
+      // Enhanced persistence: Store timestamp for better synchronization
+      await prefs.setInt('employee_notifications_last_sync', DateTime.now().millisecondsSinceEpoch);
+      
+      debugPrint('Employee notification count persisted: $count');
+    } catch (e) {
+      debugPrint('Error persisting employee notification count: $e');
+      
+      // Retry persistence if it fails
+      if (retryCount < maxRetries) {
+        debugPrint('Retrying employee notification count persistence (attempt ${retryCount + 1}/$maxRetries)');
+        await Future.delayed(retryDelay);
+        return _persistNotificationCount(count, retryCount: retryCount + 1);
+      } else {
+        debugPrint('Failed to persist employee notification count after $maxRetries attempts');
+      }
+    }
+  }
+
+  /// Synchronize local notification count with backend on app startup
+  /// Enhanced with better error handling and retry logic
+  Future<void> _synchronizeNotificationCountWithBackend({int retryCount = 0}) async {
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 2);
+    
+    try {
+      final backendCount = await TaskService().fetchTotalUnreadCount();
+      
+      if (mounted && backendCount != _notificationsBadgeCount) {
+        debugPrint('Backend notification count ($backendCount) differs from cached count ($_notificationsBadgeCount)');
+        
+        setState(() {
+          _notificationsBadgeCount = backendCount;
+        });
+        
+        // Update cached count to match backend
+        await _persistNotificationCount(backendCount);
+        
+        // Store backend sync timestamp for better tracking
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('employee_notifications_last_backend_sync', DateTime.now().millisecondsSinceEpoch);
+        } catch (e) {
+          debugPrint('Error storing backend sync timestamp: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error synchronizing employee notification count with backend: $e');
+      
+      // Retry synchronization if it fails
+      if (retryCount < maxRetries) {
+        debugPrint('Retrying employee backend synchronization (attempt ${retryCount + 1}/$maxRetries)');
+        await Future.delayed(retryDelay);
+        return _synchronizeNotificationCountWithBackend(retryCount: retryCount + 1);
+      } else {
+        debugPrint('Failed to synchronize employee notifications with backend after $maxRetries attempts');
+        // Continue with cached state if backend sync fails
+      }
+    }
   }
 
   void _openNotificationsInbox() {
@@ -988,6 +1086,10 @@ class _EmployeeNotificationsSheetState
     try {
       final items = await widget.taskService.listAppNotifications(limit: 50);
       if (!mounted) return;
+      
+      // Apply cached read states for better persistence across app sessions
+      await _applyCachedReadStates(items);
+      
       setState(() {
         _items = items;
         _loading = false;
@@ -1001,9 +1103,151 @@ class _EmployeeNotificationsSheetState
     }
   }
 
+  /// Apply cached read states to notifications for persistence across app sessions
+  /// Enhanced with notification data restoration and better synchronization
+  Future<void> _applyCachedReadStates(List<Map<String, dynamic>> items) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedReadIds = prefs.getStringList('employee_read_notification_ids') ?? [];
+      final cachedNotifications = prefs.getStringList('employee_cached_notifications') ?? [];
+      final lastSyncTimestamp = prefs.getInt('employee_notifications_last_sync') ?? 0;
+      
+      if (cachedReadIds.isEmpty && cachedNotifications.isEmpty) {
+        debugPrint('No cached employee notification data to apply');
+        return;
+      }
+      
+      // Check if cached data is recent (within 24 hours) for better reliability
+      final lastSync = DateTime.fromMillisecondsSinceEpoch(lastSyncTimestamp);
+      final isRecentCache = DateTime.now().difference(lastSync).inHours < 24;
+      
+      int appliedCount = 0;
+      int restoredCount = 0;
+      
+      // Apply read states to existing notifications
+      for (final item in items) {
+        final id = (item['id'] ?? item['_id'] ?? '').toString();
+        if (id.isNotEmpty && cachedReadIds.contains(id) && item['isRead'] != true) {
+          item['isRead'] = true;
+          appliedCount++;
+        }
+      }
+      
+      // Restore cached notifications if current list is empty or cache is recent
+      if ((items.isEmpty || isRecentCache) && cachedNotifications.isNotEmpty) {
+        final existingIds = items.map((item) => (item['id'] ?? item['_id'] ?? '').toString()).toSet();
+        
+        for (final cachedData in cachedNotifications) {
+          try {
+            final parts = cachedData.split('|');
+            if (parts.length >= 6) {
+              final id = parts[0];
+              if (!existingIds.contains(id)) {
+                final notification = {
+                  'id': id,
+                  'title': parts[1],
+                  'message': parts[2],
+                  'type': parts[3],
+                  'createdAt': parts[4],
+                  'isRead': parts[5] == 'true',
+                  'payload': parts.length > 6 && parts[6].isNotEmpty 
+                    ? {'cached': true, 'data': parts[6]} 
+                    : null,
+                };
+                items.add(notification);
+                restoredCount++;
+              }
+            }
+          } catch (e) {
+            debugPrint('Error parsing cached employee notification: $e');
+          }
+        }
+        
+        // Sort notifications by timestamp (newest first)
+        items.sort((a, b) {
+          final aTime = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime.now();
+          final bTime = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime.now();
+          return bTime.compareTo(aTime);
+        });
+        
+        // Limit to 50 notifications
+        if (items.length > 50) {
+          items.removeRange(50, items.length);
+        }
+      }
+      
+      debugPrint('Enhanced employee notification state restoration: Applied $appliedCount read states, restored $restoredCount notifications from cache');
+    } catch (e) {
+      debugPrint('Error applying cached read states to employee notifications: $e');
+    }
+  }
+
+  /// Persist notification read states for employee notifications
+  /// Enhanced with notification data caching and retry logic for better persistence across app sessions
+  Future<void> _persistReadStates({int retryCount = 0}) async {
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 1);
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final readIds = _items
+          .where((item) => item['isRead'] == true)
+          .map((item) => (item['id'] ?? item['_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      
+      // Enhanced persistence: Store both read IDs and notification data for better restoration
+      await prefs.setStringList('employee_read_notification_ids', readIds);
+      
+      // Cache notification data for offline access and faster restoration
+      final notificationData = _items.map((item) {
+        final id = (item['id'] ?? item['_id'] ?? '').toString();
+        final title = (item['title'] ?? '').toString();
+        final message = (item['message'] ?? '').toString();
+        final type = (item['type'] ?? '').toString();
+        final createdAt = (item['createdAt'] ?? DateTime.now().toIso8601String()).toString();
+        final isRead = (item['isRead'] == true).toString();
+        final payload = item['payload']?.toString() ?? '';
+        
+        return '$id|$title|$message|$type|$createdAt|$isRead|$payload';
+      }).toList();
+      
+      await prefs.setStringList('employee_cached_notifications', notificationData);
+      
+      // Store timestamp of last persistence for synchronization
+      await prefs.setInt('employee_notifications_last_sync', DateTime.now().millisecondsSinceEpoch);
+      
+      debugPrint('Enhanced employee persistence: ${readIds.length} read IDs, ${notificationData.length} notifications cached');
+    } catch (e) {
+      debugPrint('Error persisting employee notification read states: $e');
+      
+      // Retry persistence if it fails
+      if (retryCount < maxRetries) {
+        debugPrint('Retrying employee notification read states persistence (attempt ${retryCount + 1}/$maxRetries)');
+        await Future.delayed(retryDelay);
+        return _persistReadStates(retryCount: retryCount + 1);
+      } else {
+        debugPrint('Failed to persist employee notification read states after $maxRetries attempts');
+      }
+    }
+  }
+
   Future<void> _markRead(String id) async {
     try {
       await widget.taskService.markNotificationIdsRead([id]);
+      
+      // Update local state immediately for better UX
+      final itemIndex = _items.indexWhere((item) => 
+        (item['id'] ?? item['_id'] ?? '').toString() == id);
+      if (itemIndex >= 0) {
+        setState(() {
+          _items[itemIndex]['isRead'] = true;
+        });
+      }
+      
+      // Persist read state immediately for better persistence across app sessions
+      await _persistReadStates();
+      
     } catch (_) {}
     await _load();
     widget.onChanged();
@@ -1012,6 +1256,19 @@ class _EmployeeNotificationsSheetState
   Future<void> _markUnread(String id) async {
     try {
       await widget.taskService.markNotificationIdsUnread([id]);
+      
+      // Update local state immediately for better UX
+      final itemIndex = _items.indexWhere((item) => 
+        (item['id'] ?? item['_id'] ?? '').toString() == id);
+      if (itemIndex >= 0) {
+        setState(() {
+          _items[itemIndex]['isRead'] = false;
+        });
+      }
+      
+      // Persist read state immediately for better persistence across app sessions
+      await _persistReadStates();
+      
     } catch (_) {}
     await _load();
     widget.onChanged();

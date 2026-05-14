@@ -662,6 +662,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
     });
   }
 
+  void _startNotificationStatePersistenceTimer() {
+    // Periodically persist notification read states to survive app restarts
+    Timer.periodic(const Duration(minutes: 5), (_) {
+      if (!mounted) return;
+      _persistNotificationReadStates().catchError((e) {
+        debugPrint('Periodic notification state persistence error: $e');
+      });
+    });
+  }
+
   bool get _isInspecting =>
       _inspectionIndex >= 0 && _inspectionIndex < _inspectionStack.length;
 
@@ -1314,6 +1324,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
       });
     }
     
+    // Enhanced notification state persistence initialization
     // Load cached unread count immediately for better UX
     _loadCachedUnreadCount();
     
@@ -1322,7 +1333,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
     _initRealtimeService();
     _subscribeToUnreadCounts();
     _refreshUnreadNotificationsCount();
-    _loadInboxNotifications();
+    _loadInboxNotifications().then((_) {
+      // Enhanced synchronization with backend after notifications are loaded and cached states applied
+      _synchronizeNotificationStatesWithBackend();
+      // Validate and repair any inconsistencies in notification state persistence
+      _validateAndRepairNotificationStatePersistence();
+    });
     _loadPendingTickets();
     _prefetchMessageNotifications();
     _initMapData();
@@ -1335,6 +1351,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
       if (!mounted) return;
       setState(() {});
     });
+    
+    // Enhanced periodic state persistence for better session continuity
+    _startNotificationStatePersistenceTimer();
     
     // Add lifecycle observer to refresh notification count when app becomes active
     WidgetsBinding.instance.addObserver(this);
@@ -1448,12 +1467,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
               SnackBar(
                 content: Text('Failed to mark notification as read: ${e.toString()}'),
                 backgroundColor: Colors.red,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        },
-                backgroundColor: Colors.red.shade600,
                 duration: const Duration(seconds: 3),
               ),
             );
@@ -2804,22 +2817,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
       final prefs = await SharedPreferences.getInstance();
       final cachedCount = prefs.getInt('admin_unread_notifications_count') ?? 0;
       
-      // Also load cached notification read states
-      final cachedReadIds = prefs.getStringList('admin_read_notification_ids') ?? [];
-      
+      // Load cached count but don't apply read states yet
+      // Read states will be applied after notifications are loaded in _applyCachedNotificationReadStates
       if (mounted) {
         setState(() {
           _unreadNotificationsCount = cachedCount;
-          // Mark cached read notifications as read in local state
-          for (final notif in _notifications) {
-            if (cachedReadIds.contains(notif.id)) {
-              notif.isRead = true;
-            }
-          }
         });
       }
       debugPrint('Loaded cached notification count on startup: $cachedCount');
-      debugPrint('Loaded cached read notification IDs: ${cachedReadIds.length} items');
     } catch (e) {
       debugPrint('Error loading cached unread count: $e');
       // Initialize with 0 if cache loading fails
@@ -2831,8 +2836,292 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
     }
   }
 
-  /// Persist notification read states to local storage
-  Future<void> _persistNotificationReadStates() async {
+  /// Apply cached notification read states after notifications are loaded
+  /// Enhanced for better state persistence across app sessions with data restoration
+  Future<void> _applyCachedNotificationReadStates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedReadIds = prefs.getStringList('admin_read_notification_ids') ?? [];
+      final cachedNotifications = prefs.getStringList('admin_cached_notifications') ?? [];
+      final lastSyncTimestamp = prefs.getInt('admin_notifications_last_sync') ?? 0;
+      
+      if (cachedReadIds.isEmpty && cachedNotifications.isEmpty) {
+        debugPrint('No cached notification data to apply');
+        return;
+      }
+      
+      // Check if cached data is recent (within 24 hours) for better reliability
+      final lastSync = DateTime.fromMillisecondsSinceEpoch(lastSyncTimestamp);
+      final isRecentCache = DateTime.now().difference(lastSync).inHours < 24;
+      
+      int appliedCount = 0;
+      int restoredCount = 0;
+      
+      if (mounted) {
+        setState(() {
+          // Apply read states to existing notifications
+          for (final notif in _notifications) {
+            if (cachedReadIds.contains(notif.id) && !notif.isRead) {
+              notif.isRead = true;
+              appliedCount++;
+            }
+          }
+          
+          // Restore cached notifications if current list is empty or cache is recent
+          if ((_notifications.isEmpty || isRecentCache) && cachedNotifications.isNotEmpty) {
+            final existingIds = _notifications.map((n) => n.id).toSet();
+            
+            for (final cachedData in cachedNotifications) {
+              try {
+                final parts = cachedData.split('|');
+                if (parts.length >= 6) {
+                  final id = parts[0];
+                  if (!existingIds.contains(id)) {
+                    final notification = DashboardNotification(
+                      id: id,
+                      title: parts[1],
+                      message: parts[2],
+                      type: parts[3],
+                      timestamp: DateTime.parse(parts[4]),
+                      isRead: parts[5] == 'true',
+                      payload: parts.length > 6 && parts[6].isNotEmpty 
+                        ? {'cached': true, 'data': parts[6]} 
+                        : null,
+                    );
+                    _notifications.add(notification);
+                    _seenNotificationIds.add(id);
+                    restoredCount++;
+                  }
+                }
+              } catch (e) {
+                debugPrint('Error parsing cached notification: $e');
+              }
+            }
+            
+            // Sort notifications by timestamp
+            _notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+            
+            // Limit to 50 notifications
+            if (_notifications.length > 50) {
+              _notifications.removeRange(50, _notifications.length);
+            }
+          }
+        });
+      }
+      
+      debugPrint('Enhanced state restoration: Applied $appliedCount read states, restored $restoredCount notifications from cache');
+      
+      // Recalculate unread count based on current notification states
+      final currentUnreadCount = _notifications.where((n) => !n.isRead).length;
+      if (mounted && currentUnreadCount != _unreadNotificationsCount) {
+        setState(() {
+          _unreadNotificationsCount = currentUnreadCount;
+        });
+        
+        // Persist the corrected count for better state synchronization
+        try {
+          await prefs.setInt('admin_unread_notifications_count', currentUnreadCount);
+          debugPrint('Updated persisted notification count to: $currentUnreadCount');
+        } catch (e) {
+          debugPrint('Error updating persisted notification count: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error applying cached notification read states: $e');
+    }
+  }
+
+  /// Synchronize local notification states with backend on app startup
+  /// Enhanced with better error handling and retry logic for improved persistence
+  Future<void> _synchronizeNotificationStatesWithBackend({int retryCount = 0}) async {
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 2);
+    
+    try {
+      // Get the current unread count from backend
+      final backendUnreadCount = await TaskService().fetchTotalUnreadCount();
+      
+      // Compare with local state and update if different
+      if (mounted && backendUnreadCount != _unreadNotificationsCount) {
+        debugPrint('Backend unread count ($backendUnreadCount) differs from local count ($_unreadNotificationsCount)');
+        
+        setState(() {
+          _unreadNotificationsCount = backendUnreadCount;
+        });
+        
+        // Update cached count to match backend
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('admin_unread_notifications_count', backendUnreadCount);
+          await prefs.setInt('admin_notifications_last_backend_sync', DateTime.now().millisecondsSinceEpoch);
+          debugPrint('Synchronized notification count with backend: $backendUnreadCount');
+        } catch (e) {
+          debugPrint('Error updating cached count during synchronization: $e');
+        }
+      }
+      
+      // Validate local read states against backend if needed
+      await _validateLocalReadStatesWithBackend();
+      
+    } catch (e) {
+      debugPrint('Error synchronizing notification states with backend: $e');
+      
+      // Retry synchronization if it fails
+      if (retryCount < maxRetries) {
+        debugPrint('Retrying backend synchronization (attempt ${retryCount + 1}/$maxRetries)');
+        await Future.delayed(retryDelay);
+        return _synchronizeNotificationStatesWithBackend(retryCount: retryCount + 1);
+      } else {
+        debugPrint('Failed to synchronize with backend after $maxRetries attempts');
+        // Continue with cached state if backend sync fails
+      }
+    }
+  }
+  
+  /// Validate local read states against backend for consistency
+  Future<void> _validateLocalReadStatesWithBackend() async {
+    try {
+      // Get recent notifications from backend to validate read states
+      final backendNotifications = await TaskService().listAppNotifications(
+        unreadOnly: false,
+        limit: 20,
+        page: 1,
+      );
+      
+      if (backendNotifications.isEmpty) return;
+      
+      bool hasChanges = false;
+      final prefs = await SharedPreferences.getInstance();
+      final cachedReadIds = prefs.getStringList('admin_read_notification_ids') ?? [];
+      final updatedReadIds = List<String>.from(cachedReadIds);
+      
+      for (final backendNotif in backendNotifications) {
+        final id = (backendNotif['id'] ?? backendNotif['_id'] ?? '').toString();
+        final isReadOnBackend = backendNotif['isRead'] == true;
+        
+        if (id.isNotEmpty) {
+          final localNotif = _notifications.firstWhere(
+            (n) => n.id == id,
+            orElse: () => DashboardNotification(
+              id: '',
+              title: '',
+              message: '',
+              type: '',
+              timestamp: DateTime.now(),
+            ),
+          );
+          
+          // Sync read state if there's a mismatch
+          if (localNotif.id.isNotEmpty && localNotif.isRead != isReadOnBackend) {
+            if (mounted) {
+              setState(() {
+                localNotif.isRead = isReadOnBackend;
+              });
+            }
+            
+            if (isReadOnBackend && !updatedReadIds.contains(id)) {
+              updatedReadIds.add(id);
+              hasChanges = true;
+            } else if (!isReadOnBackend && updatedReadIds.contains(id)) {
+              updatedReadIds.remove(id);
+              hasChanges = true;
+            }
+          }
+        }
+      }
+      
+      // Update cached read states if there were changes
+      if (hasChanges) {
+        await prefs.setStringList('admin_read_notification_ids', updatedReadIds);
+        debugPrint('Validated and updated ${updatedReadIds.length} read states with backend');
+      }
+      
+    } catch (e) {
+      debugPrint('Error validating local read states with backend: $e');
+      // Continue silently if validation fails
+    }
+  }
+
+  /// Validate and repair notification state persistence consistency
+  /// Ensures local cache, SharedPreferences, and backend notification counts are synchronized
+  Future<void> _validateAndRepairNotificationStatePersistence({int retryCount = 0}) async {
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 1);
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // 1. Load cached count and compare with backend
+      final cachedCount = prefs.getInt('admin_unread_notifications_count') ?? 0;
+      final backendCount = await TaskService().fetchTotalUnreadCount();
+      
+      // 2. If mismatch detected, use backend as source of truth
+      bool countRepaired = false;
+      if (cachedCount != backendCount) {
+        debugPrint('Notification count mismatch detected: cached=$cachedCount, backend=$backendCount');
+        if (mounted) {
+          setState(() {
+            _unreadNotificationsCount = backendCount;
+          });
+        }
+        // Update cache to match backend
+        await prefs.setInt('admin_unread_notifications_count', backendCount);
+        countRepaired = true;
+        debugPrint('Notification count repaired to match backend: $backendCount');
+      }
+      
+      // 3. Validate cached read state IDs
+      final cachedReadIds = prefs.getStringList('admin_read_notification_ids') ?? [];
+      final validReadIds = cachedReadIds.where((id) => id.trim().isNotEmpty).toList();
+      
+      if (validReadIds.length != cachedReadIds.length) {
+        debugPrint('Found ${cachedReadIds.length - validReadIds.length} invalid cached read IDs, removing them');
+        await prefs.setStringList('admin_read_notification_ids', validReadIds);
+      }
+      
+      // 4. Remove expired cache entries (older than 7 days)
+      final lastSyncTimestamp = prefs.getInt('admin_notifications_last_sync') ?? 0;
+      if (lastSyncTimestamp > 0) {
+        final lastSync = DateTime.fromMillisecondsSinceEpoch(lastSyncTimestamp);
+        final ageInDays = DateTime.now().difference(lastSync).inDays;
+        
+        if (ageInDays > 7) {
+          debugPrint('Cache is $ageInDays days old, clearing expired entries');
+          await prefs.remove('admin_cached_notifications');
+          await prefs.remove('admin_read_notification_ids');
+          await prefs.setInt('admin_notifications_last_sync', DateTime.now().millisecondsSinceEpoch);
+        }
+      }
+      
+      // 5. Final consistency check and logging
+      if (countRepaired || validReadIds.length != cachedReadIds.length) {
+        debugPrint('Notification state persistence validation and repair completed');
+        debugPrint('Repaired count: $countRepaired, cleaned IDs: ${cachedReadIds.length - validReadIds.length}');
+      } else {
+        debugPrint('Notification state persistence is consistent, no repairs needed');
+      }
+      
+    } catch (e) {
+      debugPrint('Error validating notification state persistence: $e');
+      
+      // Retry if it fails
+      if (retryCount < maxRetries) {
+        debugPrint('Retrying notification state validation (attempt ${retryCount + 1}/$maxRetries)');
+        await Future.delayed(retryDelay);
+        return _validateAndRepairNotificationStatePersistence(retryCount: retryCount + 1);
+      } else {
+        debugPrint('Failed to validate notification state persistence after $maxRetries attempts');
+        // Continue silently - not critical if this fails
+      }
+    }
+  }
+
+  /// Persist notification read states to local storage with retry logic
+  /// Enhanced for better state persistence across app sessions
+  Future<void> _persistNotificationReadStates({int retryCount = 0}) async {
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 1);
+    
     try {
       final prefs = await SharedPreferences.getInstance();
       final readIds = _notifications
@@ -2840,10 +3129,41 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
           .map((notif) => notif.id)
           .toList();
       
+      // Enhanced persistence: Store both read IDs and notification data for better restoration
       await prefs.setStringList('admin_read_notification_ids', readIds);
-      debugPrint('Persisted ${readIds.length} read notification IDs');
+      
+      // Cache notification data for offline access and faster restoration
+      final notificationData = _notifications.map((notif) => {
+        'id': notif.id,
+        'title': notif.title,
+        'message': notif.message,
+        'type': notif.type,
+        'timestamp': notif.timestamp.toIso8601String(),
+        'isRead': notif.isRead,
+        'payload': notif.payload,
+      }).toList();
+      
+      final notificationJson = notificationData.map((data) => 
+        '${data['id']}|${data['title']}|${data['message']}|${data['type']}|${data['timestamp']}|${data['isRead']}|${data['payload']?.toString() ?? ''}'
+      ).toList();
+      
+      await prefs.setStringList('admin_cached_notifications', notificationJson);
+      
+      // Store timestamp of last persistence for synchronization
+      await prefs.setInt('admin_notifications_last_sync', DateTime.now().millisecondsSinceEpoch);
+      
+      debugPrint('Enhanced persistence: ${readIds.length} read IDs, ${notificationData.length} notifications cached');
     } catch (e) {
       debugPrint('Error persisting notification read states: $e');
+      
+      // Retry persistence if it fails
+      if (retryCount < maxRetries) {
+        debugPrint('Retrying notification read states persistence (attempt ${retryCount + 1}/$maxRetries)');
+        await Future.delayed(retryDelay);
+        return _persistNotificationReadStates(retryCount: retryCount + 1);
+      } else {
+        debugPrint('Failed to persist notification read states after $maxRetries attempts');
+      }
     }
   }
 
@@ -2990,6 +3310,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
           _notifications.removeRange(50, _notifications.length);
         }
       });
+
+      // CRITICAL FIX: Apply cached read states AFTER notifications are loaded
+      // This ensures notification state persistence across app sessions
+      await _applyCachedNotificationReadStates();
     } catch (_) {}
   }
 
@@ -5211,10 +5535,39 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     
-    // Refresh notification count when app becomes active to ensure accuracy
-    if (state == AppLifecycleState.resumed) {
-      debugPrint('App resumed, refreshing notification count for persistence');
-      _refreshUnreadNotificationsCount();
+    // Enhanced app lifecycle management for better notification state persistence
+    switch (state) {
+      case AppLifecycleState.resumed:
+        debugPrint('App resumed, refreshing notification count and synchronizing state for persistence');
+        // Refresh notification count and synchronize with backend
+        _refreshUnreadNotificationsCount();
+        // Re-apply cached states and synchronize with backend
+        _loadInboxNotifications().then((_) {
+          _synchronizeNotificationStatesWithBackend();
+        });
+        break;
+      case AppLifecycleState.paused:
+        debugPrint('App paused, persisting notification states for session continuity');
+        // Persist current notification states when app goes to background
+        _persistNotificationReadStates().catchError((e) {
+          debugPrint('Error persisting notification states on app pause: $e');
+        });
+        break;
+      case AppLifecycleState.inactive:
+        // App is transitioning between foreground and background
+        debugPrint('App inactive, preparing for potential state persistence');
+        break;
+      case AppLifecycleState.detached:
+        // App is being terminated
+        debugPrint('App detached, final notification state persistence');
+        _persistNotificationReadStates().catchError((e) {
+          debugPrint('Error persisting notification states on app detach: $e');
+        });
+        break;
+      case AppLifecycleState.hidden:
+        // App is hidden but still running
+        debugPrint('App hidden, maintaining notification state');
+        break;
     }
   }
 

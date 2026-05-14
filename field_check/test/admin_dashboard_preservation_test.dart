@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 
 /// **Property 2: Preservation** - Non-Client-Ticket Dashboard Functionality
 /// **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8**
@@ -68,7 +69,7 @@ void main() {
       expect(hasQuickActions, isTrue,
         reason: 'Dashboard quick actions should be preserved');
       
-      print('✓ Dashboard statistics and charts functionality preserved');
+      debugPrint('✓ Dashboard statistics and charts functionality preserved');
     });
     
     /// **Validates: Requirements 3.2**
@@ -121,7 +122,7 @@ void main() {
       expect(hasInspection, isTrue,
         reason: 'Employee inspection functionality should be preserved');
       
-      print('✓ Employee location tracking and map features preserved');
+      debugPrint('✓ Employee location tracking and map features preserved');
     });
     
     /// **Validates: Requirements 3.3**
@@ -172,7 +173,7 @@ void main() {
       expect(hasInboxFunctionality, isTrue,
         reason: 'Notification inbox functionality should be preserved');
       
-      print('✓ Non-client-ticket notification handling preserved');
+      debugPrint('✓ Non-client-ticket notification handling preserved');
     });
     
     /// **Validates: Requirements 3.4**
@@ -217,7 +218,7 @@ void main() {
       expect(hasNavigationRail, isTrue,
         reason: 'Navigation rail functionality should be preserved');
       
-      print('✓ Admin navigation between dashboard sections preserved');
+      debugPrint('✓ Admin navigation between dashboard sections preserved');
     });
     
     /// **Validates: Requirements 3.5**
@@ -264,7 +265,7 @@ void main() {
       expect(hasEventStream, isTrue,
         reason: 'Event stream handling should be preserved');
       
-      print('✓ Real-time updates for functioning notification types preserved');
+      debugPrint('✓ Real-time updates for functioning notification types preserved');
     });
     
     /// **Validates: Requirements 3.6**
@@ -305,7 +306,7 @@ void main() {
       expect(hasAdminProfile, isTrue,
         reason: 'Admin profile functionality should be preserved');
       
-      print('✓ Authentication and user management features preserved');
+      debugPrint('✓ Authentication and user management features preserved');
     });
     
     /// **Validates: Requirements 3.7**
@@ -347,7 +348,7 @@ void main() {
       expect(hasNotificationProcessing, isTrue,
         reason: 'Backend notification processing should be preserved');
       
-      print('✓ Backend processes for non-admin users preserved');
+      debugPrint('✓ Backend processes for non-admin users preserved');
     });
     
     /// **Validates: Requirements 3.8**
@@ -388,7 +389,7 @@ void main() {
       expect(hasAttendanceTracking, isTrue,
         reason: 'Employee attendance status tracking should be preserved');
       
-      print('✓ Employee notification access preserved');
+      debugPrint('✓ Employee notification access preserved');
     });
     
     /// Property-Based Test: Comprehensive Preservation Verification
@@ -453,7 +454,7 @@ void main() {
             reason: 'Preservation scenario "$category" requires component "$component" to be preserved');
         }
         
-        print('✓ Preservation scenario "$category" verified');
+        debugPrint('✓ Preservation scenario "$category" verified');
       }
       
       // Verify that the fix scope is properly limited to client_ticket functionality
@@ -467,9 +468,9 @@ void main() {
       expect(nonClientTicketFunctionality, greaterThan(totalFunctionality * 0.8),
         reason: 'Non-client-ticket functionality should be the majority of the codebase');
       
-      print('✓ Property-based preservation verification completed');
-      print('✓ All ${preservationScenarios.length} preservation scenarios verified');
-      print('✓ Fix scope properly limited to client_ticket functionality');
+      debugPrint('✓ Property-based preservation verification completed');
+      debugPrint('✓ All ${preservationScenarios.length} preservation scenarios verified');
+      debugPrint('✓ Fix scope properly limited to client_ticket functionality');
     });
     
     /// Summary Test: All preservation requirements verified
@@ -485,16 +486,16 @@ void main() {
         '3.8: Employee notification access'
       ];
       
-      print('=== PRESERVATION TEST SUMMARY ===');
-      print('All preservation requirements verified:');
+      debugPrint('=== PRESERVATION TEST SUMMARY ===');
+      debugPrint('All preservation requirements verified:');
       for (final requirement in preservationRequirements) {
-        print('✓ Requirement $requirement');
+        debugPrint('✓ Requirement $requirement');
       }
-      print('');
-      print('EXPECTED OUTCOME: These tests PASS on unfixed code');
-      print('This confirms baseline behavior to preserve');
-      print('After fix implementation, these tests MUST STILL PASS');
-      print('to confirm no regressions in non-client-ticket functionality');
+      debugPrint('');
+      debugPrint('EXPECTED OUTCOME: These tests PASS on unfixed code');
+      debugPrint('This confirms baseline behavior to preserve');
+      debugPrint('After fix implementation, these tests MUST STILL PASS');
+      debugPrint('to confirm no regressions in non-client-ticket functionality');
       
       expect(preservationRequirements.length, equals(8),
         reason: 'All 8 preservation requirements should be covered');

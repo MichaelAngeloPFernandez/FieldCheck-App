@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 
 /// **Property 1: Bug Condition** - Admin Dashboard Client Ticket Functionality
 /// **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10**
@@ -60,8 +61,8 @@ void main() {
       expect(hasClientTicketServiceIntegration, isTrue, 
         reason: 'EXPECTED TO FAIL: Should integrate with ClientTicketService for ticket details');
       
-      print('Bug Condition 1 Test: This test SHOULD FAIL on unfixed code');
-      print('Counterexample: Client ticket buttons navigate to admin tasks page but lack proper ticket details modal');
+      debugPrint('Bug Condition 1 Test: This test SHOULD FAIL on unfixed code');
+      debugPrint('Counterexample: Client ticket buttons navigate to admin tasks page but lack proper ticket details modal');
     });
 
     test('Bug Condition 2: Missing ticket management UI functionality', () {
@@ -115,8 +116,8 @@ void main() {
           reason: 'EXPECTED TO FAIL: ClientTicketService should have archiveClientTicket method');
       }
       
-      print('Bug Condition 2 Test: This test SHOULD FAIL on unfixed code');
-      print('Counterexample: Missing ticket management UI components and service methods');
+      debugPrint('Bug Condition 2 Test: This test SHOULD FAIL on unfixed code');
+      debugPrint('Counterexample: Missing ticket management UI components and service methods');
     });
 
     test('Bug Condition 3: Blank employee information display', () {
@@ -149,7 +150,7 @@ void main() {
       // EXPECTED TO FAIL: Should handle null/empty employee information gracefully
       final hasNullHandling = content.contains('employeeName ??') ||
                              content.contains('?? \'') ||
-                             content.contains('?? \"-\"');
+                             content.contains('?? "-"');
       expect(hasNullHandling, isTrue, 
         reason: 'Should handle null/empty employee information with defaults');
       
@@ -171,8 +172,8 @@ void main() {
           reason: 'EXPECTED TO FAIL: Should robustly extract employee info from payload: $payload');
       }
       
-      print('Bug Condition 3 Test: This test SHOULD FAIL on unfixed code');
-      print('Counterexample: Employee information extraction may not handle all payload structures, leading to blank displays');
+      debugPrint('Bug Condition 3 Test: This test SHOULD FAIL on unfixed code');
+      debugPrint('Counterexample: Employee information extraction may not handle all payload structures, leading to blank displays');
     });
 
     test('Bug Condition 4: Static notification counters', () {
@@ -214,8 +215,8 @@ void main() {
       expect(showDetailsMarksRead, isTrue, 
         reason: 'EXPECTED TO FAIL: Showing notification details should mark them as read and update counters');
       
-      print('Bug Condition 4 Test: This test SHOULD FAIL on unfixed code');
-      print('Counterexample: Notification counters remain static after user interactions');
+      debugPrint('Bug Condition 4 Test: This test SHOULD FAIL on unfixed code');
+      debugPrint('Counterexample: Notification counters remain static after user interactions');
     });
 
     test('Bug Condition 5: Notification persistence problems', () {
@@ -260,8 +261,8 @@ void main() {
       expect(hasStateSynchronization, isTrue, 
         reason: 'EXPECTED TO FAIL: Should synchronize notification state with backend');
       
-      print('Bug Condition 5 Test: This test SHOULD FAIL on unfixed code');
-      print('Counterexample: Notification states do not persist correctly across app sessions');
+      debugPrint('Bug Condition 5 Test: This test SHOULD FAIL on unfixed code');
+      debugPrint('Counterexample: Notification states do not persist correctly across app sessions');
     });
 
     test('Property-Based Test: Bug Condition Comprehensive Check', () {
@@ -363,15 +364,15 @@ void main() {
           final field = input['displayField'] as String;
           final hasNullHandling = content.contains('$field ??') ||
                                  content.contains('?? \'-\'') ||
-                                 content.contains('?? \"\"');
+                                 content.contains('?? ""');
           expect(hasNullHandling, isTrue, 
             reason: 'EXPECTED TO FAIL: $description should handle null values gracefully');
         }
       }
       
-      print('Property-Based Bug Condition Test: This test SHOULD FAIL on unfixed code');
-      print('Counterexamples found for ${bugConditionInputs.length} bug conditions');
-      print('All bug conditions demonstrate missing or incomplete functionality');
+      debugPrint('Property-Based Bug Condition Test: This test SHOULD FAIL on unfixed code');
+      debugPrint('Counterexamples found for ${bugConditionInputs.length} bug conditions');
+      debugPrint('All bug conditions demonstrate missing or incomplete functionality');
     });
   });
 }

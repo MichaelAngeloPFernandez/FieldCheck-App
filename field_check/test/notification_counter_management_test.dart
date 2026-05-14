@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 void main() {
   group('Notification Counter Management Tests', () {
@@ -57,14 +58,14 @@ void main() {
       expect(hasBulkCounterManagement, isTrue, 
         reason: 'Should properly manage counters in bulk notification operations');
       
-      print('✓ Task 3.4 Implementation Verified:');
-      print('  - Notification counters update to 0 after reading notifications');
-      print('  - Counter state persists across app sessions using SharedPreferences');
-      print('  - Counters reflect actual unread notification counts from backend');
-      print('  - Retry logic implemented for failed state persistence operations');
-      print('  - App lifecycle management ensures counter accuracy on resume');
-      print('  - Bulk operations properly manage counter updates');
-      print('  - Error handling with fallback to cached values');
+      debugPrint('✓ Task 3.4 Implementation Verified:');
+      debugPrint('  - Notification counters update to 0 after reading notifications');
+      debugPrint('  - Counter state persists across app sessions using SharedPreferences');
+      debugPrint('  - Counters reflect actual unread notification counts from backend');
+      debugPrint('  - Retry logic implemented for failed state persistence operations');
+      debugPrint('  - App lifecycle management ensures counter accuracy on resume');
+      debugPrint('  - Bulk operations properly manage counter updates');
+      debugPrint('  - Error handling with fallback to cached values');
     });
 
     test('Employee notification counter management', () {
@@ -78,7 +79,7 @@ void main() {
       expect(hasEmployeeNotifManagement, isTrue, 
         reason: 'Should have proper employee notification counter management');
       
-      print('✓ Employee notification counter management verified');
+      debugPrint('✓ Employee notification counter management verified');
     });
 
     test('Client ticket notification integration', () {
@@ -92,7 +93,7 @@ void main() {
       expect(hasClientTicketIntegration, isTrue, 
         reason: 'Should integrate client ticket notifications with counter management');
       
-      print('✓ Client ticket notification integration verified');
+      debugPrint('✓ Client ticket notification integration verified');
     });
   });
 }
