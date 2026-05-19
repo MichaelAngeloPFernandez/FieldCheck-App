@@ -9,6 +9,7 @@ Welcome to the **FieldCheck 2.0** User Manual. This manual provides instructions
 2. [Client Support Ticket Portal (Public Access)](#2-client-support-ticket-portal-public-access)
 3. [Employee Portal (Mobile App)](#3-employee-portal-mobile-app)
 4. [Administrator Portal (Desktop App)](#4-administrator-portal-desktop-app)
+5. [Client Installation & Access Guide (APK & EXE)](#5-client-installation--access-guide-apk--exe)
 
 ---
 
@@ -137,3 +138,48 @@ Upon logging in, the Admin Home Page displays critical metrics:
 2.  Filter records by **Date Range**, **Employee**, or **Geofence**.
 3.  Preview the attendance duration logs or task completion rates.
 4.  Click **Export PDF** or **Export Excel** to save the formatted sheets to your local desktop for capstone record submissions.
+
+---
+
+## 5. Client Installation & Access Guide (APK & EXE)
+
+This guide walks clients and evaluators through installing the mobile application on Android and launching the desktop application on Windows.
+
+### A. Accessing the System Landing Page (Web Browser)
+The public portal is accessible to clients to submit tickets and track statuses:
+*   **Production URL:** Open `https://fieldcheck-app-mwk3.onrender.com` in any modern web browser.
+*   **Local Development:** Navigate to `http://localhost:5000` (or the configured local backend port) once the local servers are running.
+
+---
+
+### B. Installing the Mobile App (.APK) on Android
+To install the client/employee mobile app on any Android device:
+
+1.  **Transfer the APK File:**
+    *   Locate the file `app-release.apk` (found in the root `build/app/outputs/flutter-apk/` directory or downloaded from your Google Drive submission).
+    *   Transfer this file to your phone via USB cable, Google Drive, email, or direct download.
+2.  **Enable Unknown Sources:**
+    *   Because this app is compiled locally for your capstone defense and not downloaded from the Google Play Store, Android requires security permission.
+    *   Go to **Settings** > **Apps** > **Special App Access** > **Install Unknown Apps** (or search "Unknown Sources").
+    *   Toggle **Allow** for the application you are using to open the file (e.g., *My Files*, *Files by Google*, or *Google Drive*).
+3.  **Install the APK:**
+    *   Open your phone's File Manager app and locate the `app-release.apk` file.
+    *   Tap the file.
+    *   A prompt will appear asking: *"Do you want to install this application?"*. Click **Install**.
+    *   Android Play Protect may show a warning: *"Blocked by Play Protect - Unknown Developer"*. Click **Install Anyway**.
+4.  **Launch the App:**
+    *   Once installed, tap **Open** or locate the **FieldCheck** icon on your home screen or app drawer.
+    *   Grant the location permission when prompted.
+
+---
+
+### C. Launching the Administrator App (.EXE) on Windows
+To run the Desktop Administrator Portal on any Windows computer:
+
+1.  **Prepare the Release Directory:**
+    *   Locate the `Release/` folder (either built under `field_check/build/windows/x64/runner/Release/` or extracted from your zipped submission file).
+2.  **Run the Executable:**
+    *   Double-click the `field_check.exe` file inside that folder.
+    *   *Note: Do not move `field_check.exe` out of its folder, as it relies on the surrounding `.dll` and data files in that same directory. If you want a cleaner launch, right-click `field_check.exe`, select **Show more options** > **Create shortcut**, and drag that shortcut to your Desktop.*
+3.  **Log in:**
+    *   The app will open. Click **Admin Login** and enter the credentials (`admin@example.com` / `Admin@123`).
