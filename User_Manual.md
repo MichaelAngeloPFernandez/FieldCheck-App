@@ -159,7 +159,7 @@ To install the client/employee mobile app on any Android device:
     *   Locate the file `app-release.apk` (found in the root `build/app/outputs/flutter-apk/` directory or downloaded from your Google Drive submission).
     *   Transfer this file to your phone via USB cable, Google Drive, email, or direct download.
 2.  **Enable Unknown Sources:**
-    *   Because this app is compiled locally for your capstone defense and not downloaded from the Google Play Store, Android requires security permission.
+    *   Android requires security permission.
     *   Go to **Settings** > **Apps** > **Special App Access** > **Install Unknown Apps** (or search "Unknown Sources").
     *   Toggle **Allow** for the application you are using to open the file (e.g., *My Files*, *Files by Google*, or *Google Drive*).
 3.  **Install the APK:**
