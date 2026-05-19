@@ -173,7 +173,11 @@ To install the client/employee mobile app on any Android device:
 
 ---
 
-### C. Launching the Administrator App (.EXE) on Windows
+### C. Launching the Administrator App (.EXE) on Windows (Optional)
+
+> [!NOTE]
+> Compiling or running the Windows `.exe` application is **completely optional**. The web version of the application contains the exact same Admin Dashboard. You can access it directly via browser (either locally or on your production Render URL) without compiling any Windows files.
+
 To run the Desktop Administrator Portal on any Windows computer:
 
 1.  **Prepare the Release Directory:**

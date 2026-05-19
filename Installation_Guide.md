@@ -131,10 +131,13 @@ To run the Flutter app locally on an emulator, connected physical device, or bro
 
 Because the system is designed to serve two roles, building separate target executables makes deployment easier:
 
-1.  **For Administrators (EXE/Web)**: Admins work on desktops to manage geofences, view maps, and download reports. Building a **Windows Desktop Executable (`.exe`)** is recommended for admin usage.
-2.  **For Employees (APK)**: Employees use mobile devices on-site to check in/out and view tasks. Building an **Android Package (`.apk`)** is recommended for employee usage.
+1.  **For Administrators (EXE/Web)**: Admins work on desktops to manage geofences, view maps, and download reports. Building a **Windows Desktop Executable (`.exe`)** is optional, as the Administrator Dashboard is fully accessible directly in any web browser.
+2.  **For Employees (APK)**: Employees use mobile devices on-site to check in/out and view tasks. Building an **Android Package (`.apk`)** is required for employee mobile usage.
 
-### A. Compile Windows Executable (.exe) for Admins
+### A. Compile Windows Executable (.exe) for Admins (Optional)
+
+> [!NOTE]
+> Compiling the Windows `.exe` is **completely optional**. The web version of the application contains the exact same Admin Dashboard. You can access it directly via browser (either locally or on your production Render URL) without compiling any Windows files. This build process is only required if you explicitly want a standalone desktop installer.
 
 To compile the Windows desktop client:
 
