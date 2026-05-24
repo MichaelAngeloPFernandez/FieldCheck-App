@@ -195,6 +195,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
   static const Color _panelTextPrimary = Colors.black87;
   static const double _controlFontSize = 13;
 
+  /// Build a BottomNavigationBarItem with rounded and regular icon variants
+  BottomNavigationBarItem _buildNavItem(IconData iconRounded, IconData icon, String label) {
+    return BottomNavigationBarItem(
+      icon: Icon(icon),
+      activeIcon: Icon(iconRounded),
+      label: label,
+    );
+  }
+
   Widget _maybeTooltip({required String message, required Widget child}) {
     if (kIsWeb) return child;
     return Tooltip(message: message, child: child);
@@ -6262,6 +6271,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
   Widget build(BuildContext context) {
     const brandColor = Color(0xFF2688d4);
     final width = MediaQuery.sizeOf(context).width;
+    final isSmallMobile = width < 360;
     final useRail = width >= 980;
     return Shortcuts(
       shortcuts: {
@@ -6479,46 +6489,52 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
                 : _buildCurrentScreen(),
             bottomNavigationBar: useRail
                 ? null
-                : BottomNavigationBar(
-                    type: BottomNavigationBarType.fixed,
-                    backgroundColor: Theme.of(context).colorScheme.surface,
-                    showUnselectedLabels: true,
-                    selectedItemColor: brandColor,
-                    unselectedItemColor: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.7),
-                    selectedLabelStyle: const TextStyle(
-                      fontWeight: FontWeight.w600,
+                : Container(
+                    decoration: BoxDecoration(
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 8,
+                          offset: const Offset(0, -2),
+                        ),
+                      ],
                     ),
-                    selectedIconTheme: const IconThemeData(
-                      color: brandColor,
-                      size: 28,
+                    child: BottomNavigationBar(
+                      type: BottomNavigationBarType.fixed,
+                      backgroundColor: Theme.of(context).colorScheme.surface,
+                      elevation: 0,
+                      showUnselectedLabels: true,
+                      selectedItemColor: brandColor,
+                      unselectedItemColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
+                      selectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 11,
+                      ),
+                      selectedIconTheme: IconThemeData(
+                        color: brandColor,
+                        size: isSmallMobile ? 24 : 26,
+                      ),
+                      unselectedIconTheme: IconThemeData(
+                        size: isSmallMobile ? 22 : 24,
+                      ),
+                      selectedFontSize: 12,
+                      unselectedFontSize: 11,
+                      items: <BottomNavigationBarItem>[
+                        _buildNavItem(Icons.dashboard_rounded, Icons.dashboard, 'Dashboard'),
+                        _buildNavItem(Icons.people_alt_rounded, Icons.people, 'Employees'),
+                        _buildNavItem(Icons.assessment_rounded, Icons.assessment, 'Reports'),
+                        _buildNavItem(Icons.support_agent_rounded, Icons.support_agent, 'Tickets'),
+                        _buildNavItem(Icons.apps_rounded, Icons.apps, 'More'),
+                      ],
+                      currentIndex: _currentNavIndex(),
+                      onTap: _onItemTapped,
                     ),
-                    unselectedIconTheme: const IconThemeData(size: 24),
-                    items: const <BottomNavigationBarItem>[
-                      BottomNavigationBarItem(
-                        icon: Icon(Icons.dashboard),
-                        label: 'Dashboard',
-                      ),
-                      BottomNavigationBarItem(
-                        icon: Icon(Icons.people),
-                        label: 'Employees',
-                      ),
-                      BottomNavigationBarItem(
-                        icon: Icon(Icons.assessment),
-                        label: 'Reports',
-                      ),
-                      BottomNavigationBarItem(
-                        icon: Icon(Icons.support_agent),
-                        label: 'Tickets',
-                      ),
-                      BottomNavigationBarItem(
-                        icon: Icon(Icons.more_horiz),
-                        label: 'More',
-                      ),
-                    ],
-                    currentIndex: _currentNavIndex(),
-                    onTap: _onItemTapped,
                   ),
           ),
         ),
