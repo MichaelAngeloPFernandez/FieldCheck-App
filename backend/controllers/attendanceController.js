@@ -459,6 +459,8 @@ const checkOut = asyncHandler(async (req, res) => {
     } catch (e) {
       console.error('Error populating attendance:', e);
     }
+  });
+
   // Background Job 4: Auto-create attendance report
   setImmediate(async () => {
     try {

@@ -779,7 +779,7 @@ class RealtimeService {
       
       // Add jitter (±10% of delay)
       final jitter = (delay * 0.1 * (2 * (DateTime.now().millisecond / 1000) - 1)).round();
-      finalDelay = (delay + jitter).clamp(baseDelay, maxDelay);
+      finalDelay = ((delay + jitter).clamp(baseDelay, maxDelay) as int);
     }
     
     print('RealtimeService: Scheduling reconnect in ${finalDelay}ms (attempt ${_reconnectAttempts + 1}, presence-critical: $isPresenceCritical)');
