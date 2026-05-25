@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../config/api_config.dart';
 import '../services/user_service.dart';
+import '../utils/http_util.dart';
 
 /// Employee status enum
 enum EmployeeStatus {
@@ -397,6 +399,92 @@ class EmployeeLocationService {
         'status': newStatus.toString().split('.').last,
       });
     }
+  }
+
+  /// Check if cached location is stale (older than 30 seconds)
+  bool isCacheStale(String employeeId) {
+    final location = _cachedLocations[employeeId];
+    if (location == null) return true;
+    
+    final age = DateTime.now().difference(location.timestamp);
+    return age.inSeconds > 30;
+  }
+
+  /// Get all cached locations with staleness markers
+  /// Returns locations from cache, marking those older than 30 seconds as stale
+  List<Map<String, dynamic>> getAllLocationsWithStaleness() {
+    final now = DateTime.now();
+    return _cachedLocations.values.map((loc) {
+      final age = now.difference(loc.timestamp);
+      final isStale = age.inSeconds > 30;
+      
+      return {
+        'location': loc,
+        'isStale': isStale,
+        'ageSeconds': age.inSeconds,
+      };
+    }).toList();
+  }
+
+  /// Fetch employee locations from HTTP as fallback when Socket.io is unavailable
+  /// Used to hydrate cache on dashboard init or after Socket.io disconnection
+  Future<List<EmployeeLocation>> fetchEmployeeLocationsFromHttp() async {
+    try {
+      final token = await _userService.getToken();
+      if (token == null) {
+        debugPrint('EmployeeLocationService: No token for HTTP fallback');
+        return [];
+      }
+
+      final httpClient = HttpUtil();
+      final headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      };
+
+      final response = await httpClient.get(
+        '/api/location/online-employees',
+        headers: headers,
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
+        final locations = data
+            .map((item) => EmployeeLocation.fromJson(item as Map<String, dynamic>))
+            .toList();
+
+        // Update cache with fetched locations
+        for (final location in locations) {
+          _updateLocationCache(location);
+        }
+
+        _broadcastAllLocations();
+        debugPrint('EmployeeLocationService: Fetched ${locations.length} locations from HTTP');
+        return locations;
+      } else {
+        debugPrint('EmployeeLocationService: HTTP fetch failed with status ${response.statusCode}');
+        return [];
+      }
+    } catch (e) {
+      debugPrint('EmployeeLocationService: HTTP fallback error: $e');
+      return [];
+    }
+  }
+
+  /// Refresh employee locations from HTTP or Socket.io
+  /// Prioritizes Socket.io if connected, falls back to HTTP
+  Future<List<EmployeeLocation>> refreshLocations() async {
+    if (_isConnected) {
+      debugPrint('EmployeeLocationService: Socket.io connected, requesting location refresh');
+      final socket = _socket;
+      if (socket != null && socket.connected) {
+        socket.emit('requestLocationRefresh', {});
+        return getAllLocations();
+      }
+    }
+
+    debugPrint('EmployeeLocationService: Socket.io unavailable, using HTTP fallback');
+    return await fetchEmployeeLocationsFromHttp();
   }
 
   void dispose() {

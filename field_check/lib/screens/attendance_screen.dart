@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../services/location_service.dart';
 import '../services/geofence_service.dart';
+import '../services/realtime_service.dart';
 import '../models/geofence_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/user_service.dart';
@@ -29,6 +30,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String? _locationErrorMessage;
   double? _fallbackLat;
   double? _fallbackLng;
+  
+  // Track if we're in a transient location refresh (don't show error UI during this)
+  bool _isRefreshingLocationTransient = false;
 
   // Admin-enforced settings
   final bool _allowOfflineModeAdmin = true;
@@ -41,10 +45,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   final UserService _userService = UserService();
   final GeofenceService _geofenceService =
       GeofenceService(); // Initialize GeofenceService
+  final RealtimeService _realtimeService = RealtimeService();
 
   Position? _userPosition;
   Geofence? _nearestGeofence;
   StreamSubscription? _geofenceStatusSubscription;
+  StreamSubscription? _geofenceEventSubscription;
   double? _currentDistanceMeters;
   DateTime? _lastLocationUpdate;
 
@@ -52,11 +58,62 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   void initState() {
     super.initState();
     _loadAdminAndUserSettings();
+    _setupGeofenceListener();
   }
 
   @override
   void dispose() {
+    _geofenceEventSubscription?.cancel();
     super.dispose();
+  }
+
+  /// Listen for real-time geofence updates from the server
+  /// When admin creates, updates, or deletes a geofence, refresh the employee's cache
+  void _setupGeofenceListener() {
+    try {
+      _geofenceEventSubscription = _realtimeService.geofenceStream.listen(
+        (event) {
+          final action = event['type'];
+          debugPrint('AttendanceScreen: Geofence event received: $action');
+          
+          // Refresh geofences when any change occurs
+          if (action == 'created' || action == 'updated' || action == 'deleted') {
+            _refreshGeofences();
+          }
+        },
+        onError: (error) {
+          debugPrint('AttendanceScreen: Error in geofence stream: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('AttendanceScreen: Failed to setup geofence listener: $e');
+    }
+  }
+
+  /// Refresh geofence cache from server (called when geofence events are received)
+  Future<void> _refreshGeofences() async {
+    try {
+      debugPrint('AttendanceScreen: Refreshing geofences from server');
+      final geofences = await _geofenceService.fetchGeofences();
+      
+      if (!mounted) return;
+      
+      setState(() {
+        // Re-evaluate nearest geofence with updated list
+        if (_userPosition != null && geofences.isNotEmpty) {
+          _nearestGeofence = _geofenceService.findNearestGeofence(
+            _userPosition!.latitude,
+            _userPosition!.longitude,
+            geofences,
+          );
+          _updateDistanceAndStatus();
+        }
+      });
+      
+      debugPrint('AttendanceScreen: Geofence refresh complete. Found ${geofences.length} geofences');
+    } catch (e) {
+      debugPrint('AttendanceScreen: Error refreshing geofences: $e');
+    }
   }
 
   Future<void> _loadAdminAndUserSettings() async {
@@ -194,6 +251,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _isLoading = true;
       _locationError = false;
       _locationErrorMessage = null;
+      _isRefreshingLocationTransient = true;
     });
 
     try {
@@ -212,6 +270,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _locationError = false;
         _locationErrorMessage = null;
         _lastLocationUpdate = DateTime.now();
+        _isRefreshingLocationTransient = false;
       });
 
       // Persist last known lat/lng for web fallback
@@ -235,6 +294,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       setState(() {
         _locationError = true;
         _locationErrorMessage = e.toString();
+        _isRefreshingLocationTransient = false;
       });
 
       // Apply graceful fallback: last known or geofence center
@@ -268,7 +328,177 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
+  /// Retry logic for check-in/check-out with exponential backoff
+  Future<bool> _attemptAttendanceCheckWithRetry({
+    required int maxAttempts,
+    required Duration initialDelay,
+  }) async {
+    final String endpoint = _isCheckedIn ? 'checkout' : 'checkin';
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/attendance/$endpoint');
+    final token = await _userService.getToken();
+
+    int attempt = 0;
+    Duration currentDelay = initialDelay;
+
+    while (attempt < maxAttempts) {
+      try {
+        debugPrint('AttendanceScreen: Attempt ${attempt + 1}/$maxAttempts for $endpoint');
+
+        final response = await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            if (token != null) 'Authorization': 'Bearer $token',
+          },
+          body: json.encode({
+            'latitude': _userPosition?.latitude,
+            'longitude': _userPosition?.longitude,
+            'geofenceId': _nearestGeofence?.id,
+          }),
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          debugPrint('AttendanceScreen: $endpoint succeeded on attempt ${attempt + 1}');
+          return true;
+        } else if (response.statusCode >= 500 || response.statusCode == 429) {
+          // Server error or rate limit - retry
+          attempt++;
+          if (attempt < maxAttempts) {
+            debugPrint('AttendanceScreen: Got ${response.statusCode}, retrying after ${currentDelay.inMilliseconds}ms');
+            await Future.delayed(currentDelay);
+            // Exponential backoff: 300ms, 600ms, 1200ms
+            currentDelay = Duration(milliseconds: (currentDelay.inMilliseconds * 2).clamp(0, 2000));
+          }
+        } else {
+          // Client error (4xx) - don't retry
+          debugPrint('AttendanceScreen: Got ${response.statusCode}, not retrying');
+          return false;
+        }
+      } on TimeoutException {
+        attempt++;
+        if (attempt < maxAttempts) {
+          debugPrint('AttendanceScreen: Timeout, retrying after ${currentDelay.inMilliseconds}ms');
+          await Future.delayed(currentDelay);
+          currentDelay = Duration(milliseconds: (currentDelay.inMilliseconds * 2).clamp(0, 2000));
+        }
+      } catch (e) {
+        attempt++;
+        if (attempt < maxAttempts) {
+          debugPrint('AttendanceScreen: Network error: $e, retrying after ${currentDelay.inMilliseconds}ms');
+          await Future.delayed(currentDelay);
+          currentDelay = Duration(milliseconds: (currentDelay.inMilliseconds * 2).clamp(0, 2000));
+        }
+      }
+    }
+
+    debugPrint('AttendanceScreen: $endpoint failed after $maxAttempts attempts');
+    return false;
+  }
+
   Future<void> _toggleAttendance() async {
+    // Refresh location if we have no position yet or the last update is stale
+    final now = DateTime.now();
+    if (_enableLocationTrackingAdmin &&
+        (_userPosition == null ||
+            _lastLocationUpdate == null ||
+            now.difference(_lastLocationUpdate!).inSeconds > 15)) {
+      // Show loading state during location refresh (not an error yet)
+      setState(() {
+        _isLoading = true;
+      });
+      
+      await _updateLocationAndGeofenceStatus();
+      
+      if (!mounted) return;
+      
+      // Only show error if location refresh actually failed
+      if (_locationError && !_isWithinGeofence) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showGeofenceErrorDialog();
+        return;
+      }
+    }
+
+    // Admin-enforced: block offline check if not allowed
+    if (!_isOnline && !_allowOfflineModeAdmin) {
+      _showOfflineNotAllowedDialog();
+      return;
+    }
+
+    // Only enforce geofence when location tracking is enabled by admin
+    if (_enableLocationTrackingAdmin && !_isWithinGeofence) {
+      _showGeofenceErrorDialog();
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Attempt attendance check with retries for transient network errors
+      // Use 3 retries with 300ms initial delay (exponential backoff up to 2s)
+      final success = await _attemptAttendanceCheckWithRetry(
+        maxAttempts: 3,
+        initialDelay: const Duration(milliseconds: 300),
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        // Success - show green/blue snackbar
+        final now = DateTime.now();
+        final formattedTime =
+            "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+        setState(() {
+          _isCheckedIn = !_isCheckedIn;
+          _lastCheckTime = formattedTime;
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _isCheckedIn
+                  ? 'Successfully checked in!'
+                  : 'Successfully checked out!',
+            ),
+            backgroundColor: _isCheckedIn ? Colors.green : Colors.blue,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        // Failed after retries - show error
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to ${_isCheckedIn ? 'check out' : 'check in'} after multiple attempts. Please try again.',
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Network error: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleAttendanceOld() async {
     // Refresh location if we have no position yet or the last update is stale
     final now = DateTime.now();
     if (_enableLocationTrackingAdmin &&
@@ -395,7 +625,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       ],
                     ),
                   ),
-                if (_locationError)
+                if (_locationError && !_isRefreshingLocationTransient)
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),

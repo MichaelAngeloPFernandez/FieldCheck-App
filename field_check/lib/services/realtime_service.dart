@@ -31,6 +31,8 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _adminNearbyController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _geofenceController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   bool _isConnected = false;
   Timer? _reconnectTimer;
@@ -62,6 +64,8 @@ class RealtimeService {
       _unreadCountsController.stream;
   Stream<Map<String, dynamic>> get adminNearbyStream =>
       _adminNearbyController.stream;
+  Stream<Map<String, dynamic>> get geofenceStream =>
+      _geofenceController.stream;
   Stream<Map<String, dynamic>> get connectionStatusStream =>
       _connectionStatusController.stream;
   Stream<Map<String, dynamic>> get connectionRecoveryStream =>
@@ -677,25 +681,108 @@ class RealtimeService {
         print('Error processing chatMessage: $e');
       }
     });
+
+    // Geofence events - real-time updates for newly created/updated geofences
+    _socket!.on('geofenceCreated', (data) {
+      print('RealtimeService: Geofence created: $data');
+      try {
+        if (data is Map<String, dynamic>) {
+          _geofenceController.add({'type': 'created', 'data': data});
+          _eventController.add({
+            'type': 'geofence',
+            'action': 'created',
+            'data': data,
+          });
+        } else if (data is Map) {
+          final mapped = Map<String, dynamic>.from(data);
+          _geofenceController.add({'type': 'created', 'data': mapped});
+          _eventController.add({
+            'type': 'geofence',
+            'action': 'created',
+            'data': mapped,
+          });
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing geofenceCreated: $e');
+      }
+    });
+
+    _socket!.on('geofenceUpdated', (data) {
+      print('RealtimeService: Geofence updated: $data');
+      try {
+        if (data is Map<String, dynamic>) {
+          _geofenceController.add({'type': 'updated', 'data': data});
+          _eventController.add({
+            'type': 'geofence',
+            'action': 'updated',
+            'data': data,
+          });
+        } else if (data is Map) {
+          final mapped = Map<String, dynamic>.from(data);
+          _geofenceController.add({'type': 'updated', 'data': mapped});
+          _eventController.add({
+            'type': 'geofence',
+            'action': 'updated',
+            'data': mapped,
+          });
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing geofenceUpdated: $e');
+      }
+    });
+
+    _socket!.on('geofenceDeleted', (data) {
+      print('RealtimeService: Geofence deleted: $data');
+      try {
+        if (data is Map<String, dynamic>) {
+          _geofenceController.add({'type': 'deleted', 'data': data});
+          _eventController.add({
+            'type': 'geofence',
+            'action': 'deleted',
+            'data': data,
+          });
+        } else if (data is Map) {
+          final mapped = Map<String, dynamic>.from(data);
+          _geofenceController.add({'type': 'deleted', 'data': mapped});
+          _eventController.add({
+            'type': 'geofence',
+            'action': 'deleted',
+            'data': mapped,
+          });
+        }
+      } catch (e) {
+        print('RealtimeService: Error processing geofenceDeleted: $e');
+      }
+    });
   }
 
   void _scheduleReconnectWithBackoff() {
     _reconnectTimer?.cancel();
     
-    // Exponential backoff with jitter
-    final baseDelay = 1000; // 1 second base
-    final maxDelay = 30000; // 30 seconds max
-    final backoffMultiplier = 2;
+    // Aggressive reconnection strategy for presence-critical features
+    // Use fixed 2-second interval for first 10 attempts, then exponential backoff
+    final isPresenceCritical = _reconnectAttempts < 10;
     
-    final delay = (baseDelay * 
-        (backoffMultiplier * _reconnectAttempts).clamp(1, maxDelay ~/ baseDelay))
-        .clamp(baseDelay, maxDelay);
+    int finalDelay;
+    if (isPresenceCritical) {
+      // Fixed 2-second interval for presence-critical reconnection
+      finalDelay = 2000;
+    } else {
+      // Exponential backoff with jitter for persistent failures
+      final baseDelay = 2000; // 2 seconds base
+      final maxDelay = 30000; // 30 seconds max
+      final backoffMultiplier = 1.5;
+      
+      final delay = (baseDelay * 
+          (backoffMultiplier * (_reconnectAttempts - 10)).clamp(1, maxDelay ~/ baseDelay))
+          .clamp(baseDelay, maxDelay);
+      
+      // Add jitter (±10% of delay)
+      final jitter = (delay * 0.1 * (2 * (DateTime.now().millisecond / 1000) - 1)).round();
+      finalDelay = (delay + jitter).clamp(baseDelay, maxDelay);
+    }
     
-    // Add jitter (±25% of delay)
-    final jitter = (delay * 0.25 * (2 * (DateTime.now().millisecond / 1000) - 1)).round();
-    final finalDelay = (delay + jitter).clamp(baseDelay, maxDelay);
-    
-    print('RealtimeService: Scheduling reconnect in ${finalDelay}ms (attempt ${_reconnectAttempts + 1})');
+    print('RealtimeService: Scheduling reconnect in ${finalDelay}ms (attempt ${_reconnectAttempts + 1}, presence-critical: $isPresenceCritical)');
     
     _reconnectTimer = Timer(
       Duration(milliseconds: finalDelay),
@@ -706,11 +793,13 @@ class RealtimeService {
         _connectionRecoveryController.add({
           'type': 'reconnect_attempt',
           'attempt': _reconnectAttempts,
+          'presenceCritical': isPresenceCritical,
           'timestamp': DateTime.now().toIso8601String(),
         });
         
         try {
           if (_socket != null && !_isConnected) {
+            print('RealtimeService: Attempting to reconnect (attempt ${_reconnectAttempts})');
             _socket!.connect();
             return;
           }

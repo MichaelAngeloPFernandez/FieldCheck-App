@@ -74,4 +74,11 @@ attendanceSchema.index(
   { unique: true, sparse: true },
 );
 
+// Critical index for fast lookup of prior open attendance records
+// Used in checkIn (auto-close logic) and checkOut (find open record to close)
+attendanceSchema.index(
+  { employee: 1, checkOut: 1, createdAt: -1 },
+  { name: 'idx_employee_open_attendance' },
+);
+
 module.exports = mongoose.model('Attendance', attendanceSchema);

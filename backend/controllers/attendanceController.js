@@ -55,63 +55,14 @@ const checkIn = asyncHandler(async (req, res) => {
     throw new Error('Outside geofence boundary');
   }
 
-  // If there's any prior open attendance record for this employee, close it
-  // before creating a new check-in. This prevents stuck/open sessions when
-  // previous check-outs were missed due to client/network/timezone issues.
+  // Check-in starts here
   const now = new Date();
   const phTime = new Date(now.getTime());
 
-  const priorOpen = await Attendance.findOne({
-    employee: req.user._id,
-    checkOut: { $exists: false },
-  }).sort({ createdAt: -1 }).populate('geofence');
+  // Note: Prior open attendance auto-close is now handled asynchronously
+  // after this response is returned. This prevents blocking the check-in response.
 
-  if (priorOpen) {
-    try {
-      priorOpen.checkOut = phTime;
-      priorOpen.status = 'out';
-      priorOpen.autoCheckout = true;
-      priorOpen.voidReason = 'Auto-closed by new check-in to prevent overlapping sessions';
-      const saved = await priorOpen.save();
-
-      // Emit updated record and an admin notification about the auto-close
-      io.emit('updatedAttendanceRecord', {
-        _id: saved._id,
-        employee: { _id: req.user._id, name: req.user.name },
-        geofence: { _id: priorOpen.geofence?._id || null, name: priorOpen.geofence?.name || null },
-        checkIn: saved.checkIn,
-        checkOut: saved.checkOut,
-        status: saved.status,
-        location: saved.location,
-        autoCheckout: true,
-      });
-
-      io.emit('adminNotification', {
-        type: 'attendance',
-        action: 'auto-checkout',
-        userId: req.user._id,
-        employeeId: req.user.employeeId,
-        employeeName: req.user.name,
-        geofenceName: priorOpen.geofence?.name || null,
-        checkInTime: saved.checkIn,
-        checkOutTime: saved.checkOut,
-        elapsedHours: saved.checkOut && saved.checkIn ? ((saved.checkOut - saved.checkIn) / (1000 * 60 * 60)).toFixed(2) : null,
-        timestamp: saved.checkOut,
-        message: `${req.user.name} previous session auto-closed before new check-in`,
-        severity: 'warning',
-      });
-
-      setImmediate(async () => {
-        try {
-        } catch (_) {}
-      });
-    } catch (e) {
-      console.error('Failed to auto-close prior open attendance for', req.user._id, e.message || e);
-    }
-  }
-
-  // Record time in Philippine timezone (UTC+8)
-  // (phTime already computed above to support prior auto-close)
+  // Record the new attendance immediately
   const attendance = new Attendance({
     employee: req.user._id,
     geofence: geofence._id,
@@ -122,97 +73,159 @@ const checkIn = asyncHandler(async (req, res) => {
 
   const created = await attendance.save();
 
-  // Persist last-known coordinates & online status so admin late-join snapshots
-  // always have a reliable location even if live GPS sharing is disabled.
-  try {
-    const now = new Date();
-    const userId = req.user?._id;
-    if (userId) {
-      const activeTaskCount = await UserTask.countDocuments({
-        userId,
-        isArchived: { $ne: true },
-        status: { $ne: 'completed' },
-      });
+  // **RESPOND IMMEDIATELY** - Don't wait for notifications, User updates, or reports
+  // This ensures the button click is confirmed within 200-300ms
+  res.status(201).json(created);
 
-      await User.findByIdAndUpdate(
-        userId,
-        {
-          isOnline: true,
-          lastLatitude: Number(latitude),
-          lastLongitude: Number(longitude),
-          lastLocationUpdate: now,
-          activeTaskCount,
-        },
-        { new: false },
-      );
+  // ===== ALL REMAINING OPERATIONS RUN IN BACKGROUND =====
+  // Do NOT block the response on these operations
 
-      const inProgressCount = await UserTask.countDocuments({
-        userId,
-        isArchived: { $ne: true },
-        status: 'in_progress',
-      });
+  // Background Job 1: Handle prior open attendance auto-close
+  // Find and close any prior open records for this employee
+  setImmediate(async () => {
+    try {
+      const now = new Date();
+      const priorOpenRecord = await Attendance.findOne({
+        employee: req.user._id,
+        checkOut: { $exists: false },
+        _id: { $ne: created._id }, // Don't close the one we just created
+      }).sort({ createdAt: -1 }).populate('geofence');
 
-      io.emit('employeeLocationUpdate', {
-        employeeId: userId.toString(),
-        name: req.user?.name ? String(req.user.name) : 'Employee',
-        username: req.user?.username ? String(req.user.username) : null,
-        latitude: Number(latitude),
-        longitude: Number(longitude),
-        accuracy: 0,
-        speed: 0,
-        status: inProgressCount > 0 ? 'busy' : 'available',
-        timestamp: now.toISOString(),
-        activeTaskCount,
-        workloadScore: 0,
-        currentGeofence: geofence?.name || null,
-        distanceToNearestTask: null,
-        isOnline: true,
-        batteryLevel: null,
-      });
+      if (priorOpenRecord) {
+        priorOpenRecord.checkOut = now;
+        priorOpenRecord.status = 'out';
+        priorOpenRecord.autoCheckout = true;
+        priorOpenRecord.voidReason = 'Auto-closed by new check-in to prevent overlapping sessions';
+        const saved = await priorOpenRecord.save();
+
+        io.emit('updatedAttendanceRecord', {
+          _id: saved._id,
+          employee: { _id: req.user._id, name: req.user.name },
+          geofence: { _id: priorOpenRecord.geofence?._id || null, name: priorOpenRecord.geofence?.name || null },
+          checkIn: saved.checkIn,
+          checkOut: saved.checkOut,
+          status: saved.status,
+          location: saved.location,
+          autoCheckout: true,
+        });
+
+        io.emit('adminNotification', {
+          type: 'attendance',
+          action: 'auto-checkout',
+          userId: req.user._id,
+          employeeId: req.user.employeeId,
+          employeeName: req.user.name,
+          geofenceName: priorOpenRecord.geofence?.name || null,
+          checkInTime: saved.checkIn,
+          checkOutTime: saved.checkOut,
+          elapsedHours: saved.checkOut && saved.checkIn ? ((saved.checkOut - saved.checkIn) / (1000 * 60 * 60)).toFixed(2) : null,
+          timestamp: saved.checkOut,
+          message: `${req.user.name} previous session auto-closed before new check-in`,
+          severity: 'warning',
+        });
+      }
+    } catch (e) {
+      console.error('Failed to auto-close prior open attendance in background:', e.message || e);
     }
-  } catch (_) {}
-
-  // Emit immediately with basic data for fast UI update
-  io.emit('newAttendanceRecord', {
-    _id: created._id,
-    employee: { _id: req.user._id, name: req.user.name },
-    geofence: { _id: geofence._id, name: geofence.name },
-    checkIn: created.checkIn,
-    status: created.status,
-    location: created.location,
   });
 
-  // Emit admin notification for check-in event
-  io.emit('adminNotification', {
-    type: 'attendance',
-    action: 'check-in',
-    userId: req.user._id,
-    employeeId: req.user.employeeId,
-    employeeName: req.user.name,
-    geofenceName: geofence.name,
-    timestamp: created.checkIn,
-    message: `${req.user.name} checked in at ${geofence.name}`,
-    severity: 'info',
+  // Background Job 2: Update User location and status
+  setImmediate(async () => {
+    try {
+      const now = new Date();
+      const userId = req.user?._id;
+      if (userId) {
+        const activeTaskCount = await UserTask.countDocuments({
+          userId,
+          isArchived: { $ne: true },
+          status: { $ne: 'completed' },
+        });
+
+        await User.findByIdAndUpdate(
+          userId,
+          {
+            isOnline: true,
+            lastLatitude: Number(latitude),
+            lastLongitude: Number(longitude),
+            lastLocationUpdate: now,
+            activeTaskCount,
+          },
+          { new: false },
+        );
+
+        const inProgressCount = await UserTask.countDocuments({
+          userId,
+          isArchived: { $ne: true },
+          status: 'in_progress',
+        });
+
+        io.emit('employeeLocationUpdate', {
+          employeeId: userId.toString(),
+          name: req.user?.name ? String(req.user.name) : 'Employee',
+          username: req.user?.username ? String(req.user.username) : null,
+          latitude: Number(latitude),
+          longitude: Number(longitude),
+          accuracy: 0,
+          speed: 0,
+          status: inProgressCount > 0 ? 'busy' : 'available',
+          timestamp: now.toISOString(),
+          activeTaskCount,
+          workloadScore: 0,
+          currentGeofence: geofence?.name || null,
+          distanceToNearestTask: null,
+          isOnline: true,
+          batteryLevel: null,
+        });
+      }
+    } catch (e) {
+      console.error('Failed to update user location in background:', e.message || e);
+    }
   });
 
-  try {
-    await appNotificationService.createForAdmins({
-      excludeUserId: req.user._id,
-      type: 'attendance',
-      action: 'check-in',
-      title: 'Employee Check-in',
-      message: `${req.user.name} checked in at ${geofence.name}`,
-      payload: {
-        userId: req.user._id.toString(),
+  // Background Job 3: Emit initial check-in notification
+  setImmediate(async () => {
+    try {
+      io.emit('newAttendanceRecord', {
+        _id: created._id,
+        employee: { _id: req.user._id, name: req.user.name },
+        geofence: { _id: geofence._id, name: geofence.name },
+        checkIn: created.checkIn,
+        status: created.status,
+        location: created.location,
+      });
+
+      io.emit('adminNotification', {
+        type: 'attendance',
+        action: 'check-in',
+        userId: req.user._id,
         employeeId: req.user.employeeId,
         employeeName: req.user.name,
         geofenceName: geofence.name,
-        checkInTime: created.checkIn,
-      },
-    });
-  } catch (_) {}
+        timestamp: created.checkIn,
+        message: `${req.user.name} checked in at ${geofence.name}`,
+        severity: 'info',
+      });
 
-  // Populate and emit full data asynchronously (don't block response)
+      await appNotificationService.createForAdmins({
+        excludeUserId: req.user._id,
+        type: 'attendance',
+        action: 'check-in',
+        title: 'Employee Check-in',
+        message: `${req.user.name} checked in at ${geofence.name}`,
+        payload: {
+          userId: req.user._id.toString(),
+          employeeId: req.user.employeeId,
+          employeeName: req.user.name,
+          geofenceName: geofence.name,
+          checkInTime: created.checkIn,
+        },
+      });
+    } catch (e) {
+      console.error('Failed to emit check-in notifications:', e.message || e);
+    }
+  });
+
+  // Background Job 4: Populate and emit full populated data
   setImmediate(async () => {
     try {
       const populatedAttendance = await Attendance.findById(created._id)
@@ -224,7 +237,7 @@ const checkIn = asyncHandler(async (req, res) => {
     }
   });
 
-  // Auto-create attendance report in background (don't block response)
+  // Background Job 5: Auto-create attendance report
   setImmediate(async () => {
     try {
       const rep = await Report.create({
@@ -244,8 +257,6 @@ const checkIn = asyncHandler(async (req, res) => {
       console.error('Failed to auto-create attendance check-in report:', e);
     }
   });
-
-  res.status(201).json(created);
 });
 
 // @desc    Employee check-out
@@ -320,7 +331,7 @@ const checkOut = asyncHandler(async (req, res) => {
   // Client already validated on check-in. Employees should be able to check out
   // even if they've moved outside the geofence or if the geofence is inactive.
 
-  // Record time in Philippine timezone (UTC+8)
+  // Record the checkout
   const phTime = new Date();
 
   openRecord.checkOut = phTime;
@@ -329,104 +340,115 @@ const checkOut = asyncHandler(async (req, res) => {
 
   const updated = await openRecord.save();
 
-  // Persist last-known coordinates & online status for late-join admin snapshots
-  // and emit a rich employeeLocationUpdate to refresh admin map/status instantly.
-  try {
-    const now = new Date();
-    const userId = req.user?._id;
-    if (userId) {
-      const activeTaskCount = await UserTask.countDocuments({
-        userId,
-        isArchived: { $ne: true },
-        status: { $ne: 'completed' },
-      });
+  // **RESPOND IMMEDIATELY** - Don't wait for notifications or User updates
+  res.json(updated);
 
-      await User.findByIdAndUpdate(
-        userId,
-        {
-          isOnline: true,
-          lastLatitude: Number(latitude),
-          lastLongitude: Number(longitude),
-          lastLocationUpdate: now,
+  // ===== ALL REMAINING OPERATIONS RUN IN BACKGROUND =====
+
+  // Background Job 1: Update User location and status
+  setImmediate(async () => {
+    try {
+      const now = new Date();
+      const userId = req.user?._id;
+      if (userId) {
+        const activeTaskCount = await UserTask.countDocuments({
+          userId,
+          isArchived: { $ne: true },
+          status: { $ne: 'completed' },
+        });
+
+        await User.findByIdAndUpdate(
+          userId,
+          {
+            isOnline: true,
+            lastLatitude: Number(latitude),
+            lastLongitude: Number(longitude),
+            lastLocationUpdate: now,
+            activeTaskCount,
+          },
+          { new: false },
+        );
+
+        const inProgressCount = await UserTask.countDocuments({
+          userId,
+          isArchived: { $ne: true },
+          status: 'in_progress',
+        });
+
+        io.emit('employeeLocationUpdate', {
+          employeeId: userId.toString(),
+          name: req.user?.name ? String(req.user.name) : 'Employee',
+          username: req.user?.username ? String(req.user.username) : null,
+          latitude: Number(latitude),
+          longitude: Number(longitude),
+          accuracy: 0,
+          speed: 0,
+          status: inProgressCount > 0 ? 'busy' : 'moving',
+          timestamp: now.toISOString(),
           activeTaskCount,
-        },
-        { new: false },
-      );
-
-      const inProgressCount = await UserTask.countDocuments({
-        userId,
-        isArchived: { $ne: true },
-        status: 'in_progress',
-      });
-
-      io.emit('employeeLocationUpdate', {
-        employeeId: userId.toString(),
-        name: req.user?.name ? String(req.user.name) : 'Employee',
-        username: req.user?.username ? String(req.user.username) : null,
-        latitude: Number(latitude),
-        longitude: Number(longitude),
-        accuracy: 0,
-        speed: 0,
-        status: inProgressCount > 0 ? 'busy' : 'moving',
-        timestamp: now.toISOString(),
-        activeTaskCount,
-        workloadScore: 0,
-        currentGeofence: geofence?.name || null,
-        distanceToNearestTask: null,
-        isOnline: true,
-        batteryLevel: null,
-      });
+          workloadScore: 0,
+          currentGeofence: geofence?.name || null,
+          distanceToNearestTask: null,
+          isOnline: true,
+          batteryLevel: null,
+        });
+      }
+    } catch (e) {
+      console.error('Failed to update user location in background:', e.message || e);
     }
-  } catch (_) {}
-
-  // Emit immediately with basic data for fast UI update
-  io.emit('updatedAttendanceRecord', {
-    _id: updated._id,
-    employee: { _id: req.user._id, name: req.user.name },
-    geofence: { _id: geofence._id, name: geofence.name },
-    checkIn: updated.checkIn,
-    checkOut: updated.checkOut,
-    status: updated.status,
-    location: updated.location,
   });
 
-  // Emit admin notification for check-out event
-  io.emit('adminNotification', {
-    type: 'attendance',
-    action: 'check-out',
-    userId: req.user._id,
-    employeeId: req.user.employeeId,
-    employeeName: req.user.name,
-    geofenceName: geofence.name,
-    checkInTime: updated.checkIn,
-    checkOutTime: updated.checkOut,
-    elapsedHours: ((updated.checkOut - updated.checkIn) / (1000 * 60 * 60)).toFixed(2),
-    timestamp: updated.checkOut,
-    message: `${req.user.name} checked out from ${geofence.name}`,
-    severity: 'info',
-  });
+  // Background Job 2: Emit checkout notification
+  setImmediate(async () => {
+    try {
+      io.emit('updatedAttendanceRecord', {
+        _id: updated._id,
+        employee: { _id: req.user._id, name: req.user.name },
+        geofence: { _id: geofence._id, name: geofence.name },
+        checkIn: updated.checkIn,
+        checkOut: updated.checkOut,
+        status: updated.status,
+        location: updated.location,
+      });
 
-  try {
-    await appNotificationService.createForAdmins({
-      excludeUserId: req.user._id,
-      type: 'attendance',
-      action: 'check-out',
-      title: 'Employee Checked Out',
-      message: `${req.user.name} checked out from ${geofence.name}`,
-      payload: {
-        userId: req.user._id.toString(),
+      io.emit('adminNotification', {
+        type: 'attendance',
+        action: 'check-out',
+        userId: req.user._id,
         employeeId: req.user.employeeId,
         employeeName: req.user.name,
-        geofenceId: geofence._id.toString(),
         geofenceName: geofence.name,
         checkInTime: updated.checkIn,
         checkOutTime: updated.checkOut,
         elapsedHours: ((updated.checkOut - updated.checkIn) / (1000 * 60 * 60)).toFixed(2),
-      },
-    });
-  } catch (_) {}
+        timestamp: updated.checkOut,
+        message: `${req.user.name} checked out from ${geofence.name}`,
+        severity: 'info',
+      });
 
-  // Populate and emit full data asynchronously (don't block response)
+      await appNotificationService.createForAdmins({
+        excludeUserId: req.user._id,
+        type: 'attendance',
+        action: 'check-out',
+        title: 'Employee Checked Out',
+        message: `${req.user.name} checked out from ${geofence.name}`,
+        payload: {
+          userId: req.user._id.toString(),
+          employeeId: req.user.employeeId,
+          employeeName: req.user.name,
+          geofenceId: geofence._id.toString(),
+          geofenceName: geofence.name,
+          checkInTime: updated.checkIn,
+          checkOutTime: updated.checkOut,
+          elapsedHours: ((updated.checkOut - updated.checkIn) / (1000 * 60 * 60)).toFixed(2),
+        },
+      });
+    } catch (e) {
+      console.error('Failed to emit check-out notifications:', e.message || e);
+    }
+  });
+
+  // Background Job 3: Populate and emit full data
   setImmediate(async () => {
     try {
       const populatedAttendance = await Attendance.findById(updated._id)
@@ -437,9 +459,7 @@ const checkOut = asyncHandler(async (req, res) => {
     } catch (e) {
       console.error('Error populating attendance:', e);
     }
-  });
-
-  // Auto-create attendance report in background (don't block response)
+  // Background Job 4: Auto-create attendance report
   setImmediate(async () => {
     try {
       const rep = await Report.create({
@@ -459,8 +479,6 @@ const checkOut = asyncHandler(async (req, res) => {
       console.error('Failed to auto-create attendance check-out report:', e);
     }
   });
-
-  res.json(updated);
 });
 
 // @desc    Log new attendance record (generic)
