@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import '../config/api_config.dart';
 import '../models/report_model.dart';
 import 'package:field_check/utils/http_util.dart';
@@ -274,32 +275,52 @@ class ReportService {
       throw Exception('File too large (max 10MB)');
     }
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}$_basePath/upload');
+    final token = await UserService().getToken();
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
 
-    final headers = await _headers(jsonContent: false);
-    final request = http.MultipartRequest('POST', uri);
-    request.headers.addAll(headers);
-
-    request.fields['taskId'] = taskId;
-    request.fields['employeeId'] = employeeId;
-
-    request.files.add(
-      http.MultipartFile.fromBytes('file', bytes, filename: fileName),
-    );
-
-    final response = await _sendMultipartWithAuthRetry(request);
-
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final decoded = json.decode(response.body);
-      if (decoded is Map<String, dynamic> && decoded['path'] is String) {
-        return decoded['path'] as String;
-      }
-      throw Exception('Upload succeeded but response invalid');
-    } else {
-      final msg = _extractErrorMessage(response);
-      throw Exception(
-        'Failed to upload attachment (${response.statusCode}): $msg',
+    try {
+      final dio = Dio(
+        BaseOptions(
+          baseUrl: ApiConfig.baseUrl,
+          connectTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+        ),
       );
+
+      final formData = FormData.fromMap({
+        'taskId': taskId,
+        'employeeId': employeeId,
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename: fileName,
+        ),
+      });
+
+      final response = await dio.post(
+        '$_basePath/upload',
+        data: formData,
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = response.data;
+        if (decoded is Map<String, dynamic> && decoded['path'] is String) {
+          return decoded['path'] as String;
+        }
+        throw Exception('Upload succeeded but response invalid');
+      } else {
+        throw Exception(
+          'Failed to upload attachment (${response.statusCode}): ${response.data}',
+        );
+      }
+    } on DioException catch (e) {
+      throw Exception('Upload error: ${e.message}');
+    } catch (e) {
+      throw Exception('Upload error: ${e.toString()}');
     }
   }
 
