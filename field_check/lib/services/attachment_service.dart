@@ -1,25 +1,43 @@
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'dart:convert';
-import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AttachmentService {
   final String apiBaseUrl;
+  late Dio _dio;
   String? _authToken;
 
-  AttachmentService({required this.apiBaseUrl});
+  AttachmentService({required this.apiBaseUrl}) {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: apiBaseUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+      ),
+    );
+  }
 
   /// Initialize with auth token
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _authToken = prefs.getString('jwt_token');
+    _updateAuthHeaders();
+  }
+
+  void _updateAuthHeaders() {
+    if (_authToken != null) {
+      _dio.options.headers['Authorization'] = 'Bearer $_authToken';
+    }
   }
 
   /// Upload a file as an attachment
+  /// Accepts file data as List<int> (bytes) for web compatibility
+  /// or can be extended to accept file path on native platforms
   /// 
   /// Returns: Map with _id, fileName, fileSize, url, uploadedAt
   Future<Map<String, dynamic>> uploadAttachment({
-    required File file,
+    required List<int> fileBytes,
+    required String fileName,
     required String resourceType, // 'report', 'task'
     required String resourceId,
   }) async {
@@ -28,28 +46,32 @@ class AttachmentService {
     }
 
     try {
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$apiBaseUrl/api/attachments/upload'),
+      final formData = FormData.fromMap({
+        'resourceType': resourceType,
+        'resourceId': resourceId,
+        'file': MultipartFile.fromBytes(
+          fileBytes,
+          filename: fileName,
+        ),
+      });
+
+      final response = await _dio.post(
+        '/api/attachments/upload',
+        data: formData,
+        options: Options(
+          headers: {'Authorization': 'Bearer $_authToken'},
+        ),
       );
 
-      request.headers['Authorization'] = 'Bearer $_authToken';
-      request.fields['resourceType'] = resourceType;
-      request.fields['resourceId'] = resourceId;
-      request.files.add(
-        await http.MultipartFile.fromPath('file', file.path),
-      );
-
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
-
-      if (response.statusCode == 201) {
-        return jsonDecode(responseBody);
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return Map<String, dynamic>.from(response.data);
       } else {
         throw Exception(
-          'Upload failed: ${response.statusCode} - $responseBody',
+          'Upload failed: ${response.statusCode} - ${response.data}',
         );
       }
+    } on DioException catch (e) {
+      throw Exception('Upload error: ${e.message}');
     } catch (e) {
       throw Exception('Upload error: ${e.toString()}');
     }
@@ -62,16 +84,20 @@ class AttachmentService {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/api/attachments/$attachmentId'),
-        headers: {'Authorization': 'Bearer $_authToken'},
+      final response = await _dio.get(
+        '/api/attachments/$attachmentId',
+        options: Options(
+          headers: {'Authorization': 'Bearer $_authToken'},
+        ),
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        return Map<String, dynamic>.from(response.data);
       } else {
         throw Exception('Failed to get attachment: ${response.statusCode}');
       }
+    } on DioException catch (e) {
+      throw Exception('Get attachment error: ${e.message}');
     } catch (e) {
       throw Exception('Get attachment error: ${e.toString()}');
     }
@@ -87,21 +113,23 @@ class AttachmentService {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse(
-          '$apiBaseUrl/api/resources/$resourceType/$resourceId/attachments',
+      final response = await _dio.get(
+        '/api/resources/$resourceType/$resourceId/attachments',
+        options: Options(
+          headers: {'Authorization': 'Bearer $_authToken'},
         ),
-        headers: {'Authorization': 'Bearer $_authToken'},
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         return List<Map<String, dynamic>>.from(data['attachments'] ?? []);
       } else {
         throw Exception(
           'Failed to get attachments: ${response.statusCode}',
         );
       }
+    } on DioException catch (e) {
+      throw Exception('Get attachments error: ${e.message}');
     } catch (e) {
       throw Exception('Get attachments error: ${e.toString()}');
     }
@@ -114,14 +142,18 @@ class AttachmentService {
     }
 
     try {
-      final response = await http.delete(
-        Uri.parse('$apiBaseUrl/api/attachments/$attachmentId'),
-        headers: {'Authorization': 'Bearer $_authToken'},
+      final response = await _dio.delete(
+        '/api/attachments/$attachmentId',
+        options: Options(
+          headers: {'Authorization': 'Bearer $_authToken'},
+        ),
       );
 
       if (response.statusCode != 200) {
         throw Exception('Delete failed: ${response.statusCode}');
       }
+    } on DioException catch (e) {
+      throw Exception('Delete attachment error: ${e.message}');
     } catch (e) {
       throw Exception('Delete attachment error: ${e.toString()}');
     }

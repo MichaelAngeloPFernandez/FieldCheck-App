@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io';
+import 'dart:async';
 import '../services/attachment_service.dart';
+
+// Conditional imports for platform-specific file handling
+import 'dart:io' as io show File;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Widget for picking and uploading attachments
 /// Supports: Camera, Gallery, File picker
@@ -106,7 +110,8 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
       );
 
       if (photo != null) {
-        await _uploadFile(File(photo.path), photo.name);
+        final bytes = await photo.readAsBytes();
+        await _uploadFile(bytes, photo.name);
       }
     } catch (e) {
       _showError('Camera error: $e');
@@ -121,7 +126,8 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
       );
 
       if (photo != null) {
-        await _uploadFile(File(photo.path), photo.name);
+        final bytes = await photo.readAsBytes();
+        await _uploadFile(bytes, photo.name);
       }
     } catch (e) {
       _showError('Gallery error: $e');
@@ -145,24 +151,27 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
         ],
       );
 
-      if (result != null && result.files.single.path != null) {
-        await _uploadFile(
-          File(result.files.single.path!),
-          result.files.single.name,
-        );
+      if (result != null && result.files.single.bytes != null) {
+        await _uploadFile(result.files.single.bytes!, result.files.single.name);
+      } else if (result != null && result.files.single.path != null && !kIsWeb) {
+        // Fallback for native platforms where bytes might not be available
+        final file = io.File(result.files.single.path!);
+        final bytes = await file.readAsBytes();
+        await _uploadFile(bytes, result.files.single.name);
       }
     } catch (e) {
       _showError('File picker error: $e');
     }
   }
 
-  Future<void> _uploadFile(File file, String fileName) async {
+  Future<void> _uploadFile(List<int> fileBytes, String fileName) async {
     try {
       setState(() => _isUploading = true);
       widget.onUploadStart?.call();
 
       final response = await widget.attachmentService.uploadAttachment(
-        file: file,
+        fileBytes: fileBytes,
+        fileName: fileName,
         resourceType: widget.resourceType,
         resourceId: widget.resourceId,
       );
