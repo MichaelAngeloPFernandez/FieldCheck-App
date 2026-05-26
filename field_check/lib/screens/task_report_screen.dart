@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:field_check/services/task_service.dart';
@@ -208,47 +209,52 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           _textController.text = content;
         }
 
-        final beforeFiles = autosavedData['beforeFiles'] as List<dynamic>?;
-        final afterFiles = autosavedData['afterFiles'] as List<dynamic>?;
-        List<dynamic>? documentFiles =
-            autosavedData['documentFiles'] as List<dynamic>?;
+        // On web, autosaved file references lack byte data (dart:io unavailable),
+        // so restoring them would create un-uploadable placeholders. Only restore
+        // file references on native platforms where paths can be read.
+        if (!kIsWeb) {
+          final beforeFiles = autosavedData['beforeFiles'] as List<dynamic>?;
+          final afterFiles = autosavedData['afterFiles'] as List<dynamic>?;
+          List<dynamic>? documentFiles =
+              autosavedData['documentFiles'] as List<dynamic>?;
 
-        // Backwards compatibility with legacy single files list
-        final legacyFiles = autosavedData['files'] as List<dynamic>?;
-        if ((beforeFiles == null || beforeFiles.isEmpty) &&
-            (afterFiles == null || afterFiles.isEmpty) &&
-            (documentFiles == null || documentFiles.isEmpty) &&
-            legacyFiles != null) {
-          documentFiles = legacyFiles;
-        }
+          // Backwards compatibility with legacy single files list
+          final legacyFiles = autosavedData['files'] as List<dynamic>?;
+          if ((beforeFiles == null || beforeFiles.isEmpty) &&
+              (afterFiles == null || afterFiles.isEmpty) &&
+              (documentFiles == null || documentFiles.isEmpty) &&
+              legacyFiles != null) {
+            documentFiles = legacyFiles;
+          }
 
-        void loadFiles(List<dynamic>? src, List<PlatformFile> target) {
-          if (src == null) return;
-          for (final fileData in src) {
-            if (fileData is Map<String, dynamic>) {
-              final file = PlatformFile(
-                name: fileData['name'] ?? '',
-                size: fileData['size'] is int ? fileData['size'] as int : 0,
-                path: fileData['path'] as String?,
-              );
-              target.add(file);
+          void loadFiles(List<dynamic>? src, List<PlatformFile> target) {
+            if (src == null) return;
+            for (final fileData in src) {
+              if (fileData is Map<String, dynamic>) {
+                final file = PlatformFile(
+                  name: fileData['name'] ?? '',
+                  size: fileData['size'] is int ? fileData['size'] as int : 0,
+                  path: fileData['path'] as String?,
+                );
+                target.add(file);
+              }
             }
           }
+
+          setState(() {
+            _beforeFiles.clear();
+            _afterFiles.clear();
+            _documentFiles.clear();
+
+            loadFiles(beforeFiles, _beforeFiles);
+            loadFiles(afterFiles, _afterFiles);
+            loadFiles(documentFiles, _documentFiles);
+
+            if (_task.checklist.isEmpty) {
+              _reportProgressPercent = _calculateReportProgressPercent();
+            }
+          });
         }
-
-        setState(() {
-          _beforeFiles.clear();
-          _afterFiles.clear();
-          _documentFiles.clear();
-
-          loadFiles(beforeFiles, _beforeFiles);
-          loadFiles(afterFiles, _afterFiles);
-          loadFiles(documentFiles, _documentFiles);
-
-          if (_task.checklist.isEmpty) {
-            _reportProgressPercent = _calculateReportProgressPercent();
-          }
-        });
       }
     } catch (e) {
       debugPrint('Error loading autosaved data: $e');
@@ -785,12 +791,15 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           }
 
           // Mobile/desktop path: use file path.
+          // On web, dart:io is unavailable so file-path uploads are impossible.
           final filePath = file.path;
-          if (filePath == null || filePath.isEmpty) {
+          if (kIsWeb || filePath == null || filePath.isEmpty) {
             if (!mounted) return;
             AppWidgets.showWarningSnackbar(
               context,
-              'Skipped ${file.name}: could not read file data.',
+              kIsWeb
+                  ? 'Skipped ${file.name}: please re-select this file to upload on web.'
+                  : 'Skipped ${file.name}: could not read file data.',
             );
             if (mounted) {
               setState(() {
