@@ -963,6 +963,99 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     return '${size.toStringAsFixed(i == 0 ? 0 : 1)} ${units[i]}';
   }
 
+  Widget _buildCollapsibleFileSection({
+    required String title,
+    required IconData icon,
+    required List<PlatformFile> files,
+    required void Function(int) onRemove,
+  }) {
+    final totalSize = files.fold<int>(0, (sum, f) => sum + f.size);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppTheme.dividerColor),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        child: ExpansionTile(
+          leading: Icon(icon, size: 20),
+          title: Text(
+            '$title (${files.length})',
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          subtitle: Text(
+            'Total: ${_humanBytes(totalSize)}',
+            style: AppTheme.bodySm.copyWith(color: AppTheme.textSecondary),
+          ),
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+          childrenPadding: const EdgeInsets.only(bottom: 4),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          children: List.generate(files.length, (index) {
+            final file = files[index];
+            final tooBig = file.size > _maxUploadBytes;
+            return ListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              leading: Icon(
+                _isLikelyImage(file.name)
+                    ? Icons.image_outlined
+                    : Icons.insert_drive_file_outlined,
+                color: tooBig ? Colors.red : null,
+                size: 20,
+              ),
+              title: Text(
+                file.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13),
+              ),
+              subtitle: Text(
+                '${_humanBytes(file.size)}'
+                '${tooBig ? ' \u2022 exceeds 10MB' : ''}',
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.visibility, size: 18),
+                    onPressed: _isSubmitting
+                        ? null
+                        : () => _previewSelectedFile(file),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: _isSubmitting
+                        ? null
+                        : () => onRemove(index),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasChecklist = _task.checklist.isNotEmpty;
@@ -1154,11 +1247,12 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
             ),
           ),
 
-          // Rich text editor
+          // Scrollable content area
           Expanded(
-            child: Container(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(AppTheme.lg),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (_task.checklist.isNotEmpty) ...[
                     Align(
@@ -1229,190 +1323,79 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: AppTheme.dividerColor),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      ),
-                      child: TextField(
-                        controller: _textController,
-                        maxLines: null,
-                        expands: true,
-                        textDirection: TextDirection.ltr,
-                        textAlign: TextAlign.left,
-                        textAlignVertical: TextAlignVertical.top,
-                        style: AppTheme.bodyMd,
-                        decoration: const InputDecoration(
-                          hintText:
-                              'Describe what you did, any issues encountered, or additional notes...',
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.all(16),
-                        ),
+                  Container(
+                    constraints: const BoxConstraints(minHeight: 150),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppTheme.dividerColor),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    ),
+                    child: TextField(
+                      controller: _textController,
+                      maxLines: null,
+                      minLines: 6,
+                      textDirection: TextDirection.ltr,
+                      textAlign: TextAlign.left,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: AppTheme.bodyMd,
+                      decoration: const InputDecoration(
+                        hintText:
+                            'Describe what you did, any issues encountered, or additional notes...',
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.all(16),
                       ),
                     ),
                   ),
+
+                  // Collapsible attachment sections
+                  if (_beforeFiles.isNotEmpty ||
+                      _afterFiles.isNotEmpty ||
+                      _documentFiles.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.attach_file,
+                          size: 18,
+                          color: AppTheme.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Attachments',
+                          style: TextStyle(
+                            fontSize: AppTheme.headingSm.fontSize,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (_beforeFiles.isNotEmpty)
+                      _buildCollapsibleFileSection(
+                        title: 'Before Photos',
+                        icon: Icons.camera_alt_outlined,
+                        files: _beforeFiles,
+                        onRemove: _removeBeforeFile,
+                      ),
+                    if (_afterFiles.isNotEmpty)
+                      _buildCollapsibleFileSection(
+                        title: 'After Photos',
+                        icon: Icons.camera_outlined,
+                        files: _afterFiles,
+                        onRemove: _removeAfterFile,
+                      ),
+                    if (_documentFiles.isNotEmpty)
+                      _buildCollapsibleFileSection(
+                        title: 'Documents',
+                        icon: Icons.description_outlined,
+                        files: _documentFiles,
+                        onRemove: _removeDocumentFile,
+                      ),
+                  ],
                 ],
               ),
             ),
           ),
-
-          // Selected files
-          if (_beforeFiles.isNotEmpty ||
-              _afterFiles.isNotEmpty ||
-              _documentFiles.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppTheme.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_beforeFiles.isNotEmpty) ...[
-                    const Text(
-                      'Before Photos:',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: 4),
-                    ...List.generate(_beforeFiles.length, (index) {
-                      final file = _beforeFiles[index];
-                      final tooBig = file.size > _maxUploadBytes;
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          _isLikelyImage(file.name)
-                              ? Icons.image_outlined
-                              : Icons.insert_drive_file_outlined,
-                          color: tooBig ? Colors.red : null,
-                        ),
-                        title: Text(
-                          file.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${_humanBytes(file.size)}'
-                          '${tooBig ? ' • exceeds 10MB' : ''}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.visibility),
-                              onPressed: _isSubmitting
-                                  ? null
-                                  : () => _previewSelectedFile(file),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close),
-                              onPressed: _isSubmitting
-                                  ? null
-                                  : () => _removeBeforeFile(index),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_afterFiles.isNotEmpty) ...[
-                    const Text(
-                      'After Photos:',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: 4),
-                    ...List.generate(_afterFiles.length, (index) {
-                      final file = _afterFiles[index];
-                      final tooBig = file.size > _maxUploadBytes;
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          _isLikelyImage(file.name)
-                              ? Icons.image_outlined
-                              : Icons.insert_drive_file_outlined,
-                          color: tooBig ? Colors.red : null,
-                        ),
-                        title: Text(
-                          file.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${_humanBytes(file.size)}'
-                          '${tooBig ? ' • exceeds 10MB' : ''}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.visibility),
-                              onPressed: _isSubmitting
-                                  ? null
-                                  : () => _previewSelectedFile(file),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close),
-                              onPressed: _isSubmitting
-                                  ? null
-                                  : () => _removeAfterFile(index),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_documentFiles.isNotEmpty) ...[
-                    const Text(
-                      'Documents:',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: 4),
-                    ...List.generate(_documentFiles.length, (index) {
-                      final file = _documentFiles[index];
-                      final tooBig = file.size > _maxUploadBytes;
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          _isLikelyImage(file.name)
-                              ? Icons.image_outlined
-                              : Icons.insert_drive_file_outlined,
-                          color: tooBig ? Colors.red : null,
-                        ),
-                        title: Text(
-                          file.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${_humanBytes(file.size)}'
-                          '${tooBig ? ' • exceeds 10MB' : ''}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.visibility),
-                              onPressed: _isSubmitting
-                                  ? null
-                                  : () => _previewSelectedFile(file),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close),
-                              onPressed: _isSubmitting
-                                  ? null
-                                  : () => _removeDocumentFile(index),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
-                ],
-              ),
-            ),
 
           // Submit button
           if (_task.userTaskStatus != 'completed')
