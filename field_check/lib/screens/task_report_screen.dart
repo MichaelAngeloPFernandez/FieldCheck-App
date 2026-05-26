@@ -857,26 +857,14 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           attachments: attachmentPaths,
         );
 
-        final progressPercent = _task.checklist.isNotEmpty
-            ? null
-            : _calculateReportProgressPercent();
-        await TaskService().updateUserTaskStatus(
-          _task.userTaskId!,
-          'completed',
-          progressPercent: progressPercent,
-        );
+        // Submit task for admin review (automatically transitions to pending_review)
+        await TaskService().submitUserTask(_task.userTaskId!);
 
         try {
           await LocationSyncService().refreshNow();
         } catch (_) {}
 
         await _autosaveService.clearData('task_report_${widget.task.id}');
-
-        _realtimeService.emit('taskCompleted', {
-          'taskId': widget.task.id,
-          'employeeId': widget.employeeId,
-          'timestamp': DateTime.now().toIso8601String(),
-        });
       }
 
       if (mounted) {
@@ -884,7 +872,7 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           context,
           _isResubmission
               ? 'Report resubmitted (reopened window)!'
-              : 'Report submitted successfully!',
+              : 'Report submitted successfully! Waiting for admin review...',
         );
         Navigator.pop(context, true);
       }
