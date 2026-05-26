@@ -124,7 +124,7 @@ function canTransitionTaskStatus(fromStatus, toStatus, userRole, actionType) {
     'pending': ['in_progress'], // Only through employee acceptance
     'pending_acceptance': ['accepted', 'in_progress'], // Through acceptance
     'accepted': ['in_progress'], // Through starting work
-    'in_progress': ['pending_review', 'blocked'], // Through submission or blocking
+    'in_progress': ['pending_review', 'blocked', 'completed'], // Through submission, blocking, or report completion
     'pending_review': ['completed', 'in_progress'], // Through admin approval or rejection
     'blocked': ['in_progress', 'closed'], // Through admin unblock or close
     'completed': [], // Terminal state

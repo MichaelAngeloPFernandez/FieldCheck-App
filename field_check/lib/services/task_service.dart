@@ -838,7 +838,16 @@ class TaskService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to update user task status');
+      String message = 'Failed to update user task status';
+      if (response.body.isNotEmpty) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          }
+        } catch (_) {}
+      }
+      throw Exception(message);
     }
   }
 
