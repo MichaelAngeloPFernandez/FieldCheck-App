@@ -836,6 +836,11 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
         });
       }
 
+      // Check acceptance requirement BEFORE creating report
+      if (!_isResubmission && _needsAcceptance) {
+        throw Exception('Accept this task first to begin');
+      }
+
       // Create the report
       if (_isResubmission) {
         await ReportService().resubmitReport(
@@ -851,10 +856,6 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
           content: content,
           attachments: attachmentPaths,
         );
-
-        if (_needsAcceptance) {
-          throw Exception('Accept this task first to begin');
-        }
 
         final progressPercent = _task.checklist.isNotEmpty
             ? null
