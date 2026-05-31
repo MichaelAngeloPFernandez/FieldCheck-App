@@ -1,18 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const ticketRatingController = require('../controllers/ticketRatingController');
-const { protect, admin } = require('../middleware/authMiddleware');
 
 /**
- * Admin-only routes (authentication required)
+ * Public routes (no authentication required)
+ * Note: Admin grading has been removed - only clients can rate and view their own ratings
  */
 
-// GET - List all ticket ratings with filters (admin only)
-router.get(
-  '/',
-  protect,
-  admin,
-  ticketRatingController.listTicketRatings
-);
+// GET - Get all ticket ratings for a client (public, email-based)
+router.get('/', ticketRatingController.getClientRatings);
 
 module.exports = router;

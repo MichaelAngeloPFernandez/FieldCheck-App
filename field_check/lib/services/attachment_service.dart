@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AttachmentService {
@@ -31,7 +30,7 @@ class AttachmentService {
   }
 
   /// Upload a file as an attachment
-  /// Accepts file data as List<int> (bytes) for web compatibility
+  /// Accepts file data as `List<int>` (bytes) for web compatibility
   /// or can be extended to accept file path on native platforms
   /// 
   /// Returns: Map with _id, fileName, fileSize, url, uploadedAt

@@ -6,7 +6,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:field_check/services/task_service.dart';
 import 'package:field_check/services/report_service.dart';
 import 'package:field_check/services/autosave_service.dart';
-import 'package:field_check/services/realtime_service.dart';
 import 'package:field_check/services/location_sync_service.dart';
 import 'package:field_check/models/task_model.dart';
 import 'package:field_check/utils/app_theme.dart';
@@ -39,7 +38,6 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
   final List<PlatformFile> _afterFiles = [];
   final List<PlatformFile> _documentFiles = [];
   final AutosaveService _autosaveService = AutosaveService();
-  final RealtimeService _realtimeService = RealtimeService();
   late Task _task;
   bool _isSubmitting = false;
   bool _isBlocking = false;

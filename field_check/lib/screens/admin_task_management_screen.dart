@@ -1917,7 +1917,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                       ),
                     _detailRow(
                       Icons.flag,
-                      'Status: ${task.status.replaceAll('_', ' ')}',
+                      'Status: ${_formatTaskStatus(task.status)}',
                     ),
                     if (task.type != null && task.type!.isNotEmpty)
                       _detailRow(Icons.category, 'Type: ${task.type}'),
@@ -2191,19 +2191,55 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                                       actionLabel: 'Reject',
                                                     );
                                                 if (note == null) return;
+                                                if (!mounted) return;
+                                                
+                                                // Show loading indicator
+                                                showDialog(
+                                                  context: context,
+                                                  barrierDismissible: false,
+                                                  builder: (ctx) => const AlertDialog(
+                                                    content: Row(
+                                                      children: [
+                                                        CircularProgressIndicator(),
+                                                        SizedBox(width: 16),
+                                                        Expanded(
+                                                          child: Text('Rejecting task...'),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                                
                                                 try {
                                                   await TaskService()
                                                       .rejectUserTask(
                                                         userTaskId,
                                                         note,
                                                       );
+                                                  
                                                   if (!mounted) return;
+                                                  
+                                                  // Close loading dialog
+                                                  Navigator.of(context).pop();
+                                                  
+                                                  // Refresh task list
+                                                  await _fetchTasks();
+                                                  
+                                                  if (!mounted) return;
+                                                  
+                                                  // Close task detail modal
+                                                  Navigator.of(ctx).pop();
+                                                  
                                                   AppWidgets.showSuccessSnackbar(
                                                     context,
                                                     'Task rejected',
                                                   );
                                                 } catch (e) {
                                                   if (!mounted) return;
+                                                  
+                                                  // Close loading dialog
+                                                  Navigator.of(context).pop();
+                                                  
                                                   AppWidgets.showErrorSnackbar(
                                                     context,
                                                     AppWidgets.friendlyErrorMessage(
@@ -2233,19 +2269,55 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                                       actionLabel: 'Approve',
                                                     );
                                                 if (note == null) return;
+                                                if (!mounted) return;
+                                                
+                                                // Show loading indicator
+                                                showDialog(
+                                                  context: context,
+                                                  barrierDismissible: false,
+                                                  builder: (ctx) => const AlertDialog(
+                                                    content: Row(
+                                                      children: [
+                                                        CircularProgressIndicator(),
+                                                        SizedBox(width: 16),
+                                                        Expanded(
+                                                          child: Text('Approving task...'),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                                
                                                 try {
                                                   await TaskService()
                                                       .approveUserTask(
                                                         userTaskId,
                                                         note,
                                                       );
+                                                  
                                                   if (!mounted) return;
+                                                  
+                                                  // Close loading dialog
+                                                  Navigator.of(context).pop();
+                                                  
+                                                  // Refresh task list
+                                                  await _fetchTasks();
+                                                  
+                                                  if (!mounted) return;
+                                                  
+                                                  // Close task detail modal
+                                                  Navigator.of(ctx).pop();
+                                                  
                                                   AppWidgets.showSuccessSnackbar(
                                                     context,
-                                                    'Task approved',
+                                                    'Task approved successfully',
                                                   );
                                                 } catch (e) {
                                                   if (!mounted) return;
+                                                  
+                                                  // Close loading dialog
+                                                  Navigator.of(context).pop();
+                                                  
                                                   AppWidgets.showErrorSnackbar(
                                                     context,
                                                     AppWidgets.friendlyErrorMessage(
@@ -2326,6 +2398,30 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
       case 'pending':
       default:
         return const Color(0xFF757575);
+    }
+  }
+
+  String _formatTaskStatus(String status) {
+    switch (status.toLowerCase().trim()) {
+      case 'pending_review':
+        return 'Under Review';
+      case 'in_progress':
+        return 'In Progress';
+      case 'completed':
+        return 'Completed';
+      case 'blocked':
+        return 'Blocked';
+      case 'overdue':
+        return 'Overdue';
+      case 'pending':
+        return 'Pending';
+      default:
+        // Fallback to title case
+        return status
+            .replaceAll('_', ' ')
+            .split(' ')
+            .map((word) => word[0].toUpperCase() + word.substring(1).toLowerCase())
+            .join(' ');
     }
   }
 
@@ -2670,7 +2766,7 @@ class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
-                                        task.status.replaceAll('_', ' '),
+                                        _formatTaskStatus(task.status),
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,

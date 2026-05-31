@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:app_settings/app_settings.dart';
 
 /// Location Permission Dialog Widget
 /// Displays a user-friendly prompt to request location permissions
@@ -119,7 +118,7 @@ class _LocationPermissionDialogState extends State<LocationPermissionDialog> {
     final messenger = ScaffoldMessenger.of(context);
 
     try {
-      await AppSettings.openLocationSettings();
+      await Geolocator.openLocationSettings();
 
       // After returning from settings, check permission again
       await Future.delayed(const Duration(milliseconds: 500));

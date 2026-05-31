@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:field_check/screens/admin_reports_screen.dart';
 import 'package:field_check/screens/enhanced_reports_screen.dart';
-import 'package:field_check/screens/client_grades_report_screen.dart';
 
 class AdminReportsHubScreen extends StatefulWidget {
   static final ValueNotifier<int> requestedInitialTab = ValueNotifier<int>(0);
@@ -31,16 +30,16 @@ class _AdminReportsHubScreenState extends State<AdminReportsHubScreen>
   @override
   void initState() {
     super.initState();
-    final fromWidget = widget.initialTab.clamp(0, 2);
-    final initial = AdminReportsHubScreen.requestedInitialTab.value.clamp(0, 2);
+    final fromWidget = widget.initialTab.clamp(0, 1);
+    final initial = AdminReportsHubScreen.requestedInitialTab.value.clamp(0, 1);
     _tabController = TabController(
-      length: 3,
+      length: 2,
       vsync: this,
       initialIndex: initial != 0 ? initial : fromWidget,
     );
 
     _tabRequestListener = () {
-      final idx = AdminReportsHubScreen.requestedInitialTab.value.clamp(0, 2);
+      final idx = AdminReportsHubScreen.requestedInitialTab.value.clamp(0, 1);
       if (!mounted) return;
       if (_tabController.index == idx) return;
       _tabController.animateTo(idx);
@@ -74,7 +73,6 @@ class _AdminReportsHubScreenState extends State<AdminReportsHubScreen>
       tabs: const [
         Tab(icon: Icon(Icons.table_chart), text: 'Manage'),
         Tab(icon: Icon(Icons.insights), text: 'Analytics'),
-        Tab(icon: Icon(Icons.star_rate), text: 'Client Grades'),
       ],
     );
 
@@ -83,7 +81,6 @@ class _AdminReportsHubScreenState extends State<AdminReportsHubScreen>
       children: const [
         _AdminReportsEmbedded(),
         _EnhancedReportsEmbedded(),
-        _ClientGradesReportEmbedded()
       ],
     );
 
@@ -126,14 +123,5 @@ class _EnhancedReportsEmbedded extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const EnhancedReportsScreen();
-  }
-}
-
-class _ClientGradesReportEmbedded extends StatelessWidget {
-  const _ClientGradesReportEmbedded();
-
-  @override
-  Widget build(BuildContext context) {
-    return const ClientGradesReportScreen(embedded: true);
   }
 }

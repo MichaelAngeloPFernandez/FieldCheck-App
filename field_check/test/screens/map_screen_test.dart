@@ -5,6 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Tests for Phase 3: Map Functionality Enhancement
 /// Validates Requirements 6.1, 6.2, 6.3, 6.4, 8.1, 8.2, 8.3, 8.4, 8.5, 9.1, 9.2, 9.3, 9.4, 9.5
+Future<void> _pumpUntilMapControlsReady(WidgetTester tester) async {
+  for (var i = 0; i < 100; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (find.byIcon(Icons.my_location).evaluate().isNotEmpty) {
+      return;
+    }
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -79,7 +88,8 @@ void main() {
 
       // Tap the button to navigate
       await tester.tap(find.text('Open Map'));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
 
       // Assert - Should navigate to map screen
       expect(find.byType(MapScreen), findsOneWidget);
@@ -109,7 +119,8 @@ void main() {
 
       // Navigate to map
       await tester.tap(find.text('Open Map'));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
 
       // Assert - Should have back button in app bar
       expect(find.byType(BackButton), findsOneWidget);
@@ -124,7 +135,7 @@ void main() {
           home: MapScreen(),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 200));
 
       // Assert - Should have center map button with my_location icon
       expect(find.byIcon(Icons.my_location), findsOneWidget);
@@ -137,7 +148,7 @@ void main() {
           home: MapScreen(),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 200));
 
       // Assert - Should have fit map button with center_focus_strong icon
       expect(find.byIcon(Icons.center_focus_strong), findsOneWidget);
@@ -150,7 +161,7 @@ void main() {
           home: MapScreen(),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 200));
 
       // Assert - Should have search button
       expect(find.byIcon(Icons.search), findsWidgets);
@@ -163,7 +174,7 @@ void main() {
           home: MapScreen(),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 200));
 
       // Assert - Should have refresh button in app bar
       expect(find.byIcon(Icons.refresh), findsOneWidget);
@@ -178,7 +189,7 @@ void main() {
           home: MapScreen(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUntilMapControlsReady(tester);
 
       // Find the center map button by icon
       final centerButton = find.ancestor(
@@ -200,7 +211,7 @@ void main() {
           home: MapScreen(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUntilMapControlsReady(tester);
 
       // Find the fit map button by icon
       final fitButton = find.ancestor(

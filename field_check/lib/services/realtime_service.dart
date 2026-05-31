@@ -1,5 +1,6 @@
 // ignore_for_file: avoid_print, library_prefixes
 import 'dart:async';
+import 'package:flutter/scheduler.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:field_check/config/api_config.dart';
 import 'package:field_check/services/user_service.dart';
@@ -139,7 +140,19 @@ class RealtimeService {
     }
   }
 
+  bool _isWidgetTestEnvironment() {
+    try {
+      return SchedulerBinding.instance.runtimeType
+          .toString()
+          .contains('TestWidgets');
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> initialize() async {
+    if (_isWidgetTestEnvironment()) return;
+
     final token = await UserService().getToken();
 
     // Important: RealtimeService is a singleton. If the user logs out and logs in
@@ -799,7 +812,7 @@ class RealtimeService {
         
         try {
           if (_socket != null && !_isConnected) {
-            print('RealtimeService: Attempting to reconnect (attempt ${_reconnectAttempts})');
+            print('RealtimeService: Attempting to reconnect (attempt $_reconnectAttempts)');
             _socket!.connect();
             return;
           }

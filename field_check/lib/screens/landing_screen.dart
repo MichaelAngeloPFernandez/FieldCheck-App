@@ -1097,6 +1097,18 @@ class _LandingScreenState extends State<LandingScreen> {
                                 ),
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: () => Navigator.of(context).pushNamed('/client-grades'),
+                              icon: const Icon(Icons.star_half),
+                              label: const Text('View My Grades'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 14,
+                                ),
+                              ),
+                            ),
                             const SizedBox(height: 16),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,

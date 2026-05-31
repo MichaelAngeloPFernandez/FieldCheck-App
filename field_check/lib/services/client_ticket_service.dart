@@ -994,4 +994,85 @@ class ClientTicketService {
       rethrow;
     }
   }
-}
+  /// Get all ticket ratings for a client (public - email-based auth)
+  /// Returns: success: bool, ratings: List, total: int, pages: int, averageRating: double
+  Future<Map<String, dynamic>> getClientRatings({
+    required String clientEmail,
+    int page = 1,
+    int limit = 10,
+    int? stars,
+    String sortBy = 'recent',
+  }) async {
+    try {
+      final query = <String, String>{
+        'clientEmail': clientEmail,
+        'page': page.toString(),
+        'limit': limit.toString(),
+        'sort': sortBy,
+        if (stars != null) 'stars': stars.toString(),
+      };
+
+      final response = await HttpUtil()
+          .get(
+            '/api/ticket-ratings',
+            queryParams: query,
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? {
+                  'success': true,
+                  'ratings': decoded['ratings'] ?? [],
+                  'total': decoded['total'] ?? 0,
+                  'pages': decoded['pages'] ?? 1,
+                  'averageRating': decoded['averageRating'] ?? 0.0,
+                  'fiveStarCount': decoded['fiveStarCount'] ?? 0,
+                  'fourStarCount': decoded['fourStarCount'] ?? 0,
+                  'threeStarCount': decoded['threeStarCount'] ?? 0,
+                  'twoStarCount': decoded['twoStarCount'] ?? 0,
+                  'oneStarCount': decoded['oneStarCount'] ?? 0,
+                }
+              : {
+                  'success': true,
+                  'ratings': [],
+                  'total': 0,
+                  'pages': 1,
+                  'averageRating': 0.0,
+                };
+        } catch (_) {
+          return {
+            'success': true,
+            'ratings': [],
+            'total': 0,
+            'pages': 1,
+            'averageRating': 0.0,
+          };
+        }
+      } else if (response.statusCode == 404) {
+        return {
+          'success': true,
+          'ratings': [],
+          'total': 0,
+          'pages': 1,
+          'averageRating': 0.0,
+          'message': 'No ratings found for this email',
+        };
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to load ratings');
+        } catch (_) {
+          throw Exception('Failed to load ratings (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception('Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }}

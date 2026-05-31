@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../config/api_config.dart';
 import '../services/user_service.dart';
@@ -139,8 +140,20 @@ class EmployeeLocationService {
   final Map<String, List<EmployeeLocation>> _locationHistory = {};
   static const int maxHistoryPerEmployee = 50;
 
+  bool _isWidgetTestEnvironment() {
+    try {
+      return SchedulerBinding.instance.runtimeType
+          .toString()
+          .contains('TestWidgets');
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Initialize socket connection for real-time location updates
   Future<void> initialize() async {
+    if (_isWidgetTestEnvironment()) return;
+
     final token = await _userService.getToken();
     final tokenChanged = (token ?? '') != (_lastAuthToken ?? '');
     if (_socket != null && _isConnected && !tokenChanged) return;

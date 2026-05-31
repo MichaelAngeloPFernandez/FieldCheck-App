@@ -23,6 +23,7 @@ import 'package:field_check/screens/landing_screen.dart';
 import 'package:field_check/screens/verify_email_screen.dart';
 import 'package:field_check/screens/chat_screen.dart';
 import 'package:field_check/screens/admin_chat_screen.dart';
+import 'package:field_check/screens/client_grades_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/services/migration_service.dart';
@@ -222,6 +223,7 @@ class MyAppState extends State<MyApp> {
           '/admin-overview': (context) => const EnhancedAdminDashboardScreen(),
           '/chat': (context) => const ChatScreen(),
           '/admin-chat': (context) => const AdminChatScreen(),
+          '/client-grades': (context) => const ClientGradesScreen(),
         },
         onGenerateRoute: (settings) {
           final rawName = settings.name;

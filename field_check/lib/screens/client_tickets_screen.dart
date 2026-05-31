@@ -448,7 +448,12 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> {
       builder: (ctx) {
         return _TicketDetailModal(ticket: ticket, onRefresh: _loadTickets);
       },
-    );
+    ).then((_) {
+      // Refresh ticket list when modal closes (whether dismissed or through action)
+      if (mounted) {
+        _loadTickets();
+      }
+    });
   }
 
   void _showStatusPicker() {
