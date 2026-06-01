@@ -4679,11 +4679,124 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Widget
   }
 
   void _assignTicketToEmployee(Map<String, dynamic> ticket) {
-    // Show dialog to select an employee for assignment
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Assign ticket ${ticket['ticketNumber']} to employee'),
-      ),
+    final ticketNumber = (ticket['ticketNumber'] ?? '').toString();
+    final initiallyAssigned =
+        List<Map<String, dynamic>>.from(ticket['assignedEmployees'] ?? const []);
+    final selectedIds = initiallyAssigned
+        .map((employee) => (employee['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final availableEmployees = _employees.values.toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        bool isSubmitting = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Assign $ticketNumber'),
+              content: SizedBox(
+                width: 420,
+                child: availableEmployees.isEmpty
+                    ? const Text('No employees available.')
+                    : SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: availableEmployees
+                              .map(
+                                (employee) => CheckboxListTile(
+                                  value: selectedIds.contains(employee.id),
+                                  title: Text(employee.name),
+                                  subtitle: Text(employee.email),
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                  onChanged: isSubmitting
+                                      ? null
+                                      : (checked) {
+                                          setDialogState(() {
+                                            if (checked == true) {
+                                              selectedIds.add(employee.id);
+                                            } else {
+                                              selectedIds.remove(employee.id);
+                                            }
+                                          });
+                                        },
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      isSubmitting ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          if (selectedIds.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Select at least one employee.'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                            return;
+                          }
+                          setDialogState(() => isSubmitting = true);
+                          try {
+                            final response = await HttpUtil().post(
+                              '/api/client-tickets/$ticketNumber/assign',
+                              body: {'employeeIds': selectedIds.toList()},
+                            );
+                            if (!mounted) return;
+                            if (response.statusCode == 200 ||
+                                response.statusCode == 201) {
+                              Navigator.of(dialogContext).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Assigned ${selectedIds.length} employee(s) to $ticketNumber',
+                                  ),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                              _loadPendingTickets();
+                            } else {
+                              final decoded = jsonDecode(response.body);
+                              throw Exception(
+                                decoded['error'] ?? 'Failed to assign ticket',
+                              );
+                            }
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Assignment failed: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            setDialogState(() => isSubmitting = false);
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save Assignment'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

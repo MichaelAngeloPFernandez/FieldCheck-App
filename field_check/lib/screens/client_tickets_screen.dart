@@ -83,10 +83,15 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final pagination =
+            (data['pagination'] as Map?)?.cast<String, dynamic>() ?? const {};
         setState(() {
           _tickets = List<Map<String, dynamic>>.from(data['tickets'] ?? []);
-          _totalTickets = data['total'] ?? 0;
-          _totalPages = data['pages'] ?? 1;
+          _totalTickets =
+              (pagination['total'] as num?)?.toInt() ??
+              (data['tickets'] as List?)?.length ??
+              0;
+          _totalPages = (pagination['pages'] as num?)?.toInt() ?? 1;
           _isLoading = false;
           _error = null;
         });
@@ -315,6 +320,8 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> {
     final createdAt = ticket['createdAt'] as String?;
     final description = ticket['description'] as String? ?? '';
     final assignedEmployeeId = ticket['assignedEmployeeId'] as String?;
+    final assignedEmployees =
+        List<Map<String, dynamic>>.from(ticket['assignedEmployees'] ?? []);
 
     final isDark = theme.brightness == Brightness.dark;
     final cardBg =
@@ -387,7 +394,15 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> {
                     'Type: ${serviceType.replaceAll('_', ' ').toUpperCase()}',
                     style: theme.textTheme.labelSmall,
                   ),
-                  if (assignedEmployeeId != null)
+                  if (assignedEmployees.isNotEmpty)
+                    Text(
+                      assignedEmployees.length > 1
+                          ? '${assignedEmployees.length} assigned'
+                          : 'Assigned',
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: Colors.green),
+                    )
+                  else if (assignedEmployeeId != null)
                     Text(
                       'Assigned',
                       style: theme.textTheme.labelSmall
@@ -687,7 +702,7 @@ class _TicketDetailModalState extends State<_TicketDetailModal> {
     final status = ticket['status'] as String? ?? 'open';
     final description = ticket['description'] as String? ?? '';
     final attachments = ticket['attachments'] as List? ?? [];
-    final rating = ticket['rating'] as Map<String, dynamic>?;
+    final rating = (ticket['rating'] as Map?)?.cast<String, dynamic>();
 
     return SingleChildScrollView(
       child: Padding(

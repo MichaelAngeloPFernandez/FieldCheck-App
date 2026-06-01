@@ -79,6 +79,12 @@ const clientTicketSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    assignedEmployeeIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
 
     // Link to auto-created employee task
     linkedTaskId: {
@@ -120,7 +126,7 @@ const clientTicketSchema = new mongoose.Schema(
       },
     ],
 
-    // Client rating (submitted after ticket completion)
+    // Legacy single rating retained for backward compatibility.
     rating: {
       stars: {
         type: Number,
@@ -131,6 +137,43 @@ const clientTicketSchema = new mongoose.Schema(
       submittedAt: Date,
       submittedBy: String, // client email
     },
+
+    // Per-employee ratings for multi-assignee client support tasks.
+    employeeRatings: [
+      {
+        employeeId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        reportId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Report',
+          default: null,
+        },
+        stars: {
+          type: Number,
+          min: 1,
+          max: 5,
+          required: true,
+        },
+        comment: {
+          type: String,
+          trim: true,
+          default: '',
+        },
+        submittedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        submittedBy: {
+          type: String,
+          required: true,
+          lowercase: true,
+          trim: true,
+        },
+      },
+    ],
 
     // Internal admin notes
     adminNotes: String,
@@ -175,6 +218,8 @@ clientTicketSchema.index({ status: 1, createdAt: -1 });
 clientTicketSchema.index({ serviceType: 1, status: 1 });
 clientTicketSchema.index({ clientEmail: 1, createdAt: -1 });
 clientTicketSchema.index({ assignedEmployeeId: 1, status: 1 });
+clientTicketSchema.index({ assignedEmployeeIds: 1, status: 1 });
+clientTicketSchema.index({ 'employeeRatings.employeeId': 1, updatedAt: -1 });
 
 // Update 'updatedAt' on any save
 clientTicketSchema.pre('save', function (next) {

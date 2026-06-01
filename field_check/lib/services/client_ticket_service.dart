@@ -11,9 +11,10 @@ import 'dart:developer' as developer;
 class ClientTicketService {
   static const String _basePath = '/api/client-tickets';
   static const String _contactPath = '/api/contact';
-  static const String _debugEndpoint = 'http://127.0.0.1:7594/ingest/1c924b68-154a-46b7-8559-78da3d47b03c';
+  static const String _debugEndpoint =
+      'http://127.0.0.1:7594/ingest/1c924b68-154a-46b7-8559-78da3d47b03c';
   static const String _debugSessionId = '1d6461';
-  
+
   final RealtimeService _realtimeService = RealtimeService();
 
   void _debugLog({
@@ -72,7 +73,7 @@ class ClientTicketService {
       name: 'ClientTicketService',
       error: details,
     );
-    
+
     return {
       'success': false,
       'error': message,
@@ -198,7 +199,7 @@ class ClientTicketService {
       'cleaning',
       'security_audit',
       'aircon_cleaning',
-      'other'
+      'other',
     ];
     if (!validServiceTypes.contains(serviceType)) {
       return _createErrorResponse(
@@ -227,7 +228,8 @@ class ClientTicketService {
       return _createErrorResponse(
         errorType: 'validation',
         errorCode: 'MISSING_OTHER_DETAILS',
-        message: 'Please provide service details for "Other" service type (min 5 characters)',
+        message:
+            'Please provide service details for "Other" service type (min 5 characters)',
         canRetry: false,
         details: 'Other service details validation failed',
       );
@@ -265,7 +267,9 @@ class ClientTicketService {
       message: 'About to call HttpUtil.post',
       data: {
         'requestUrl': '${ApiConfig.baseUrl}$_basePath',
-        'hasOtherServiceDetails': otherServiceDetails != null && otherServiceDetails.trim().isNotEmpty,
+        'hasOtherServiceDetails':
+            otherServiceDetails != null &&
+            otherServiceDetails.trim().isNotEmpty,
         'attachmentCount': attachments?.length ?? 0,
       },
     );
@@ -275,14 +279,13 @@ class ClientTicketService {
       http.Response response;
       try {
         response = await HttpUtil()
-            .post(
-              _basePath,
-              body: body,
-              headers: await _getHeaders(),
-            )
-            .timeout(const Duration(seconds: 90), onTimeout: () {
-          throw TimeoutException('Request timed out');
-        });
+            .post(_basePath, body: body, headers: await _getHeaders())
+            .timeout(
+              const Duration(seconds: 90),
+              onTimeout: () {
+                throw TimeoutException('Request timed out');
+              },
+            );
       } on TimeoutException {
         _debugLog(
           runId: runId,
@@ -292,14 +295,13 @@ class ClientTicketService {
           data: {'requestUrl': '${ApiConfig.baseUrl}$_basePath'},
         );
         response = await HttpUtil()
-            .post(
-              _basePath,
-              body: body,
-              headers: await _getHeaders(),
-            )
-            .timeout(const Duration(seconds: 90), onTimeout: () {
-          throw TimeoutException('Request timed out after retry');
-        });
+            .post(_basePath, body: body, headers: await _getHeaders())
+            .timeout(
+              const Duration(seconds: 90),
+              onTimeout: () {
+                throw TimeoutException('Request timed out after retry');
+              },
+            );
       }
       _debugLog(
         runId: runId,
@@ -382,7 +384,8 @@ class ClientTicketService {
       return _createErrorResponse(
         errorType: 'network',
         errorCode: 'NETWORK_ERROR',
-        message: 'Network connection failed. Please check your internet connection.',
+        message:
+            'Network connection failed. Please check your internet connection.',
         canRetry: true,
         details: e.toString(),
       );
@@ -411,11 +414,11 @@ class ClientTicketService {
   /// Handle HTTP error responses with specific error codes
   Map<String, dynamic> _handleHttpError(dynamic response) {
     final statusCode = response.statusCode;
-    
+
     try {
       final errorBody = jsonDecode(response.body);
       final serverMessage = errorBody['error'] ?? 'Server error occurred';
-      
+
       switch (statusCode) {
         case 400:
           return _createErrorResponse(
@@ -530,8 +533,10 @@ class ClientTicketService {
   /// Fetch a client ticket by ticket number (public - optional email token)
   /// emailToken: Token provided via email link for authentication
   /// Returns: data: ticket details or throws Exception
-  Future<Map<String, dynamic>> getClientTicket(String ticketNumber,
-      {String? emailToken}) async {
+  Future<Map<String, dynamic>> getClientTicket(
+    String ticketNumber, {
+    String? emailToken,
+  }) async {
     if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
       throw Exception('Invalid ticket number format');
     }
@@ -542,9 +547,12 @@ class ClientTicketService {
             '$_basePath/$ticketNumber',
             headers: await _getHeaders(emailToken: emailToken),
           )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -560,10 +568,56 @@ class ClientTicketService {
       } else if (response.statusCode == 401) {
         throw Exception('Invalid or expired ticket link');
       } else {
-        throw Exception('Failed to fetch ticket (Status: ${response.statusCode})');
+        throw Exception(
+          'Failed to fetch ticket (Status: ${response.statusCode})',
+        );
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getClientTicketAdmin(String ticketNumber) async {
+    if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
+      throw Exception('Invalid ticket number format');
+    }
+
+    try {
+      final response = await HttpUtil()
+          .get('$_basePath/admin/$ticketNumber', headers: await _getHeaders())
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'error': 'Invalid response format'};
+        } catch (_) {
+          return {'error': 'Failed to parse response'};
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Ticket not found');
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else {
+        throw Exception(
+          'Failed to fetch ticket (Status: ${response.statusCode})',
+        );
+      }
+    } on TimeoutException {
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -574,11 +628,63 @@ class ClientTicketService {
   /// Submit rating for completed ticket (client only, requires email token)
   /// emailToken: Token provided via email link for authentication
   /// Returns: success: bool, message: string or throws Exception
+  Future<Map<String, dynamic>> requestTicketAccess({
+    required String ticketNumber,
+    required String clientEmail,
+  }) async {
+    if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
+      throw Exception('Invalid ticket number format');
+    }
+
+    final emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    if (!emailRegex.hasMatch(clientEmail.trim())) {
+      throw Exception('Invalid email address');
+    }
+
+    try {
+      final response = await HttpUtil()
+          .post(
+            '$_basePath/$ticketNumber/access',
+            body: {'clientEmail': clientEmail.trim()},
+            headers: await _getHeaders(),
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        return decoded is Map<String, dynamic>
+            ? decoded
+            : {'success': false, 'error': 'Invalid response format'};
+      }
+
+      try {
+        final error = jsonDecode(response.body);
+        throw Exception(error['error'] ?? 'Failed to access ticket');
+      } catch (_) {
+        throw Exception(
+          'Failed to access ticket (Status: ${response.statusCode})',
+        );
+      }
+    } on TimeoutException {
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> submitTicketRating({
     required String ticketNumber,
     required int stars,
     String? comment,
     required String clientEmail,
+    String? employeeId,
     String? emailToken,
   }) async {
     if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
@@ -590,15 +696,20 @@ class ClientTicketService {
     }
 
     if (stars < 3 &&
-        (comment == null || comment.trim().isEmpty || comment.trim().length < 5)) {
+        (comment == null ||
+            comment.trim().isEmpty ||
+            comment.trim().length < 5)) {
       throw Exception(
-          'Comment is required for ratings below 3 stars (minimum 5 characters)');
+        'Comment is required for ratings below 3 stars (minimum 5 characters)',
+      );
     }
 
     final body = {
       'stars': stars,
       'comment': comment?.trim(),
       'clientEmail': clientEmail.trim(),
+      if (employeeId != null && employeeId.trim().isNotEmpty)
+        'employeeId': employeeId.trim(),
     };
 
     try {
@@ -608,9 +719,12 @@ class ClientTicketService {
             body: body,
             headers: await _getHeaders(emailToken: emailToken),
           )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -628,11 +742,15 @@ class ClientTicketService {
           final error = jsonDecode(response.body);
           throw Exception(error['error'] ?? 'Failed to submit rating');
         } catch (_) {
-          throw Exception('Failed to submit rating (Status: ${response.statusCode})');
+          throw Exception(
+            'Failed to submit rating (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -678,9 +796,12 @@ class ClientTicketService {
             body: body,
             headers: await _getHeaders(emailToken: emailToken),
           )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -698,11 +819,15 @@ class ClientTicketService {
           final error = jsonDecode(response.body);
           throw Exception(error['error'] ?? 'Failed to submit comment');
         } catch (_) {
-          throw Exception('Failed to submit comment (Status: ${response.statusCode})');
+          throw Exception(
+            'Failed to submit comment (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -735,7 +860,13 @@ class ClientTicketService {
       throw Exception('Message must be at least 10 characters');
     }
 
-    final validCategories = ['billing', 'technical', 'account', 'service', 'other'];
+    final validCategories = [
+      'billing',
+      'technical',
+      'account',
+      'service',
+      'other',
+    ];
     if (!validCategories.contains(serviceCategory)) {
       throw Exception('Invalid service category');
     }
@@ -750,14 +881,13 @@ class ClientTicketService {
 
     try {
       final response = await HttpUtil()
-          .post(
-            _contactPath,
-            body: body,
-            headers: await _getHeaders(),
-          )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .post(_contactPath, body: body, headers: await _getHeaders())
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         try {
@@ -774,11 +904,14 @@ class ClientTicketService {
           throw Exception(error['error'] ?? 'Failed to submit inquiry');
         } catch (_) {
           throw Exception(
-              'Failed to submit inquiry (Status: ${response.statusCode})');
+            'Failed to submit inquiry (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -796,9 +929,12 @@ class ClientTicketService {
             '$_basePath?status=open&page=$page&limit=$limit',
             headers: await _getHeaders(),
           )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -816,11 +952,15 @@ class ClientTicketService {
           final error = jsonDecode(response.body);
           throw Exception(error['error'] ?? 'Failed to fetch pending tickets');
         } catch (_) {
-          throw Exception('Failed to fetch pending tickets (Status: ${response.statusCode})');
+          throw Exception(
+            'Failed to fetch pending tickets (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -839,9 +979,17 @@ class ClientTicketService {
       throw Exception('At least one ticket ID is required');
     }
 
-    final validOrganizationTypes = ['priority', 'category', 'assignment', 'status'];
-    if (organizationType != null && !validOrganizationTypes.contains(organizationType)) {
-      throw Exception('Invalid organization type. Must be one of: ${validOrganizationTypes.join(', ')}');
+    final validOrganizationTypes = [
+      'priority',
+      'category',
+      'assignment',
+      'status',
+    ];
+    if (organizationType != null &&
+        !validOrganizationTypes.contains(organizationType)) {
+      throw Exception(
+        'Invalid organization type. Must be one of: ${validOrganizationTypes.join(', ')}',
+      );
     }
 
     final body = {
@@ -853,14 +1001,13 @@ class ClientTicketService {
 
     try {
       final response = await HttpUtil()
-          .post(
-            '$_basePath/organize',
-            body: body,
-            headers: await _getHeaders(),
-          )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .post('$_basePath/organize', body: body, headers: await _getHeaders())
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -880,11 +1027,15 @@ class ClientTicketService {
           final error = jsonDecode(response.body);
           throw Exception(error['error'] ?? 'Failed to organize tickets');
         } catch (_) {
-          throw Exception('Failed to organize tickets (Status: ${response.statusCode})');
+          throw Exception(
+            'Failed to organize tickets (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -900,13 +1051,13 @@ class ClientTicketService {
 
     try {
       final response = await HttpUtil()
-          .delete(
-            '$_basePath/$ticketNumber',
-            headers: await _getHeaders(),
-          )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .delete('$_basePath/$ticketNumber', headers: await _getHeaders())
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -922,17 +1073,23 @@ class ClientTicketService {
       } else if (response.statusCode == 404) {
         throw Exception('Ticket not found');
       } else if (response.statusCode == 403) {
-        throw Exception('Cannot delete ticket. Ticket may be in progress or completed.');
+        throw Exception(
+          'Cannot delete ticket. Ticket may be in progress or completed.',
+        );
       } else {
         try {
           final error = jsonDecode(response.body);
           throw Exception(error['error'] ?? 'Failed to delete ticket');
         } catch (_) {
-          throw Exception('Failed to delete ticket (Status: ${response.statusCode})');
+          throw Exception(
+            'Failed to delete ticket (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -941,7 +1098,8 @@ class ClientTicketService {
   /// Archive a client ticket (admin only)
   /// Moves a ticket to archived status without deleting it
   /// Returns: success: bool, message: string
-  Future<Map<String, dynamic>> archiveClientTicket(String ticketNumber, {
+  Future<Map<String, dynamic>> archiveClientTicket(
+    String ticketNumber, {
     String? archiveReason,
   }) async {
     if (!RegExp(r'^RNG-\d{8}-[A-Z0-9]{4}$').hasMatch(ticketNumber)) {
@@ -956,14 +1114,17 @@ class ClientTicketService {
 
     try {
       final response = await HttpUtil()
-          .patch(
-            '$_basePath/$ticketNumber/status',
+          .put(
+            '$_basePath/$ticketNumber/archive',
             body: body,
             headers: await _getHeaders(),
           )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -979,21 +1140,28 @@ class ClientTicketService {
       } else if (response.statusCode == 404) {
         throw Exception('Ticket not found');
       } else if (response.statusCode == 409) {
-        throw Exception('Cannot archive ticket. Ticket may already be archived or in an invalid state.');
+        throw Exception(
+          'Cannot archive ticket. Ticket may already be archived or in an invalid state.',
+        );
       } else {
         try {
           final error = jsonDecode(response.body);
           throw Exception(error['error'] ?? 'Failed to archive ticket');
         } catch (_) {
-          throw Exception('Failed to archive ticket (Status: ${response.statusCode})');
+          throw Exception(
+            'Failed to archive ticket (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
   }
+
   /// Get all ticket ratings for a client (public - email-based auth)
   /// Returns: success: bool, ratings: List, total: int, pages: int, averageRating: double
   Future<Map<String, dynamic>> getClientRatings({
@@ -1013,13 +1181,13 @@ class ClientTicketService {
       };
 
       final response = await HttpUtil()
-          .get(
-            '/api/ticket-ratings',
-            queryParams: query,
-          )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .get('/api/ticket-ratings', queryParams: query)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -1067,11 +1235,15 @@ class ClientTicketService {
           final error = jsonDecode(response.body);
           throw Exception(error['error'] ?? 'Failed to load ratings');
         } catch (_) {
-          throw Exception('Failed to load ratings (Status: ${response.statusCode})');
+          throw Exception(
+            'Failed to load ratings (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
-      throw Exception('Request timeout. Please check your connection and try again.');
+      throw Exception(
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -1096,10 +1268,8 @@ class ClientTicketService {
         if (stars != null) 'stars': stars.toString(),
         if (clientEmail != null && clientEmail.isNotEmpty)
           'clientEmail': clientEmail,
-        if (startDate != null)
-          'startDate': startDate.toIso8601String(),
-        if (endDate != null)
-          'endDate': endDate.toIso8601String(),
+        if (startDate != null) 'startDate': startDate.toIso8601String(),
+        if (endDate != null) 'endDate': endDate.toIso8601String(),
       };
 
       final response = await HttpUtil()
@@ -1108,9 +1278,12 @@ class ClientTicketService {
             queryParams: query,
             headers: await _getHeaders(),
           )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -1129,12 +1302,14 @@ class ClientTicketService {
           throw Exception(error['error'] ?? 'Failed to fetch client grades');
         } catch (_) {
           throw Exception(
-              'Failed to fetch client grades (Status: ${response.statusCode})');
+            'Failed to fetch client grades (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
       throw Exception(
-          'Request timeout. Please check your connection and try again.');
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -1165,9 +1340,12 @@ class ClientTicketService {
             queryParams: query,
             headers: await _getHeaders(),
           )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         return response.body;
@@ -1175,11 +1353,13 @@ class ClientTicketService {
         throw Exception('Unauthorized. Admin access required.');
       } else {
         throw Exception(
-            'Failed to export client grades (Status: ${response.statusCode})');
+          'Failed to export client grades (Status: ${response.statusCode})',
+        );
       }
     } on TimeoutException {
       throw Exception(
-          'Request timeout. Please check your connection and try again.');
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
@@ -1207,9 +1387,12 @@ class ClientTicketService {
             queryParams: query,
             headers: await _getHeaders(),
           )
-          .timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timed out');
-      });
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         try {
@@ -1228,15 +1411,16 @@ class ClientTicketService {
           throw Exception(error['error'] ?? 'Failed to fetch your grades');
         } catch (_) {
           throw Exception(
-              'Failed to fetch your grades (Status: ${response.statusCode})');
+            'Failed to fetch your grades (Status: ${response.statusCode})',
+          );
         }
       }
     } on TimeoutException {
       throw Exception(
-          'Request timeout. Please check your connection and try again.');
+        'Request timeout. Please check your connection and try again.',
+      );
     } catch (e) {
       rethrow;
     }
   }
 }
-

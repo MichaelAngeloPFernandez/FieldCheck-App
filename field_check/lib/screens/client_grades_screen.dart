@@ -414,6 +414,7 @@ class _ClientGradesScreenState extends State<ClientGradesScreen> {
   Widget _buildGradeCard(ThemeData theme, Map<String, dynamic> grade) {
     final ticketNumber = grade['ticketNumber'] as String? ?? 'N/A';
     final ticketDescription = grade['ticketDescription'] as String? ?? '';
+    final employeeName = grade['employeeName'] as String? ?? '';
     final stars = grade['stars'] as int? ?? 0;
     final comment = grade['comment'] as String? ?? '';
     final submittedAt = grade['submittedAt'] as String?;
@@ -449,6 +450,11 @@ class _ClientGradesScreenState extends State<ClientGradesScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall,
+                        ),
+                      if (employeeName.isNotEmpty)
+                        Text(
+                          'Employee: $employeeName',
+                          style: theme.textTheme.labelSmall,
                         ),
                     ],
                   ),

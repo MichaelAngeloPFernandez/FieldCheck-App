@@ -3,7 +3,9 @@
 import 'package:field_check/main.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:field_check/screens/client_ticket_tracking_screen.dart';
 import 'package:field_check/widgets/client_ticket_modal.dart';
+import 'package:field_check/widgets/client_ticket_grading_modal.dart';
 import 'package:field_check/services/client_ticket_service.dart';
 
 class LandingScreen extends StatefulWidget {
@@ -179,6 +181,27 @@ class _LandingScreenState extends State<LandingScreen> {
         setState(() {});
       }
     });
+  }
+
+  void _openClientTicketGradingModal() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return ClientTicketGradingModal(
+          onAccessGranted: (ticketNumber, accessToken) {
+            Navigator.of(dialogContext).pop();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ClientTicketTrackingScreen(
+                  ticketNumber: ticketNumber,
+                  emailToken: accessToken,
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _scrollTo(GlobalKey key) {
@@ -1084,18 +1107,38 @@ class _LandingScreenState extends State<LandingScreen> {
                               ),
                             ),
                             const SizedBox(height: 18),
-                            FilledButton.icon(
-                              onPressed: _openClientTicketModal,
-                              icon: const Icon(Icons.support_agent),
-                              label: const Text('Submit a Ticket'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _brandPrimary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 14,
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: _openClientTicketModal,
+                                  icon: const Icon(Icons.support_agent),
+                                  label: const Text('Submit a Ticket'),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: _brandPrimary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 14,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                OutlinedButton.icon(
+                                  onPressed: _openClientTicketGradingModal,
+                                  icon: const Icon(Icons.star_outline),
+                                  label: const Text('Grade a Task Report'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: _brandPrimary,
+                                    side: const BorderSide(color: _brandPrimary),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 14,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 24),
                             Row(

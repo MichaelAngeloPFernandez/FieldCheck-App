@@ -6,8 +6,20 @@ const ticketRatingSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ClientTicket',
       required: true,
-      unique: true,
       index: true,
+    },
+
+    employeeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true,
+    },
+
+    reportId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Report',
+      default: null,
     },
 
     clientEmail: {
@@ -50,5 +62,10 @@ ticketRatingSchema.pre('save', function (next) {
   }
   next();
 });
+
+ticketRatingSchema.index(
+  { ticketId: 1, employeeId: 1, clientEmail: 1 },
+  { unique: true, partialFilterExpression: { employeeId: { $exists: true } } }
+);
 
 module.exports = mongoose.model('TicketRating', ticketRatingSchema);

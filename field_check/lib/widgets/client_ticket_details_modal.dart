@@ -39,11 +39,14 @@ class _ClientTicketDetailsModalState extends State<ClientTicketDetailsModal> {
         _error = null;
       });
 
-      final result = await _ticketService.getClientTicket(widget.ticketNumber);
+      final result = await _ticketService.getClientTicketAdmin(
+        widget.ticketNumber,
+      );
       
       if (mounted) {
         setState(() {
-          _ticketData = result;
+          _ticketData =
+              (result['data'] as Map<String, dynamic>?) ?? result;
           _isLoading = false;
         });
       }

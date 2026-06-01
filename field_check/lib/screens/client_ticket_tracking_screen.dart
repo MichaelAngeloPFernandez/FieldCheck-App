@@ -18,14 +18,17 @@ class ClientTicketTrackingScreen extends StatefulWidget {
       _ClientTicketTrackingScreenState();
 }
 
-class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen> {
+class _ClientTicketTrackingScreenState
+    extends State<ClientTicketTrackingScreen> {
   final TextEditingController _commentController = TextEditingController();
-  final TextEditingController _ratingCommentController = TextEditingController();
+  final TextEditingController _ratingCommentController =
+      TextEditingController();
 
   Map<String, dynamic>? _ticket;
   bool _isLoading = true;
   String? _error;
   int _selectedRating = 0;
+  String? _selectedEmployeeId;
   bool _isSubmittingComment = false;
   bool _isSubmittingRating = false;
 
@@ -48,10 +51,18 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
       if (!mounted) return;
 
       if (result.containsKey('data')) {
+        final ticketData = result['data'] as Map<String, dynamic>;
+        final rateableEmployees = List<Map<String, dynamic>>.from(
+          ticketData['rateableEmployees'] ?? [],
+        );
+        final fallbackSelectedId = rateableEmployees.isNotEmpty
+            ? (rateableEmployees.first['employeeId'] as String?)
+            : null;
         setState(() {
-          _ticket = result['data'] as Map<String, dynamic>;
+          _ticket = ticketData;
           _isLoading = false;
           _error = null;
+          _selectedEmployeeId = _selectedEmployeeId ?? fallbackSelectedId;
         });
       } else {
         throw Exception(result['error'] ?? 'Failed to load ticket');
@@ -100,10 +111,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -128,7 +136,9 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
     if (_selectedRating < 3 && comment.length < 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please provide detailed feedback for ratings below 3 stars'),
+          content: Text(
+            'Please provide detailed feedback for ratings below 3 stars',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -142,12 +152,25 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
         throw Exception('Ticket data not loaded');
       }
 
+      final rateableEmployees = List<Map<String, dynamic>>.from(
+        _ticket!['rateableEmployees'] ?? [],
+      );
+      final targetEmployeeId =
+          _selectedEmployeeId ??
+          (rateableEmployees.length == 1
+              ? rateableEmployees.first['employeeId'] as String?
+              : null);
+      if (rateableEmployees.length > 1 && targetEmployeeId == null) {
+        throw Exception('Please select which assigned employee to grade.');
+      }
+
       final clientEmail = (_ticket!['clientEmail'] ?? '') as String;
       await ClientTicketService().submitTicketRating(
         ticketNumber: widget.ticketNumber,
         stars: _selectedRating,
         comment: comment.isNotEmpty ? comment : null,
         clientEmail: clientEmail,
+        employeeId: targetEmployeeId,
         emailToken: widget.emailToken,
       );
 
@@ -166,10 +189,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -215,48 +235,65 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
     }
   }
 
+  List<Map<String, dynamic>> get _assignedEmployees =>
+      List<Map<String, dynamic>>.from(
+        _ticket?['assignedEmployees'] ?? const [],
+      );
+
+  List<Map<String, dynamic>> get _rateableEmployees =>
+      List<Map<String, dynamic>>.from(
+        _ticket?['rateableEmployees'] ?? const [],
+      );
+
+  Map<String, dynamic>? get _selectedRateableEmployee {
+    if (_selectedEmployeeId == null) return null;
+    for (final employee in _rateableEmployees) {
+      if (employee['employeeId'] == _selectedEmployeeId) {
+        return employee;
+      }
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ticket Tracking'),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Ticket Tracking'), elevation: 0),
       body: _isLoading
           ? AppWidgets.loadingIndicator(message: 'Loading ticket...')
           : _error != null
-              ? AppWidgets.emptyState(
-                  title: 'Error',
-                  message: _error!,
-                  icon: Icons.error_outline,
-                )
-              : _ticket == null
-                  ? AppWidgets.emptyState(
-                      title: 'No Ticket',
-                      message: 'Ticket not found',
-                      icon: Icons.inbox_outlined,
-                    )
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.all(AppTheme.md),
-                      child: Column(
-                        spacing: AppTheme.md,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildTicketHeader(theme, isDark),
-                          _buildStatusTimeline(theme, isDark),
-                          _buildTicketDetails(theme, isDark),
-                          if (_ticket?['comments'] != null)
-                            _buildCommentsSection(theme, isDark),
-                          _buildCommentForm(theme, isDark),
-                          if (_ticket?['status'] == 'completed')
-                            _buildRatingSection(theme, isDark),
-                          const SizedBox(height: AppTheme.md),
-                        ],
-                      ),
-                    ),
+          ? AppWidgets.emptyState(
+              title: 'Error',
+              message: _error!,
+              icon: Icons.error_outline,
+            )
+          : _ticket == null
+          ? AppWidgets.emptyState(
+              title: 'No Ticket',
+              message: 'Ticket not found',
+              icon: Icons.inbox_outlined,
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(AppTheme.md),
+              child: Column(
+                spacing: AppTheme.md,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildTicketHeader(theme, isDark),
+                  _buildStatusTimeline(theme, isDark),
+                  _buildTicketDetails(theme, isDark),
+                  if (_ticket?['comments'] != null)
+                    _buildCommentsSection(theme, isDark),
+                  _buildCommentForm(theme, isDark),
+                  if (_ticket?['status'] == 'completed')
+                    _buildRatingSection(theme, isDark),
+                  const SizedBox(height: AppTheme.md),
+                ],
+              ),
+            ),
     );
   }
 
@@ -274,10 +311,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
           children: [
             Row(
               children: [
-                const Text(
-                  '🎫',
-                  style: TextStyle(fontSize: 24),
-                ),
+                const Text('🎫', style: TextStyle(fontSize: 24)),
                 const SizedBox(width: AppTheme.sm),
                 Expanded(
                   child: Column(
@@ -292,7 +326,9 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                       Text(
                         'Created: ${_formatDate(createdAt)}',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                          color: theme.textTheme.bodySmall?.color?.withValues(
+                            alpha: 0.7,
+                          ),
                         ),
                       ),
                     ],
@@ -368,7 +404,9 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: isPast || isCurrent
                             ? theme.primaryColor
-                            : theme.textTheme.bodySmall?.color?.withValues(alpha: 0.5),
+                            : theme.textTheme.bodySmall?.color?.withValues(
+                                alpha: 0.5,
+                              ),
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -389,7 +427,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
     final serviceType = (_ticket?['serviceType'] ?? 'N/A') as String;
     final description = (_ticket?['description'] ?? 'N/A') as String;
     final otherDetails = _ticket?['otherServiceDetails'] as String?;
-    final assignedEmployee = _ticket?['assignedEmployeeId'];
+    final assignedEmployees = _assignedEmployees;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -454,7 +492,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
             ),
           ),
         ),
-        if (assignedEmployee != null) ...[
+        if (assignedEmployees.isNotEmpty) ...[
           const SizedBox(height: AppTheme.md),
           Card(
             elevation: 1,
@@ -465,15 +503,22 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Assigned Employee',
+                    assignedEmployees.length > 1
+                        ? 'Assigned Employees'
+                        : 'Assigned Employee',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: AppTheme.md),
-                  Text(assignedEmployee is Map
-                      ? '${assignedEmployee['name'] ?? 'Unknown'} (${assignedEmployee['email'] ?? ''})'
-                      : 'N/A'),
+                  ...assignedEmployees.map(
+                    (employee) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppTheme.sm),
+                      child: Text(
+                        '${employee['name'] ?? 'Unknown'} (${employee['email'] ?? ''})',
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -534,7 +579,9 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                       Text(
                         _formatDate(createdAt),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.6),
+                          color: theme.textTheme.bodySmall?.color?.withValues(
+                            alpha: 0.6,
+                          ),
                         ),
                       ),
                     ],
@@ -608,10 +655,124 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
   }
 
   Widget _buildRatingSection(ThemeData theme, bool isDark) {
-    final rating = _ticket?['rating'];
-    final hasRating = rating != null && rating is Map && rating['stars'] != null;
+    final rateableEmployees = _rateableEmployees;
+    final selectedRateableEmployee = _selectedRateableEmployee;
+    final selectedRatingData =
+        (selectedRateableEmployee?['existingRating'] as Map?)
+            ?.cast<String, dynamic>();
+    final ticketRating = _ticket?['rating'];
+    final rating =
+        selectedRatingData ??
+        (ticketRating is Map ? Map<String, dynamic>.from(ticketRating) : null);
+    final hasRating = rating != null && rating['stars'] != null;
+    final reportReviewed = selectedRateableEmployee == null
+        ? (_ticket?['status'] == 'completed')
+        : (selectedRateableEmployee['reportReviewed'] == true);
+
+    if (rateableEmployees.length > 1) {
+      final dropdownItems = rateableEmployees
+          .map(
+            (employee) => DropdownMenuItem<String>(
+              value: employee['employeeId'] as String?,
+              child: Text(
+                ((employee['employee'] as Map?)?['name'] ?? 'Assigned Employee')
+                    .toString(),
+              ),
+            ),
+          )
+          .toList();
+      if (_selectedEmployeeId == null && dropdownItems.isNotEmpty) {
+        _selectedEmployeeId = dropdownItems.first.value;
+      }
+      return Card(
+        elevation: 1,
+        child: Padding(
+          padding: const EdgeInsets.all(AppTheme.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Rate Your Experience',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: AppTheme.md),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedEmployeeId,
+                items: dropdownItems,
+                decoration: const InputDecoration(
+                  labelText: 'Select Employee Report',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedEmployeeId = value;
+                    _selectedRating = 0;
+                    _ratingCommentController.clear();
+                  });
+                },
+              ),
+              const SizedBox(height: AppTheme.md),
+              if (selectedRateableEmployee != null)
+                Text(
+                  selectedRateableEmployee['reportReviewed'] == true
+                      ? 'This employee report is ready for grading.'
+                      : 'This employee report is not reviewed yet.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: selectedRateableEmployee['reportReviewed'] == true
+                        ? Colors.green
+                        : Colors.orange,
+                  ),
+                ),
+              const SizedBox(height: AppTheme.md),
+              if (!reportReviewed)
+                Text(
+                  'Wait for the reviewed report before submitting a grade.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.orange,
+                  ),
+                ),
+              if (reportReviewed)
+                _buildSingleRatingForm(theme, isDark, rating, hasRating),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _buildSingleRatingForm(
+      theme,
+      isDark,
+      rating,
+      hasRating,
+      reportReviewed: reportReviewed,
+    );
+  }
+
+  Widget _buildSingleRatingForm(
+    ThemeData theme,
+    bool isDark,
+    Map<String, dynamic>? rating,
+    bool hasRating, {
+    bool reportReviewed = true,
+  }) {
+    if (!reportReviewed) {
+      return Card(
+        elevation: 1,
+        child: Padding(
+          padding: const EdgeInsets.all(AppTheme.md),
+          child: Text(
+            'The report must be reviewed before it can be graded.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.orange),
+          ),
+        ),
+      );
+    }
 
     if (hasRating) {
+      final ratingStars = (rating?['stars'] as num?)?.toInt() ?? 0;
+      final ratingComment = (rating?['comment'] as String?) ?? '';
       return Card(
         elevation: 2,
         color: Colors.green.withValues(alpha: 0.1),
@@ -639,13 +800,11 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                   5,
                   (idx) => Icon(
                     Icons.star,
-                    color: idx < (rating['stars'] as int)
-                        ? Colors.amber
-                        : Colors.grey[300],
+                    color: idx < ratingStars ? Colors.amber : Colors.grey[300],
                   ),
                 ),
               ),
-              if (rating['comment'] != null && (rating['comment'] as String).isNotEmpty) ...[
+              if (ratingComment.isNotEmpty) ...[
                 const SizedBox(height: AppTheme.md),
                 Text(
                   'Your Feedback:',
@@ -654,7 +813,7 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                   ),
                 ),
                 const SizedBox(height: AppTheme.sm),
-                Text(rating['comment'] as String),
+                Text(ratingComment),
               ],
             ],
           ),
@@ -685,7 +844,9 @@ class _ClientTicketTrackingScreenState extends State<ClientTicketTrackingScreen>
                   child: Icon(
                     Icons.star,
                     size: 32,
-                    color: idx < _selectedRating ? Colors.amber : Colors.grey[300],
+                    color: idx < _selectedRating
+                        ? Colors.amber
+                        : Colors.grey[300],
                   ),
                 ),
               ),

@@ -258,7 +258,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '${_averageGrade.toStringAsFixed(1)}',
+                    _averageGrade.toStringAsFixed(1),
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w900,
                       color: Colors.amber.shade600,

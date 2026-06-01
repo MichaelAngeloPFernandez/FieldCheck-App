@@ -3945,6 +3945,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   final stars = (g['stars'] as num?)?.toInt() ?? 0;
                   final clientEmail =
                       (g['clientEmail'] as String?) ?? 'Unknown';
+                  final employeeName =
+                      ((g['employeeName'] as String?) ?? '').trim();
                   final comment =
                       ((g['comment'] as String?) ?? '').trim();
                   final submittedAt = g['submittedAt'] != null
@@ -3954,10 +3956,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               DateTime.now(),
                           'yyyy-MM-dd HH:mm')
                       : '-';
-                  final ticketNumber = (g['ticketId'] is Map)
-                      ? ((g['ticketId'] as Map)['ticketNumber'] as String? ??
-                          '')
-                      : '';
+                  final ticketNumber = (g['ticketNumber'] as String?) ??
+                      ((g['ticketId'] is Map)
+                          ? ((g['ticketId'] as Map)['ticketNumber']
+                                  as String? ??
+                              '')
+                          : '');
 
                   return Container(
                     decoration: BoxDecoration(
@@ -4013,6 +4017,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               fontStyle: FontStyle.italic,
                               color: theme.colorScheme.onSurface
                                   .withValues(alpha: 0.75),
+                            ),
+                          ),
+                        ],
+                        if (employeeName.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Employee: $employeeName',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
