@@ -172,29 +172,6 @@ class ReportService {
     }
   }
 
-  Future<ReportModel> updateReportStatusWithGrade(
-    String id,
-    String status, {
-    String? grade,
-    String? gradeComment,
-  }) async {
-    final response = await HttpUtil().patch(
-      '$_basePath/$id/status',
-      headers: await _headers(),
-      body: {
-        'status': status,
-        // Backend clears grade when it receives an empty string.
-        'grade': grade ?? '',
-        // Backend clears grade comment when it receives an empty string.
-        'gradeComment': gradeComment ?? '',
-      },
-    );
-    if (response.statusCode == 200) {
-      return ReportModel.fromJson(json.decode(response.body));
-    }
-    throw Exception('Failed to update report status');
-  }
-
   Future<void> deleteReport(String id) async {
     final response = await HttpUtil().delete(
       '$_basePath/$id',

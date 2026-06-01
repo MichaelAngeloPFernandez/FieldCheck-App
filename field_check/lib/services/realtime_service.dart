@@ -767,6 +767,52 @@ class RealtimeService {
         print('RealtimeService: Error processing geofenceDeleted: $e');
       }
     });
+
+    // Client ticket grading events — emitted by backend when client rates a ticket
+    _socket!.on('client_graded_ticket', (data) {
+      print('RealtimeService: Client graded ticket: $data');
+      try {
+        final Map<String, dynamic> mapped = data is Map<String, dynamic>
+            ? data
+            : (data is Map ? Map<String, dynamic>.from(data) : {});
+        _eventController.add({
+          'type': 'client_grade',
+          'action': 'submitted',
+          'data': mapped,
+        });
+        // Also push to notification stream so admin sidebar picks it up
+        _notificationController.add({
+          'type': 'client_grade',
+          'action': 'submitted',
+          'ticketNumber': mapped['ticketNumber'] ?? '',
+          'clientName': mapped['clientName'] ?? '',
+          'stars': mapped['stars'] ?? 0,
+          'comment': mapped['comment'],
+          'isResubmission': mapped['isResubmission'] ?? false,
+          'gradedAt': mapped['gradedAt'] ?? DateTime.now().toIso8601String(),
+          'data': mapped,
+        });
+      } catch (e) {
+        print('RealtimeService: Error processing client_graded_ticket: $e');
+      }
+    });
+
+    // Client ticket created event for admin real-time updates
+    _socket!.on('client_ticket_created', (data) {
+      print('RealtimeService: Client ticket created: $data');
+      try {
+        final Map<String, dynamic> mapped = data is Map<String, dynamic>
+            ? data
+            : (data is Map ? Map<String, dynamic>.from(data) : {});
+        _eventController.add({
+          'type': 'client_ticket',
+          'action': 'created',
+          'data': mapped,
+        });
+      } catch (e) {
+        print('RealtimeService: Error processing client_ticket_created: $e');
+      }
+    });
   }
 
   void _scheduleReconnectWithBackoff() {

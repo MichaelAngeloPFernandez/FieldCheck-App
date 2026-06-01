@@ -363,105 +363,20 @@ const getReportById = asyncHandler(async (req, res) => {
 // @route PATCH /api/reports/:id/status
 // @access Private/Admin
 const updateReportStatus = asyncHandler(async (req, res) => {
-  const { status, grade, gradeComment } = req.body;
+  const { status } = req.body;
   const rep = await Report.findById(req.params.id);
   if (!rep) {
     res.status(404);
     throw new Error('Report not found');
   }
 
-  const previousGrade = rep.grade ? String(rep.grade).toLowerCase() : '';
-
   const hasStatusUpdate = status !== undefined && status !== null;
-  const hasGradeUpdate = grade !== undefined;
-  const hasGradeCommentUpdate = gradeComment !== undefined;
 
   if (hasStatusUpdate) {
     rep.status = status || rep.status;
   }
 
-  const cleanedGrade = hasGradeUpdate ? String(grade || '').trim().toLowerCase() : null;
-  if (hasGradeUpdate) {
-    if (cleanedGrade === '') {
-      rep.grade = undefined;
-    } else {
-
-      const allowed = new Set(['poor', 'good', 'excellent']);
-      if (!allowed.has(cleanedGrade)) {
-        res.status(400);
-        throw new Error('Invalid grade value');
-      }
-      rep.grade = cleanedGrade;
-      // Auto-mark as reviewed when grading.
-      rep.status = 'reviewed';
-    }
-  }
-
-  const cleanedGradeComment = hasGradeCommentUpdate
-    ? String(gradeComment || '').trim()
-    : null;
-  if (hasGradeCommentUpdate) {
-    const maxLen = 2000;
-    if (cleanedGradeComment.length > maxLen) {
-      res.status(400);
-      throw new Error(`Grade comment must be ${maxLen} characters or less`);
-    }
-    rep.gradeComment = cleanedGradeComment;
-  }
   const updated = await rep.save();
-
-  // Send in-app notification to the employee when a grade is assigned/changed.
-  // Best-effort: do not block the API response.
-  const shouldNotifyGradeAssigned =
-    hasGradeUpdate &&
-    !!cleanedGrade &&
-    !!rep.employee &&
-    String(cleanedGrade) !== String(previousGrade);
-
-  if (shouldNotifyGradeAssigned) {
-    setImmediate(async () => {
-      try {
-        const appNotificationService = require('../services/appNotificationService');
-        let taskTitle = '';
-        let taskId = '';
-
-        if (updated.type === 'task' && updated.task) {
-          taskId = String(updated.task);
-          try {
-            const task = await Task.findById(updated.task).select('title').lean();
-            taskTitle = (task?.title || '').toString();
-          } catch (_) {}
-        }
-
-        await appNotificationService.createNotification({
-          recipientUserId: updated.employee,
-          scope: 'tasks',
-          type: 'success',
-          action: 'reportGraded',
-          title: 'Report Reviewed',
-          message: (() => {
-            const base =
-              updated.type === 'task'
-                ? `Your report for "${taskTitle || 'a task'}" was reviewed: ${cleanedGrade}.`
-                : `Your report was reviewed: ${cleanedGrade}.`;
-            const comment = (updated.gradeComment || '').toString().trim();
-            if (!comment) return base;
-            return `${base} Comment: ${comment}`;
-          })(),
-          payload: {
-            reportId: String(updated._id),
-            reportType: String(updated.type || ''),
-            grade: cleanedGrade,
-            gradeComment: (updated.gradeComment || '').toString(),
-            taskId,
-            // For UX: client should open My Tasks -> Completed and then open this task.
-            destination: 'tasks.completed',
-          },
-        });
-
-      } catch (_) {}
-    });
-  }
 
   setImmediate(async () => {
     try {

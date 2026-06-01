@@ -752,6 +752,7 @@ exports.addTicketComment = asyncHandler(async (req, res) => {
 /**
  * POST /api/client-tickets/:ticketNumber/rating
  * Submit rating for completed ticket (client only, requires email token)
+ * Only allowed after admin marks the report as \"reviewed\"
  */
 exports.submitTicketRating = asyncHandler(async (req, res) => {
   const { ticketNumber } = req.params;
@@ -801,6 +802,17 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
     // Check if ticket is completed
     if (ticket.status !== 'completed') {
       return res.status(400).json({ error: 'Only completed tickets can be rated.' });
+    }
+
+    // NEW: Check if the report associated with this ticket has been reviewed
+    // Find the report for this ticket's linked task
+    if (ticket.linkedTaskId) {
+      const Report = require('../models/Report');
+      const report = await Report.findOne({ task: ticket.linkedTaskId });
+      
+      if (!report || report.status !== 'reviewed') {
+        return res.status(400).json({ error: 'Report must be reviewed before you can grade it. Please wait for admin review.' });
+      }
     }
 
     // Track if this is a re-submission
@@ -854,6 +866,26 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
           rating: stars,
         },
       });
+    }
+
+    // Emit real-time WebSocket notification to admin
+    if (global.io) {
+      try {
+        global.io.emit('client_graded_ticket', {
+          ticketNumber,
+          clientName: ticket.clientName,
+          clientEmail: ticket.clientEmail,
+          stars,
+          comment: comment ? comment.trim() : null,
+          isResubmission: !!isResubmission,
+          gradedAt: new Date().toISOString(),
+        });
+      } catch (socketError) {
+        console.warn('Failed to emit client_graded_ticket socket event', {
+          ticketNumber,
+          error: socketError && socketError.message ? socketError.message : String(socketError),
+        });
+      }
     }
 
     res.json({

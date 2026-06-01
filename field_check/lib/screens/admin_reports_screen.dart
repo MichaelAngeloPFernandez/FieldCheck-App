@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -20,6 +21,7 @@ import 'package:field_check/widgets/admin_control_bar.dart';
 import 'package:field_check/utils/manila_time.dart';
 import 'package:field_check/utils/file_download/file_download.dart';
 import 'package:flutter/services.dart';
+import 'package:field_check/services/client_ticket_service.dart';
 
 class _ResubmitCountdown extends StatefulWidget {
   final DateTime until;
@@ -105,7 +107,16 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   List<ReportModel> _taskReports = [];
   List<ReportModel> _archivedTaskReports = [];
   List<Task> _overdueTasks = [];
-  String _viewMode = 'attendance'; // 'attendance' | 'task'
+  String _viewMode = 'attendance'; // 'attendance' | 'task' | 'client_grades'
+
+  // --- Client Grades state ---
+  List<Map<String, dynamic>> _clientGrades = [];
+  bool _isLoadingClientGrades = false;
+  String? _clientGradesError;
+  int? _gradesStarFilter;
+  String _gradesEmailFilter = '';
+  DateTime? _gradesStartDate;
+  DateTime? _gradesEndDate;
   bool _isLoadingTaskReports = false;
   String? _taskReportsError;
   bool _isLoadingOverdueTasks = false;
@@ -179,6 +190,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
     if (mode == 'attendance') {
       await _fetchAttendanceRecords();
+      return;
+    }
+
+    if (mode == 'client_grades') {
+      await _fetchClientGrades();
       return;
     }
 
@@ -1635,6 +1651,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         _fetchTaskReports();
       }
     });
+
+    // Refresh client grades tab in real-time when a client grades a ticket
+    _socket.on('client_graded_ticket', (data) {
+      debugPrint('Client graded ticket: $data');
+      if (_viewMode == 'client_grades' && mounted) {
+        _fetchClientGrades();
+      }
+    });
   }
 
   Future<void> _fetchGeofences() async {
@@ -1965,6 +1989,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           label: 'Task Reports',
                           icon: Icons.assignment,
                         ),
+                        AdminControlOption(
+                          value: 'client_grades',
+                          label: 'Client Grades',
+                          icon: Icons.star_rounded,
+                        ),
                       ],
                       primaryValue: _viewMode,
                       onPrimaryChanged: (value) {
@@ -2037,7 +2066,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       subtitle: Text(
                         _viewMode == 'attendance'
                             ? 'Jump to common date ranges'
-                            : 'Common report statuses',
+                            : _viewMode == 'client_grades'
+                                ? 'Filter by star rating'
+                                : 'Common report statuses',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurface.withValues(
                             alpha: 0.7,
@@ -2082,6 +2113,32 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                   _setAttendanceQuickDateFilter('month');
                                 },
                               ),
+                            ],
+                          )
+                        else if (_viewMode == 'client_grades')
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _buildFilterChip(
+                                label: 'All ratings',
+                                selected: _gradesStarFilter == null,
+                                onSelected: (sel) {
+                                  if (!sel) return;
+                                  setState(() => _gradesStarFilter = null);
+                                  _fetchClientGrades();
+                                },
+                              ),
+                              for (int s = 5; s >= 1; s--)
+                                _buildFilterChip(
+                                  label: '⭐' * s,
+                                  selected: _gradesStarFilter == s,
+                                  onSelected: (sel) {
+                                    if (!sel) return;
+                                    setState(() => _gradesStarFilter = s);
+                                    _fetchClientGrades();
+                                  },
+                                ),
                             ],
                           )
                         else
@@ -2377,6 +2434,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         ),
 
                 if (_viewMode == 'task') _buildTaskReportsView(),
+
+                if (_viewMode == 'client_grades') _buildClientGradesView(),
               ],
             ),
           ),
@@ -2574,53 +2633,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             r.resubmitUntil != null && r.resubmitUntil!.isAfter(now);
         final isBlocked = _isTaskAssignmentBlocked(r);
 
-        String? grade = r.grade;
         bool saving = false;
-        final gradeCommentController = TextEditingController(
-          text: r.gradeComment,
-        );
 
         return StatefulBuilder(
           builder: (ctxOuter, setOuterState) {
-            String labelForGrade(String? value) {
-              final v = (value ?? '').trim().toLowerCase();
-              if (v == 'poor') return 'Poor';
-              if (v == 'good') return 'Good';
-              if (v == 'excellent') return 'Excellent';
-              return 'Not graded';
-            }
-
-            Color gradeColor(String? value) {
-              final v = (value ?? '').trim().toLowerCase();
-              if (v == 'poor') return theme.colorScheme.error;
-              if (v == 'good') return Colors.orange;
-              if (v == 'excellent') return Colors.green;
-              return theme.colorScheme.onSurface.withValues(alpha: 0.7);
-            }
-
-            bool isGraded(String? value) {
-              final v = (value ?? '').trim().toLowerCase();
-              return v == 'poor' || v == 'good' || v == 'excellent';
-            }
-
             Future<void> save() async {
               if (saving) return;
               setOuterState(() {
                 saving = true;
               });
               try {
-                final updated = await ReportService()
-                    .updateReportStatusWithGrade(
-                      r.id,
-                      r.status,
-                      grade: grade,
-                      gradeComment: gradeCommentController.text,
-                    );
+                await ReportService()
+                    .updateReportStatus(r.id, r.status);
                 if (!mounted) return;
-                setOuterState(() {
-                  grade = updated.grade;
-                  gradeCommentController.text = updated.gradeComment;
-                });
                 await _fetchTaskReports();
               } catch (e) {
                 if (!mounted) return;
@@ -2628,7 +2653,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   context,
                   AppWidgets.friendlyErrorMessage(
                     e,
-                    fallback: 'Failed to save grade',
+                    fallback: 'Failed to update report',
                   ),
                 );
               } finally {
@@ -2645,38 +2670,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      r.taskTitle ?? 'Report Details',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if (isGraded(grade))
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.green.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Text(
-                        'Graded',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ),
-                ],
+              title: Text(
+                r.taskTitle ?? 'Report Details',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               content: SizedBox(
                 width: dialogWidth,
@@ -2723,26 +2721,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                 ],
                               ),
                             ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: gradeColor(grade).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: gradeColor(grade).withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Text(
-                              labelForGrade(grade),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: gradeColor(grade),
-                              ),
-                            ),
-                          ),
                           if (r.taskIsOverdue)
                             _buildMetaChip(
                               'Overdue',
@@ -2762,130 +2740,20 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Container(
+                      SizedBox(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: theme.colorScheme.outlineVariant,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Grade',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                    ),
+                        child: FilledButton.icon(
+                          onPressed: saving ? null : save,
+                          icon: saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
                                   ),
-                                ),
-                                PopupMenuButton<String>(
-                                  tooltip: 'Set grade',
-                                  onSelected: (value) {
-                                    switch (value) {
-                                      case 'clear':
-                                        setOuterState(() {
-                                          grade = null;
-                                        });
-                                        return;
-                                      case 'poor':
-                                      case 'good':
-                                      case 'excellent':
-                                        setOuterState(() {
-                                          grade = value;
-                                        });
-                                        return;
-                                    }
-                                  },
-                                  itemBuilder: (_) =>
-                                      const <PopupMenuEntry<String>>[
-                                        PopupMenuItem(
-                                          value: 'excellent',
-                                          child: Text('Excellent'),
-                                        ),
-                                        PopupMenuItem(
-                                          value: 'good',
-                                          child: Text('Good'),
-                                        ),
-                                        PopupMenuItem(
-                                          value: 'poor',
-                                          child: Text('Poor'),
-                                        ),
-                                        PopupMenuDivider(),
-                                        PopupMenuItem(
-                                          value: 'clear',
-                                          child: Text('Clear grade'),
-                                        ),
-                                      ],
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.surface,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: theme.colorScheme.outlineVariant,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.grade,
-                                          size: 18,
-                                          color: gradeColor(grade),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          labelForGrade(grade),
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        const Icon(Icons.expand_more, size: 18),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: gradeCommentController,
-                              maxLines: 4,
-                              decoration: const InputDecoration(
-                                labelText: 'Grade comment',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: saving ? null : save,
-                                icon: saving
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.save),
-                                label: Text(saving ? 'Saving…' : 'Save'),
-                              ),
-                            ),
-                          ],
+                                )
+                              : const Icon(Icons.save),
+                          label: Text(saving ? 'Saving…' : 'Update Report'),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -2919,12 +2787,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                 r.taskBlockReasonText!.trim(),
                               ),
                             _buildDetailRow('Status:', r.status),
-                            _buildDetailRow('Grade:', labelForGrade(grade)),
-                            if (gradeCommentController.text.trim().isNotEmpty)
-                              _buildDetailRow(
-                                'Comment:',
-                                gradeCommentController.text.trim(),
-                              ),
+                            _buildDetailRow('Client Rating:', 'Graded by client after review'),
                             _buildDetailRow(
                               'Submitted:',
                               formatManila(r.submittedAt, 'yyyy-MM-dd HH:mm'),
@@ -3746,6 +3609,427 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+
+  // ─────────────────────────── Client Grades ───────────────────────────
+
+  Future<void> _fetchClientGrades() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingClientGrades = true;
+      _clientGradesError = null;
+    });
+    try {
+      final result = await ClientTicketService().getClientGradesAdmin(
+        stars: _gradesStarFilter,
+        clientEmail: _gradesEmailFilter.trim().isNotEmpty
+            ? _gradesEmailFilter.trim()
+            : null,
+        startDate: _gradesStartDate,
+        endDate: _gradesEndDate,
+        limit: 100,
+      );
+      if (!mounted) return;
+      final List<dynamic> raw = (result['ratings'] ?? result['data'] ?? []) as List<dynamic>;
+      setState(() {
+        _clientGrades = raw
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        _isLoadingClientGrades = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingClientGrades = false;
+        _clientGradesError = 'Failed to load client grades: $e';
+      });
+    }
+  }
+
+  Widget _buildClientGradesView() {
+    final theme = Theme.of(context);
+
+    if (_isLoadingClientGrades) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_clientGradesError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
+              const SizedBox(height: 12),
+              Text(_clientGradesError!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: theme.colorScheme.error)),
+              const SizedBox(height: 12),
+              FilledButton(
+                  onPressed: _fetchClientGrades,
+                  child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final total = _clientGrades.length;
+    final avgRaw = total == 0
+        ? 0.0
+        : _clientGrades
+                .map((g) => (g['stars'] as num?)?.toDouble() ?? 0)
+                .reduce((a, b) => a + b) /
+            total;
+    final avg = double.parse(avgRaw.toStringAsFixed(1));
+    final starCounts = List.generate(
+        5,
+        (i) => _clientGrades
+            .where((g) => (g['stars'] as num?)?.toInt() == (5 - i))
+            .length);
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.star_rounded,
+                      color: Colors.amber, size: 22),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Client Grades',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800)),
+                      Text(
+                        'Ratings submitted by clients after report is reviewed',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.65),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: () async {
+                    try {
+                      final csv = await ClientTicketService()
+                          .exportClientGradesAdmin(
+                        format: 'csv',
+                        stars: _gradesStarFilter,
+                        clientEmail: _gradesEmailFilter.trim().isNotEmpty
+                            ? _gradesEmailFilter.trim()
+                            : null,
+                        startDate: _gradesStartDate,
+                        endDate: _gradesEndDate,
+                      );
+                      await FileDownload.downloadBytes(
+                        bytes: Uint8List.fromList(utf8.encode(csv)),
+                        filename:
+                            'client_grades_${DateTime.now().millisecondsSinceEpoch}.csv',
+                        mimeType: 'text/csv',
+                      );
+                      if (mounted) {
+                        AppWidgets.showSuccessSnackbar(
+                            context, 'Export downloaded');
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        AppWidgets.showErrorSnackbar(
+                            context, 'Export failed: $e');
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.download, size: 18),
+                  label: const Text('Export CSV'),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Summary stats
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Total Ratings',
+                    value: '$total',
+                    icon: Icons.rate_review_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Average Rating',
+                    value: total == 0 ? '-' : '$avg \u2b50',
+                    icon: Icons.star_half_rounded,
+                    color: Colors.amber,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Star distribution bars
+            ...List.generate(5, (i) {
+              final stars = 5 - i;
+              final count = starCounts[i];
+              final pct = total == 0 ? 0.0 : count / total;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 30,
+                      child: Text('$stars\u2b50',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: pct,
+                          minHeight: 8,
+                          backgroundColor: theme.colorScheme.outlineVariant
+                              .withValues(alpha: 0.4),
+                          valueColor:
+                              const AlwaysStoppedAnimation<Color>(Colors.amber),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 28,
+                      child: Text('$count',
+                          style: theme.textTheme.bodySmall,
+                          textAlign: TextAlign.end),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
+            const SizedBox(height: 16),
+
+            // Search + date range row
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: 'Search by client email\u2026',
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                    ),
+                    onChanged: (v) => setState(() => _gradesEmailFilter = v),
+                    onSubmitted: (_) => _fetchClientGrades(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final now = DateTime.now();
+                    final picked = await showDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(now.year - 2),
+                      lastDate: now,
+                      initialDateRange: _gradesStartDate != null &&
+                              _gradesEndDate != null
+                          ? DateTimeRange(
+                              start: _gradesStartDate!, end: _gradesEndDate!)
+                          : null,
+                    );
+                    if (picked != null && mounted) {
+                      setState(() {
+                        _gradesStartDate = picked.start;
+                        _gradesEndDate =
+                            picked.end.add(const Duration(days: 1));
+                      });
+                      _fetchClientGrades();
+                    }
+                  },
+                  icon: const Icon(Icons.date_range, size: 18),
+                  label: Text(
+                    _gradesStartDate != null
+                        ? '${DateFormat('MM/dd').format(_gradesStartDate!)} \u2013 ${DateFormat('MM/dd').format(_gradesEndDate!.subtract(const Duration(days: 1)))}'
+                        : 'Date range',
+                  ),
+                ),
+                if (_gradesStartDate != null) ...[
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: 'Clear date filter',
+                    icon: const Icon(Icons.clear, size: 18),
+                    onPressed: () {
+                      setState(() {
+                        _gradesStartDate = null;
+                        _gradesEndDate = null;
+                      });
+                      _fetchClientGrades();
+                    },
+                  ),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Grade cards list
+            if (_clientGrades.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.star_border_rounded,
+                          size: 48,
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.3)),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No client grades yet',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color:
+                              theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _clientGrades.length,
+                separatorBuilder: (_, a) => const SizedBox(height: 8),
+                itemBuilder: (ctx, i) {
+                  final g = _clientGrades[i];
+                  final stars = (g['stars'] as num?)?.toInt() ?? 0;
+                  final clientEmail =
+                      (g['clientEmail'] as String?) ?? 'Unknown';
+                  final comment =
+                      ((g['comment'] as String?) ?? '').trim();
+                  final submittedAt = g['submittedAt'] != null
+                      ? formatManila(
+                          DateTime.tryParse(
+                                  g['submittedAt'].toString()) ??
+                              DateTime.now(),
+                          'yyyy-MM-dd HH:mm')
+                      : '-';
+                  final ticketNumber = (g['ticketId'] is Map)
+                      ? ((g['ticketId'] as Map)['ticketNumber'] as String? ??
+                          '')
+                      : '';
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: theme.colorScheme.outlineVariant),
+                    ),
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(
+                                5,
+                                (s) => Icon(
+                                  s < stars
+                                      ? Icons.star_rounded
+                                      : Icons.star_border_rounded,
+                                  color: Colors.amber,
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                clientEmail,
+                                style: theme.textTheme.bodySmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (ticketNumber.isNotEmpty)
+                              Chip(
+                                label: Text(ticketNumber,
+                                    style: theme.textTheme.labelSmall),
+                                padding: EdgeInsets.zero,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                          ],
+                        ),
+                        if (comment.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '\u201c$comment\u201d',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontStyle: FontStyle.italic,
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.75),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          submittedAt,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+          ],
         ),
       ),
     );

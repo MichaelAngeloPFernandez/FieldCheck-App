@@ -1075,4 +1075,168 @@ class ClientTicketService {
     } catch (e) {
       rethrow;
     }
-  }}
+  }
+
+  /// Fetch ALL client grades (admin only, requires auth token)
+  /// Filters: stars (1-5), clientEmail, startDate, endDate, sort, page, limit
+  Future<Map<String, dynamic>> getClientGradesAdmin({
+    int page = 1,
+    int limit = 20,
+    int? stars,
+    String? clientEmail,
+    DateTime? startDate,
+    DateTime? endDate,
+    String sortBy = 'recent',
+  }) async {
+    try {
+      final query = <String, String>{
+        'page': page.toString(),
+        'limit': limit.toString(),
+        'sort': sortBy,
+        if (stars != null) 'stars': stars.toString(),
+        if (clientEmail != null && clientEmail.isNotEmpty)
+          'clientEmail': clientEmail,
+        if (startDate != null)
+          'startDate': startDate.toIso8601String(),
+        if (endDate != null)
+          'endDate': endDate.toIso8601String(),
+      };
+
+      final response = await HttpUtil()
+          .get(
+            '/api/ticket-ratings/admin/all',
+            queryParams: query,
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'success': false, 'error': 'Invalid response format'};
+        } catch (_) {
+          return {'success': false, 'error': 'Failed to parse response'};
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to fetch client grades');
+        } catch (_) {
+          throw Exception(
+              'Failed to fetch client grades (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception(
+          'Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Export client grades as CSV or JSON (admin only)
+  /// Returns raw bytes for CSV or Map for JSON
+  Future<String> exportClientGradesAdmin({
+    String format = 'csv',
+    int? stars,
+    String? clientEmail,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      final query = <String, String>{
+        'format': format,
+        if (stars != null) 'stars': stars.toString(),
+        if (clientEmail != null && clientEmail.isNotEmpty)
+          'clientEmail': clientEmail,
+        if (startDate != null) 'startDate': startDate.toIso8601String(),
+        if (endDate != null) 'endDate': endDate.toIso8601String(),
+      };
+
+      final response = await HttpUtil()
+          .get(
+            '/api/ticket-ratings/admin/export',
+            queryParams: query,
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        return response.body;
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Admin access required.');
+      } else {
+        throw Exception(
+            'Failed to export client grades (Status: ${response.statusCode})');
+      }
+    } on TimeoutException {
+      throw Exception(
+          'Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Fetch all grades that current employee RECEIVED from clients (employee auth required)
+  /// Filters: stars (1-5), sort, page, limit
+  Future<Map<String, dynamic>> getEmployeeReceivedGrades({
+    int page = 1,
+    int limit = 10,
+    int? stars,
+    String sortBy = 'recent',
+  }) async {
+    try {
+      final query = <String, String>{
+        'page': page.toString(),
+        'limit': limit.toString(),
+        'sort': sortBy,
+        if (stars != null) 'stars': stars.toString(),
+      };
+
+      final response = await HttpUtil()
+          .get(
+            '/api/ticket-ratings/me/grades',
+            queryParams: query,
+            headers: await _getHeaders(),
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timed out');
+      });
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = jsonDecode(response.body);
+          return decoded is Map<String, dynamic>
+              ? decoded
+              : {'success': false, 'error': 'Invalid response format'};
+        } catch (_) {
+          return {'success': false, 'error': 'Failed to parse response'};
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized. Employee access required.');
+      } else {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['error'] ?? 'Failed to fetch your grades');
+        } catch (_) {
+          throw Exception(
+              'Failed to fetch your grades (Status: ${response.statusCode})');
+        }
+      }
+    } on TimeoutException {
+      throw Exception(
+          'Request timeout. Please check your connection and try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+}
+

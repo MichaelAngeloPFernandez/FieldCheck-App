@@ -13,6 +13,7 @@ import '../services/user_service.dart';
 import '../utils/http_util.dart';
 import '../services/autosave_service.dart';
 import '../services/attendance_service.dart';
+import '../services/client_ticket_service.dart';
 import '../widgets/location_tracker_indicator.dart';
 import '../widgets/checkin_timer_widget.dart';
 import 'package:uuid/uuid.dart';
@@ -32,6 +33,7 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   final GeofenceService _geofenceService = GeofenceService();
   final UserService _userService = UserService();
   final AttendanceService _attendanceService = AttendanceService();
+  final ClientTicketService _clientTicketService = ClientTicketService();
 
   bool _isCheckedIn = false;
   bool _isLoading = false;
@@ -59,11 +61,18 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
   bool _locationPermissionDeniedForever = false;
   bool _locationServiceDisabled = false;
 
+  // Employee grades
+  bool _isLoadingGrades = false;
+  List<dynamic> _employeeGrades = [];
+  double _averageGrade = 0.0;
+  int _totalGrades = 0;
+
   @override
   void initState() {
     super.initState();
     _initializeServices();
     _loadAttendanceStatus();
+    _loadEmployeeGrades();
   }
 
   @override
@@ -138,6 +147,232 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       });
     }
     Navigator.of(context).pushNamed('/chat');
+  }
+
+  Widget _buildEmployeeGradesCard() {
+    final theme = Theme.of(context);
+
+    if (_isLoadingGrades) {
+      return _buildSurfaceCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            height: 100,
+            child: Center(
+              child: CircularProgressIndicator(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_totalGrades == 0) {
+      return _buildSurfaceCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.star_outline,
+                    color: theme.colorScheme.primary,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'My Client Grades',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'No grades received yet. Grades will appear here after clients rate your completed work.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _buildSurfaceCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.star,
+                  color: Colors.amber.shade600,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'My Client Grades',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$_totalGrades grade${_totalGrades == 1 ? '' : 's'} received',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Average rating
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    'Average Rating: ',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_averageGrade.toStringAsFixed(1)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: Colors.amber.shade600,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  for (int i = 0; i < 5; i++)
+                    Icon(
+                      i < _averageGrade.round() ? Icons.star : Icons.star_border,
+                      color: Colors.amber.shade600,
+                      size: 14,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Recent grades list
+            if (_employeeGrades.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Recent Feedback',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  for (int i = 0; i < (_employeeGrades.length < 3 ? _employeeGrades.length : 3); i++)
+                    _buildGradeItem(theme, _employeeGrades[i], i),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradeItem(ThemeData theme, dynamic grade, int index) {
+    final rating = (grade['rating'] ?? 0) as int;
+    final comment = (grade['comment'] ?? '') as String;
+    final createdAt = grade['createdAt'] as String?;
+    
+    String formattedDate = '';
+    if (createdAt != null) {
+      try {
+        final date = DateTime.parse(createdAt);
+        final now = DateTime.now();
+        final diff = now.difference(date);
+        if (diff.inDays == 0) {
+          formattedDate = 'Today';
+        } else if (diff.inDays == 1) {
+          formattedDate = 'Yesterday';
+        } else if (diff.inDays < 7) {
+          formattedDate = '${diff.inDays} days ago';
+        } else {
+          formattedDate = '${date.month}/${date.day}/${date.year}';
+        }
+      } catch (_) {}
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: index < 2 ? 10 : 0),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    for (int i = 0; i < 5; i++)
+                      Icon(
+                        i < rating ? Icons.star : Icons.star_border,
+                        color: Colors.amber.shade600,
+                        size: 16,
+                      ),
+                  ],
+                ),
+                if (formattedDate.isNotEmpty)
+                  Text(
+                    formattedDate,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+              ],
+            ),
+            if (comment.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                comment,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildChatQuickAccessCard() {
@@ -337,6 +572,36 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
       }
     } catch (e) {
       debugPrint('Error loading attendance status: $e');
+    }
+  }
+
+  Future<void> _loadEmployeeGrades() async {
+    try {
+      setState(() {
+        _isLoadingGrades = true;
+      });
+
+      final result = await _clientTicketService.getEmployeeReceivedGrades(
+        limit: 5,
+        sortBy: 'recent',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _isLoadingGrades = false;
+        if (result['success'] == true) {
+          _employeeGrades = result['grades'] ?? [];
+          _averageGrade = (result['averageRating'] ?? 0.0) as double;
+          _totalGrades = (result['total'] ?? 0) as int;
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingGrades = false;
+        });
+      }
+      debugPrint('Error loading employee grades: $e');
     }
   }
 
@@ -1230,6 +1495,9 @@ class _EnhancedAttendanceScreenState extends State<EnhancedAttendanceScreen> {
                 const SizedBox(height: 12),
                 // Informational: show all geofences
                 if (_allGeofences.isNotEmpty) _buildAllGeofencesCard(),
+                const SizedBox(height: 16),
+                // Employee grades from clients
+                _buildEmployeeGradesCard(),
                 const SizedBox(height: 16),
                 _buildChatQuickAccessCard(),
               ],
