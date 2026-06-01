@@ -2,6 +2,7 @@
 
 import 'package:field_check/main.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:field_check/screens/client_ticket_tracking_screen.dart';
 import 'package:field_check/widgets/client_ticket_modal.dart';
@@ -17,6 +18,9 @@ class LandingScreen extends StatefulWidget {
 
 class _LandingScreenState extends State<LandingScreen> {
   final ScrollController _scrollController = ScrollController();
+  String? _lastTicketNumber;
+  String? _lastEmailToken;
+  bool _hasSavedSession = false;
 
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -41,27 +45,33 @@ class _LandingScreenState extends State<LandingScreen> {
   final List<Map<String, String>> _faqItems = [
     {
       'question': 'How do I submit a support ticket?',
-      'answer': 'You can submit a support ticket by clicking the "Submit Ticket" button in the Client Support Tickets section above, or use the Contact form below. Our team will respond to your ticket via email within 24 hours.',
+      'answer':
+          'You can submit a support ticket by clicking the "Submit Ticket" button in the Client Support Tickets section above, or use the Contact form below. Our team will respond to your ticket via email within 24 hours.',
     },
     {
       'question': 'How can I track my ticket status?',
-      'answer': 'After submitting a ticket, you\'ll receive a confirmation email with a tracking link. Click the link to view your ticket status, see assigned employee details, and leave comments or feedback.',
+      'answer':
+          'After submitting a ticket, you\'ll receive a confirmation email with a tracking link. Click the link to view your ticket status, see assigned employee details, and leave comments or feedback.',
     },
     {
       'question': 'What should I include in my ticket?',
-      'answer': 'Include a clear description of your issue, specify the service type (facility inspection, maintenance, etc.), and attach any relevant photos or documents. The more details you provide, the faster we can resolve your issue.',
+      'answer':
+          'Include a clear description of your issue, specify the service type (facility inspection, maintenance, etc.), and attach any relevant photos or documents. The more details you provide, the faster we can resolve your issue.',
     },
     {
       'question': 'I forgot my login password. What do I do?',
-      'answer': 'Contact your administrator directly. They can reset your password or help you regain access to your account. Use the Contact form below to reach the appropriate support team.',
+      'answer':
+          'Contact your administrator directly. They can reset your password or help you regain access to your account. Use the Contact form below to reach the appropriate support team.',
     },
     {
       'question': 'How long does it take to resolve a ticket?',
-      'answer': 'Most tickets are acknowledged within 24 hours. Resolution time depends on the complexity of your issue. You\'ll receive updates via email throughout the process.',
+      'answer':
+          'Most tickets are acknowledged within 24 hours. Resolution time depends on the complexity of your issue. You\'ll receive updates via email throughout the process.',
     },
     {
       'question': 'Can I add comments to my ticket after submission?',
-      'answer': 'Yes! Use your tracking link to view your ticket and add comments anytime. This helps our team stay updated on your progress and any new information you might have.',
+      'answer':
+          'Yes! Use your tracking link to view your ticket and add comments anytime. This helps our team stay updated on your progress and any new information you might have.',
     },
   ];
 
@@ -89,6 +99,63 @@ class _LandingScreenState extends State<LandingScreen> {
   static const double _maxWidth = 1160;
   static const double _sectionVPad = 110;
 
+  @override
+  void initState() {
+    super.initState();
+    _checkSavedSession();
+  }
+
+  Future<void> _checkSavedSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastTicket = prefs.getString('last_ticket_number');
+      final lastToken = prefs.getString('last_email_token');
+
+      if (lastTicket != null &&
+          lastTicket.isNotEmpty &&
+          lastToken != null &&
+          lastToken.isNotEmpty) {
+        setState(() {
+          _lastTicketNumber = lastTicket;
+          _lastEmailToken = lastToken;
+          _hasSavedSession = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking saved session: $e');
+    }
+  }
+
+  Future<void> _continueLastSession() async {
+    if (_lastTicketNumber != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ClientTicketTrackingScreen(
+            ticketNumber: _lastTicketNumber!,
+            emailToken: _lastEmailToken,
+            rememberOnDevice: true,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _clearSavedSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('last_ticket_number');
+      await prefs.remove('last_email_token');
+      await prefs.remove('last_client_email');
+      setState(() {
+        _lastTicketNumber = null;
+        _lastEmailToken = null;
+        _hasSavedSession = false;
+      });
+    } catch (e) {
+      debugPrint('Error clearing saved session: $e');
+    }
+  }
+
   Future<void> _submitContactForm() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
@@ -96,7 +163,11 @@ class _LandingScreenState extends State<LandingScreen> {
     final message = _messageController.text.trim();
     final category = _contactCategoryController.text.trim();
 
-    if (name.isEmpty || email.isEmpty || subject.isEmpty || message.isEmpty || category.isEmpty) {
+    if (name.isEmpty ||
+        email.isEmpty ||
+        subject.isEmpty ||
+        message.isEmpty ||
+        category.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please fill in all fields'),
@@ -159,12 +230,14 @@ class _LandingScreenState extends State<LandingScreen> {
             // Show success message
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Ticket $ticketNumber submitted! Check your email.'),
+                content: Text(
+                  'Ticket $ticketNumber submitted! Check your email.',
+                ),
                 backgroundColor: Colors.green,
                 duration: const Duration(seconds: 3),
               ),
             );
-            
+
             // Auto-refresh landing page after modal closes
             if (mounted) {
               Navigator.of(context).pop();
@@ -188,13 +261,14 @@ class _LandingScreenState extends State<LandingScreen> {
       context: context,
       builder: (dialogContext) {
         return ClientTicketGradingModal(
-          onAccessGranted: (ticketNumber, accessToken) {
+          onAccessGranted: (ticketNumber, accessToken, rememberOnDevice) {
             Navigator.of(dialogContext).pop();
             Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => ClientTicketTrackingScreen(
                   ticketNumber: ticketNumber,
                   emailToken: accessToken,
+                  rememberOnDevice: rememberOnDevice,
                 ),
               ),
             );
@@ -1107,6 +1181,55 @@ class _LandingScreenState extends State<LandingScreen> {
                               ),
                             ),
                             const SizedBox(height: 18),
+                            if (_hasSavedSession) ...[
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: _brandPrimary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _brandPrimary.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Continue your last ticket session',
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Ticket: $_lastTicketNumber',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(color: textSecondary),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        TextButton.icon(
+                                          onPressed: _clearSavedSession,
+                                          icon: const Icon(Icons.close),
+                                          label: const Text('Dismiss'),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        FilledButton.icon(
+                                          onPressed: _continueLastSession,
+                                          icon: const Icon(Icons.play_arrow),
+                                          label: const Text('Continue'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                            ],
                             Wrap(
                               spacing: 12,
                               runSpacing: 12,
@@ -1131,7 +1254,9 @@ class _LandingScreenState extends State<LandingScreen> {
                                   label: const Text('Grade a Task Report'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: _brandPrimary,
-                                    side: const BorderSide(color: _brandPrimary),
+                                    side: const BorderSide(
+                                      color: _brandPrimary,
+                                    ),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 20,
                                       vertical: 14,
@@ -1147,21 +1272,25 @@ class _LandingScreenState extends State<LandingScreen> {
                                 Expanded(
                                   child: Column(
                                     children: [
-                                      Icon(Icons.numbers, color: _brandPrimary, size: 28),
+                                      Icon(
+                                        Icons.numbers,
+                                        color: _brandPrimary,
+                                        size: 28,
+                                      ),
                                       const SizedBox(height: 8),
                                       Text(
                                         'Ticket Tracking',
-                                        style: theme.textTheme.labelLarge?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                        style: theme.textTheme.labelLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
                                         'Get a unique ticket number for tracking',
                                         textAlign: TextAlign.center,
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: textSecondary,
-                                        ),
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(color: textSecondary),
                                       ),
                                     ],
                                   ),
@@ -1170,21 +1299,25 @@ class _LandingScreenState extends State<LandingScreen> {
                                 Expanded(
                                   child: Column(
                                     children: [
-                                      Icon(Icons.email_outlined, color: _brandPrimary, size: 28),
+                                      Icon(
+                                        Icons.email_outlined,
+                                        color: _brandPrimary,
+                                        size: 28,
+                                      ),
                                       const SizedBox(height: 8),
                                       Text(
                                         'Email Updates',
-                                        style: theme.textTheme.labelLarge?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                        style: theme.textTheme.labelLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
                                         'Receive updates via email',
                                         textAlign: TextAlign.center,
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: textSecondary,
-                                        ),
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(color: textSecondary),
                                       ),
                                     ],
                                   ),
@@ -1193,21 +1326,25 @@ class _LandingScreenState extends State<LandingScreen> {
                                 Expanded(
                                   child: Column(
                                     children: [
-                                      Icon(Icons.rate_review_outlined, color: _brandPrimary, size: 28),
+                                      Icon(
+                                        Icons.rate_review_outlined,
+                                        color: _brandPrimary,
+                                        size: 28,
+                                      ),
                                       const SizedBox(height: 8),
                                       Text(
                                         'Rate Service',
-                                        style: theme.textTheme.labelLarge?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                        style: theme.textTheme.labelLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
                                         'Give feedback after completion',
                                         textAlign: TextAlign.center,
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: textSecondary,
-                                        ),
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(color: textSecondary),
                                       ),
                                     ],
                                   ),
@@ -1292,9 +1429,7 @@ class _LandingScreenState extends State<LandingScreen> {
                                 decoration: BoxDecoration(
                                   color: cardBg,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: borderColor,
-                                  ),
+                                  border: Border.all(color: borderColor),
                                 ),
                                 child: ExpansionTile(
                                   title: Text(
@@ -1304,7 +1439,12 @@ class _LandingScreenState extends State<LandingScreen> {
                                       color: textPrimary,
                                     ),
                                   ),
-                                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                  childrenPadding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    0,
+                                    16,
+                                    16,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -1314,10 +1454,11 @@ class _LandingScreenState extends State<LandingScreen> {
                                   children: [
                                     Text(
                                       item['answer'] ?? '',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        height: 1.6,
-                                        color: textSecondary,
-                                      ),
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            height: 1.6,
+                                            color: textSecondary,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -1681,7 +1822,9 @@ class _LandingScreenState extends State<LandingScreen> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: _contactCategoryController.text.isEmpty ? 'other' : _contactCategoryController.text,
+            value: _contactCategoryController.text.isEmpty
+                ? 'other'
+                : _contactCategoryController.text,
             items: const [
               DropdownMenuItem(value: 'billing', child: Text('Billing')),
               DropdownMenuItem(value: 'technical', child: Text('Technical')),

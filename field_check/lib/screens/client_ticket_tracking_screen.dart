@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/app_theme.dart';
 import 'package:field_check/services/client_ticket_service.dart';
@@ -6,11 +8,13 @@ import 'package:field_check/services/client_ticket_service.dart';
 class ClientTicketTrackingScreen extends StatefulWidget {
   final String ticketNumber;
   final String? emailToken;
+  final bool rememberOnDevice;
 
   const ClientTicketTrackingScreen({
     super.key,
     required this.ticketNumber,
     this.emailToken,
+    this.rememberOnDevice = false,
   });
 
   @override
@@ -31,11 +35,58 @@ class _ClientTicketTrackingScreenState
   String? _selectedEmployeeId;
   bool _isSubmittingComment = false;
   bool _isSubmittingRating = false;
+  Timer? _autoRefreshTimer;
+  static const _autoRefreshInterval = Duration(seconds: 15);
 
   @override
   void initState() {
     super.initState();
     _loadTicket();
+    _startAutoRefresh();
+    if (widget.rememberOnDevice) {
+      _saveSession();
+    } else {
+      _clearSavedSession();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    _commentController.dispose();
+    _ratingCommentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_ticket_number', widget.ticketNumber);
+      if (widget.emailToken != null) {
+        await prefs.setString('last_email_token', widget.emailToken!);
+      }
+    } catch (e) {
+      debugPrint('Error saving session: $e');
+    }
+  }
+
+  Future<void> _clearSavedSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('last_ticket_number');
+      await prefs.remove('last_email_token');
+      await prefs.remove('last_client_email');
+    } catch (e) {
+      debugPrint('Error clearing session: $e');
+    }
+  }
+
+  void _startAutoRefresh() {
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (timer) {
+      if (mounted) {
+        _loadTicket();
+      }
+    });
   }
 
   Future<void> _loadTicket() async {
@@ -74,6 +125,32 @@ class _ClientTicketTrackingScreenState
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _exitConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Exit Ticket Tracking'),
+        content: const Text(
+          'Are you sure you want to exit this ticket tracking page? Don\'t worry, the progress won\'t be lost but you may have to retype credentials again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Exit'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      Navigator.pop(context);
     }
   }
 
@@ -261,7 +338,22 @@ class _ClientTicketTrackingScreenState
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Ticket Tracking'), elevation: 0),
+      appBar: AppBar(
+        title: const Text('Ticket Tracking'),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: _exitConfirmation,
+          tooltip: 'Exit',
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadTicket,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
       body: _isLoading
           ? AppWidgets.loadingIndicator(message: 'Loading ticket...')
           : _error != null
@@ -893,12 +985,5 @@ class _ClientTicketTrackingScreenState
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _commentController.dispose();
-    _ratingCommentController.dispose();
-    super.dispose();
   }
 }

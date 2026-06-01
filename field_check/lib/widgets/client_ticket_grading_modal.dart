@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:field_check/services/client_ticket_service.dart';
 
 class ClientTicketGradingModal extends StatefulWidget {
-  final void Function(String ticketNumber, String accessToken) onAccessGranted;
+  final void Function(
+    String ticketNumber,
+    String accessToken,
+    bool rememberOnDevice,
+  )
+  onAccessGranted;
 
-  const ClientTicketGradingModal({
-    super.key,
-    required this.onAccessGranted,
-  });
+  const ClientTicketGradingModal({super.key, required this.onAccessGranted});
 
   @override
   State<ClientTicketGradingModal> createState() =>
@@ -18,6 +20,7 @@ class _ClientTicketGradingModalState extends State<ClientTicketGradingModal> {
   final _ticketController = TextEditingController();
   final _emailController = TextEditingController();
   bool _isSubmitting = false;
+  bool _rememberOnDevice = false;
 
   Future<void> _submit() async {
     final ticketNumber = _ticketController.text.trim().toUpperCase();
@@ -26,7 +29,9 @@ class _ClientTicketGradingModalState extends State<ClientTicketGradingModal> {
     if (ticketNumber.isEmpty || clientEmail.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Enter both the exact RNG ticket number and your email.'),
+          content: Text(
+            'Enter both the exact RNG ticket number and your email.',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -45,14 +50,11 @@ class _ClientTicketGradingModalState extends State<ClientTicketGradingModal> {
       if (accessToken.isEmpty) {
         throw Exception(result['error'] ?? 'Failed to open ticket grading');
       }
-      widget.onAccessGranted(ticketNumber, accessToken);
+      widget.onAccessGranted(ticketNumber, accessToken, _rememberOnDevice);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) {
@@ -103,6 +105,24 @@ class _ClientTicketGradingModalState extends State<ClientTicketGradingModal> {
           const Text(
             'The report can only be graded after it is reviewed, and each assigned employee can be graded separately.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _rememberOnDevice,
+            onChanged: _isSubmitting
+                ? null
+                : (value) {
+                    setState(() {
+                      _rememberOnDevice = value ?? false;
+                    });
+                  },
+            title: const Text('Remember this ticket on this device'),
+            subtitle: const Text(
+              'Use this only on your own device.',
+              style: TextStyle(fontSize: 12),
+            ),
+            controlAffinity: ListTileControlAffinity.leading,
           ),
         ],
       ),

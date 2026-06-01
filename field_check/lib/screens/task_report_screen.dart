@@ -93,18 +93,13 @@ class _TaskReportScreenState extends State<TaskReportScreen> {
     final wordCount = _countWords(_textController.text);
     int progress = 0;
 
-    if (wordCount >= 500) {
-      progress += 50;
-    } else if (wordCount >= 250) {
-      progress += 25;
-    }
-
-    if (_beforeFiles.isNotEmpty && _afterFiles.isNotEmpty) {
-      progress += 25;
-    }
-
-    if (_documentFiles.isNotEmpty) {
-      progress += 25;
+    // 100% at 10 words
+    if (wordCount >= 10) {
+      progress = 100;
+    } else if (wordCount >= 5) {
+      progress = 50;
+    } else if (wordCount > 0) {
+      progress = 25;
     }
 
     return progress.clamp(0, 100).toInt();
