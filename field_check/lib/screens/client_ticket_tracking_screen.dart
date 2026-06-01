@@ -332,6 +332,13 @@ class _ClientTicketTrackingScreenState
     return null;
   }
 
+  bool get _hasRateableEmployee {
+    if (_ticket?['hasRateableEmployee'] == true) {
+      return true;
+    }
+    return _rateableEmployees.any((employee) => employee['reportReviewed'] == true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -380,7 +387,7 @@ class _ClientTicketTrackingScreenState
                   if (_ticket?['comments'] != null)
                     _buildCommentsSection(theme, isDark),
                   _buildCommentForm(theme, isDark),
-                  if (_ticket?['status'] == 'completed')
+                  if (_hasRateableEmployee || _ticket?['status'] == 'completed')
                     _buildRatingSection(theme, isDark),
                   const SizedBox(height: AppTheme.md),
                 ],
@@ -758,7 +765,7 @@ class _ClientTicketTrackingScreenState
         (ticketRating is Map ? Map<String, dynamic>.from(ticketRating) : null);
     final hasRating = rating != null && rating['stars'] != null;
     final reportReviewed = selectedRateableEmployee == null
-        ? (_ticket?['status'] == 'completed')
+        ? (_hasRateableEmployee || _ticket?['status'] == 'completed')
         : (selectedRateableEmployee['reportReviewed'] == true);
 
     if (rateableEmployees.length > 1) {

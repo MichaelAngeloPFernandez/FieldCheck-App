@@ -111,9 +111,36 @@ function mapEmployeeRatings(ticketObj) {
     .filter(Boolean);
 }
 
+function getStatusRank(status) {
+  switch (status) {
+    case 'open':
+      return 0;
+    case 'in_progress':
+      return 1;
+    case 'pending_review':
+      return 2;
+    case 'completed':
+      return 3;
+    case 'closed':
+      return 4;
+    case 'expired':
+      return 5;
+    default:
+      return -1;
+  }
+}
+
+function mergeClientVisibleStatus(rawStatus, derivedStatus) {
+  if (['closed', 'expired'].includes(rawStatus)) {
+    return rawStatus;
+  }
+  return getStatusRank(derivedStatus) > getStatusRank(rawStatus) ? derivedStatus : rawStatus;
+}
+
 async function buildTicketResponseData(ticket) {
   const ticketData = ticket.toObject();
   delete ticketData.trackingToken;
+  ticketData.workflowStatus = ticketData.status;
 
   const assignedEmployees =
     Array.isArray(ticketData.assignedEmployeeIds) && ticketData.assignedEmployeeIds.length > 0
@@ -135,15 +162,31 @@ async function buildTicketResponseData(ticket) {
 
   if (ticketData.linkedTaskId && assignedEmployees.length > 0) {
     const Report = require('../models/Report');
+    const taskId = ticketData.linkedTaskId._id || ticketData.linkedTaskId;
     const assignedIds = assignedEmployees.map((employee) => employee.id);
-    const reviewedReports = await Report.find({
-      task: ticketData.linkedTaskId._id || ticketData.linkedTaskId,
-      employee: { $in: assignedIds },
-      status: 'reviewed',
-    })
-      .select('_id employee status submittedAt updatedAt')
-      .populate('employee', 'name email')
-      .lean();
+    const [reviewedReports, submittedReports, userTasks] = await Promise.all([
+      Report.find({
+        task: taskId,
+        employee: { $in: assignedIds },
+        status: 'reviewed',
+      })
+        .select('_id employee status submittedAt updatedAt')
+        .populate('employee', 'name email')
+        .lean(),
+      Report.find({
+        task: taskId,
+        employee: { $in: assignedIds },
+        status: 'submitted',
+      })
+        .select('_id employee status submittedAt updatedAt')
+        .lean(),
+      UserTask.find({
+        taskId,
+        userId: { $in: assignedIds },
+      })
+        .select('userId status')
+        .lean(),
+    ]);
 
     const ratingsByEmployeeId = new Map(
       employeeRatings.map((rating) => [rating.employeeId, rating])
@@ -163,6 +206,27 @@ async function buildTicketResponseData(ticket) {
         existingRating: rating,
       };
     });
+
+    const hasReviewedWork =
+      reviewedReports.length > 0 ||
+      userTasks.some((entry) => ['completed', 'reviewed'].includes(String(entry.status || '').toLowerCase()));
+    const hasPendingReview =
+      submittedReports.length > 0 ||
+      userTasks.some((entry) => String(entry.status || '').toLowerCase() === 'pending_review');
+    const hasAssignedWork = assignedEmployees.length > 0;
+
+    const derivedStatus = hasReviewedWork
+      ? 'completed'
+      : hasPendingReview
+      ? 'pending_review'
+      : hasAssignedWork
+      ? 'in_progress'
+      : 'open';
+
+    ticketData.status = mergeClientVisibleStatus(ticketData.status, derivedStatus);
+    ticketData.hasRateableEmployee = ticketData.rateableEmployees.some(
+      (employee) => employee.reportReviewed
+    );
   } else {
     ticketData.rateableEmployees = assignedEmployees.map((employee) => ({
       employeeId: employee.id,
@@ -173,6 +237,7 @@ async function buildTicketResponseData(ticket) {
       existingRating:
         employeeRatings.find((rating) => rating.employeeId === employee.id) || null,
     }));
+    ticketData.hasRateableEmployee = false;
   }
 
   return ticketData;
@@ -1050,11 +1115,6 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
       return res.status(401).json({ error: 'Ticket token required.' });
     }
 
-    // Check if ticket is completed
-    if (ticket.status !== 'completed') {
-      return res.status(400).json({ error: 'Only completed tickets can be rated.' });
-    }
-
     const assignedEmployeeIds = getAssignedEmployeeIds(ticket);
     const normalizedEmployeeId = employeeId ? employeeId.trim() : '';
     const targetEmployeeId =
@@ -1091,6 +1151,10 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
             'Report must be reviewed before you can grade it. Please wait for admin review.',
         });
       }
+    } else if (ticket.status !== 'completed') {
+      return res.status(400).json({
+        error: 'This ticket is not ready for grading yet.',
+      });
     }
 
     const ratingComment = comment ? comment.trim() : '';
