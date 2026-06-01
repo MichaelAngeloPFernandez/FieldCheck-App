@@ -44,6 +44,140 @@ function debugLog(runId, hypothesisId, location, message, data = {}) {
 }
 // #endregion
 
+function normalizeObjectIdStrings(values) {
+  const seen = new Set();
+  const normalized = [];
+  for (const value of values || []) {
+    const raw =
+      value && typeof value === 'object' && value._id
+        ? value._id.toString()
+        : value
+        ? value.toString()
+        : '';
+    if (!raw || seen.has(raw)) continue;
+    seen.add(raw);
+    normalized.push(raw);
+  }
+  return normalized;
+}
+
+function getAssignedEmployeeIds(ticket) {
+  const fromArray = Array.isArray(ticket?.assignedEmployeeIds) ? ticket.assignedEmployeeIds : [];
+  if (fromArray.length > 0) {
+    return normalizeObjectIdStrings(fromArray);
+  }
+  if (ticket?.assignedEmployeeId) {
+    return normalizeObjectIdStrings([ticket.assignedEmployeeId]);
+  }
+  return [];
+}
+
+function applyAssignedEmployeeIds(ticket, employeeIds) {
+  const normalized = normalizeObjectIdStrings(employeeIds);
+  ticket.assignedEmployeeIds = normalized;
+  ticket.assignedEmployeeId = normalized.length > 0 ? normalized[0] : null;
+  return normalized;
+}
+
+function toEmployeeSummary(employee) {
+  if (!employee) return null;
+  const id = employee._id ? employee._id.toString() : employee.id ? employee.id.toString() : '';
+  if (!id) return null;
+  return {
+    id,
+    name: employee.name || 'Unknown',
+    email: employee.email || '',
+    phone: employee.phone || '',
+  };
+}
+
+function mapEmployeeRatings(ticketObj) {
+  const ratings = Array.isArray(ticketObj?.employeeRatings) ? ticketObj.employeeRatings : [];
+  return ratings
+    .map((entry) => {
+      const employee = toEmployeeSummary(entry.employeeId);
+      const employeeId = employee?.id || (entry.employeeId ? entry.employeeId.toString() : '');
+      if (!employeeId) return null;
+      return {
+        employeeId,
+        employee,
+        reportId: entry.reportId ? entry.reportId.toString() : null,
+        stars: entry.stars,
+        comment: entry.comment || '',
+        submittedAt: entry.submittedAt,
+        submittedBy: entry.submittedBy || '',
+      };
+    })
+    .filter(Boolean);
+}
+
+async function buildTicketResponseData(ticket) {
+  const ticketData = ticket.toObject();
+  delete ticketData.trackingToken;
+
+  const assignedEmployees =
+    Array.isArray(ticketData.assignedEmployeeIds) && ticketData.assignedEmployeeIds.length > 0
+      ? ticketData.assignedEmployeeIds.map(toEmployeeSummary).filter(Boolean)
+      : [toEmployeeSummary(ticketData.assignedEmployeeId)].filter(Boolean);
+  ticketData.assignedEmployees = assignedEmployees;
+
+  const employeeRatings = mapEmployeeRatings(ticketData);
+  ticketData.employeeRatings = employeeRatings;
+
+  if (!ticketData.rating && employeeRatings.length === 1) {
+    ticketData.rating = {
+      stars: employeeRatings[0].stars,
+      comment: employeeRatings[0].comment,
+      submittedAt: employeeRatings[0].submittedAt,
+      submittedBy: employeeRatings[0].submittedBy,
+    };
+  }
+
+  if (ticketData.linkedTaskId && assignedEmployees.length > 0) {
+    const Report = require('../models/Report');
+    const assignedIds = assignedEmployees.map((employee) => employee.id);
+    const reviewedReports = await Report.find({
+      task: ticketData.linkedTaskId._id || ticketData.linkedTaskId,
+      employee: { $in: assignedIds },
+      status: 'reviewed',
+    })
+      .select('_id employee status submittedAt updatedAt')
+      .populate('employee', 'name email')
+      .lean();
+
+    const ratingsByEmployeeId = new Map(
+      employeeRatings.map((rating) => [rating.employeeId, rating])
+    );
+
+    ticketData.rateableEmployees = assignedEmployees.map((employee) => {
+      const report = reviewedReports.find(
+        (entry) => String(entry.employee?._id || entry.employee) === employee.id
+      );
+      const rating = ratingsByEmployeeId.get(employee.id) || null;
+      return {
+        employeeId: employee.id,
+        employee,
+        reportId: report ? String(report._id) : null,
+        reportStatus: report?.status || null,
+        reportReviewed: Boolean(report),
+        existingRating: rating,
+      };
+    });
+  } else {
+    ticketData.rateableEmployees = assignedEmployees.map((employee) => ({
+      employeeId: employee.id,
+      employee,
+      reportId: null,
+      reportStatus: null,
+      reportReviewed: false,
+      existingRating:
+        employeeRatings.find((rating) => rating.employeeId === employee.id) || null,
+    }));
+  }
+
+  return ticketData;
+}
+
 /**
  * POST /api/client-tickets
  * Create a new client support ticket (public endpoint, no auth required)
@@ -295,7 +429,7 @@ exports.listClientTickets = asyncHandler(async (req, res) => {
   }
 
   if (assignedTo) {
-    query.assignedEmployeeId = assignedTo;
+    query.$or = [{ assignedEmployeeId: assignedTo }, { assignedEmployeeIds: assignedTo }];
   }
 
   if (startDate || endDate) {
@@ -312,6 +446,7 @@ exports.listClientTickets = asyncHandler(async (req, res) => {
     const skip = (page - 1) * limit;
     const tickets = await ClientTicket.find(query)
       .populate('assignedEmployeeId', 'name email')
+      .populate('assignedEmployeeIds', 'name email')
       .populate('linkedTaskId', '_id title status')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -319,9 +454,19 @@ exports.listClientTickets = asyncHandler(async (req, res) => {
 
     const total = await ClientTicket.countDocuments(query);
 
+    const data = tickets.map((ticket) => {
+      const obj = ticket.toObject();
+      obj.assignedEmployees =
+        Array.isArray(obj.assignedEmployeeIds) && obj.assignedEmployeeIds.length > 0
+          ? obj.assignedEmployeeIds.map(toEmployeeSummary).filter(Boolean)
+          : [toEmployeeSummary(obj.assignedEmployeeId)].filter(Boolean);
+      return obj;
+    });
+
     res.json({
       success: true,
-      data: tickets,
+      data,
+      tickets: data,
       pagination: {
         total,
         page: parseInt(page),
@@ -336,6 +481,45 @@ exports.listClientTickets = asyncHandler(async (req, res) => {
       message: process.env.NODE_ENV === 'development' ? error.message : 'Internal error',
     });
   }
+});
+
+/**
+ * POST /api/client-tickets/:ticketNumber/access
+ * Issue a fresh secure tracking token after validating the client email.
+ */
+exports.requestTicketAccess = asyncHandler(async (req, res) => {
+  const { ticketNumber } = req.params;
+  const { clientEmail } = req.body || {};
+
+  if (!ticketNumber || !/^RNG-\d{8}-[A-Z0-9]{4}$/.test(ticketNumber)) {
+    return res.status(400).json({ error: 'Invalid ticket number format.' });
+  }
+
+  if (!clientEmail || typeof clientEmail !== 'string') {
+    return res.status(400).json({ error: 'Client email is required.' });
+  }
+
+  const ticket = await ClientTicket.findOne({ ticketNumber }).select('+trackingToken');
+  if (!ticket) {
+    return res.status(404).json({ error: 'Ticket not found.' });
+  }
+
+  if (ticket.clientEmail !== clientEmail.toLowerCase().trim()) {
+    return res.status(403).json({ error: 'Unauthorized: Email does not match ticket.' });
+  }
+
+  const { token, tokenHash } = generateEmailToken();
+  ticket.trackingToken = tokenHash;
+  await ticket.save();
+
+  res.json({
+    success: true,
+    message: 'Secure ticket access granted.',
+    data: {
+      ticketNumber,
+      accessToken: token,
+    },
+  });
 });
 
 /**
@@ -360,23 +544,21 @@ exports.getClientTicket = asyncHandler(async (req, res) => {
     const ticket = await ClientTicket.findOne({ ticketNumber })
       .select('+trackingToken')
       .populate('assignedEmployeeId', 'name email phone')
+      .populate('assignedEmployeeIds', 'name email phone')
       .populate('linkedTaskId', '_id title status progress dueDate')
+      .populate('employeeRatings.employeeId', 'name email')
+      .populate('employeeRatings.reportId', '_id status submittedAt')
       .populate('comments.authorId', 'name email');
 
     if (!ticket) {
       return res.status(404).json({ error: 'Ticket not found.' });
     }
 
-    // Verify email token if provided
-    if (emailToken) {
-      if (!ticket.trackingToken || !verifyEmailToken(emailToken, ticket.trackingToken)) {
-        return res.status(401).json({ error: 'Invalid or expired ticket link.' });
-      }
+    if (!emailToken || !ticket.trackingToken || !verifyEmailToken(emailToken, ticket.trackingToken)) {
+      return res.status(401).json({ error: 'Invalid or expired ticket link.' });
     }
 
-    // Remove sensitive field from response
-    const ticketData = ticket.toObject();
-    delete ticketData.trackingToken;
+    const ticketData = await buildTicketResponseData(ticket);
 
     res.json({
       success: true,
@@ -392,109 +574,165 @@ exports.getClientTicket = asyncHandler(async (req, res) => {
 });
 
 /**
+ * GET /api/client-tickets/admin/:ticketNumber
+ * Get ticket details for admins without requiring a public email token.
+ */
+exports.getClientTicketAdmin = asyncHandler(async (req, res) => {
+  const { ticketNumber } = req.params;
+
+  if (!ticketNumber || !/^RNG-\d{8}-[A-Z0-9]{4}$/.test(ticketNumber)) {
+    return res.status(400).json({ error: 'Invalid ticket number format.' });
+  }
+
+  try {
+    const ticket = await ClientTicket.findOne({ ticketNumber })
+      .select('+trackingToken')
+      .populate('assignedEmployeeId', 'name email phone')
+      .populate('assignedEmployeeIds', 'name email phone')
+      .populate('linkedTaskId', '_id title status progress dueDate')
+      .populate('employeeRatings.employeeId', 'name email')
+      .populate('employeeRatings.reportId', '_id status submittedAt')
+      .populate('comments.authorId', 'name email');
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found.' });
+    }
+
+    const ticketData = await buildTicketResponseData(ticket);
+
+    res.json({
+      success: true,
+      data: ticketData,
+    });
+  } catch (error) {
+    console.error('Error fetching client ticket for admin:', error);
+    res.status(500).json({
+      error: 'Failed to fetch ticket',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal error',
+    });
+  }
+});
+
+/**
  * POST /api/client-tickets/:ticketNumber/assign/:employeeId
- * Assign ticket to an employee (admin only)
- * Auto-creates a UserTask in employee's task list
+ * Assign ticket to one or more employees (admin only)
+ * Uses one shared linked task with per-employee UserTask assignments.
  */
 exports.assignTicketToEmployee = asyncHandler(async (req, res) => {
   const { ticketNumber, employeeId } = req.params;
-  const { dueDate } = req.body;
+  const { dueDate, employeeIds = [] } = req.body;
 
   // Validate ticket number format
   if (!ticketNumber || !/^RNG-\d{8}-[A-Z0-9]{4}$/.test(ticketNumber)) {
     return res.status(400).json({ error: 'Invalid ticket number format.' });
   }
 
-  // Validate employee ID
-  if (!employeeId || employeeId.length !== 24) {
-    return res.status(400).json({ error: 'Invalid employee ID.' });
+  const requestedEmployeeIds = normalizeObjectIdStrings([
+    ...(Array.isArray(employeeIds) ? employeeIds : []),
+    employeeId,
+  ]);
+
+  if (requestedEmployeeIds.length === 0) {
+    return res.status(400).json({ error: 'At least one employee ID is required.' });
   }
 
   try {
-    // Find ticket
     const ticket = await ClientTicket.findOne({ ticketNumber });
     if (!ticket) {
       return res.status(404).json({ error: 'Ticket not found.' });
     }
 
-    // Verify employee exists
-    const employee = await User.findById(employeeId);
-    if (!employee || employee.role !== 'employee') {
-      return res.status(404).json({ error: 'Employee not found or invalid role.' });
+    const employees = await User.find({
+      _id: { $in: requestedEmployeeIds },
+      role: 'employee',
+    }).select('_id name email');
+
+    if (employees.length !== requestedEmployeeIds.length) {
+      return res.status(404).json({ error: 'One or more employees were not found or are not employees.' });
     }
 
-    // Check if already assigned
-    if (ticket.assignedEmployeeId) {
-      return res.status(400).json({ error: 'Ticket is already assigned to an employee.' });
+    let task = ticket.linkedTaskId ? await Task.findById(ticket.linkedTaskId) : null;
+    if (!task) {
+      task = new Task({
+        title: `Client Ticket: ${ticketNumber}`,
+        description: `⚠️ CLIENT SUPPORT TICKET\n\nTicket #: ${ticketNumber}\nClient Email: ${ticket.clientEmail}\nService Type: ${ticket.serviceType}\n\nClient's Message:\n"${ticket.description}"\n\nFollow standard task workflow: Accept → Work → Submit for Review\nUpdates will be sent to client via email.\nRating by: CLIENT (not admin)`,
+        type: 'client_support',
+        difficulty: 'medium',
+        dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        assignedBy: req.user._id,
+        assignedTo: requestedEmployeeIds[0],
+        status: 'assigned',
+        attachments: {
+          documents: ticket.attachments.map((attachment) => attachment.fileUrl),
+        },
+      });
+      await task.save();
+      ticket.linkedTaskId = task._id;
     }
 
-    // Update ticket
-    ticket.assignedEmployeeId = employeeId;
+    const existingAssignments = await UserTask.find({
+      taskId: task._id,
+      userId: { $in: requestedEmployeeIds },
+    }).select('userId');
+    const existingAssignedIds = new Set(
+      existingAssignments.map((assignment) => assignment.userId.toString())
+    );
+
+    const createdAssignments = [];
+    for (const requestedId of requestedEmployeeIds) {
+      if (existingAssignedIds.has(requestedId)) {
+        continue;
+      }
+      const userTask = new UserTask({
+        userId: requestedId,
+        taskId: task._id,
+        status: 'pending_acceptance',
+      });
+      await userTask.save();
+      createdAssignments.push(userTask);
+    }
+
+    const mergedAssignedIds = normalizeObjectIdStrings([
+      ...getAssignedEmployeeIds(ticket),
+      ...requestedEmployeeIds,
+    ]);
+    applyAssignedEmployeeIds(ticket, mergedAssignedIds);
     ticket.assignedBy = req.user._id;
     ticket.assignedAt = new Date();
     ticket.status = 'in_progress';
     await ticket.save();
 
-    // Create linked task in employee task list
-    const task = new Task({
-      title: `Client Ticket: ${ticketNumber}`,
-      description: `⚠️ CLIENT SUPPORT TICKET\n\nTicket #: ${ticketNumber}\nClient Email: ${ticket.clientEmail}\nService Type: ${ticket.serviceType}\n\nClient's Message:\n"${ticket.description}"\n\nFollow standard task workflow: Accept → Work → Submit for Review\nUpdates will be sent to client via email.\nRating by: CLIENT (not admin)`,
-      type: 'client_support',
-      difficulty: 'medium',
-      dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Default 7 days
-      assignedBy: req.user._id,
-      assignedTo: employeeId,
-      status: 'pending_acceptance',
-      attachments: {
-        documents: ticket.attachments.map(a => a.fileUrl),
-      },
-    });
+    for (const employee of employees) {
+      try {
+        const assignedEmployeeEmailHtml = ticketAssignedEmail(
+          employee.name,
+          ticketNumber,
+          ticket.clientName,
+          ticket.clientEmail,
+          ticket.serviceType,
+          ticket.description
+        );
 
-    await task.save();
-
-    // Link task to ticket
-    ticket.linkedTaskId = task._id;
-    await ticket.save();
-
-    // Create UserTask assignment
-    const userTask = new UserTask({
-      userId: employeeId,
-      taskId: task._id,
-      status: 'pending_acceptance',
-    });
-
-    await userTask.save();
-
-    // Send email to employee (don't fail if email fails)
-    try {
-      const assignedEmployeeEmailHtml = ticketAssignedEmail(
-        employee.name,
-        ticketNumber,
-        ticket.clientName,
-        ticket.clientEmail,
-        ticket.serviceType,
-        ticket.description
-      );
-
-      await sendEmail({
-        email: employee.email,
-        subject: `New Client Support Ticket Assigned: ${ticketNumber}`,
-        html: assignedEmployeeEmailHtml,
-      });
-    } catch (emailError) {
-      console.warn('Failed to send ticket assignment email to employee', {
-        ticketNumber,
-        employeeId,
-        error: emailError && emailError.message ? emailError.message : String(emailError),
-      });
+        await sendEmail({
+          email: employee.email,
+          subject: `New Client Support Ticket Assigned: ${ticketNumber}`,
+          html: assignedEmployeeEmailHtml,
+        });
+      } catch (emailError) {
+        console.warn('Failed to send ticket assignment email to employee', {
+          ticketNumber,
+          employeeId: employee._id.toString(),
+          error: emailError && emailError.message ? emailError.message : String(emailError),
+        });
+      }
     }
 
-    // Send email to client to notify about assignment
     try {
+      const employeeLabel = employees.map((employee) => employee.name).join(', ');
       const assignedClientEmailHtml = ticketAssignedClientEmail(
         ticket.clientName,
         ticketNumber,
-        employee.name,
+        employeeLabel,
         ticket.serviceType
       );
 
@@ -511,33 +749,39 @@ exports.assignTicketToEmployee = asyncHandler(async (req, res) => {
       });
     }
 
-    // Create notification for employee
-    try {
-      await appNotificationService.createForUser(employeeId, {
-        scope: 'clientTickets',
-        type: 'ticket_assigned',
-        title: `Client Ticket Assigned: ${ticketNumber}`,
-        message: `Client ${ticket.clientName} needs assistance with ${ticket.serviceType}.`,
-        action: 'view_task',
-        payload: {
-          taskId: task._id.toString(),
+    for (const employee of employees) {
+      try {
+        await appNotificationService.createForUser(employee._id, {
+          scope: 'clientTickets',
+          type: 'ticket_assigned',
+          title: `Client Ticket Assigned: ${ticketNumber}`,
+          message: `Client ${ticket.clientName} needs assistance with ${ticket.serviceType}.`,
+          action: 'view_task',
+          payload: {
+            taskId: task._id.toString(),
+            ticketNumber,
+          },
+        });
+      } catch (notifError) {
+        console.warn('Failed to create notification for ticket assignment', {
           ticketNumber,
-        },
-      });
-    } catch (notifError) {
-      console.warn('Failed to create notification for ticket assignment', {
-        ticketNumber,
-        employeeId,
-        error: notifError && notifError.message ? notifError.message : String(notifError),
-      });
+          employeeId: employee._id.toString(),
+          error: notifError && notifError.message ? notifError.message : String(notifError),
+        });
+      }
     }
 
     res.json({
       success: true,
-      message: 'Ticket assigned successfully',
+      message:
+        createdAssignments.length > 0
+          ? 'Ticket assigned successfully'
+          : 'All requested employees were already assigned to this ticket',
       data: {
         ticket,
         task: task._id,
+        assignedEmployeeIds: mergedAssignedIds,
+        createdAssignments: createdAssignments.map((assignment) => assignment._id.toString()),
       },
     });
   } catch (error) {
@@ -572,6 +816,7 @@ exports.updateTicketStatus = asyncHandler(async (req, res) => {
     }
 
     const oldStatus = ticket.status;
+    const assignedEmployeeIds = getAssignedEmployeeIds(ticket);
     ticket.status = status;
 
     if (status === 'completed') {
@@ -579,14 +824,17 @@ exports.updateTicketStatus = asyncHandler(async (req, res) => {
       ticket.completedBy = req.user._id;
 
       // Send completion email to client with rating link (don't fail if email fails)
-      if (ticket.assignedEmployeeId) {
+      if (assignedEmployeeIds.length > 0) {
         try {
-          const employee = await User.findById(ticket.assignedEmployeeId);
+          const employees = await User.find({ _id: { $in: assignedEmployeeIds } }).select('name');
+          const employeeLabel = employees.length
+            ? employees.map((employee) => employee.name).join(', ')
+            : 'Our Team';
           const ratingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticketNumber}/rate`;
           const completedEmailHtml = ticketCompletedEmail(
             ticket.clientName,
             ticketNumber,
-            employee?.name || 'Our Team',
+            employeeLabel,
             ratingLink,
             ticket.comments || []
           );
@@ -609,8 +857,8 @@ exports.updateTicketStatus = asyncHandler(async (req, res) => {
     await ticket.save();
 
     // Create notification
-    if (ticket.assignedEmployeeId) {
-      await appNotificationService.createForUser(ticket.assignedEmployeeId, {
+    for (const assignedEmployeeId of assignedEmployeeIds) {
+      await appNotificationService.createForUser(assignedEmployeeId, {
         scope: 'clientTickets',
         type: 'ticket_status_updated',
         title: `Ticket Status Updated: ${ticketNumber}`,
@@ -752,11 +1000,11 @@ exports.addTicketComment = asyncHandler(async (req, res) => {
 /**
  * POST /api/client-tickets/:ticketNumber/rating
  * Submit rating for completed ticket (client only, requires email token)
- * Only allowed after admin marks the report as \"reviewed\"
+ * Only allowed after admin marks the employee report as \"reviewed\"
  */
 exports.submitTicketRating = asyncHandler(async (req, res) => {
   const { ticketNumber } = req.params;
-  const { stars, comment, clientEmail } = req.body;
+  const { stars, comment, clientEmail, employeeId } = req.body || {};
   const emailToken = req.headers['x-ticket-token'];
 
   if (!ticketNumber || !/^RNG-\d{8}-[A-Z0-9]{4}$/.test(ticketNumber)) {
@@ -775,11 +1023,14 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Client email is required.' });
   }
 
+  if (employeeId && typeof employeeId !== 'string') {
+    return res.status(400).json({ error: 'Invalid employee ID.' });
+  }
+
   try {
-    // Fetch ticket with tracking token (select: false means it's hidden by default)
     const ticket = await ClientTicket.findOne({ ticketNumber })
       .select('+trackingToken');
-    
+
     if (!ticket) {
       return res.status(404).json({ error: 'Ticket not found.' });
     }
@@ -804,57 +1055,160 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
       return res.status(400).json({ error: 'Only completed tickets can be rated.' });
     }
 
-    // NEW: Check if the report associated with this ticket has been reviewed
-    // Find the report for this ticket's linked task
+    const assignedEmployeeIds = getAssignedEmployeeIds(ticket);
+    const normalizedEmployeeId = employeeId ? employeeId.trim() : '';
+    const targetEmployeeId =
+      normalizedEmployeeId ||
+      (assignedEmployeeIds.length === 1 ? assignedEmployeeIds[0] : '');
+
+    if (assignedEmployeeIds.length > 1 && !targetEmployeeId) {
+      return res.status(400).json({
+        error: 'Please select which assigned employee you want to grade.',
+      });
+    }
+
+    if (targetEmployeeId && !assignedEmployeeIds.includes(targetEmployeeId)) {
+      return res.status(400).json({ error: 'Selected employee is not assigned to this ticket.' });
+    }
+
+    let targetReport = null;
     if (ticket.linkedTaskId) {
       const Report = require('../models/Report');
-      const report = await Report.findOne({ task: ticket.linkedTaskId });
-      
-      if (!report || report.status !== 'reviewed') {
-        return res.status(400).json({ error: 'Report must be reviewed before you can grade it. Please wait for admin review.' });
+      const reportQuery = {
+        task: ticket.linkedTaskId,
+        status: 'reviewed',
+      };
+      if (targetEmployeeId) {
+        reportQuery.employee = targetEmployeeId;
+      }
+      targetReport = await Report.findOne(reportQuery)
+        .sort({ updatedAt: -1, submittedAt: -1 })
+        .populate('employee', 'name email');
+
+      if (!targetReport) {
+        return res.status(400).json({
+          error:
+            'Report must be reviewed before you can grade it. Please wait for admin review.',
+        });
       }
     }
 
-    // Track if this is a re-submission
-    const isResubmission = ticket.rating && ticket.rating.stars;
+    const ratingComment = comment ? comment.trim() : '';
+    const submittedAt = new Date();
+    const employeeRatings = Array.isArray(ticket.employeeRatings)
+      ? [...ticket.employeeRatings]
+      : [];
+    const existingRatingIndex = employeeRatings.findIndex((entry) => {
+      const entryEmployeeId =
+        entry.employeeId && typeof entry.employeeId === 'object' && entry.employeeId._id
+          ? entry.employeeId._id.toString()
+          : entry.employeeId
+          ? entry.employeeId.toString()
+          : '';
+      return entryEmployeeId === targetEmployeeId;
+    });
+    const existingLegacyRating = targetEmployeeId
+      ? employeeRatings.find((entry) => {
+          const entryEmployeeId =
+            entry.employeeId && typeof entry.employeeId === 'object' && entry.employeeId._id
+              ? entry.employeeId._id.toString()
+              : entry.employeeId
+              ? entry.employeeId.toString()
+              : '';
+          return entryEmployeeId === targetEmployeeId;
+        })
+      : ticket.rating;
+    const isResubmission = Boolean(existingLegacyRating && existingLegacyRating.stars);
 
-    // Save rating (overwrites previous rating in ticket)
-    ticket.rating = {
+    const nextRating = {
+      employeeId: targetEmployeeId || null,
+      reportId: targetReport?._id || null,
       stars,
-      comment: comment ? comment.trim() : null,
-      submittedAt: new Date(),
-      submittedBy: clientEmail,
+      comment: ratingComment,
+      submittedAt,
+      submittedBy: clientEmail.toLowerCase().trim(),
     };
+
+    if (targetEmployeeId) {
+      if (existingRatingIndex >= 0) {
+        employeeRatings[existingRatingIndex] = nextRating;
+      } else {
+        employeeRatings.push(nextRating);
+      }
+      ticket.employeeRatings = employeeRatings;
+    }
+
+    if (!targetEmployeeId || assignedEmployeeIds.length <= 1) {
+      ticket.rating = {
+        stars,
+        comment: ratingComment || null,
+        submittedAt,
+        submittedBy: clientEmail.toLowerCase().trim(),
+      };
+    }
 
     await ticket.save();
 
-    // Create TicketRating record (tracks all rating submissions, including re-submissions)
-    const rating = new TicketRating({
-      ticketId: ticket._id,
-      clientEmail,
-      stars,
-      comment: comment ? comment.trim() : null,
-    });
+    let rating = null;
+    try {
+      const ratingFilter = {
+        ticketId: ticket._id,
+        clientEmail: clientEmail.toLowerCase().trim(),
+      };
+      if (targetEmployeeId) {
+        ratingFilter.employeeId = targetEmployeeId;
+      }
+      rating = await TicketRating.findOneAndUpdate(
+        ratingFilter,
+        {
+          $set: {
+            employeeId: targetEmployeeId || null,
+            reportId: targetReport?._id || null,
+            stars,
+            comment: ratingComment || null,
+            submittedAt,
+          },
+          $setOnInsert: {
+            ticketId: ticket._id,
+            clientEmail: clientEmail.toLowerCase().trim(),
+          },
+        },
+        {
+          new: true,
+          upsert: true,
+          runValidators: true,
+          setDefaultsOnInsert: true,
+        }
+      );
+    } catch (ratingError) {
+      console.warn('Failed to persist TicketRating mirror record', {
+        ticketNumber,
+        employeeId: targetEmployeeId || null,
+        error: ratingError && ratingError.message ? ratingError.message : String(ratingError),
+      });
+    }
 
-    await rating.save();
+    const targetEmployee =
+      targetReport?.employee ||
+      (targetEmployeeId ? await User.findById(targetEmployeeId).select('name email') : null);
 
-    // Notify admin and employee of rating
     const notificationMsg = stars >= 4 ? '⭐ Positive feedback' : stars >= 3 ? '✓ Neutral feedback' : '⚠️ Negative feedback';
     await appNotificationService.createForAdmins({
       scope: 'clientTickets',
       type: 'ticket_rated',
       title: `Ticket Rated: ${ticketNumber}`,
-      message: `${notificationMsg} (${stars}/5 stars) from ${ticket.clientName}`,
+      message: `${notificationMsg} (${stars}/5 stars) from ${ticket.clientName}${targetEmployee ? ` for ${targetEmployee.name}` : ''}`,
       action: 'view_ticket',
       payload: {
         ticketId: ticket._id.toString(),
         ticketNumber,
         rating: stars,
+        employeeId: targetEmployeeId || null,
       },
     });
 
-    if (ticket.assignedEmployeeId) {
-      await appNotificationService.createForUser(ticket.assignedEmployeeId, {
+    if (targetEmployeeId) {
+      await appNotificationService.createForUser(targetEmployeeId, {
         scope: 'clientTickets',
         type: 'ticket_rated',
         title: `Your Work Was Rated: ${ticketNumber}`,
@@ -864,6 +1218,7 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
           ticketId: ticket._id.toString(),
           ticketNumber,
           rating: stars,
+          employeeId: targetEmployeeId,
         },
       });
     }
@@ -875,10 +1230,12 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
           ticketNumber,
           clientName: ticket.clientName,
           clientEmail: ticket.clientEmail,
+          employeeId: targetEmployeeId || null,
+          employeeName: targetEmployee?.name || null,
           stars,
-          comment: comment ? comment.trim() : null,
+          comment: ratingComment || null,
           isResubmission: !!isResubmission,
-          gradedAt: new Date().toISOString(),
+          gradedAt: submittedAt.toISOString(),
         });
       } catch (socketError) {
         console.warn('Failed to emit client_graded_ticket socket event', {
@@ -893,7 +1250,15 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
       message: 'Rating submitted successfully. Thank you for your feedback!',
       data: {
         ticket,
-        rating,
+        rating:
+          rating ||
+          {
+            employeeId: targetEmployeeId || null,
+            reportId: targetReport?._id?.toString() || null,
+            stars,
+            comment: ratingComment,
+            submittedAt,
+          },
       },
     });
   } catch (error) {
