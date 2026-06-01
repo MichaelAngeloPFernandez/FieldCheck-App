@@ -141,11 +141,27 @@ async function buildTicketResponseData(ticket) {
   const ticketData = ticket.toObject();
   delete ticketData.trackingToken;
   ticketData.workflowStatus = ticketData.status;
-
-  const assignedEmployees =
+  let assignedEmployees =
     Array.isArray(ticketData.assignedEmployeeIds) && ticketData.assignedEmployeeIds.length > 0
       ? ticketData.assignedEmployeeIds.map(toEmployeeSummary).filter(Boolean)
       : [toEmployeeSummary(ticketData.assignedEmployeeId)].filter(Boolean);
+
+  if (ticketData.linkedTaskId && assignedEmployees.length === 0) {
+    const taskId = ticketData.linkedTaskId._id || ticketData.linkedTaskId;
+    const linkedAssignments = await UserTask.find({ taskId })
+      .select('userId status')
+      .populate('userId', 'name email phone')
+      .lean();
+
+    assignedEmployees = linkedAssignments
+      .map((entry) => toEmployeeSummary(entry.userId))
+      .filter(Boolean);
+
+    if (assignedEmployees.length > 0) {
+      ticketData.assignedEmployeeIds = assignedEmployees.map((employee) => employee.id);
+      ticketData.assignedEmployeeId = assignedEmployees[0].id;
+    }
+  }
   ticketData.assignedEmployees = assignedEmployees;
 
   const employeeRatings = mapEmployeeRatings(ticketData);
