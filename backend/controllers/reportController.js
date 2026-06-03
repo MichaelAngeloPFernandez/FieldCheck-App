@@ -384,13 +384,19 @@ const updateReportStatus = asyncHandler(async (req, res) => {
       const ClientTicket = require('../models/ClientTicket');
       const User = require('../models/User');
       
-      // Find client tickets linked to this task
+      // Find client tickets linked to this task (in any status except already completed/closed)
       const linkedTickets = await ClientTicket.find({
         linkedTaskId: updated.task,
-        status: 'pending_review', // Only auto-complete tickets in pending_review
+        status: { $nin: ['completed', 'closed'] }, // Allow open, in_progress, pending_review
       });
 
       for (const ticket of linkedTickets) {
+        // Check if this ticket is already completed
+        if (ticket.status === 'completed' || ticket.status === 'closed') {
+          continue;
+        }
+
+        // Move to completed
         ticket.status = 'completed';
         ticket.completedAt = new Date();
         ticket.completedBy = req.user._id;

@@ -180,10 +180,11 @@ async function buildTicketResponseData(ticket) {
     const Report = require('../models/Report');
     const taskId = ticketData.linkedTaskId._id || ticketData.linkedTaskId;
     const assignedIds = assignedEmployees.map((employee) => employee.id);
-    const [reviewedReports, submittedReports, userTasks] = await Promise.all([
+    
+    // Get all reports for this task (not just assigned employees)
+    const [allReviewedReports, allSubmittedReports] = await Promise.all([
       Report.find({
         task: taskId,
-        employee: { $in: assignedIds },
         status: 'reviewed',
       })
         .select('_id employee status submittedAt updatedAt')
@@ -191,11 +192,20 @@ async function buildTicketResponseData(ticket) {
         .lean(),
       Report.find({
         task: taskId,
-        employee: { $in: assignedIds },
         status: 'submitted',
       })
         .select('_id employee status submittedAt updatedAt')
         .lean(),
+    ]);
+    
+    const reviewedReports = allReviewedReports.filter((r) => 
+      assignedIds.includes(String(r.employee?._id || r.employee))
+    );
+    const submittedReports = allSubmittedReports.filter((r) => 
+      assignedIds.includes(String(r.employee?._id || r.employee))
+    );
+    
+    const [userTasks] = await Promise.all([
       UserTask.find({
         taskId,
         userId: { $in: assignedIds },
@@ -224,10 +234,10 @@ async function buildTicketResponseData(ticket) {
     });
 
     const hasReviewedWork =
-      reviewedReports.length > 0 ||
+      allReviewedReports.length > 0 ||
       userTasks.some((entry) => ['completed', 'reviewed'].includes(String(entry.status || '').toLowerCase()));
     const hasPendingReview =
-      submittedReports.length > 0 ||
+      allSubmittedReports.length > 0 ||
       userTasks.some((entry) => String(entry.status || '').toLowerCase() === 'pending_review');
     const hasAssignedWork = assignedEmployees.length > 0;
 
@@ -240,9 +250,10 @@ async function buildTicketResponseData(ticket) {
       : 'open';
 
     ticketData.status = mergeClientVisibleStatus(ticketData.status, derivedStatus);
+    // If there are ANY reviewed reports for this task, enable grading
     ticketData.hasRateableEmployee = ticketData.rateableEmployees.some(
       (employee) => employee.reportReviewed
-    );
+    ) || allReviewedReports.length > 0;
   } else {
     ticketData.rateableEmployees = assignedEmployees.map((employee) => ({
       employeeId: employee.id,
