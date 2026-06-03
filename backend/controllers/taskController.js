@@ -7,6 +7,7 @@ const Attendance = require('../models/Attendance');
 const Settings = require('../models/Settings');
 const notificationService = require('../services/notificationService');
 const appNotificationService = require('../services/appNotificationService');
+const { syncTicketStatus } = require('../services/ticketStatusSyncService');
 
 // Use global.io which is set by server.js
 const getIO = () => global.io;
@@ -40,6 +41,27 @@ function isBlockedAssignment(ut) {
   if (s === 'blocked') return true;
   const b = String(ut.blockStatus || '').toLowerCase();
   return b === 'blocked';
+}
+
+/**
+ * Trigger ticket status synchronization asynchronously (non-blocking)
+ * This helper ensures ticket synchronization happens after task updates
+ * without affecting the response time of API endpoints.
+ * 
+ * @param {String|ObjectId} taskId - The ID of the task to synchronize
+ */
+function triggerTicketSync(taskId) {
+  setImmediate(async () => {
+    try {
+      await syncTicketStatus(taskId);
+    } catch (error) {
+      console.error('Ticket synchronization failed', {
+        taskId: taskId.toString(),
+        error: error.message
+      });
+      // Error is logged but not propagated - ticket sync should never block task updates
+    }
+  });
 }
 
 async function countActiveNonOverdueTasksForUser(userId) {
@@ -443,6 +465,9 @@ const updateTask = asyncHandler(async (req, res) => {
   });
 
   res.json(toTaskJson(updated));
+  
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(updated._id);
 });
 
 const deleteTask = asyncHandler(async (req, res) => {
@@ -840,6 +865,51 @@ const assignTaskToMultipleUsers = asyncHandler(async (req, res) => {
   });
 });
 // @access Private
+async function syncAggregateTaskStatus(taskId, { progressPercent } = {}) {
+  const taskForStatusUpdate = await Task.findById(taskId);
+  if (!taskForStatusUpdate) return null;
+
+  const allAssignments = await UserTask.find({
+    taskId: taskForStatusUpdate._id,
+    isArchived: { $ne: true },
+  }).select('status');
+
+  const statuses = allAssignments.map((a) => String(a.status || '').toLowerCase());
+  const isCompletedStatus = (status) => ['completed', 'reviewed'].includes(status);
+  const allCompleted = statuses.length > 0 && statuses.every(isCompletedStatus);
+  const anyPendingReview = statuses.some((s) => s === 'pending_review');
+  const anyInProgress = statuses.some((s) => ['accepted', 'in_progress'].includes(s));
+
+  if (progressPercent !== undefined) {
+    taskForStatusUpdate.progressPercent = progressPercent;
+  }
+
+  if (allCompleted) {
+    taskForStatusUpdate.status = 'completed';
+    if (
+      progressPercent === undefined &&
+      (typeof taskForStatusUpdate.progressPercent !== 'number' ||
+        taskForStatusUpdate.progressPercent < 100)
+    ) {
+      taskForStatusUpdate.progressPercent = 100;
+    }
+  } else if (anyPendingReview) {
+    taskForStatusUpdate.status = 'pending_review';
+  } else if (anyInProgress) {
+    taskForStatusUpdate.status = 'in_progress';
+    if (
+      progressPercent === undefined &&
+      (typeof taskForStatusUpdate.progressPercent !== 'number' ||
+        taskForStatusUpdate.progressPercent < 1)
+    ) {
+      taskForStatusUpdate.progressPercent = 50;
+    }
+  }
+
+  await taskForStatusUpdate.save();
+  return taskForStatusUpdate;
+}
+
 const updateUserTaskStatus = asyncHandler(async (req, res) => {
   const { userTaskId } = req.params;
   const { status, progressPercent } = req.body;
@@ -903,40 +973,9 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
   // Keep Task.status as an aggregate state for admin/UI convenience.
   if (taskForStatusUpdate) {
     try {
-      const allAssignments = await UserTask.find({
-        taskId: taskForStatusUpdate._id,
-        isArchived: { $ne: true },
-      }).select('status');
-
-      const statuses = allAssignments.map((a) => String(a.status || '').toLowerCase());
-      const anyInProgress = statuses.some((s) => s === 'in_progress');
-      const allCompleted = statuses.length > 0 && statuses.every((s) => s === 'completed');
-
-      if (progressValue !== undefined) {
-        taskForStatusUpdate.progressPercent = progressValue;
-      }
-
-      if (allCompleted) {
-        taskForStatusUpdate.status = 'completed';
-        if (
-          progressValue === undefined &&
-          (typeof taskForStatusUpdate.progressPercent !== 'number' ||
-            taskForStatusUpdate.progressPercent < 1)
-        ) {
-          taskForStatusUpdate.progressPercent = 100;
-        }
-      } else if (anyInProgress) {
-        taskForStatusUpdate.status = 'in_progress';
-        if (
-          progressValue === undefined &&
-          (typeof taskForStatusUpdate.progressPercent !== 'number' ||
-            taskForStatusUpdate.progressPercent < 1)
-        ) {
-          taskForStatusUpdate.progressPercent = 50;
-        }
-      }
-
-      await taskForStatusUpdate.save();
+      await syncAggregateTaskStatus(taskForStatusUpdate._id, {
+        progressPercent: progressValue,
+      });
       console.log(`✓ Updated Task ${ut.taskId} aggregate status`);
     } catch (e) {
       console.warn(`⚠️ Failed to update Task status: ${e.message}`);
@@ -1073,6 +1112,9 @@ const updateUserTaskStatus = asyncHandler(async (req, res) => {
     completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
     progressPercent: ut.progressPercent,
   });
+  
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(ut.taskId);
 });
 
 // @route POST /api/tasks/user-task/:userTaskId/accept
@@ -1134,6 +1176,12 @@ const acceptUserTask = asyncHandler(async (req, res) => {
   
   await ut.save();
 
+  try {
+    await syncAggregateTaskStatus(ut.taskId);
+  } catch (e) {
+    console.warn(`⚠️ Failed to sync aggregate task status after accept: ${e.message}`);
+  }
+
   io.emit('updatedUserTaskStatus', {
     id: ut._id.toString(),
     userId: ut.userId.toString(),
@@ -1151,6 +1199,9 @@ const acceptUserTask = asyncHandler(async (req, res) => {
     assignedAt: ut.assignedAt.toISOString(),
     completedAt: ut.completedAt ? ut.completedAt.toISOString() : null,
   });
+  
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(ut.taskId);
 });
 
 // @route POST /api/tasks/user-task/:userTaskId/cancel
@@ -1194,6 +1245,12 @@ const cancelUserTask = asyncHandler(async (req, res) => {
   ut.cancelledAt = new Date();
   ut.completedAt = undefined;
   await ut.save();
+
+  try {
+    await syncAggregateTaskStatus(ut.taskId);
+  } catch (e) {
+    console.warn(`⚠️ Failed to sync aggregate task status after cancel: ${e.message}`);
+  }
 
   // Emit real-time event
   io.emit('taskCancelled', {
@@ -1299,6 +1356,12 @@ const submitUserTask = asyncHandler(async (req, res) => {
   
   await ut.save();
 
+  try {
+    await syncAggregateTaskStatus(ut.taskId);
+  } catch (e) {
+    console.warn(`⚠️ Failed to sync aggregate task status after submit: ${e.message}`);
+  }
+
   // Emit real-time event
   const io = getIO();
   if (io) {
@@ -1353,6 +1416,9 @@ const submitUserTask = asyncHandler(async (req, res) => {
     submittedAt: ut.submittedAt.toISOString(),
     submittedBy: ut.submittedBy.toString(),
   });
+  
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(ut.taskId);
 });
 
 // @route POST /api/tasks/user-task/:userTaskId/approve
@@ -1406,6 +1472,12 @@ const approveUserTask = asyncHandler(async (req, res) => {
   
   await ut.save();
 
+  try {
+    await syncAggregateTaskStatus(ut.taskId);
+  } catch (e) {
+    console.warn(`⚠️ Failed to sync aggregate task status after approval: ${e.message}`);
+  }
+
   // Emit real-time event
   const io = getIO();
   if (io) {
@@ -1428,6 +1500,9 @@ const approveUserTask = asyncHandler(async (req, res) => {
     reviewedAt: ut.reviewedAt.toISOString(),
     reviewedBy: ut.reviewedBy.toString(),
   });
+  
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(ut.taskId);
 });
 
 // @route POST /api/tasks/user-task/:userTaskId/reject
@@ -1486,6 +1561,12 @@ const rejectUserTask = asyncHandler(async (req, res) => {
   
   await ut.save();
 
+  try {
+    await syncAggregateTaskStatus(ut.taskId);
+  } catch (e) {
+    console.warn(`⚠️ Failed to sync aggregate task status after rejection: ${e.message}`);
+  }
+
   // Emit real-time event
   const io = getIO();
   if (io) {
@@ -1531,6 +1612,9 @@ const rejectUserTask = asyncHandler(async (req, res) => {
     status: ut.status,
     rejectionReason,
   });
+  
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(ut.taskId);
 });
 
 // @route PUT /api/tasks/:id/checklist-item
@@ -1736,6 +1820,9 @@ const blockTask = asyncHandler(async (req, res) => {
     adminAction: updatedUt.adminAction,
     adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
   });
+
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(task._id);
 });
 
 // @desc Admin action: unblock a blocked task assignment (UserTask)
@@ -1806,6 +1893,9 @@ const unblockUserTask = asyncHandler(async (req, res) => {
     adminAction: updatedUt.adminAction,
     adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
   });
+
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(updatedUt.taskId);
 });
 
 // @desc Admin action: close a blocked task assignment (UserTask)
@@ -1874,6 +1964,9 @@ const closeUserTask = asyncHandler(async (req, res) => {
     adminAction: updatedUt.adminAction,
     adminActionAt: updatedUt.adminActionAt ? updatedUt.adminActionAt.toISOString() : null,
   });
+
+  // Trigger ticket status synchronization asynchronously (non-blocking)
+  triggerTicketSync(updatedUt.taskId);
 });
 
 // --- Missing function stubs (were exported but never defined) ---

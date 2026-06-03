@@ -3,6 +3,8 @@ const https = require('https');
 const { OAuth2Client } = require('google-auth-library');
 const accountActivationEmail = require('./templates/accountActivationEmail');
 const passwordResetEmail = require('./templates/passwordResetEmail');
+const ticketStatusUpdateEmail = require('./templates/ticketStatusUpdateEmail');
+const { generateEmailToken } = require('./emailTokenGenerator');
 
 let didLogEmailMode = false;
 
@@ -549,5 +551,33 @@ const sendEmail = async (options) => {
   }
 };
 
+/**
+ * Send status update email to client when their ticket status changes.
+ * Uses the existing email service infrastructure with fallback providers.
+ * 
+ * @param {Object} ticket - ClientTicket object with client information
+ * @param {string} newStatus - New status value (in_progress, pending_review, completed, closed)
+ * @returns {Promise<Object>} Email send result
+ */
+const sendStatusUpdateEmail = async (ticket, newStatus) => {
+  const { token } = generateEmailToken();
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const trackingLink = `${frontendUrl}/client-ticket/${ticket.ticketNumber}?token=${token}`;
+  
+  const emailHtml = ticketStatusUpdateEmail(
+    ticket.clientName,
+    ticket.ticketNumber,
+    newStatus,
+    trackingLink
+  );
+  
+  await sendEmail({
+    email: ticket.clientEmail,
+    subject: `Ticket Update: ${ticket.ticketNumber} - Status Changed`,
+    html: emailHtml
+  });
+};
+
 module.exports = sendEmail;
 module.exports.initializeEmailService = initializeEmailService;
+module.exports.sendStatusUpdateEmail = sendStatusUpdateEmail;
