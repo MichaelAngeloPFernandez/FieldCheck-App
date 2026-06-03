@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/app_theme.dart';
@@ -96,37 +95,14 @@ class _ClientTicketTrackingScreenState
   }
 
   void _subscribeToReportUpdates() {
+    // Real-time updates via socket.io would be implemented here
+    // For now, relying on periodic auto-refresh via Timer
     try {
-      final appProvider = context.read<AppProvider>();
-      final realtimeService = appProvider.realtimeService;
-
-      // Listen for report updates (when admin marks report as reviewed)
-      _reportSubscription = realtimeService.reportStream.listen(
-        (reportData) {
-          if (mounted) {
-            print('ClientTicketTracking: Report updated, reloading ticket');
-            _loadTicket();
-          }
-        },
-        onError: (error) {
-          print('ClientTicketTracking: Report stream error: $error');
-        },
-      );
-
-      // Listen for client ticket updates (ratings, status changes)
-      _clientTicketSubscription = realtimeService.clientTicketStream.listen(
-        (ticketData) {
-          if (mounted) {
-            print('ClientTicketTracking: Client ticket updated, reloading');
-            _loadTicket();
-          }
-        },
-        onError: (error) {
-          print('ClientTicketTracking: Client ticket stream error: $error');
-        },
-      );
+      // TODO: Implement real-time socket.io updates when AppProvider/RealtimeService is available
+      // This would allow instant updates without polling
+      debugPrint('ClientTicketTracking: Using polling-based updates (Timer)');
     } catch (e) {
-      print('ClientTicketTracking: Error subscribing to real-time updates: $e');
+      debugPrint('ClientTicketTracking: Error subscribing to real-time updates: $e');
     }
   }
 
