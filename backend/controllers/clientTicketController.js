@@ -1092,11 +1092,19 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Invalid ticket number format.' });
   }
 
-  if (!stars || typeof stars !== 'number' || stars < 1 || stars > 5) {
+  // Stars and comment are now optional but at least one must be provided
+  const hasStars = stars !== undefined && stars !== null;
+  const hasComment = comment && typeof comment === 'string' && comment.trim().length > 0;
+
+  if (!hasStars && !hasComment) {
+    return res.status(400).json({ error: 'Please provide either a rating or a comment.' });
+  }
+
+  if (hasStars && (typeof stars !== 'number' || stars < 1 || stars > 5)) {
     return res.status(400).json({ error: 'Rating must be between 1 and 5 stars.' });
   }
 
-  if (stars < 3 && (!comment || typeof comment !== 'string' || comment.trim().length < 5)) {
+  if (hasStars && stars < 3 && (!comment || typeof comment !== 'string' || comment.trim().length < 5)) {
     return res.status(400).json({ error: 'Comment is required for ratings below 3 stars (minimum 5 characters).' });
   }
 
@@ -1167,13 +1175,14 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
             'Report must be reviewed before you can grade it. Please wait for admin review.',
         });
       }
-    } else if (ticket.status !== 'completed') {
+    } else if (ticket.status !== 'completed' && ticket.status !== 'pending_review') {
       return res.status(400).json({
-        error: 'This ticket is not ready for grading yet.',
+        error: 'This ticket is not ready for grading yet. It must be in pending review or completed status.',
       });
     }
 
     const ratingComment = comment ? comment.trim() : '';
+    const ratingStars = hasStars ? stars : null;  // Stars can be null for comment-only submissions
     const submittedAt = new Date();
     const employeeRatings = Array.isArray(ticket.employeeRatings)
       ? [...ticket.employeeRatings]
@@ -1203,7 +1212,7 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
     const nextRating = {
       employeeId: targetEmployeeId || null,
       reportId: targetReport?._id || null,
-      stars,
+      stars: ratingStars,
       comment: ratingComment,
       submittedAt,
       submittedBy: clientEmail.toLowerCase().trim(),
@@ -1220,7 +1229,7 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
 
     if (!targetEmployeeId || assignedEmployeeIds.length <= 1) {
       ticket.rating = {
-        stars,
+        stars: ratingStars,
         comment: ratingComment || null,
         submittedAt,
         submittedBy: clientEmail.toLowerCase().trim(),
@@ -1244,7 +1253,7 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
           $set: {
             employeeId: targetEmployeeId || null,
             reportId: targetReport?._id || null,
-            stars,
+            stars: ratingStars,
             comment: ratingComment || null,
             submittedAt,
           },
@@ -1272,17 +1281,18 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
       targetReport?.employee ||
       (targetEmployeeId ? await User.findById(targetEmployeeId).select('name email') : null);
 
-    const notificationMsg = stars >= 4 ? '⭐ Positive feedback' : stars >= 3 ? '✓ Neutral feedback' : '⚠️ Negative feedback';
+    const notificationMsg = ratingStars ? (ratingStars >= 4 ? '⭐ Positive feedback' : ratingStars >= 3 ? '✓ Neutral feedback' : '⚠️ Negative feedback') : '💬 Comment received';
+    const ratingDisplay = ratingStars ? `(${ratingStars}/5 stars)` : '(comment only)';
     await appNotificationService.createForAdmins({
       scope: 'clientTickets',
       type: 'ticket_rated',
       title: `Ticket Rated: ${ticketNumber}`,
-      message: `${notificationMsg} (${stars}/5 stars) from ${ticket.clientName}${targetEmployee ? ` for ${targetEmployee.name}` : ''}`,
+      message: `${notificationMsg} ${ratingDisplay} from ${ticket.clientName}${targetEmployee ? ` for ${targetEmployee.name}` : ''}`,
       action: 'view_ticket',
       payload: {
         ticketId: ticket._id.toString(),
         ticketNumber,
-        rating: stars,
+        rating: ratingStars,
         employeeId: targetEmployeeId || null,
       },
     });
@@ -1292,12 +1302,12 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
         scope: 'clientTickets',
         type: 'ticket_rated',
         title: `Your Work Was Rated: ${ticketNumber}`,
-        message: `${notificationMsg} (${stars}/5 stars)`,
+        message: `${notificationMsg} ${ratingDisplay}`,
         action: 'view_ticket',
         payload: {
           ticketId: ticket._id.toString(),
           ticketNumber,
-          rating: stars,
+          rating: ratingStars,
           employeeId: targetEmployeeId,
         },
       });
@@ -1312,7 +1322,7 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
           clientEmail: ticket.clientEmail,
           employeeId: targetEmployeeId || null,
           employeeName: targetEmployee?.name || null,
-          stars,
+          stars: ratingStars,
           comment: ratingComment || null,
           isResubmission: !!isResubmission,
           gradedAt: submittedAt.toISOString(),
@@ -1335,7 +1345,7 @@ exports.submitTicketRating = asyncHandler(async (req, res) => {
           {
             employeeId: targetEmployeeId || null,
             reportId: targetReport?._id?.toString() || null,
-            stars,
+            stars: ratingStars,
             comment: ratingComment,
             submittedAt,
           },

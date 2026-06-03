@@ -237,14 +237,6 @@ class _LandingScreenState extends State<LandingScreen> {
                 duration: const Duration(seconds: 3),
               ),
             );
-
-            // Auto-refresh landing page after modal closes
-            if (mounted) {
-              Navigator.of(context).pop();
-              setState(() {
-                // Trigger rebuild to reset any form state
-              });
-            }
           },
         );
       },

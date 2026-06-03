@@ -24,10 +24,14 @@ class ClientTicketModal extends StatelessWidget {
         child: ClientTicketForm(
           onSuccess: (ticketNumber) {
             onSuccess?.call(ticketNumber);
+            // Let the form handle its own navigation closure
             Navigator.pop(context);
           },
           onClose: () {
-            Navigator.pop(context);
+            // Only pop if not already popped by onSuccess
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            }
           },
         ),
       ),

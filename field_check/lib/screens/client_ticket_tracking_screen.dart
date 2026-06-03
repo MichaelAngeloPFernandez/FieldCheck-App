@@ -387,7 +387,7 @@ class _ClientTicketTrackingScreenState
                   if (_ticket?['comments'] != null)
                     _buildCommentsSection(theme, isDark),
                   _buildCommentForm(theme, isDark),
-                  if (_hasRateableEmployee || _ticket?['status'] == 'completed')
+                  if (_hasRateableEmployee || _ticket?['status'] == 'completed' || _ticket?['status'] == 'pending_review')
                     _buildRatingSection(theme, isDark),
                   const SizedBox(height: AppTheme.md),
                 ],
@@ -765,7 +765,7 @@ class _ClientTicketTrackingScreenState
         (ticketRating is Map ? Map<String, dynamic>.from(ticketRating) : null);
     final hasRating = rating != null && rating['stars'] != null;
     final reportReviewed = selectedRateableEmployee == null
-        ? (_hasRateableEmployee || _ticket?['status'] == 'completed')
+        ? (_hasRateableEmployee || _ticket?['status'] == 'completed' || _ticket?['status'] == 'pending_review')
         : (selectedRateableEmployee['reportReviewed'] == true);
 
     if (rateableEmployees.length > 1) {

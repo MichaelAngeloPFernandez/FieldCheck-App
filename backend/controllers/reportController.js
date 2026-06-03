@@ -378,6 +378,96 @@ const updateReportStatus = asyncHandler(async (req, res) => {
 
   const updated = await rep.save();
 
+  // Auto-complete linked client ticket when report is marked as reviewed
+  if (updated.status === 'reviewed' && updated.task) {
+    try {
+      const ClientTicket = require('../models/ClientTicket');
+      const User = require('../models/User');
+      
+      // Find client tickets linked to this task
+      const linkedTickets = await ClientTicket.find({
+        linkedTaskId: updated.task,
+        status: 'pending_review', // Only auto-complete tickets in pending_review
+      });
+
+      for (const ticket of linkedTickets) {
+        ticket.status = 'completed';
+        ticket.completedAt = new Date();
+        ticket.completedBy = req.user._id;
+        await ticket.save();
+
+        // Send completion email to client with rating link
+        try {
+          const sendEmail = require('../utils/sendEmail');
+          const ticketCompletedEmail = require('../emails/ticketCompletedEmail');
+          const assignedEmployeeIds = ticket.assignedEmployees && Array.isArray(ticket.assignedEmployees)
+            ? ticket.assignedEmployees.map((emp) => emp._id || emp)
+            : [];
+          
+          if (assignedEmployeeIds.length > 0) {
+            const employees = await User.find({ _id: { $in: assignedEmployeeIds } }).select('name');
+            const employeeLabel = employees.length
+              ? employees.map((employee) => employee.name).join(', ')
+              : 'Our Team';
+            const ratingLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-ticket/${ticket.ticketNumber}/rate`;
+            const completedEmailHtml = ticketCompletedEmail(
+              ticket.clientName,
+              ticket.ticketNumber,
+              employeeLabel,
+              ratingLink,
+              ticket.comments || []
+            );
+
+            await sendEmail({
+              email: ticket.clientEmail,
+              subject: `Your Support Ticket is Complete - ${ticket.ticketNumber}`,
+              html: completedEmailHtml,
+            });
+          }
+        } catch (emailError) {
+          console.warn('Failed to send ticket completion email on auto-complete', {
+            ticketNumber: ticket.ticketNumber,
+            clientEmail: ticket.clientEmail,
+            error: emailError && emailError.message ? emailError.message : String(emailError),
+          });
+        }
+
+        // Emit real-time notification
+        try {
+          const appNotificationService = require('../services/appNotificationService');
+          const assignedEmployeeIds = ticket.assignedEmployees && Array.isArray(ticket.assignedEmployees)
+            ? ticket.assignedEmployees.map((emp) => emp._id || emp)
+            : [];
+          
+          for (const empId of assignedEmployeeIds) {
+            await appNotificationService.createForUser(empId, {
+              scope: 'clientTickets',
+              type: 'ticket_status_updated',
+              title: `Ticket Auto-Completed: ${ticket.ticketNumber}`,
+              message: 'Your work has been reviewed and the ticket is now ready for client grading',
+              action: 'view_ticket',
+              payload: {
+                ticketId: ticket._id.toString(),
+                ticketNumber: ticket.ticketNumber,
+              },
+            });
+          }
+        } catch (notifError) {
+          console.warn('Failed to create notification on ticket auto-complete', {
+            ticketNumber: ticket.ticketNumber,
+            error: notifError && notifError.message ? notifError.message : String(notifError),
+          });
+        }
+      }
+    } catch (autoCompleteError) {
+      console.warn('Failed to auto-complete linked client ticket', {
+        reportId: updated._id,
+        taskId: updated.task,
+        error: autoCompleteError && autoCompleteError.message ? autoCompleteError.message : String(autoCompleteError),
+      });
+    }
+  }
+
   setImmediate(async () => {
     try {
       const populated = await populateReportById(updated._id);
