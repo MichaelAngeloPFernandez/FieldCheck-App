@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:field_check/widgets/app_widgets.dart';
 import 'package:field_check/utils/app_theme.dart';
@@ -36,6 +37,8 @@ class _ClientTicketTrackingScreenState
   bool _isSubmittingComment = false;
   bool _isSubmittingRating = false;
   Timer? _autoRefreshTimer;
+  StreamSubscription<Map<String, dynamic>>? _reportSubscription;
+  StreamSubscription<Map<String, dynamic>>? _clientTicketSubscription;
   static const _autoRefreshInterval = Duration(seconds: 15);
 
   @override
@@ -43,6 +46,7 @@ class _ClientTicketTrackingScreenState
     super.initState();
     _loadTicket();
     _startAutoRefresh();
+    _subscribeToReportUpdates();
     if (widget.rememberOnDevice) {
       _saveSession();
     } else {
@@ -53,6 +57,8 @@ class _ClientTicketTrackingScreenState
   @override
   void dispose() {
     _autoRefreshTimer?.cancel();
+    _reportSubscription?.cancel();
+    _clientTicketSubscription?.cancel();
     _commentController.dispose();
     _ratingCommentController.dispose();
     super.dispose();
@@ -87,6 +93,41 @@ class _ClientTicketTrackingScreenState
         _loadTicket();
       }
     });
+  }
+
+  void _subscribeToReportUpdates() {
+    try {
+      final appProvider = context.read<AppProvider>();
+      final realtimeService = appProvider.realtimeService;
+
+      // Listen for report updates (when admin marks report as reviewed)
+      _reportSubscription = realtimeService.reportStream.listen(
+        (reportData) {
+          if (mounted) {
+            print('ClientTicketTracking: Report updated, reloading ticket');
+            _loadTicket();
+          }
+        },
+        onError: (error) {
+          print('ClientTicketTracking: Report stream error: $error');
+        },
+      );
+
+      // Listen for client ticket updates (ratings, status changes)
+      _clientTicketSubscription = realtimeService.clientTicketStream.listen(
+        (ticketData) {
+          if (mounted) {
+            print('ClientTicketTracking: Client ticket updated, reloading');
+            _loadTicket();
+          }
+        },
+        onError: (error) {
+          print('ClientTicketTracking: Client ticket stream error: $error');
+        },
+      );
+    } catch (e) {
+      print('ClientTicketTracking: Error subscribing to real-time updates: $e');
+    }
   }
 
   Future<void> _loadTicket() async {

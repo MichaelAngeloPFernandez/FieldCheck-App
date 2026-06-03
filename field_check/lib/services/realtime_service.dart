@@ -34,6 +34,10 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _geofenceController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _reportController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _clientTicketController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   bool _isConnected = false;
   Timer? _reconnectTimer;
@@ -67,6 +71,9 @@ class RealtimeService {
       _adminNearbyController.stream;
   Stream<Map<String, dynamic>> get geofenceStream =>
       _geofenceController.stream;
+  Stream<Map<String, dynamic>> get reportStream => _reportController.stream;
+  Stream<Map<String, dynamic>> get clientTicketStream =>
+      _clientTicketController.stream;
   Stream<Map<String, dynamic>> get connectionStatusStream =>
       _connectionStatusController.stream;
   Stream<Map<String, dynamic>> get connectionRecoveryStream =>
@@ -811,6 +818,36 @@ class RealtimeService {
         });
       } catch (e) {
         print('RealtimeService: Error processing client_ticket_created: $e');
+      }
+    });
+
+    // Report update stream for real-time ticket grading
+    _socket!.on('updatedReport', (data) {
+      try {
+        _reportController.add(Map<String, dynamic>.from(data as Map));
+      } catch (e) {
+        print('RealtimeService: Error processing updatedReport for stream: $e');
+      }
+    });
+
+    // Client ticket grading/rating event
+    _socket!.on('client_graded_ticket', (data) {
+      try {
+        _clientTicketController.add({
+          'type': 'rating_submitted',
+          'data': Map<String, dynamic>.from(data as Map),
+        });
+      } catch (e) {
+        print('RealtimeService: Error processing client_graded_ticket for stream: $e');
+      }
+    });
+
+    // General client ticket update
+    _socket!.on('clientTicketUpdated', (data) {
+      try {
+        _clientTicketController.add(Map<String, dynamic>.from(data as Map));
+      } catch (e) {
+        print('RealtimeService: Error processing clientTicketUpdated: $e');
       }
     });
   }

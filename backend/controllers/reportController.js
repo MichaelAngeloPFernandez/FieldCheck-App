@@ -477,9 +477,19 @@ const updateReportStatus = asyncHandler(async (req, res) => {
   setImmediate(async () => {
     try {
       const populated = await populateReportById(updated._id);
-      getIo().emit('updatedReport', populated || updated);
+      const reportData = populated || updated;
+      // Emit globally for admin dashboard and connected clients
+      getIo().emit('updatedReport', reportData);
+      // Also emit to specific task room for efficiency
+      if (updated.task) {
+        getIo().to(`task-${updated.task}`).emit('updatedReport', reportData);
+      }
     } catch (_) {
+      // Emit with fallback data
       getIo().emit('updatedReport', updated);
+      if (updated.task) {
+        getIo().to(`task-${updated.task}`).emit('updatedReport', updated);
+      }
     }
   });
   res.json(updated);
